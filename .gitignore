@@ -4,3 +4,6 @@ staging/
 .DS_Store
 *.db-shm
 *.db-wal
+__pycache__/
+*.pyc
+.env
