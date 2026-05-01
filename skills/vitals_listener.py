@@ -1,48 +1,47 @@
-import hashlib
-import os
-import sqlite3
-from fastapi import FastAPI, Request
-from dotenv import load_dotenv
+import os, sqlite3
+from flask import Flask, request, jsonify
 
-load_dotenv()
+app = Flask(__name__)
 DB_PATH = os.path.expanduser("~/developer/agency/rahat/vault/rahat.db")
 
-app = FastAPI(title="The Ear")
-
-def generate_sample_id(metric, value, timestamp):
-    # L9 Deduplication: Creates a unique fingerprint for every data point
-    return hashlib.md5(f"{metric}{value}{timestamp}".encode()).hexdigest()
-
-@app.post("/vitals")
-async def receive_vitals(request: Request):
-    payload = await request.json()
-    samples = payload if isinstance(payload, list) else [payload]
+@app.route('/vitals', methods=['POST'])
+def ingest_vitals():
+    data = request.json
+    ts = data.get('timestamp')
     
+    if not ts:
+        print("⚠️ Received request with no timestamp.")
+        return jsonify({"error": "Missing timestamp"}), 400
+
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
-    
-    count = 0
     try:
-        for s in samples:
-            m, v, ts = s.get('metric'), s.get('value'), s.get('timestamp')
-            if not all([m, v, ts]): continue
-            
-            s_id = generate_sample_id(m, v, ts)
-            
-            # Use 'INSERT OR IGNORE' so duplicates from the iPhone don't break the Ledger
-            cur.execute("""
-                INSERT OR IGNORE INTO raw_vitals (sample_id, timestamp, metric_type, value)
-                VALUES (?, ?, ?, ?)
-            """, (s_id, ts, m, v))
-            count += cur.rowcount
-            
+        # 1. Process Weight (Global Override: Only one record ever)
+        if 'weight' in data and data['weight']:
+            cur.execute("DELETE FROM raw_vitals WHERE metric_type = 'weight'")
+            cur.execute("INSERT INTO raw_vitals (metric_type, value, timestamp) VALUES ('weight', ?, ?)", 
+                        (data['weight'], ts))
+            print(f"⚖️ Weight Synced: {data['weight']} LBS")
+
+        # 2. Process Calories (Daily Override: Clears only TODAY's entry before inserting)
+        # We look for any key containing 'active_calo' to handle truncation in Shortcut UI
+        cal_key = next((k for k in data if 'active_calo' in k.lower()), None)
+        if cal_key and data[cal_key]:
+            # Extract date part (YYYY-MM-DD)
+            date_str = ts.replace('T', ' ').split(' ')[0]
+            cur.execute("DELETE FROM raw_vitals WHERE metric_type = 'active_calories' AND timestamp LIKE ?", (f"{date_str}%",))
+            cur.execute("INSERT INTO raw_vitals (metric_type, value, timestamp) VALUES ('active_calories', ?, ?)", 
+                        (data[cal_key], ts))
+            print(f"🔥 Calories Synced: {data[cal_key]} kcal")
+
         conn.commit()
+        return jsonify({"status": "success"}), 200
+    except Exception as e:
+        print(f"❌ Database Error: {e}")
+        return jsonify({"error": str(e)}), 500
     finally:
         conn.close()
-    
-    return {"status": "success", "ingested": count}
 
-if __name__ == "__main__":
-    import uvicorn
-    # '0.0.0.0' makes the Mac Mini accessible to your iPhone on the local WiFi
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+if __name__ == '__main__':
+    # Listen on 0.0.0.0 to allow iPhone connection
+    app.run(host='0.0.0.0', port=5000)
