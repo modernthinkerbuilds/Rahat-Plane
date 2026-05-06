@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 1100 760" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="t1 d1">
+  <title id="t1">Rahat target architecture — three planes (Control, Data, Runtime) with Miya as the orchestrator</title>
+  <desc id="d1">Channels feed Miya which fans out to agents through the Charter policy chokepoint, with state persisted in a single SQLite ledger and decisions traced for replay.</desc>
+
+  <style>
+    .bg { fill: #ffffff; }
+    .panel { fill: #f7f6f2; stroke: #e6e3da; stroke-width: 1; }
+    .accent { fill: #d97757; }
+    .ink { fill: #1a1a1a; font-family: ui-sans-serif, system-ui, sans-serif; }
+    .muted { fill: #6b6b6b; font-family: ui-sans-serif, system-ui, sans-serif; }
+    .title { font-weight: 600; font-size: 14px; }
+    .h2 { font-weight: 600; font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; }
+    .lbl { font-size: 11px; }
+    .small { font-size: 10px; }
+    .box { fill: #ffffff; stroke: #e6e3da; stroke-width: 1; }
+    .box-accent { fill: #ffffff; stroke: #d97757; stroke-width: 1.5; }
+    .arrow { stroke: #b8b3a6; stroke-width: 1.2; fill: none; }
+    .arrow-accent { stroke: #d97757; stroke-width: 1.4; fill: none; }
+    .dashed { stroke-dasharray: 4 3; }
+  </style>
+
+  <defs>
+    <marker id="arr1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#b8b3a6"/>
+    </marker>
+    <marker id="arra1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#d97757"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" width="1100" height="760"/>
+
+  <text class="ink h2" x="40" y="30">Channels</text>
+  <rect class="box" x="40" y="42" width="160" height="44" rx="6"/>
+  <text class="ink lbl" x="120" y="60" text-anchor="middle">Telegram</text>
+  <text class="muted small" x="120" y="76" text-anchor="middle">today, single inbox</text>
+  <rect class="box dashed" x="220" y="42" width="160" height="44" rx="6" stroke-dasharray="4 3"/>
+  <text class="ink lbl" x="300" y="60" text-anchor="middle">Mobile (SwiftUI)</text>
+  <text class="muted small" x="300" y="76" text-anchor="middle">Later · 12+ months</text>
+  <rect class="box" x="580" y="42" width="220" height="44" rx="6"/>
+  <text class="ink lbl" x="690" y="60" text-anchor="middle">Sensors — Apple Watch, Calendar</text>
+  <text class="muted small" x="690" y="76" text-anchor="middle">passive ingest</text>
+  <rect class="box" x="820" y="42" width="220" height="44" rx="6"/>
+  <text class="ink lbl" x="930" y="60" text-anchor="middle">Bridges — SugarWOD, Notion, Photos</text>
+  <text class="muted small" x="930" y="76" text-anchor="middle">external systems</text>
+
+  <rect class="box-accent" x="40" y="116" width="1000" height="62" rx="8"/>
+  <text class="ink title" x="60" y="140">The Miya — Orchestrator</text>
+  <text class="muted small" x="60" y="158">classify (regex + Flash) · fan-out · synthesize · Hyderabadi voice (deterministic phrasebook)</text>
+  <text class="accent small" x="60" y="172">single user-facing process · single voice · enforces notification budget</text>
+
+  <rect class="panel" x="40" y="200" width="320" height="270" rx="8"/>
+  <text class="ink h2" x="60" y="222">Control Plane · declarative</text>
+  <rect class="box" x="60" y="240" width="280" height="42" rx="6"/>
+  <text class="ink lbl" x="74" y="258">Agent Registry</text>
+  <text class="muted small" x="74" y="272">Python class · in-process at N≤6</text>
+  <rect class="box-accent" x="60" y="290" width="280" height="42" rx="6"/>
+  <text class="ink lbl" x="74" y="308">The Charter — policy chokepoint</text>
+  <text class="muted small" x="74" y="322">approve · modify · veto + audit</text>
+  <rect class="box" x="60" y="340" width="280" height="42" rx="6"/>
+  <text class="ink lbl" x="74" y="358">Identity / Scopes (single-user now)</text>
+  <text class="muted small" x="74" y="372">subject_id ready for multi-user</text>
+  <rect class="box" x="60" y="390" width="280" height="42" rx="6"/>
+  <text class="ink lbl" x="74" y="408">Tool helpers (core/io.py)</text>
+  <text class="muted small" x="74" y="422">Telegram + Gemini + db()</text>
+
+  <rect class="panel" x="380" y="200" width="320" height="270" rx="8"/>
+  <text class="ink h2" x="400" y="222">Runtime Plane · compute</text>
+  <rect class="box" x="400" y="240" width="280" height="42" rx="6"/>
+  <text class="ink lbl" x="414" y="258">Agent Host</text>
+  <text class="muted small" x="414" y="272">on_message · on_tick · on_event</text>
+  <rect class="box" x="400" y="290" width="280" height="42" rx="6"/>
+  <text class="ink lbl" x="414" y="308">Scheduler — heartbeat (1-min bucket)</text>
+  <text class="muted small" x="414" y="322">@daily 08:00 brief · 21:00 recovery · weekly reset</text>
+  <rect class="box-accent" x="400" y="340" width="280" height="42" rx="6"/>
+  <text class="ink lbl" x="414" y="358">Decisions trace (decisions table)</text>
+  <text class="muted small" x="414" y="372">trace_id · span · latency · cost</text>
+  <rect class="box" x="400" y="390" width="280" height="42" rx="6"/>
+  <text class="ink lbl" x="414" y="408">Eval harness (330 cases · 30s)</text>
+  <text class="muted small" x="414" y="422">CI gate · isolated DB · time-frozen</text>
+
+  <rect class="panel" x="720" y="200" width="320" height="270" rx="8"/>
+  <text class="ink h2" x="740" y="222">Data Plane · state</text>
+  <rect class="box-accent" x="740" y="240" width="280" height="42" rx="6"/>
+  <text class="ink lbl" x="754" y="258">SQLite Intent Ledger (one file)</text>
+  <text class="muted small" x="754" y="272">WAL · ACID · backup is `cp`</text>
+  <rect class="box" x="740" y="290" width="280" height="42" rx="6"/>
+  <text class="ink lbl" x="754" y="308">Episodes · episode_notes</text>
+  <text class="muted small" x="754" y="322">Curriculum · trip recall · cycles</text>
+  <rect class="box" x="740" y="340" width="280" height="42" rx="6"/>
+  <text class="ink lbl" x="754" y="358">Profile · Semantic (Next phase)</text>
+  <text class="muted small" x="754" y="372">profile_facts · sqlite-vss</text>
+  <rect class="box" x="740" y="390" width="280" height="42" rx="6"/>
+  <text class="ink lbl" x="754" y="408">governance_log · raw_vitals · plans</text>
+  <text class="muted small" x="754" y="422">audit · observations · projections</text>
+
+  <text class="ink h2" x="40" y="500">Agent mesh — manifests-free at small N (Year 1: ~20 agents)</text>
+  <g>
+    <rect class="box" x="40" y="514" width="155" height="58" rx="6"/>
+    <text class="ink lbl" x="56" y="534">The Scientist</text>
+    <text class="muted small" x="56" y="550">vitality · math</text>
+    <text class="accent small" x="56" y="564">live</text>
+  </g>
+  <g>
+    <rect class="box" x="205" y="514" width="155" height="58" rx="6"/>
+    <text class="ink lbl" x="221" y="534">Fraser — Coach</text>
+    <text class="muted small" x="221" y="550">CrossFit loading</text>
+    <text class="accent small" x="221" y="564">P0 · soon</text>
+  </g>
+  <g>
+    <rect class="box" x="370" y="514" width="155" height="58" rx="6"/>
+    <text class="ink lbl" x="386" y="534">Bajrangi</text>
+    <text class="muted small" x="386" y="550">HRV · sleep advisor</text>
+    <text class="accent small" x="386" y="564">P0 · with Coach</text>
+  </g>
+  <g>
+    <rect class="box" x="535" y="514" width="155" height="58" rx="6"/>
+    <text class="ink lbl" x="551" y="534">Curriculum</text>
+    <text class="muted small" x="551" y="550">toddler / newborn</text>
+    <text class="accent small" x="551" y="564">P1 · year 1</text>
+  </g>
+  <g>
+    <rect class="box" x="700" y="514" width="155" height="58" rx="6"/>
+    <text class="ink lbl" x="716" y="534">Foodie</text>
+    <text class="muted small" x="716" y="550">vision audit · profile</text>
+    <text class="accent small" x="716" y="564">P1 · year 1</text>
+  </g>
+  <g>
+    <rect class="box dashed" x="865" y="514" width="175" height="58" rx="6" stroke-dasharray="4 3"/>
+    <text class="ink lbl" x="881" y="534">Concierge / Voyager</text>
+    <text class="muted small" x="881" y="550">trips · semantic recall</text>
+    <text class="muted small" x="881" y="564">year 1–2</text>
+  </g>
+
+  <rect class="panel" x="40" y="600" width="1000" height="60" rx="8"/>
+  <text class="ink h2" x="60" y="622">Substrate</text>
+  <text class="muted lbl" x="60" y="642">Mac Mini M-series · launchd KeepAlive · caffeinate -imd · Tailscale tunnel for mobile (Later)</text>
+  <text class="accent small" x="60" y="656">Sovereignty as infrastructure — preserved end to end · backup is a file copy</text>
+
+  <text class="muted small" x="40" y="690">PRINCIPLE: deterministic core, LLM at edges  ·  state-bus over RPC  ·  heartbeat-driven  ·  manifests-free at small N  ·  voice in the orchestrator</text>
+  <text class="muted small" x="40" y="708">EVALS: 330 cases (142 + 142 + 46) — three independent paths — 30s runtime — CI-gate-able</text>
+  <text class="muted small" x="40" y="726">CHOKEPOINTS: Miya (one inbox) · Charter (one policy gate) · Tool Broker (one I/O path) · Decisions (one trace log)</text>
+  <text class="accent small" x="40" y="744">Designed so adding agent #20 changes one plane minimally and the other two not at all.</text>
+
+  <path class="arrow" d="M120,90 L120,116" marker-end="url(#arr1)"/>
+  <path class="arrow dashed" d="M300,90 L300,116" marker-end="url(#arr1)" stroke-dasharray="4 3"/>
+  <path class="arrow" d="M690,90 L690,116" marker-end="url(#arr1)"/>
+  <path class="arrow" d="M930,90 L930,116" marker-end="url(#arr1)"/>
+  <path class="arrow-accent" d="M200,178 L200,200" marker-end="url(#arra1)"/>
+  <path class="arrow-accent" d="M540,178 L540,200" marker-end="url(#arra1)"/>
+  <path class="arrow-accent" d="M880,178 L880,200" marker-end="url(#arra1)"/>
+  <path class="arrow" d="M360,330 L380,330" marker-end="url(#arr1)"/>
+  <path class="arrow" d="M700,330 L720,330" marker-end="url(#arr1)"/>
+  <path class="arrow" d="M540,470 L540,514" marker-end="url(#arr1)"/>
+  <path class="arrow" d="M540,572 L540,600" marker-end="url(#arr1)"/>
+</svg>

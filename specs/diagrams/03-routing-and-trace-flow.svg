@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 1100 720" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="t3 d3">
+  <title id="t3">Routing &amp; trace flow — one inbound message, end to end</title>
+  <desc id="d3">Sequence diagram tracing a single Telegram message from inbound poll through Miya routing, agent route, Charter policy review, voice dressing, and Telegram send — with trace_id propagation throughout.</desc>
+
+  <style>
+    .bg { fill: #ffffff; }
+    .panel { fill: #f7f6f2; stroke: #e6e3da; stroke-width: 1; }
+    .ink { fill: #1a1a1a; font-family: ui-sans-serif, system-ui, sans-serif; }
+    .muted { fill: #6b6b6b; font-family: ui-sans-serif, system-ui, sans-serif; }
+    .accent { fill: #d97757; }
+    .title { font-weight: 600; font-size: 14px; }
+    .h2 { font-weight: 600; font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; }
+    .lbl { font-size: 11px; font-family: ui-sans-serif, system-ui, sans-serif; }
+    .small { font-size: 10px; font-family: ui-sans-serif, system-ui, sans-serif; }
+    .tiny { font-size: 9.5px; font-family: ui-sans-serif, system-ui, sans-serif; }
+    .col-line { stroke: #e6e3da; stroke-width: 1; stroke-dasharray: 3 3; }
+    .col-head { fill: #ffffff; stroke: #e6e3da; stroke-width: 1; }
+    .col-head-accent { fill: #ffffff; stroke: #d97757; stroke-width: 1.5; }
+    .arrow { stroke: #1a1a1a; stroke-width: 1.2; fill: none; }
+    .arrow-accent { stroke: #d97757; stroke-width: 1.4; fill: none; }
+    .ledger { fill: #ffffff; stroke: #d97757; stroke-width: 1; stroke-dasharray: 2 2; }
+  </style>
+
+  <defs>
+    <marker id="arr3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#1a1a1a"/>
+    </marker>
+    <marker id="arr3a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#d97757"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" width="1100" height="720"/>
+  <text class="ink title" x="40" y="34">Routing &amp; trace flow — one inbound message, end to end</text>
+  <text class="muted lbl" x="40" y="54">Every step writes a row to <tspan font-family="ui-monospace, monospace">decisions</tspan> table sharing the same trace_id. `rahat replay &lt;trace&gt;` reconstructs the entire turn.</text>
+
+  <rect class="col-head" x="40" y="80" width="140" height="40" rx="6"/>
+  <text class="ink lbl" x="110" y="103" text-anchor="middle">User · Telegram</text>
+
+  <rect class="col-head-accent" x="200" y="80" width="140" height="40" rx="6"/>
+  <text class="ink lbl" x="270" y="103" text-anchor="middle">Miya — orchestrator</text>
+
+  <rect class="col-head" x="360" y="80" width="140" height="40" rx="6"/>
+  <text class="ink lbl" x="430" y="103" text-anchor="middle">Agent (Scientist)</text>
+
+  <rect class="col-head-accent" x="520" y="80" width="140" height="40" rx="6"/>
+  <text class="ink lbl" x="590" y="103" text-anchor="middle">Charter — policy</text>
+
+  <rect class="col-head" x="680" y="80" width="140" height="40" rx="6"/>
+  <text class="ink lbl" x="750" y="103" text-anchor="middle">Voice layer</text>
+
+  <rect class="col-head" x="840" y="80" width="220" height="40" rx="6"/>
+  <text class="ink lbl" x="950" y="103" text-anchor="middle">SQLite Intent Ledger</text>
+
+  <line class="col-line" x1="110" y1="120" x2="110" y2="640"/>
+  <line class="col-line" x1="270" y1="120" x2="270" y2="640"/>
+  <line class="col-line" x1="430" y1="120" x2="430" y2="640"/>
+  <line class="col-line" x1="590" y1="120" x2="590" y2="640"/>
+  <line class="col-line" x1="750" y1="120" x2="750" y2="640"/>
+  <line class="col-line" x1="950" y1="120" x2="950" y2="640"/>
+
+  <text class="ink lbl" x="60" y="148" font-weight="600">1</text>
+  <path class="arrow" d="M110,150 L260,150" marker-end="url(#arr3)"/>
+  <text class="muted tiny" x="115" y="143">"how do I catch up?"</text>
+
+  <text class="accent small" x="270" y="170" text-anchor="middle">trace_id = uuid4().hex</text>
+
+  <text class="ink lbl" x="60" y="200" font-weight="600">2</text>
+  <text class="ink small" x="200" y="200">classify (regex + Flash)</text>
+  <path class="arrow" d="M270,210 Q272,225 272,235" marker-end="url(#arr3)"/>
+  <rect class="ledger" x="840" y="195" width="220" height="32" rx="4"/>
+  <text class="muted tiny" x="855" y="216">decisions ← {actor:miya, op:miya.route, trace_id, strategy:regex}</text>
+
+  <text class="ink lbl" x="60" y="260" font-weight="600">3</text>
+  <path class="arrow" d="M270,262 L420,262" marker-end="url(#arr3)"/>
+  <text class="muted tiny" x="275" y="255">route(msg)</text>
+
+  <text class="ink lbl" x="60" y="300" font-weight="600">4</text>
+  <text class="ink small" x="360" y="300">handle_recalibrate()</text>
+  <text class="muted tiny" x="360" y="316">deterministic gap math</text>
+  <rect class="ledger" x="840" y="295" width="220" height="32" rx="4"/>
+  <text class="muted tiny" x="855" y="316">decisions ← {actor:scientist, op:agent.route, latency_ms}</text>
+
+  <text class="ink lbl" x="60" y="350" font-weight="600">5</text>
+  <path class="arrow" d="M425,352 L275,352" marker-end="url(#arr3)"/>
+  <text class="muted tiny" x="280" y="345">Reply(text, confidence, work_orders=[])</text>
+
+  <text class="ink lbl" x="60" y="395" font-weight="600">6</text>
+  <path class="arrow-accent" d="M270,397 L580,397" marker-end="url(#arr3a)"/>
+  <text class="accent small" x="275" y="390">charter.review(WorkOrder, ctx={"now":...})</text>
+
+  <text class="ink small" x="520" y="440">predicates run in order:</text>
+  <text class="muted tiny" x="520" y="456">  · external_veto_check  · quiet_hours  · hrv_red_blocks</text>
+  <rect class="ledger" x="840" y="430" width="220" height="32" rx="4"/>
+  <text class="muted tiny" x="855" y="451">governance_log ← {actor, subject, decision:approved}</text>
+
+  <text class="ink lbl" x="60" y="490" font-weight="600">7</text>
+  <path class="arrow-accent" d="M585,492 L275,492" marker-end="url(#arr3a)"/>
+  <text class="accent small" x="280" y="485">Verdict(approved, reason)</text>
+
+  <text class="ink lbl" x="60" y="535" font-weight="600">8</text>
+  <path class="arrow" d="M270,537 L740,537" marker-end="url(#arr3)"/>
+  <text class="muted tiny" x="275" y="530">voice.dress(text)  → idempotent · preserves data</text>
+  <text class="ink small" x="680" y="557">classify kind → opener/closer phrasebook</text>
+
+  <text class="ink lbl" x="60" y="590" font-weight="600">9</text>
+  <path class="arrow" d="M260,592 L115,592" marker-end="url(#arr3)"/>
+  <text class="muted tiny" x="120" y="585">"Suno miya — Burned 752 / 6,000. Convert Thu+Sun to CF."</text>
+  <rect class="ledger" x="840" y="585" width="220" height="32" rx="4"/>
+  <text class="muted tiny" x="855" y="606">decisions ← {actor:miya, op:io.telegram_send, latency_ms, outcome:ok}</text>
+
+  <rect class="panel" x="40" y="650" width="1020" height="58" rx="8"/>
+  <text class="ink h2" x="60" y="670">Why this shape</text>
+  <text class="muted small" x="60" y="687">Each chokepoint is one place to extend, one place to debug, one place to grade. Adding a new agent: register it. Adding a policy: add a function.</text>
+  <text class="accent small" x="60" y="703">Total trace = 4–5 rows in `decisions` per turn. Replay is `SELECT * FROM decisions WHERE trace_id = ?` ordered by ts, span_id.</text>
+</svg>
