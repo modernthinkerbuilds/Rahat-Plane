@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.rahat.scientist</string>
+
+    <!-- caffeinate wrapper keeps the Mac awake (system + display) while the
+         Scientist is running, so Telegram messages are answered 24/7 even
+         when nothing else is keeping the Mac alive.
+           -i   prevent idle system sleep
+           -d   prevent display sleep
+           -m   prevent disk sleep
+         If you also have `pmset -c sleep 0` set, this is belt-and-suspenders
+         but harmless. Drop the -d flag if you want the screen to sleep
+         (useful for Mac Mini headless setups). -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/caffeinate</string>
+        <string>-imd</string>
+        <string>/usr/bin/python3</string>
+        <string>-u</string>
+        <string>/Users/venkat/developer/agency/rahat/agents/the_scientist/main.py</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/venkat/developer/agency/rahat</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Restart on any exit (crash or otherwise). Pair with the script's
+         `restart` which uses `launchctl kickstart -k` for clean code reloads. -->
+    <key>KeepAlive</key>
+    <true/>
+
+    <!-- Don't hot-loop if the agent is failing fast — wait 10s between retries. -->
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/venkat/developer/agency/rahat/vault/scientist.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/venkat/developer/agency/rahat/vault/scientist.log</string>
+
+    <!-- Inherit the user's PATH so brew-installed python and other tools resolve. -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>

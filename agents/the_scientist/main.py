@@ -46,6 +46,7 @@ from __future__ import annotations  # 3.9-safe: defer PEP 604 / PEP 585 evaluati
 import os
 import re
 import sqlite3
+import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -54,6 +55,43 @@ from pathlib import Path
 import requests
 from dotenv import load_dotenv
 from google import genai
+
+# ── Path bootstrap so `from agents.the_scientist.protocols import …`
+# resolves regardless of whether main.py is loaded as a module ("sci"
+# via eval_suite) or as a package member. Adds the repo root to
+# sys.path; idempotent.
+_REPO_ROOT = str(Path(__file__).resolve().parent.parent.parent)
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+
+# Pure math + constants live in protocols.py so other agents (Coach,
+# Curriculum, etc.) can import them without pulling in this module's
+# Telegram poll loop or genai client. See agents/the_scientist/protocols.py.
+from agents.the_scientist.protocols import (  # noqa: E402
+    BMR_KCAL, KCAL_PER_LB_FAT, KCAL_PER_KG_FAT,
+    WEEKLY_ACTIVE_TARGET_KCAL, DAILY_INTAKE_KCAL,
+    INTENT_INTERMEDIATE_KG, INTENT_INTERMEDIATE_LBS,
+    INTENT_TARGET_KG, INTENT_TARGET_LBS,
+    INTENT_INTERMEDIATE_DATE, INTENT_TARGET_DATE,
+    TARGET_LBS,
+    EASY_LOSS_LB_PER_WEEK, MAX_LOSS_LB_PER_WEEK,
+    LOCKED_LOSS_LB_PER_WEEK,
+    TYPICAL_BURN, TIERS, DEFAULT_TIER,
+    HRV_RED, HRV_YELLOW, HRV_GREEN, HRV_ELITE,
+    BLACKLIST, STRENGTH_BLACKLIST,
+    Z2_RUN_KCAL_DEFAULT, NONWORKOUT_BURN_FLOOR,
+    NUDGE_MORNING_HOUR, NUDGE_HOURLY_START, NUDGE_HOURLY_END,
+    NUDGE_RECOVERY_HOUR, HAMMER_KCAL,
+    DAY_TYPE_BY_TIER, DAY_TYPE_LABEL,
+    WEEKDAY_INDEX, WEEKDAY_NAME, Z2_PREFERRED_WEEKDAY,
+    week_bounds, hrv_band, fmt_kcal, fmt_lbs,
+    _empty_prefs, _eta_at_locked_rate, _locked_intake,
+    _WEEKDAY_LOOKUP, _WEEKDAY_TOKEN_RE,
+    parse_weekdays, _BLACKLIST_NORMALIZE, normalize_blacklist_term,
+    DAY_HEADER, GymDay,
+    parse_gym_plan as _proto_parse_gym_plan,
+    eligible_cf_days as _proto_eligible_cf_days,
+)
 
 # ─────────────────────────── Config ───────────────────────────
 load_dotenv()
@@ -64,81 +102,22 @@ HOME     = Path.home()
 DB_PATH  = HOME / "developer/agency/rahat/vault/rahat.db"
 PLAN_PATH = HOME / "developer/agency/rahat/staging/workspace/gym-programming/weekly_plan.txt"
 
-# ── Athlete constants (per Rahat PRD §3 Scientist + §6 Success Metrics) ─
-BMR_KCAL          = int(os.getenv("BMR_KCAL", "2100"))      # he corrected this himself
-DAILY_INTAKE_KCAL = int(os.getenv("INTAKE_KCAL", "2400"))   # the sustainable target
-KCAL_PER_LB_FAT   = 3500
-KCAL_PER_KG_FAT   = 7700
 
-# Scientist's own North Star (PRD §6). Seeded into the shared `intents`
-# table on boot and used by handle_weight_timeline() for the linear-decay
-# math the Scientist owns per PRD §3. The 155 kg deadlift Intent belongs
-# to Matt Fraser (PRD §3 Performance) and is seeded by that agent — not here.
-INTENT_TARGET_KG    = 80.0
-INTENT_TARGET_LBS   = INTENT_TARGET_KG * 2.20462    # 176.4 lbs
-INTENT_TARGET_DATE  = "2026-07-01"
-TARGET_LBS          = float(os.getenv("TARGET_LBS", str(INTENT_TARGET_LBS)))
+# Thin wrappers preserve the legacy zero-arg call sites — they read
+# from this module's `PLAN_PATH`, which the eval suite reassigns to
+# the fixture. Behavior is identical to the pre-extract version.
+def parse_gym_plan(text: str | None = None) -> list[GymDay]:
+    return _proto_parse_gym_plan(text, plan_path=PLAN_PATH)
 
-# Typical session burns (kcal). Used by split-target math.
-TYPICAL_BURN = {
-    "crossfit":      850,    # PRVN strength + WOD
-    "crossfit_hiit": 550,    # pure metcon, no strength
-    "z2_10k":        1100,   # ~9-10 mi at conversational pace
-    "z2_walk_60":    350,
-    "incline_30":    250,    # 10% / 3.0 mph treadmill
-    "rest_passive":  500,    # baseline NEAT on a no-workout day
-}
 
-# Recovery tiers — what "the program" looks like in different life phases.
-TIERS: dict[str, dict] = {
-    "survival":    {"weekly": 3500, "daily": 500, "cap": 600,
-                    "note": "Newborn/illness. Walks + family movement only."},
-    "re_entry":    {"weekly": 4200, "daily": 600, "cap": 800,
-                    "note": "Coming back. Z2 walks + light mobility."},
-    "baseline":    {"weekly": 5500, "daily": 785, "cap": 1100,
-                    "note": "Sustainable. 3 CF + 1 Z2 + walks."},
-    "performance": {"weekly": 6000, "daily": 857, "cap": 1100,
-                    "note": "Default. 3-4 CF + 1 Z2."},
-    "hammer":      {"weekly": 6500, "daily": 928, "cap": 1450,
-                    "note": "Pre-weigh-in push. 4 CF + 1-2 Z2."},
-}
-DEFAULT_TIER = "performance"
+def eligible_cf_days(days: list[GymDay] | None = None) -> list[GymDay]:
+    if days is None:
+        days = parse_gym_plan()
+    return _proto_eligible_cf_days(days)
 
-# HRV interpretation thresholds (ms).
-HRV_RED    = 30   # below = total rest, recovery only
-HRV_YELLOW = 45   # below = Z2 only, no high intensity
-HRV_GREEN  = 50   # at/above = normal training
-HRV_ELITE  = 70   # at/above = green light for hammer
-
-# Movements that disqualify a day for the user's CrossFit slots.
-BLACKLIST = ["partner", "handstand", "muscle up", "muscle-up",
-             "overhead squat", "ohs"]
-STRENGTH_BLACKLIST = ["snatch"]   # only flagged in the strength portion
-
-# Tunables for the scheduler + nudges.
-Z2_RUN_KCAL_DEFAULT   = int(os.getenv("Z2_RUN_KCAL", "400"))
-NONWORKOUT_BURN_FLOOR = int(os.getenv("NONWORKOUT_FLOOR", "250"))
-NUDGE_MORNING_HOUR    = 8       # daily briefing
-NUDGE_HOURLY_START    = 10
-NUDGE_HOURLY_END      = 20
-NUDGE_RECOVERY_HOUR   = 21
-HAMMER_KCAL           = 1000    # any single day above this counts as a "hammer"
-
-# Locked weekly cadence: 3 PRVN CrossFit + 1 Zone-2 10K + 3 active-rest.
-# Day-type per-day targets scale with the active tier so the same plan
-# expresses both "baseline" weeks and "hammer" pre-weighin weeks.
-DAY_TYPE_BY_TIER: dict[str, dict[str, int]] = {
-    "survival":    {"cf": 0,    "z2": 0,    "rest": 500},
-    "re_entry":    {"cf": 600,  "z2": 800,  "rest": 500},
-    "baseline":    {"cf": 800,  "z2": 1100, "rest": 500},
-    "performance": {"cf": 850,  "z2": 1100, "rest": 500},
-    "hammer":      {"cf": 1100, "z2": 1400, "rest": 600},
-}
-DAY_TYPE_LABEL = {"cf": "CrossFit", "z2": "Zone-2 10K", "rest": "Active rest"}
-WEEKDAY_INDEX = {"Mon": 0, "Tue": 1, "Wed": 2, "Thu": 3,
-                 "Fri": 4, "Sat": 5, "Sun": 6}
-WEEKDAY_NAME = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-Z2_PREFERRED_WEEKDAY = 5  # Saturday
+# Athlete constants, tier tables, blacklists, and nudge tunables now
+# live in agents/the_scientist/protocols.py — imported above. Remove
+# duplicate definitions here to prevent silent drift.
 
 client = genai.Client(api_key=API_KEY) if API_KEY else None
 
@@ -211,10 +190,21 @@ def _db():
         " decision TEXT NOT NULL,"           # approved | modified | vetoed
         " reason TEXT);"
     )
-    # Seed only the Scientist's own intent (weight). Other agents seed theirs.
-    con.execute(
-        "INSERT OR IGNORE INTO intents (kind, target_value, target_date) "
-        "VALUES (?, ?, ?)", ("weight_kg", INTENT_TARGET_KG, INTENT_TARGET_DATE))
+    # Seed both Scientist intents only if no row of that kind exists yet.
+    # Plain INSERT OR IGNORE doesn't help here because the table's UNIQUE
+    # constraint is on (kind, target_date) — and recalibrate_intents() shifts
+    # target_date over time, which would otherwise let the seed create
+    # duplicate rows for the same kind.
+    for kind, value, date in [
+        ("weight_intermediate_kg", INTENT_INTERMEDIATE_KG, INTENT_INTERMEDIATE_DATE),
+        ("weight_kg",              INTENT_TARGET_KG,       INTENT_TARGET_DATE),
+    ]:
+        exists = con.execute(
+            "SELECT 1 FROM intents WHERE kind=? LIMIT 1", (kind,)).fetchone()
+        if not exists:
+            con.execute(
+                "INSERT INTO intents (kind, target_value, target_date) "
+                "VALUES (?, ?, ?)", (kind, value, date))
     con.commit()
     return con
 
@@ -314,16 +304,6 @@ def burn_for_range(start: datetime, end: datetime) -> float:
         con.close()
 
 
-def week_bounds(now: datetime | None = None) -> tuple[datetime, datetime]:
-    """Mon-start..Sun-end week bounds for the week containing `now`."""
-    now = now or datetime.now()
-    # weekday: Mon=0..Sun=6
-    monday = (now - timedelta(days=now.weekday())).replace(
-        hour=0, minute=0, second=0, microsecond=0)
-    sunday = monday + timedelta(days=6, hours=23, minutes=59)
-    return monday, sunday
-
-
 def burn_this_week() -> tuple[float, datetime]:
     """Sum kcal Mon..now. Returns (kcal, week_start_monday)."""
     monday, _ = week_bounds()
@@ -338,14 +318,11 @@ def burn_last_week() -> tuple[float, datetime, datetime]:
 
 
 def weekly_target() -> float:
-    """Plan-aware target. The locked weekly cadence is the source of truth;
-    fall back to tier ceiling, then to the most recent campaign row."""
-    try:
-        t = sum(d["target_kcal"] for d in current_plan())
-        if t > 0:
-            return float(t)
-    except Exception:
-        pass
+    """User's locked weekly active-burn target. Sourced from the active tier
+    (performance=6000, baseline=5500, hammer=6500, …). The plan's day-type
+    sum (~5,150 for performance) only captures *scheduled* sessions; the
+    extra ~850 is daily NEAT. Returning the tier value keeps the headline
+    target (6,000) consistent with what the user committed to."""
     tier = state_get("recovery_tier", DEFAULT_TIER)
     if tier in TIERS:
         return float(TIERS[tier]["weekly"])
@@ -354,13 +331,15 @@ def weekly_target() -> float:
         row = con.execute(
             "SELECT target_active_calories FROM weekly_campaigns "
             "ORDER BY week_start DESC LIMIT 1").fetchone()
-        return float(row[0]) if row else 6000.0
+        return float(row[0]) if row else float(WEEKLY_ACTIVE_TARGET_KCAL)
     finally:
         con.close()
 
 
 # ─────────────────────── Weekly plan (3 CF + 1 Z2) ────────────
 def day_type_target(day_type: str, tier: str | None = None) -> int:
+    """DB-coupled: reads `recovery_tier` from user_state if no tier given.
+    Pure-math equivalent in protocols.DAY_TYPE_BY_TIER."""
     tier = tier or state_get("recovery_tier", DEFAULT_TIER)
     return DAY_TYPE_BY_TIER.get(tier, DAY_TYPE_BY_TIER[DEFAULT_TIER]).get(day_type, 0)
 
@@ -434,6 +413,10 @@ def replan_week(monday: datetime, *, force: bool = False) -> list[dict]:
         forced_orig = list(prefs["forced_cf_days"])
         forced_kept = [wd for wd in forced_orig if wd not in unavailable]
         target_count = len(forced_orig) if forced_orig else 3
+        # Track whether we had to fall back to a default cadence because no
+        # gym plan was synced for this week. handle_show_plan reads this
+        # via the user_state key 'plan_fallback' to surface a warning.
+        plan_fallback = False
         if forced_orig:
             cf_wds = list(forced_kept)
             for wd in eligible_wds:
@@ -441,8 +424,29 @@ def replan_week(monday: datetime, *, force: bool = False) -> list[dict]:
                     break
                 if wd not in cf_wds:
                     cf_wds.append(wd)
-        else:
+        elif eligible_wds:
+            # Normal path: gym plan synced + has CF-eligible days.
             cf_wds = list(eligible_wds[:3])
+        else:
+            # Fallback: no gym plan synced (or every day is blacklisted)
+            # AND user hasn't set explicit picks. Default to the standard
+            # 3-CF cadence (Mon/Wed/Fri) — these are the most common CF
+            # programming days and give the user a sensible plan even
+            # without the SugarWOD sync. handle_show_plan surfaces a
+            # "sync the bookmarklet" warning when this path fires.
+            DEFAULT_CF_FALLBACK = [0, 2, 4]  # Mon, Wed, Fri
+            cf_wds = [wd for wd in DEFAULT_CF_FALLBACK
+                      if wd not in unavailable][:3]
+            # If the user has marked Mon/Wed/Fri unavailable, slide to the
+            # next-best 3 weekdays (skipping Sat for Z2).
+            if len(cf_wds) < 3:
+                for wd in [1, 3, 6, 0, 2, 4]:  # Tue, Thu, Sun, then defaults
+                    if wd in cf_wds or wd in unavailable or wd == 5:
+                        continue
+                    cf_wds.append(wd)
+                    if len(cf_wds) >= 3:
+                        break
+            plan_fallback = True
         cf_picks = [(wd, gym_label_by_wd.get(wd)) for wd in cf_wds]
         cf_weekdays = {wd for wd, _ in cf_picks}
         backfilled = [wd for wd in cf_wds
@@ -493,6 +497,14 @@ def replan_week(monday: datetime, *, force: bool = False) -> list[dict]:
                 "VALUES (?, ?, ?, ?, ?)",
                 (week_key, row["weekday"], row["day_type"],
                  row["gym_label"], row["target_kcal"]))
+        # Record whether this week's plan came from the gym schedule or
+        # the fallback default cadence. handle_show_plan reads this to
+        # surface a "sync the bookmarklet" warning when relevant.
+        fallback_key = f"plan_fallback_{week_key}"
+        con.execute(
+            "INSERT INTO user_state (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (fallback_key, "1" if plan_fallback else "0"))
         con.commit()
         return plan
     finally:
@@ -510,60 +522,164 @@ def today_plan() -> dict:
     return current_plan()[datetime.now().weekday()]
 
 
+# ───────────────────── Week recalibration ─────────────────────
+def compute_week_recalibration(now: datetime | None = None) -> dict:
+    """Daily review: am I on track to hit the weekly active-burn target?
+
+    Returns a dict with the gap analysis and a redistribution proposal:
+        {
+          "today_idx":          0-6,
+          "burned_so_far":      kcal already in raw_vitals/workout_log,
+          "weekly_target":      from active tier,
+          "remaining_to_goal":  weekly_target - burned_so_far,
+          "remaining_planned":  sum of target_kcal for today + future days,
+          "gap":                remaining_to_goal - remaining_planned
+                                (positive = behind; negative = ahead),
+          "on_track":           True if abs(gap) < tolerance,
+          "proposal":           list of dicts {weekday, from, to, reason}
+                                describing the suggested redistribution,
+          "summary":            human-readable description.
+        }
+
+    Redistribution algorithm (when behind by `gap` kcal):
+      1. List remaining REST days (excluding today if today is past noon).
+      2. Each rest → CF conversion adds ~350 kcal (cf 850 - rest 500).
+      3. Convert as many rest days to CF as needed, in order:
+         Mon → Wed → Fri → Tue → Thu → Sun (skip Sat which is Z2 default).
+      4. If still behind after converting all rest days, suggest
+         extending the Z2 day (or adding a second Z2 if the user has
+         capacity).
+
+    The function is read-only — it doesn't mutate the plan. It just
+    *proposes*. The user applies via existing commands ("pick X Y for cf",
+    "swap X for Y").
+    """
+    now = now or datetime.now()
+    today_idx = now.weekday()
+    monday, _ = week_bounds(now)
+    plan = current_plan(monday)
+
+    # What's already happened this week.
+    burned_so_far = burn_for_range(monday, now)
+    weekly_t = weekly_target()
+    remaining_to_goal = max(weekly_t - burned_so_far, 0.0)
+
+    # What's still planned (today + future). For "today", count the
+    # ideal even if user has burned some already — they may still hit it.
+    remaining_planned = sum(
+        d["target_kcal"] for d in plan if d["weekday"] >= today_idx
+    )
+
+    # Tolerance: ±10% of weekly target is "on track" — small gaps don't
+    # warrant a redistribution suggestion.
+    tolerance = weekly_t * 0.10
+    gap = remaining_to_goal - remaining_planned
+    on_track = abs(gap) <= tolerance
+
+    proposal: list[dict] = []
+    if not on_track and gap > 0:
+        # Behind. Convert future rest days to CF until the gap closes.
+        kcal_per_conversion = max(
+            day_type_target("cf") - day_type_target("rest"), 1)
+        needed = int(gap // kcal_per_conversion) + (
+            1 if gap % kcal_per_conversion else 0)
+        rest_priority = [0, 2, 4, 1, 3, 6]   # Mon, Wed, Fri, Tue, Thu, Sun
+        future_rest_wds = [
+            wd for wd in rest_priority
+            if wd >= today_idx
+            and any(p["weekday"] == wd and p["day_type"] == "rest"
+                    for p in plan)
+        ]
+        for wd in future_rest_wds[:needed]:
+            proposal.append({
+                "weekday": wd,
+                "weekday_name": WEEKDAY_NAME[wd],
+                "from": "rest",
+                "to": "cf",
+                "delta_kcal": kcal_per_conversion,
+                "reason": f"close {fmt_kcal(gap)} gap",
+            })
+
+    # Build a human summary.
+    if on_track and gap >= 0:
+        summary = (
+            f"On track. Burned {fmt_kcal(burned_so_far)} of "
+            f"{fmt_kcal(weekly_t)}; planned {fmt_kcal(remaining_planned)} "
+            f"more covers the gap.")
+    elif on_track and gap < 0:
+        summary = (
+            f"Ahead of pace. Burned {fmt_kcal(burned_so_far)} vs "
+            f"{fmt_kcal(weekly_t)} target — comfortable buffer.")
+    elif gap > 0 and proposal:
+        added = ", ".join(p["weekday_name"] for p in proposal)
+        summary = (
+            f"Behind by {fmt_kcal(gap)}. To catch up, convert "
+            f"{added} from rest → CrossFit. "
+            f"Apply with: `pick "
+            f"{' '.join(WEEKDAY_NAME[p['weekday']] for p in proposal)} "
+            f"for crossfit`.")
+    elif gap > 0:
+        # Behind but no rest days available to convert.
+        summary = (
+            f"Behind by {fmt_kcal(gap)}. No rest days left to convert "
+            f"in the remaining schedule. Consider extending Saturday's "
+            f"Z2 run or adding a second Z2 if HRV allows.")
+    else:
+        # gap <= 0: ahead of pace but outside the on-track tolerance
+        # band. fmt_kcal of a negative number reads "−1,685 kcal", which
+        # is correct but parses awkwardly in "Behind by …" framing —
+        # so flip the sign and frame as "ahead of plan".
+        summary = (
+            f"Ahead of plan by {fmt_kcal(-gap)} — the remaining schedule "
+            f"already over-covers your weekly target. You can take a "
+            f"rest day if HRV is low without losing the goal.")
+
+    return {
+        "today_idx":         today_idx,
+        "burned_so_far":     burned_so_far,
+        "weekly_target":     weekly_t,
+        "remaining_to_goal": remaining_to_goal,
+        "remaining_planned": remaining_planned,
+        "gap":               gap,
+        "on_track":          on_track,
+        "proposal":          proposal,
+        "summary":           summary,
+    }
+
+
+def handle_recalibrate() -> str:
+    """User-facing: 'how do I catch up?', 'am I behind?', 'what should I
+    do this week?'. Returns the same recalibration proposal that the
+    morning briefing uses, but on demand and full-fat."""
+    r = compute_week_recalibration()
+    lines = [
+        f"*Week recalibration — {WEEKDAY_NAME[r['today_idx']]} morning*",
+        f"Burned: *{fmt_kcal(r['burned_so_far'])}* / "
+        f"{fmt_kcal(r['weekly_target'])} target.",
+        f"Remaining to goal: *{fmt_kcal(r['remaining_to_goal'])}* | "
+        f"Planned ahead: {fmt_kcal(r['remaining_planned'])}.",
+        "",
+        r["summary"],
+    ]
+    if r["proposal"]:
+        lines.append("")
+        lines.append("*Suggested redistribution:*")
+        for p in r["proposal"]:
+            lines.append(
+                f"  • {p['weekday_name']}: {p['from']} → {p['to']} "
+                f"(+{fmt_kcal(p['delta_kcal'])})")
+    return "\n".join(lines)
+
+
 # ───────────────────── Per-week preference overrides ──────────
 # These let the user say "I can't make it on day X this week" or "pick days
 # X/Y/Z for CF instead". They auto-expire at the Sunday reset because the
 # row is keyed on week_start.
 import json as _json  # local alias to avoid touching the import block
 
-_WEEKDAY_LOOKUP = {
-    "mon":0, "monday":0,
-    "tue":1, "tues":1, "tuesday":1,
-    "wed":2, "weds":2, "wednesday":2,
-    "thu":3, "thur":3, "thurs":3, "thursday":3,
-    "fri":4, "friday":4,
-    "sat":5, "saturday":5,
-    "sun":6, "sunday":6,
-}
-_WEEKDAY_TOKEN_RE = re.compile(
-    r"\b(mon(?:day)?|tue(?:s|sday)?|wed(?:s|nesday)?|thu(?:r|rs|rsday)?|"
-    r"fri(?:day)?|sat(?:urday)?|sun(?:day)?|today|tomorrow)\b", re.I)
-
-
-def parse_weekdays(text: str) -> list[int]:
-    """Pull weekday indices (0=Mon..6=Sun) out of any prose. Generic — no day
-    is hardcoded. 'today' and 'tomorrow' resolve relative to now()."""
-    found: list[int] = []
-    today = datetime.now().weekday()
-    for m in _WEEKDAY_TOKEN_RE.finditer(text):
-        tok = m.group(0).lower()
-        if tok == "today":
-            idx = today
-        elif tok == "tomorrow":
-            idx = (today + 1) % 7
-        else:
-            idx = _WEEKDAY_LOOKUP.get(tok)
-        if idx is not None and idx not in found:
-            found.append(idx)
-    return found
-
-
-_BLACKLIST_NORMALIZE = {
-    "muscle ups": "muscle up", "muscleups": "muscle up", "muscle-ups": "muscle up",
-    "muscle-up": "muscle up", "mu": "muscle up",
-    "ohs": "overhead squat",
-    "hspu": "handstand", "handstands": "handstand", "handstand push-up": "handstand",
-    "partner wod": "partner", "partner workout": "partner",
-}
-
-def normalize_blacklist_term(term: str) -> str:
-    t = term.lower().strip()
-    return _BLACKLIST_NORMALIZE.get(t, t)
-
-
-def _empty_prefs() -> dict:
-    return {"unavailable_days": [], "forced_cf_days": [],
-            "forced_z2_day": None, "tolerated_blacklist": []}
+# _WEEKDAY_LOOKUP, _WEEKDAY_TOKEN_RE, parse_weekdays,
+# _BLACKLIST_NORMALIZE, normalize_blacklist_term, _empty_prefs
+# all imported from protocols.py (top of file).
 
 
 def get_prefs(monday: datetime) -> dict:
@@ -624,29 +740,86 @@ def clear_prefs(monday: datetime) -> None:
 
 
 def latest_weight() -> float:
+    """Authoritative weight read.
+
+    Apple Watch (raw_vitals via vitals_listener) is the source of truth.
+    Manual `wt:` entries (weighin_log) are stop-gaps for when the watch
+    hasn't synced. The vitals_listener writes date-only timestamps
+    ('2026-05-04') while weighin_log writes full datetimes
+    ('2026-05-04 20:14:21'); naive lexical comparison would make the
+    longer string win, so manual would always shadow same-day watch
+    syncs. We compare on the date prefix and prefer watch when its
+    date is on or after the manual entry's date.
+    """
     con = _db()
     try:
-        # Prefer the dedicated weighin_log; fall back to raw_vitals.
-        row = con.execute(
-            "SELECT weight_lbs FROM weighin_log ORDER BY ts DESC LIMIT 1"
-        ).fetchone()
-        if row:
-            return float(row[0])
-        row = con.execute(
-            "SELECT value FROM raw_vitals WHERE metric_type='weight' "
-            "ORDER BY timestamp DESC LIMIT 1").fetchone()
-        return float(row[0]) if row else 198.0
+        watch = con.execute("""
+            SELECT value, substr(timestamp, 1, 10) AS day, timestamp
+            FROM raw_vitals
+            WHERE metric_type='weight'
+            ORDER BY day DESC, timestamp DESC, rowid DESC
+            LIMIT 1
+        """).fetchone()
+        manual = con.execute("""
+            SELECT weight_lbs, substr(ts, 1, 10) AS day, ts
+            FROM weighin_log
+            ORDER BY day DESC, ts DESC, rowid DESC
+            LIMIT 1
+        """).fetchone()
+        if watch and manual:
+            # Watch wins ties — it's the authoritative source.
+            return float(watch[0]) if watch[1] >= manual[1] else float(manual[0])
+        if watch:
+            return float(watch[0])
+        if manual:
+            return float(manual[0])
+        return 198.0
     finally:
         con.close()
 
 
 def sync_weight(val: float) -> None:
+    """Log a new weight and trigger intent recalibration so the projected
+    target dates always reflect the latest reading."""
     con = _db()
     try:
         con.execute("INSERT INTO weighin_log (weight_lbs) VALUES (?)", (val,))
         con.commit()
     finally:
         con.close()
+    recalibrate_intents()
+
+
+def recalibrate_intents() -> dict[str, str]:
+    """Project new target_date for both weight intents from current weight
+    at the locked sustainable rate. Returns a {kind: new_date} mapping for
+    callers that want to surface the change. Marks an intent 'met' if the
+    user is already at or below the target."""
+    current = latest_weight()
+    today = datetime.now()
+    updates: dict[str, str] = {}
+    spec = [
+        ("weight_intermediate_kg", INTENT_INTERMEDIATE_LBS),
+        ("weight_kg",              INTENT_TARGET_LBS),
+    ]
+    con = _db()
+    try:
+        for kind, target_lbs in spec:
+            if current <= target_lbs:
+                new_date = today.strftime("%Y-%m-%d")
+                status = "met"
+            else:
+                weeks = (current - target_lbs) / LOCKED_LOSS_LB_PER_WEEK
+                new_date = (today + timedelta(weeks=weeks)).strftime("%Y-%m-%d")
+                status = "active"
+            con.execute(
+                "UPDATE intents SET target_date=?, status=? WHERE kind=?",
+                (new_date, status, kind))
+            updates[kind] = new_date
+        con.commit()
+    finally:
+        con.close()
+    return updates
 
 
 def log_hrv(val: float) -> None:
@@ -709,72 +882,10 @@ def mark_nudge(kind: str, day: str) -> None:
 
 
 # ───────────────────────── Gym plan ──────────────────────────
-DAY_HEADER = re.compile(r"^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+\d+\s*$",
-                        re.IGNORECASE | re.MULTILINE)
-
-
-@dataclass
-class GymDay:
-    label: str
-    weekday: str
-    body: str
-    strength: str
-    blockers: list[str]
-
-
-def parse_gym_plan(text: str | None = None) -> list[GymDay]:
-    if text is None:
-        if not PLAN_PATH.exists():
-            return []
-        text = PLAN_PATH.read_text(errors="ignore")
-    parts: list[tuple[str, str]] = []
-    current_label, buf = None, []
-    for line in text.splitlines():
-        if DAY_HEADER.match(line.strip()):
-            if current_label is not None:
-                parts.append((current_label, "\n".join(buf)))
-            current_label = line.strip()
-            buf = []
-        else:
-            buf.append(line)
-    if current_label is not None:
-        parts.append((current_label, "\n".join(buf)))
-
-    # SugarWOD's calendar uses "0 results" as a per-workout delimiter — the
-    # first chunk in a day's body is always the strength piece, the rest are
-    # primer / WOD / levels / accessories. This matches both the old verbose
-    # weekly_plan.txt format and the new bridge output, so the strength-only
-    # blacklist (snatch in the lift, not in a metcon) is reliable across
-    # sources.
-    days: list[GymDay] = []
-    for label, body in parts:
-        weekday = label.split()[0]
-        chunks = re.split(r"^0 results\s*$", body, flags=re.MULTILINE)
-        strength = chunks[0] if chunks else body
-        blockers = []
-        body_lc = body.lower()
-        for term in BLACKLIST:
-            if term in body_lc:
-                blockers.append(term)
-        for term in STRENGTH_BLACKLIST:
-            if term in strength.lower():
-                blockers.append(f"{term} (strength)")
-        days.append(GymDay(label, weekday, body, strength, blockers))
-    return days
-
-
-def eligible_cf_days(days: list[GymDay] | None = None) -> list[GymDay]:
-    days = days if days is not None else parse_gym_plan()
-    return [d for d in days if not d.blockers]
-
-
-# ───────────────────────── Format helpers ─────────────────────
-def fmt_kcal(x: float) -> str:
-    return f"{x:,.0f} kcal"
-
-
-def fmt_lbs(x: float) -> str:
-    return f"{x:.1f} lbs"
+# DAY_HEADER, GymDay, parse_gym_plan, eligible_cf_days, fmt_kcal, fmt_lbs
+# all imported from protocols.py (top of file). The PLAN_PATH-aware
+# wrappers `parse_gym_plan` and `eligible_cf_days` defined right after
+# the protocols import preserve the legacy zero-arg call sites.
 
 
 # ───────────────────────── Handlers ──────────────────────────
@@ -880,20 +991,7 @@ def handle_weighin_when() -> str:
     )
 
 
-def hrv_band(value: float) -> tuple[str, str]:
-    if value < HRV_RED:
-        return ("RED",
-                "Total rest. No high-intensity. 20 min 7/15 breathing tonight, "
-                "extra magnesium, in bed by 10pm.")
-    if value < HRV_YELLOW:
-        return ("YELLOW",
-                "Z2 only — nasal-breathing walk or easy run. Skip the WOD. "
-                "10 min 7/15 breathing tonight.")
-    if value < HRV_ELITE:
-        return ("GREEN",
-                "Normal training is on the table. Hit your planned session.")
-    return ("ELITE",
-            "Green light for a hammer day if you want it. Body is primed.")
+# hrv_band imported from protocols.py — pure-math, also re-exported for Coach/Bajrangi.
 
 
 def handle_hrv(value: float) -> str:
@@ -996,50 +1094,158 @@ def handle_manual_burn(kcal: float, kind: str = "manual") -> str:
     return f"✅ Logged *{fmt_kcal(kcal)}* ({kind}). Today total: {fmt_kcal(today)}."
 
 
+# _eta_at_locked_rate, _locked_intake imported from protocols.py.
+
+
 def handle_weight_timeline(target_lbs: float | None = None,
                            by_date: datetime | None = None) -> str:
-    """How long to target weight, or required deficit by date."""
+    """Realistic timeline at the user's locked sustainable rate.
+
+    Default (no args): shows ETAs for BOTH the 84 kg intermediate and
+    80 kg final targets, plus the locked intake/deficit/active-burn numbers.
+    Single target: shows that one. With a date: refuses faster-than-max
+    rates and proposes a realistic alternative date.
+    """
     current = latest_weight()
+    deficit_locked = LOCKED_LOSS_LB_PER_WEEK * KCAL_PER_LB_FAT / 7   # 375
+    intake_locked = _locked_intake()                                 # 2,600
+    daily_active = WEEKLY_ACTIVE_TARGET_KCAL / 7                     # 857
+    tdee = BMR_KCAL + daily_active                                   # 2,957
+
+    def line(name: str, target: float) -> str:
+        if current <= target:
+            return f"  • {name} ({fmt_lbs(target)}): 🎯 *met*."
+        eta = _eta_at_locked_rate(current - target)
+        weeks = (current - target) / LOCKED_LOSS_LB_PER_WEEK
+        return (f"  • {name} ({fmt_lbs(target)}): {weeks:.0f} weeks → "
+                f"*{eta.strftime('%b %-d, %Y')}*")
+
+    # Default: dual-target dashboard.
+    if target_lbs is None and by_date is None:
+        return "\n".join([
+            "*Weight timeline*",
+            f"Now: {fmt_lbs(current)}.",
+            "",
+            "*Targets at locked 0.75 lb/wk pace:*",
+            line("84 kg intermediate", INTENT_INTERMEDIATE_LBS),
+            line("80 kg final",        INTENT_TARGET_LBS),
+            "",
+            f"*Daily intake*: *{intake_locked:,} kcal* "
+            f"(TDEE {tdee:,.0f} − {deficit_locked:.0f} kcal deficit).",
+            f"*Weekly active burn*: *{WEEKLY_ACTIVE_TARGET_KCAL:,} kcal* "
+            f"(scheduled {weekly_target():,.0f} from plan + ~"
+            f"{WEEKLY_ACTIVE_TARGET_KCAL - int(weekly_target()):,} from daily walks/NEAT).",
+            "_Targets auto-recalibrate every time you log a new weight._",
+        ])
+
+    # Single target with optional date.
     target = target_lbs if target_lbs is not None else TARGET_LBS
     if current <= target:
         return (f"You're at {fmt_lbs(current)} ≤ target {fmt_lbs(target)}. "
-                "Goal already met — set a new one with `target 180` or similar.")
+                "Goal already met.")
     lbs_to_lose = current - target
-    # Default plan: realistic 1 lb/week
-    weeks_at_1lb = lbs_to_lose / 1.0
-    eta_1lb = datetime.now() + timedelta(weeks=weeks_at_1lb)
+    eta_locked = _eta_at_locked_rate(lbs_to_lose)
+    weeks_locked = lbs_to_lose / LOCKED_LOSS_LB_PER_WEEK
 
     out = [
-        f"*Weight timeline*",
+        "*Weight timeline*",
         f"Now: {fmt_lbs(current)} → goal: {fmt_lbs(target)} "
         f"(lose {fmt_lbs(lbs_to_lose)}).",
-        f"At 1 lb/week (sustainable): ~{weeks_at_1lb:.0f} weeks → "
-        f"{eta_1lb.strftime('%b %-d, %Y')}.",
+        f"At locked {LOCKED_LOSS_LB_PER_WEEK} lb/wk: {weeks_locked:.0f} weeks → "
+        f"*{eta_locked.strftime('%b %-d, %Y')}*",
+        "",
+        f"*Daily intake*: {intake_locked:,} kcal "
+        f"(TDEE {tdee:,.0f} − {deficit_locked:.0f} deficit).",
+        f"*Weekly active burn*: {WEEKLY_ACTIVE_TARGET_KCAL:,} kcal target.",
     ]
+
     if by_date is not None:
         weeks = max((by_date - datetime.now()).days / 7, 0.1)
-        rate = lbs_to_lose / weeks
-        # daily deficit needed = rate * 3500 / 7
-        deficit_per_day = rate * KCAL_PER_LB_FAT / 7
-        # active needed = deficit + (intake - BMR)
-        active_per_week = deficit_per_day * 7 + (DAILY_INTAKE_KCAL - BMR_KCAL) * 7
-        out.append(
-            f"\nBy {by_date.strftime('%b %-d, %Y')} ({weeks:.1f} weeks): "
-            f"need {rate:.2f} lbs/week → daily deficit "
-            f"*{deficit_per_day:.0f} kcal* "
-            f"(intake {DAILY_INTAKE_KCAL}, BMR {BMR_KCAL} → "
-            f"active *{active_per_week:.0f}*/wk)."
-        )
-        if rate > 1.5:
+        required_rate = lbs_to_lose / weeks
+        out.append("")
+        if required_rate <= MAX_LOSS_LB_PER_WEEK:
+            deficit_needed = required_rate * KCAL_PER_LB_FAT / 7
+            intake_needed = round((tdee - deficit_needed) / 50) * 50
             out.append(
-                f"⚠️ {rate:.1f} lb/wk is aggressive. >1.5 risks muscle loss + HRV crash."
+                f"By {by_date.strftime('%b %-d, %Y')} ({weeks:.1f} weeks): "
+                f"need {required_rate:.2f} lb/wk → "
+                f"intake *{intake_needed:,} kcal/day* "
+                f"(deficit {deficit_needed:.0f}/day)."
             )
+        else:
+            slip_days = max((eta_locked - by_date).days, 0)
+            out.append(
+                f"⚠️ {by_date.strftime('%b %-d, %Y')} would require "
+                f"*{required_rate:.2f} lb/wk* — above your sustainable max "
+                f"of {MAX_LOSS_LB_PER_WEEK} lb/wk."
+            )
+            out.append(
+                f"Realistic ETA at {LOCKED_LOSS_LB_PER_WEEK} lb/wk: "
+                f"*{eta_locked.strftime('%b %-d, %Y')}* "
+                f"(~{slip_days} days past your stated date)."
+            )
+            out.append(
+                f"At that pace: intake {intake_locked:,} kcal/day, "
+                f"{WEEKLY_ACTIVE_TARGET_KCAL:,} weekly active."
+            )
+
     return "\n".join(out)
 
 
+def handle_current_weight() -> str:
+    """Bare 'what's my current weight' lookup. Uses same watch-preferred
+    logic as latest_weight(); shows source attribution."""
+    con = _db()
+    try:
+        watch = con.execute("""
+            SELECT value, substr(timestamp,1,10) AS day, timestamp
+            FROM raw_vitals
+            WHERE metric_type='weight'
+            ORDER BY day DESC, timestamp DESC, rowid DESC
+            LIMIT 1
+        """).fetchone()
+        manual = con.execute("""
+            SELECT weight_lbs, substr(ts,1,10) AS day, ts
+            FROM weighin_log
+            ORDER BY day DESC, ts DESC, rowid DESC
+            LIMIT 1
+        """).fetchone()
+    finally:
+        con.close()
+
+    if not watch and not manual:
+        return "No weight logged yet. Try `wt: 198` to anchor."
+    if watch and (not manual or watch[1] >= manual[1]):
+        return (f"Current weight: *{fmt_lbs(watch[0])}* "
+                f"(Apple Watch, {watch[2]}).")
+    return (f"Current weight: *{fmt_lbs(manual[0])}* "
+            f"(manual entry at {manual[2]}). "
+            "_Watch hasn't synced a fresher reading yet._")
+
+
 def handle_weight(val: float) -> str:
-    sync_weight(val)
-    return f"✅ Weight logged: {fmt_lbs(val)}. (Previous reading kept in history.)"
+    sync_weight(val)   # logs + auto-recalibrates intent dates
+    lines = [f"✅ Weight logged: {fmt_lbs(val)}."]
+    con = _db()
+    try:
+        for kind, label_kg, target_lbs in [
+            ("weight_intermediate_kg", "84 kg", INTENT_INTERMEDIATE_LBS),
+            ("weight_kg",              "80 kg", INTENT_TARGET_LBS),
+        ]:
+            row = con.execute(
+                "SELECT target_date, status FROM intents WHERE kind=? "
+                "ORDER BY id DESC LIMIT 1", (kind,)).fetchone()
+            if not row:
+                continue
+            target_date, status = row
+            if status == "met":
+                lines.append(f"🎯 {label_kg} ({target_lbs:.1f} lbs) — *met*.")
+            else:
+                lines.append(f"🎯 {label_kg} ETA: {target_date}")
+    finally:
+        con.close()
+    lines.append(f"_Recalibrated at {LOCKED_LOSS_LB_PER_WEEK} lb/wk locked rate._")
+    return "\n".join(lines)
 
 
 def handle_filter() -> str:
@@ -1064,17 +1270,31 @@ def handle_show_plan(next_week: bool = False) -> str:
     if next_week:
         monday = monday + timedelta(days=7)
     plan = current_plan(monday)
-    target = sum(d["target_kcal"] for d in plan)
+    plan_sum = sum(d["target_kcal"] for d in plan)
+    weekly_total = weekly_target()
+    neat = max(int(weekly_total - plan_sum), 0)
     today_idx = datetime.now().weekday()
     tier = state_get("recovery_tier", DEFAULT_TIER)
     sun = monday + timedelta(days=6)
 
     header = "Next week" if next_week else "This week"
+    week_key = monday.strftime("%Y-%m-%d")
+    is_fallback = state_get(f"plan_fallback_{week_key}", "0") == "1"
     lines = [
         f"*{header} — {monday.strftime('%b %-d')} – {sun.strftime('%b %-d')}*",
-        f"Tier `{tier}`, target {fmt_kcal(target)}.",
+        f"Tier `{tier}`, target *{fmt_kcal(weekly_total)}* "
+        f"({fmt_kcal(plan_sum)} from plan + ~{fmt_kcal(neat)} NEAT).",
         "",
     ]
+    if is_fallback:
+        # No gym plan synced for this week — picks aren't blacklist-aware.
+        # Prompt the user to sync via the SugarWOD bookmarklet so future
+        # picks can avoid partner WODs / handstand pushups / etc.
+        lines.insert(1,
+            "_⚠️ No gym plan synced — using default Mon/Wed/Fri cadence._")
+        lines.insert(2,
+            "_Sync via the SugarWOD bookmarklet for blacklist-aware picks._")
+        lines.insert(3, "")
     for row in plan:
         is_today = (not next_week) and row["weekday"] == today_idx
         marker = "▶" if is_today else " "
@@ -1091,7 +1311,7 @@ def handle_show_plan(next_week: bool = False) -> str:
             f"{fmt_kcal(row['target_kcal'])}{actual_s}")
     if not next_week:
         burned, _ = burn_this_week()
-        lines.append(f"\nWeek so far: *{fmt_kcal(burned)}* / {fmt_kcal(target)}.")
+        lines.append(f"\nWeek so far: *{fmt_kcal(burned)}* / {fmt_kcal(weekly_total)}.")
     return "\n".join(lines)
 
 
@@ -1142,9 +1362,15 @@ def _which_monday(next_week: bool) -> tuple[datetime, str]:
 
 def handle_unavailable(weekday_text: str, next_week: bool = False) -> str:
     """Mark one or more weekdays as unavailable; replan picks the next-best
-    day automatically. Generic — works for any weekday, any week."""
+    day automatically. Generic — works for any weekday, any week.
+
+    If the message contains both an explicit named weekday AND 'today'/
+    'tomorrow', use only the named day(s) — the relative reference is
+    almost always part of a different clause ('I can't make Thursday,
+    can I work out today?' — only Thursday should be marked off)."""
     monday, label = _which_monday(next_week)
-    indices = parse_weekdays(weekday_text)
+    named = parse_weekdays(weekday_text, include_relative=False)
+    indices = named if named else parse_weekdays(weekday_text)
     if not indices:
         return ("Couldn't find a weekday in that. Try: "
                 "'I can't make Wednesday' or 'skip Thursday next week'.")
@@ -1237,6 +1463,72 @@ def handle_clear_prefs(next_week: bool = False) -> str:
             "auto-picker.\n\n" + handle_show_plan(next_week=next_week))
 
 
+def handle_swap(text: str, next_week: bool = False) -> str:
+    """Swap one workout day for another. Handles many phrasings:
+      • 'I'd prefer Monday over Sunday'
+      • 'swap Sunday for Monday'  /  'switch Sunday to Monday'
+      • 'use Monday instead of Sunday'
+      • 'move Sunday's session to Monday'
+      • 'Monday rather than Sunday'  /  'Monday as opposed to Sunday'
+    Adds the new day to forced_cf_days, marks the old day unavailable,
+    so the locked 3 CF + 1 Z2 cadence is preserved."""
+    monday, label = _which_monday(next_week)
+    days = parse_weekdays(text)
+    if len(days) < 2:
+        return ("Need two weekdays to swap. Try: "
+                "'swap Sunday for Monday' or 'I'd prefer Mon over Sun'.")
+
+    text_lc = text.lower()
+    # Direction depends on phrasing.
+    # In "swap/switch/move A to B": A is OLD (removed), B is NEW (added).
+    # In "prefer A over B" / "A instead of B": A is NEW, B is OLD.
+    if re.search(r"\b(swap|switch|move|change)\b", text_lc):
+        old_idx, new_idx = days[0], days[1]
+    else:
+        new_idx, old_idx = days[0], days[1]
+
+    prefs = get_prefs(monday)
+    # If forced_cf_days is empty, materialize the current plan's auto-picks
+    # as the baseline first — otherwise the swap collapses the plan to a
+    # single day instead of just substituting one slot.
+    forced = list(prefs["forced_cf_days"])
+    if not forced:
+        forced = [r["weekday"] for r in current_plan(monday)
+                  if r["day_type"] == "cf"]
+
+    # Apply the swap on top of the baseline.
+    if old_idx in forced:
+        forced.remove(old_idx)
+    if new_idx not in forced:
+        forced.append(new_idx)
+
+    new_unavail = sorted(
+        (set(prefs["unavailable_days"]) - {new_idx}) | {old_idx})
+    set_prefs(monday, unavailable_days=new_unavail,
+              forced_cf_days=sorted(forced))
+    replan_week(monday, force=True)
+    return (
+        f"✅ Swapped: {WEEKDAY_NAME[old_idx]} → {WEEKDAY_NAME[new_idx]} "
+        f"({label}). Replanned.\n\n"
+        + handle_show_plan(next_week=next_week))
+
+
+def handle_scheduling_help() -> str:
+    """Shown when a message has weekday tokens + workout intent but doesn't
+    match any specific handler. Beats the LLM coach hallucinating fictional
+    plans (Z2 every day, 5 CF days, etc.)."""
+    return (
+        "Tell me what to change and I'll replan around the locked 3 CF + 1 Z2 "
+        "cadence:\n"
+        "• `swap Sunday for Monday` — swap workout days\n"
+        "• `I can't make Thursday` — drop a day, auto-pick a replacement\n"
+        "• `pick Mon Tue Fri Sun for crossfit` — explicit picks\n"
+        "• `I'm fine with muscle-ups this week` — tolerate a blacklisted move\n"
+        "• `show plan` — see this week's grid\n"
+        "• `clear preferences` — reset all overrides for this week"
+    )
+
+
 def handle_pace() -> str:
     """Today's burn vs day-type ideal, plus week-to-date vs target."""
     plan_row = today_plan()
@@ -1272,12 +1564,108 @@ def handle_today_target() -> str:
             f"*{fmt_kcal(row['target_kcal'])}*.")
 
 
+def _extract_wod_summary(body: str, max_workouts: int = 2) -> str:
+    """Pull the strength + main metcon out of a SugarWOD day body, skipping
+    Levels / Reset / Accessory / Optional / Primer / Warm-up sections.
+    Returns a short multi-line summary suitable for a Telegram message."""
+    chunks = re.split(r"^0 results\s*$", body, flags=re.MULTILINE)
+    important = []
+    skip_titles_re = re.compile(
+        r"^(?:\[|.*\b(?:Level|Reset|Accessor|Optional|Primer|Warm.?up)\b)",
+        re.I)
+    for chunk in chunks:
+        lines = [l.rstrip() for l in chunk.splitlines() if l.strip() not in ("", "0")]
+        if not lines:
+            continue
+        title = lines[0].lstrip(" ").strip()
+        if skip_titles_re.match(title):
+            continue
+        body_text = "\n".join(lines[1:]).strip()
+        # Trim long descriptions to keep the message scannable.
+        if len(body_text) > 280:
+            body_text = body_text[:280].rstrip() + "..."
+        important.append((title, body_text))
+        if len(important) >= max_workouts:
+            break
+    if not important:
+        return ""
+    return "\n\n".join(f"*{t}*\n{b}" for t, b in important)
+
+
+def handle_workout_on(idx: int) -> str:
+    """Return the planned workout (day-type + WOD content) for an arbitrary
+    weekday this week. Used by 'what am I doing on Friday', 'Saturday's
+    workout', etc. — distinct from handle_workout_today which only does
+    today/tomorrow."""
+    plan = current_plan()
+    row = plan[idx]
+    name = WEEKDAY_NAME[idx]
+    kind = DAY_TYPE_LABEL[row["day_type"]]
+    target = row["target_kcal"]
+
+    if row["day_type"] == "rest":
+        return (f"*{name}: {kind}* — no scheduled workout.\n"
+                f"Target ~{fmt_kcal(target)} from walks, toddler time, "
+                "or a 10-min mobility flush.")
+    if row["day_type"] == "z2":
+        return (f"*{name}: Zone-2 10K run* — target ~{fmt_kcal(target)}.\n"
+                "Nasal breathing only, conversational pace. "
+                "Save the intensity for CF days.")
+
+    # CF day — pull the actual WOD from the gym schedule.
+    gym_label = row.get("gym_label")
+    summary = ""
+    if gym_label:
+        gym_days = parse_gym_plan()
+        match = next((d for d in gym_days if d.label == gym_label), None)
+        if match:
+            summary = _extract_wod_summary(match.body)
+
+    header = (f"*{name}: CrossFit ({gym_label})* — target "
+              f"~{fmt_kcal(target)}\n") if gym_label else (
+              f"*{name}: CrossFit* — target ~{fmt_kcal(target)}\n")
+    body = summary or "_(WOD details not available — check SugarWOD app)_"
+    return header + "\n" + body
+
+
+def handle_workout_today(when: str = "today") -> str:
+    """Yes/no answer for 'am I working out today' (or tomorrow). Distinct
+    from today_target (returns kcal number) and daily burn (returns
+    burn-so-far). This says what *kind* of day it is."""
+    plan = current_plan()
+    if when == "tomorrow":
+        idx = (datetime.now().weekday() + 1) % 7
+        when_label = "tomorrow"
+    else:
+        idx = datetime.now().weekday()
+        when_label = "today"
+    row = plan[idx]
+    kind = DAY_TYPE_LABEL[row["day_type"]]
+    gym = f" ({row['gym_label']})" if row["gym_label"] else ""
+    if row["day_type"] == "rest":
+        return (f"*No workout {when_label}.* {kind} day — keep it light. "
+                f"Target ~{fmt_kcal(row['target_kcal'])} from walks, toddler "
+                "time, or a 10-min mobility flush.")
+    if row["day_type"] == "z2":
+        return (f"*Yes — Zone-2 10K run {when_label}.* "
+                f"Target ~{fmt_kcal(row['target_kcal'])}. "
+                "Nasal breathing only, conversational pace.")
+    return (f"*Yes — CrossFit{gym}* {when_label}. "
+            f"Target ~{fmt_kcal(row['target_kcal'])}. "
+            "Get to the gym; bridge with a 20-min walk after if you can.")
+
+
 # Keep `handle_schedule` as an alias for back-compat with old chat shortcuts.
 handle_schedule = handle_show_plan
 
 
 # ───────────────────────── Intent router ──────────────────────
 WEIGHT_RE   = re.compile(r"\b(?:weight|wt)[:\s]+(\d+\.?\d*)", re.I)
+WEIGHT_QUERY_RE = re.compile(
+    r"\b(what.?s\s+my\s+(?:current\s+)?weight|"
+    r"current\s+weight|"
+    r"how\s+much\s+do\s+I\s+weigh|"
+    r"weight\s+now|latest\s+weight)\b", re.I)
 TODAY_RE    = re.compile(r"\b(today|now)\b", re.I)
 YEST_RE     = re.compile(r"\byesterday\b", re.I)
 LASTWK_RE   = re.compile(r"\blast\s+week\b", re.I)
@@ -1292,18 +1680,83 @@ NEXT_WEEK_TARGET_RE = re.compile(
     r"(?:target|goal|burn|calories?|kcal).*next\s+week|"
     r"calorie?ic?\s+target|weekly\s+target|"
     r"target\s+for\s+(?:the\s+)?(?:week|next\s+week))\b", re.I)
-# "which days should I crossfit/rest/run zone 2" — scheduling question
+# Scheduling questions that should return the weekly plan grid:
+#   • "which days am I working out [this week / next week / rest of week]?"
+#   • "when am I running next?"
+#   • "what days should I crossfit?"
+#   • "when do I CF?"
+#   • "how about rest of the week?"  (no calorie keyword present)
 PLAN_DAYS_RE = re.compile(
-    r"\b(?:which\s+days?|what\s+days?|days?\s+should\s+I|"
-    r"when\s+should\s+I)\b.*"
-    r"\b(?:crossfit|cf|wod|run|rest|recover|zone\s*2|z2|workout)\b", re.I)
+    r"(?:"
+    # interrogative + day-noun
+    r"\b(?:which\s+days?|what\s+days?|when\s+(?:do|am|will)\s+i|"
+    r"when\s+should\s+i|days?\s+should\s+i|next\s+(?:run|crossfit|cf|wod)|"
+    r"how\s+about\s+(?:the\s+)?rest|rest\s+of\s+(?:the\s+)?week)\b"
+    r"[\s\S]{0,80}?"
+    r"\b(?:crossfit|cf|wod|run(?:ning)?|rest|recover|zone\s*2|z2|"
+    r"workout|working\s*out|workouts|next)\b"
+    r"|"
+    # "am I working out (this week|rest of week|next week)" without 'today'
+    r"\bam\s+i\s+(?:working\s*out|running|doing\s+(?:crossfit|cf|wod))\b"
+    r"[\s\S]{0,60}?"
+    r"\b(?:this\s+week|next\s+week|rest\s+of\s+(?:the\s+)?week|"
+    r"week|days?|when)\b"
+    r"|"
+    # standalone "rest of the week" / "how about rest" → user is asking for
+    # the schedule continuation, not a kcal remainder (REMAIN_RE handles
+    # the kcal version when calorie keywords are present)
+    r"\b(?:rest\s+of\s+(?:the\s+)?week|how\s+about\s+(?:the\s+)?(?:rest|week))\b"
+    r")", re.I)
 NEXT_WEEK_RE = re.compile(r"\bnext\s+week\b", re.I)
-# Note: trailing \b dropped from REMAIN so "remaining" / "remainder" both match.
-REMAIN_RE   = re.compile(r"\b(remain|left for the week|rest of (the )?week|week.*(target|goal))", re.I)
-SCHED_RE    = re.compile(r"\b(schedule|structure|plan (my )?(week|workout)|show plan|this week.*plan|3 ?cross|crossfit.*(week|plan))\b", re.I)
+# REMAIN_RE — kcal-remainder questions. Requires either an explicit calorie
+# keyword OR the high-confidence phrasing "left/remaining for the week".
+REMAIN_RE = re.compile(
+    r"(?:"
+    r"\b(?:remain|left|remaining)[\s\S]{0,30}?"
+    r"\b(?:calories?|kcal|active|burn(?:ed|t)?|deficit)\b"
+    r"|"
+    r"\b(?:calories?|kcal|active|burn(?:ed|t)?|deficit)[\s\S]{0,30}?"
+    r"\b(?:remain|left|remaining)\b"
+    r"|"
+    r"\brest\s+of\s+(?:the\s+)?week[\s\S]{0,40}?"
+    r"\b(?:calories?|kcal|active|burn|target|goal|deficit)\b"
+    r"|"
+    r"\b(?:calories?|kcal|active|burn|deficit)[\s\S]{0,30}?"
+    r"\brest\s+of\s+(?:the\s+)?week\b"
+    r"|"
+    r"\bweek[\s\S]{0,20}?\b(?:target|goal)\b"
+    r"|"
+    # "how much left/remaining for the week" — high-confidence kcal intent
+    # in this agent's context even without an explicit calorie keyword.
+    r"\b(?:how\s+much|what'?s)\s+(?:do\s+i\s+have\s+)?(?:left|remaining)\s+"
+    r"(?:for\s+)?(?:the\s+)?week\b"
+    r")", re.I)
+SCHED_RE    = re.compile(
+    r"\b(?:schedule|structure|"
+    r"plan\s+(?:my|the|for|this|next)?\s*(?:week|workout)?|"
+    r"show\s+(?:me\s+)?(?:the\s+)?(?:next\s+week.?s?|this\s+week.?s?|weekly)?\s*plan|"
+    r"(?:next|this)\s+week.{0,5}plan|"
+    r"3\s?cross|crossfit.{0,10}(?:week|plan))\b", re.I)
 FILTER_RE   = re.compile(r"\b(filter|which days|eligible|skip|partner|handstand|muscle ?up|overhead squat|snatch in)\b", re.I)
 REPLAN_RE   = re.compile(r"\b(replan|rebuild plan|reset plan|new plan)\b", re.I)
 PACE_RE     = re.compile(r"\b(pace|on track|how am I doing|status)\b", re.I)
+# "Catch-up" / recalibration intent — when the user wants Miya to look
+# at where they are vs the weekly target and propose a redistribution.
+# Distinct from PACE_RE (which just shows current numbers) — this one
+# proposes new picks.
+RECALIBRATE_RE = re.compile(
+    r"(?:"
+    r"\bcatch[\s-]?up\b|\bcatching\s+up\b|"
+    r"\bbehind\s+(?:on|in)\s+(?:calories?|kcal|cal|burn|target|goal|pace)\b|"
+    r"\bhow\s+do\s+i\s+(?:catch|hit|reach)\b|"
+    r"\bhow\s+(?:can|should)\s+i\s+(?:get\s+to|hit|reach)\s+(?:my\s+)?"
+    r"(?:weekly|week.?s?)\s+(?:target|goal)\b|"
+    r"\bwhat\s+(?:should|can)\s+i\s+do\s+(?:this|the\s+rest\s+of\s+the)\s+week\b|"
+    r"\brecalibrate\b|\bredistribute\b|"
+    r"\brecommend\s+(?:days?|workouts?|schedule)\b|"
+    r"\bplan\s+(?:my\s+)?week\s+to\s+(?:hit|catch)\b|"
+    r"\badjust\s+(?:the\s+|my\s+)?(?:plan|schedule|week)\b"
+    r")", re.I)
 # Per-week prefs. UNAVAILABLE_RE catches "can't make X" / "skip X" / "out X".
 UNAVAILABLE_RE = re.compile(
     r"\b(can(?:'?t| ?not)|cannot|won'?t|skip(?:ping)?|miss(?:ing)?|"
@@ -1321,10 +1774,93 @@ TOLERATE_RE = re.compile(
 CLEAR_PREFS_RE = re.compile(
     r"\b(clear (?:prefs|preferences|overrides)|reset (?:prefs|preferences|week)|"
     r"use defaults|forget my (?:prefs|preferences|overrides))\b", re.I)
+# "I'd prefer X over Y" / "swap Y for X" / "use X instead of Y" / "X rather than Y"
+SWAP_RE = re.compile(
+    r"\b(prefer|over|instead\s+of|in\s+place\s+of|rather\s+than|"
+    r"as\s+opposed\s+to|swap|switch|move|change)\b", re.I)
 # Broader: "daily target", "target for today", "today's goal/ideal"
 TODAY_TARGET_RE = re.compile(
     r"\b(today.?s?\s+(?:target|ideal|goal)|target\s+for\s+today|"
     r"daily\s+(?:target|ideal|goal)|ideal\s+today|day\s+target)\b", re.I)
+# "What am I doing on Friday?" — looking at a specific weekday's workout.
+# Distinct from PLAN_DAYS_RE (plural, full week) and WORKOUT_TODAY_RE
+# (today/tomorrow only). Detected via a function (not a single regex)
+# because the trigger is contextual: a question word + a single named
+# weekday + workout-context-or-short.
+def _is_workout_on_day_query(m: str) -> int | None:
+    """Return weekday index (0=Mon..6=Sun) if the message is a 'what am I
+    doing on X' / 'Friday's workout?' query. Else None.
+    Requires exactly one named weekday — multiple weekdays imply a swap
+    or pick, which other handlers own. Excludes messages that look like
+    per-week pref mutators (UNAVAILABLE / PICK / SWAP / TOLERATE) so those
+    keep flowing to their dedicated handlers."""
+    # Skip if any per-week-pref keyword is present — those handlers own
+    # the routing for their respective intents.
+    if re.search(
+            r"\b(can'?t|cannot|won'?t|skip(?:ping)?|miss(?:ing)?|busy|"
+            r"unavailable|out\s+(?:on|for)|"
+            r"prefer|swap|switch|move|change|"
+            r"\bpick\b|fine\s+with|tolerate|scale|ignore|allow|"
+            r"clear|reset|rather|instead\s+of|in\s+place\s+of)\b", m, re.I):
+        return None
+    days = parse_weekdays(m, include_relative=False)
+    if len(days) != 1:
+        return None
+    has_question = re.search(
+        r"\b(what|tell me|show( me)?|how|give me|describe)\b", m, re.I)
+    has_workout_ctx = re.search(
+        r"\b(doing|workout|wod|cf|crossfit|run|running|session|gym|"
+        r"training|train|lift|lifting|going)\b", m, re.I)
+    # Either: question + workout context, OR a terse day-specific ask
+    # ("Friday workout?", "Wednesday's session?") that doesn't need an
+    # interrogative.
+    if has_question and (has_workout_ctx or len(m.split()) <= 8):
+        return days[0]
+    if has_workout_ctx and len(m.split()) <= 6:
+        return days[0]
+    return None
+
+
+# "Am I working out today?" — must explicitly mention today/now or 'today' as
+# the day-marker. Without that anchor, generic "am I working out" gets shadowed
+# by scheduling questions like "which days am I working out" → those should
+# go to PLAN_DAYS_RE / handle_show_plan instead.
+WORKOUT_TODAY_RE = re.compile(
+    r"(?:"
+    # "am I [verb] today/now"
+    r"\bam\s+i\s+(?:working\s*out|workout|doing\s+(?:crossfit|cf|wod)|"
+    r"going\s+to\s+(?:the\s+)?gym|running|on\s+a\s+(?:rest|workout|cf)\s+day)\s+"
+    r"(?:today|now)\b"
+    r"|"
+    # "do I work out / crossfit / run today/now"
+    r"\bdo\s+i\s+(?:work\s*out|crossfit|run)\s+(?:today|now)\b"
+    r"|"
+    # "is today a CF / rest / Z2 / run / workout / recovery day"
+    r"\bis\s+today\s+(?:a\s+|my\s+)?(?:workout|cf|crossfit|rest|z2|run|recovery)\s+day\b"
+    r"|"
+    # "workout today?" alone
+    r"\bworkout\s+today\b\??"
+    r"|"
+    # "running today" / "running tomorrow" / "workout tomorrow" — short
+    # gym-status questions about today or tomorrow.
+    r"\b(?:running|workout|crossfit|cf|wod)\s+(?:today|tomorrow)\b\??"
+    r")", re.I)
+
+# ─── Hindi / Hyderabadi-transliterated phrasings ───
+# The user mixes English and Hindi (Dakhini) freely. These triggers route
+# common Hindi questions to the correct deterministic handler instead of
+# falling through to the LLM (which hallucinates plausible-but-wrong
+# answers because it has all the context).
+#
+#   "aaj" (today) + workout/cf/wod          → handle_workout_today
+#   "aaj ka workout"                        → handle_workout_today
+#   "kya chal" / "kaisa hai" + (day-ish?)   → handle_pace (status check)
+HINDI_AAJ_WORKOUT_RE = re.compile(
+    r"\baaj\b[\s\S]*?\b(crossfit|cf|wod|workout|gym|run(?:ning)?|"
+    r"rest|recovery|kal\s+kya|kya\s+karna)\b", re.I)
+HINDI_STATUS_RE = re.compile(
+    r"\b(kya|kaise|kaisa|kaisi)\s+(chal|hal|haal)\b", re.I)
+
 # Word-number support so "one rest day" parses too.
 _NUMS = r"(\d+|one|two|three|four|five|six|seven)"
 _WORD_NUM = {"one":1,"two":2,"three":3,"four":4,"five":5,"six":6,"seven":7}
@@ -1347,8 +1883,9 @@ BREATH715_RE = re.compile(r"\b(7[/\-]15|7\s*15|breath(e|ing).*hrv|improve.*hrv|r
 BOXBREATH_RE = re.compile(r"\bbox\s*breath", re.I)
 PREFUEL_RE  = re.compile(r"\b(eat|fuel|snack).*(before|pre.?workout|pre.?run)|"
                          r"\b(pre.?workout|pre.?run)\b.*\b(eat|fuel|snack)", re.I)
-COOLDOWN_RE = re.compile(r"\b(cool.?down|cooldown|stretch|recovery routine|"
-                         r"post.?workout|post.?wod)\b", re.I)
+COOLDOWN_RE = re.compile(r"\b(cool.?down|cooldown|stretch(?:ing|es)?|"
+                         r"recovery\s+routine|post.?workout|post.?wod|"
+                         r"mobility\s+(?:routine|flow|work))\b", re.I)
 # Only fires for explicit A-vs-B comparisons. Plain "should I run" no longer
 # triggers it (Bug 3 from 05/03 testing — false-positive on scheduling questions).
 DECIDE_RE   = re.compile(r"\b(run(?:ning)?\s+(?:or|vs|versus)\s+(?:crossfit|wod|workout)|"
@@ -1358,9 +1895,40 @@ DECIDE_RE   = re.compile(r"\b(run(?:ning)?\s+(?:or|vs|versus)\s+(?:crossfit|wod|
 TIER_RE     = re.compile(r"\btier\s+(survival|re.?entry|baseline|performance|hammer)\b", re.I)
 LOG_BURN_RE = re.compile(r"\b(burn(?:ed|t)?|did)\s+(\d{2,4})\s*(?:cal|kcal|calories|active)?\b", re.I)
 LOG_KIND_RE = re.compile(r"\b(crossfit|cf|wod|run|10k|z2|walk|bike|row)\s+(\d{2,4})\b", re.I)
-TIMELINE_RE = re.compile(r"\b(to|target|reach|hit)\s+(\d{2,3})\s*(lbs?|kg|pounds?)?\b.*"
-                         r"\bby\s+([a-z]+\s+\d+|\d+/\d+|\d+-\d+)", re.I)
+TIMELINE_RE = re.compile(
+    r"\b(to|target|reach|hit|want|aim|drop|cut|get|lose)\s+(?:to\s+)?"
+    r"(\d{2,3})\s*(lbs?|kg|pounds?)?\b.*"
+    r"\bby\s+([a-z]+\s+\d+|\d+/\d+|\d+-\d+)", re.I)
 TIMELINE_SHORT_RE = re.compile(r"\b(timeline|how long).*\b(\d{2,3})\s*(lbs?|kg)?", re.I)
+# No-arg form: "realistic timeline", "sustainable pace", "what's my deficit",
+# "daily intake target". Defaults to TARGET_LBS (the seeded 80 kg intent).
+TIMELINE_NO_ARG_RE = re.compile(
+    r"\b(realistic\s+(?:target|timeline|date|goal|weight\s+loss|deficit|pace)|"
+    r"sustainable\s+(?:target|timeline|date|deficit|pace|rate)|"
+    r"weight\s+loss\s+(?:plan|timeline|date|rate|pace)|"
+    r"daily\s+(?:intake|calorie\s+intake|cal\s+intake)\s+target|"
+    r"what.{0,15}deficit|how (?:long|fast).{0,30}(?:lose|drop|cut))\b", re.I)
+# Natural-language asks about WHEN the user hits target weight / goal weight.
+# Falls into the dual-target dashboard which shows actual ETA dates
+# (Aug 13, 2026 / Nov 3, 2026), not just "17 weeks".
+TARGET_WEIGHT_RE = re.compile(
+    r"\b(?:"
+    # Tolerate typos and dropped auxiliaries: "will", "wil", "wll",
+    # "i'll", or even bare "when I reach" with no auxiliary at all.
+    # The auxiliary slot is a 2-5 char word starting with w/d/a/c/s, OR
+    # absent. This catches "When wil I reach my target" without making
+    # the regex permissive enough to false-fire elsewhere.
+    r"when\s+(?:(?:will|wil|wll|i'?ll|do|am|can|should)\s+)?i\s+"
+    r"(?:get\s+to|hit|reach|be\s+at|achieve|see|lose)\s+"
+    r"(?:my\s+)?(?:target|goal|intermediate|final)?\s*"
+    r"(?:weight|lbs?|kg|\d{2,3})|"
+    r"how\s+long\s+(?:until|till|to)\s+"
+    r"(?:i\s+)?(?:hit|reach|get\s+to|achieve|lose)\s+"
+    r"(?:my\s+)?(?:target|goal|weight|\d{2,3})|"
+    r"when\s+(?:will|wil|do)\s+i\s+(?:hit|reach|lose)\s+"
+    r"(?:\d{2,3}\s*(?:lbs?|kg)|85\s*kg|84\s*kg|80\s*kg|176|185|target)|"
+    r"target\s+date|when.*at\s+(?:80|84)\s*kg"
+    r")\b", re.I)
 
 
 def _parse_date(s: str) -> datetime | None:
@@ -1381,11 +1949,21 @@ def _parse_date(s: str) -> datetime | None:
 
 
 def route(msg: str) -> str:
-    m = msg.strip()
+    # Normalize iOS / Telegram autocorrect characters BEFORE any regex runs
+    # — most regexes assume ASCII apostrophes. Curly apostrophe (U+2019)
+    # in "can't" was the cause of the 02:19 AM bug where "I can't workout
+    # on Thursday" fell through to the LLM and got a fabricated plan.
+    m = (msg.strip()
+            .replace("’", "'")   # right single quote → '
+            .replace("‘", "'")   # left single quote → '
+            .replace("“", '"')   # left double quote → "
+            .replace("”", '"'))  # right double quote → "
 
     # --- mutators first (set state, log data) ---
     if (mw := WEIGHT_RE.search(m)):
         return handle_weight(float(mw.group(1)))
+    if WEIGHT_QUERY_RE.search(m):
+        return handle_current_weight()
     if (mh := HRV_RE.search(m)):
         return handle_hrv(float(mh.group(1)))
     if (mt := TIER_RE.search(m)):
@@ -1396,9 +1974,36 @@ def route(msg: str) -> str:
         return handle_manual_burn(float(mb.group(2)), kind="today")
 
     # --- specific lookups (must beat generic TODAY/REMAIN matches) ---
-    # B4 fix: "daily target for today" → today's plan target, not burn-so-far.
+    # 02:19 AM bug fix: 'am I working out today' was returning the burn-so-far
+    # because TODAY_RE matched first. Catch the workout-status question here.
+    if WORKOUT_TODAY_RE.search(m):
+        when = "tomorrow" if re.search(r"\btomorrow\b", m, re.I) else "today"
+        return handle_workout_today(when=when)
+    # Hindi/Dakhini: "aaj crossfit hai na", "aaj ka workout kya hai" —
+    # without these, the LLM fallback fabricates today's workout from
+    # context. Route to the deterministic same-day handler.
+    if HINDI_AAJ_WORKOUT_RE.search(m):
+        return handle_workout_today(when="today")
+    # Hindi/Dakhini status check: "kya chal ra" / "kaisa hai" — route to
+    # pace handler so the user gets actual numbers instead of an LLM
+    # paraphrase of their context.
+    if HINDI_STATUS_RE.search(m):
+        return handle_pace()
+    # "What am I doing on Friday?" — single named weekday + workout intent
+    # → show that day's planned session with WOD details.
+    day_idx = _is_workout_on_day_query(m)
+    if day_idx is not None:
+        return handle_workout_on(day_idx)
+    # "daily target for today" → today's plan target, not burn-so-far.
     if TODAY_TARGET_RE.search(m):
         return handle_today_target()
+    # Catch-up / recalibration: "how do I catch up", "how can I hit my
+    # weekly target", "behind on calories" — must fire BEFORE
+    # NEXT_WEEK_TARGET_RE because phrases like "hit my weekly target"
+    # would otherwise be misrouted to next-week's plain target lookup
+    # instead of a redistribution proposal.
+    if RECALIBRATE_RE.search(m):
+        return handle_recalibrate()
     # B1 fix: "caloric target for next week" → plan-based active-burn target.
     if NEXT_WEEK_TARGET_RE.search(m):
         return handle_next_week_target()
@@ -1439,6 +2044,10 @@ def route(msg: str) -> str:
         if "kg" in unit:
             target = target * 2.20462
         return handle_weight_timeline(target)
+    if TIMELINE_NO_ARG_RE.search(m):
+        return handle_weight_timeline()
+    if TARGET_WEIGHT_RE.search(m):
+        return handle_weight_timeline()
 
     # --- split-target math (must run before REMAIN, since "...left" matches REMAIN too) ---
     # Optional override: "to hit 6500" / "for 6000" inside the same message.
@@ -1449,14 +2058,44 @@ def route(msg: str) -> str:
         return handle_split_target(_n(ms.group(1)), _n(ms.group(2)), target_override)
     if (ms := SPLIT_RE2.search(m)):
         return handle_split_target(_n(ms.group(2)), _n(ms.group(1)), target_override)
-    if WORKOUTS_ONLY_RE.search(m) and re.search(r"\b(hit|reach|target|goal|6\d{3}|5\d{3})\b", m, re.I):
+    # Trigger split when the user explicitly states a target ("hit 6500"),
+    # asks about distribution ("how many should I burn"), or signals
+    # remaining-budget intent ("I have N workouts left/remaining").
+    if WORKOUTS_ONLY_RE.search(m) and re.search(
+            r"\b(hit|reach|target|goal|6\d{3}|5\d{3}|"
+            r"left|remaining|have|how (?:many|much))\b", m, re.I):
         n = _n(WORKOUTS_ONLY_RE.search(m).group(1))
-        # Days remaining in the week (Mon..Sun) minus the workouts = rest days
         days_left = 7 - datetime.now().weekday()
         rests = max(days_left - n, 0)
         return handle_split_target(n, rests, target_override)
 
-    # --- standard lookups ---
+    # --- per-week pref mutators ---
+    # MUST run BEFORE the generic standard lookups (today/yesterday/remain).
+    # Otherwise a message like "I can't workout Thursday, can I work out today?"
+    # gets eaten by TODAY_RE on the trailing "today" instead of marking
+    # Thursday unavailable.
+    next_week_q = bool(NEXT_WEEK_RE.search(m))
+    if CLEAR_PREFS_RE.search(m):
+        return handle_clear_prefs(next_week=next_week_q)
+    if TOLERATE_RE.search(m):
+        return handle_tolerate(m, next_week=next_week_q)
+    # SWAP must run before UNAVAILABLE/PICK because "prefer Mon over Sun"
+    # mentions both weekdays.
+    if SWAP_RE.search(m) and len(parse_weekdays(m)) >= 2:
+        return handle_swap(m, next_week=next_week_q)
+    if UNAVAILABLE_RE.search(m) and parse_weekdays(m):
+        return handle_unavailable(m, next_week=next_week_q)
+    if PICK_RE.search(m) and parse_weekdays(m):
+        return handle_pick_days(m, next_week=next_week_q)
+    if (parse_weekdays(m) or
+        re.search(r"\b(workouts?|crossfit|cf|wod|runs?|z2|zone\s*2|"
+                  r"rest|recover|sessions?)\b", m, re.I)) and re.search(
+            r"\b(can'?t|prefer|swap|switch|move|skip|miss|busy|"
+            r"unavailable|update|adjust|change|reschedul|fix|fewer|less|"
+            r"reduce|drop|cut)\b", m, re.I):
+        return handle_scheduling_help()
+
+    # --- standard lookups (after per-week mutators) ---
     if YEST_RE.search(m):
         return handle_daily_burn(datetime.now() - timedelta(days=1))
     if LASTWK_RE.search(m):
@@ -1465,22 +2104,13 @@ def route(msg: str) -> str:
         return handle_weekly_remaining()
     if TODAY_RE.search(m):
         return handle_daily_burn(datetime.now())
-    # Per-week pref mutators — must run before REPLAN/SCHED so messages like
-    # "skip Wednesday next week, replan" hit the override handler first.
-    next_week_q = bool(NEXT_WEEK_RE.search(m))
-    if CLEAR_PREFS_RE.search(m):
-        return handle_clear_prefs(next_week=next_week_q)
-    if TOLERATE_RE.search(m):
-        return handle_tolerate(m, next_week=next_week_q)
-    if UNAVAILABLE_RE.search(m) and parse_weekdays(m):
-        return handle_unavailable(m, next_week=next_week_q)
-    if PICK_RE.search(m) and parse_weekdays(m):
-        return handle_pick_days(m, next_week=next_week_q)
 
     if REPLAN_RE.search(m):
         return handle_replan()
     if SCHED_RE.search(m):
-        return handle_show_plan()
+        return handle_show_plan(next_week=next_week_q)
+    # (RECALIBRATE_RE already checked higher in the router so phrases
+    # like "hit my weekly target" beat NEXT_WEEK_TARGET_RE.)
     if PACE_RE.search(m):
         return handle_pace()
     if TODAY_TARGET_RE.search(m):
@@ -1506,17 +2136,62 @@ def llm_coach(msg: str) -> str:
     elig = ", ".join(d.label for d in eligible_cf_days()) or "none"
 
     prompt = (
-        f"Athlete: Venkat (6'1\"). Weight {weight:.1f} lbs. Goal {TARGET_LBS} lbs.\n"
-        f"Tier: {tier}. BMR {BMR_KCAL}, intake target {DAILY_INTAKE_KCAL} kcal.\n"
+        f"Athlete: Venkat (6'1\"). Weight {weight:.1f} lbs.\n"
+        f"Targets: 84 kg ({INTENT_INTERMEDIATE_LBS:.1f} lbs) intermediate, "
+        f"80 kg ({INTENT_TARGET_LBS:.1f} lbs) final.\n"
+        f"LOCKED rate: {LOCKED_LOSS_LB_PER_WEEK} lb/wk → daily intake "
+        f"{DAILY_INTAKE_KCAL} kcal, weekly active {WEEKLY_ACTIVE_TARGET_KCAL} kcal.\n"
+        f"LOCKED CADENCE — exactly 3 PRVN CrossFit + 1 Zone-2 10K + 3 active rest "
+        "per week. NEVER more sessions, NEVER more Z2 runs, NEVER 'add a Z2 to a "
+        "CF day'. The user's body is calibrated for this load. Anything else "
+        "causes injury, HRV crash, or burnout.\n"
+        f"Tier: {tier}. BMR {BMR_KCAL}.\n"
         f"Week burn: {burned:.0f} / {target:.0f} kcal "
         f"(remaining {remaining:.0f} over {days_left} days).\n"
         f"Eligible CF days (no partner/handstand/muscle-up/OHS/snatch-in-strength): {elig}.\n"
         f"User message: {msg}\n"
-        "Rules: data-driven CrossFit + Z2 coach. Lbs only. ≤6 lines.\n"
+        f"Rules: data-driven CrossFit + Z2 coach. Lbs only. ≤6 lines.\n"
+        f"\n"
+        f"VOICE — Hyderabadi (Dakhini) wit + PM brevity (per PRD §3):\n"
+        f" • Mix English + Hyderabadi phrases naturally. NOT pure Hindi.\n"
+        f" • Numbers, dates, exact protocols stay in English for clarity.\n"
+        f" • Vocabulary you can use sparingly: hau (yes), nakko (don't),\n"
+        f"   miya/bhai (friendly address), bole to (i.e.), light lo (chill),\n"
+        f"   samjhe (got it), chal (let's go), abhi (now), bohot (very).\n"
+        f" • One Hyderabadi phrase per response is plenty — DON'T parody.\n"
+        f" • Address as 'bhai' or 'miya', not 'sir' or 'mate'.\n"
+        f" • Keep it dry and direct, like a Hyderabadi gym coach who's\n"
+        f"   seen it all. Not flowery, not over-friendly.\n"
+        f" • Example: 'Hau bhai, today's burn 850. Locked rate, light lo.'\n"
+        f"   NOT: 'Aaj bhai aapka burn 850 hai, namaste!' (too forced).\n"
+
+        f"NEVER recommend a deficit faster than {MAX_LOSS_LB_PER_WEEK} lb/wk — causes "
+        "muscle loss + HRV crash + scale stalls. Use the LOCKED numbers above as "
+        "the baseline; don't propose a different intake, active target, or cadence.\n"
+        "If the user is asking about scheduling (which days to work out, swapping "
+        "days, missing a day), say: 'Use `swap X for Y`, `I can't make X`, or "
+        "`pick X Y Z for crossfit` — those replan deterministically against your "
+        "locked cadence.' Do NOT propose a plan yourself — the deterministic "
+        "scheduler in this agent is the only correct source for that.\n"
         "If user only asked about a single day's burn, do NOT mention weekly target.\n"
         "Use 7/15 breathing for HRV recovery. Bias toward run for fat loss.\n"
         "If HRV likely low (back-to-back hammer days, sick, sleep-deprived), "
-        "scale back rather than push."
+        "scale back rather than push.\n"
+        "\n"
+        "ANTI-HALLUCINATION RULES (critical — these are the most common\n"
+        "ways the LLM gets the user wrong):\n"
+        " • DO NOT invent or compute weight-timeline math (e.g. \"17 days to\n"
+        "   target\"). If asked about ETA / target dates / how long to lose X,\n"
+        "   reply: 'Ask `when will I get to my target weight` or `how long to\n"
+        "   80 kg` — those use the deterministic timeline math.'\n"
+        " • DO NOT claim what TODAY'S workout is. The user's gym programming\n"
+        "   isn't in this prompt. Reply: 'Ask `aaj ka workout` / `workout\n"
+        "   today` / `what am I doing today` — that pulls the actual WOD.'\n"
+        " • DO NOT make up burn numbers, weights, or HRV values. If asked,\n"
+        "   reply: 'Ask `today` / `current weight` / `pace` for the live numbers.'\n"
+        " • Hindi / Dakhini phrasings (`aaj`, `kya chal`, `hai na`) are\n"
+        "   first-class — answer in the same register, but route the user to\n"
+        "   a deterministic command if they're asking for specific data."
     )
     try:
         res = client.models.generate_content(model=MODEL_ID, contents=prompt)
@@ -1593,11 +2268,27 @@ def maybe_morning_briefing() -> str | None:
             "Prescription: total rest, 20 min 7/15 breathing, "
             "magnesium, in bed by 10pm."
         )
-    return (
+    # Daily recalibration: am I on track to hit the weekly target? If
+    # behind, append a redistribution proposal so the user knows exactly
+    # which days to convert from rest → CrossFit (or where to extend Z2)
+    # to close the gap. This is the "review every morning + tell me how
+    # to get to the goal" loop.
+    recalc = compute_week_recalibration(now)
+    base = (
         f"☀️ *Morning brief — {WEEKDAY_NAME[row['weekday']]}*\n"
         f"Today: *{kind}*{gym}. Ideal burn: {fmt_kcal(row['target_kcal'])}.\n"
         f"Week so far: {fmt_kcal(burned)} / {fmt_kcal(target)}."
     )
+    if recalc["on_track"]:
+        return base
+    # Behind — append the redistribution proposal in a compact format.
+    extra_lines = ["", recalc["summary"]]
+    if recalc["proposal"]:
+        names = " ".join(p["weekday_name"] for p in recalc["proposal"])
+        extra_lines.append(
+            f"_Apply with `pick {names} for crossfit` if you want to "
+            "lock it in._")
+    return base + "\n" + "\n".join(extra_lines)
 
 
 def maybe_recovery_nudge() -> str | None:
@@ -1770,7 +2461,16 @@ def start():
             now = datetime.now()
             if now.minute != last_tick_minute:
                 last_tick_minute = now.minute
-                for nudge in (maybe_weekly_reset(),
+                # Apple Watch syncs land in raw_vitals via vitals_listener
+                # without going through sync_weight(). Recalibrate every
+                # minute so the seeded ETAs always reflect the freshest
+                # weight, regardless of source. Cheap (two UPDATEs).
+                try:
+                    recalibrate_intents()
+                except Exception as e:
+                    print(f"recalibrate tick: {e}")
+                for nudge in (maybe_morning_briefing(),
+                              maybe_weekly_reset(),
                               maybe_recovery_nudge(),
                               maybe_walk_nudge()):
                     if nudge:
