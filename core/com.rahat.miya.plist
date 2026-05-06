@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.rahat.miya</string>
+
+    <!-- caffeinate keeps the Mac awake while Miya is running, so the bot
+         answers 24/7 even with nothing else holding the system on.
+           -i  prevent idle system sleep
+           -d  prevent display sleep   (drop -d for headless Mac Mini)
+           -m  prevent disk sleep
+         Mirrors the legacy Scientist plist exactly so the cutover is
+         a like-for-like swap. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/caffeinate</string>
+        <string>-imd</string>
+        <string>/usr/bin/python3</string>
+        <string>-u</string>
+        <string>/Users/venkat/developer/agency/rahat/core/miya_main.py</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/venkat/developer/agency/rahat</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Restart on any exit. Pair with `launchctl kickstart -k` for
+         clean code reloads. -->
+    <key>KeepAlive</key>
+    <true/>
+
+    <!-- 10s between retries — don't hot-loop on a fast-failing import. -->
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/venkat/developer/agency/rahat/vault/miya.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/venkat/developer/agency/rahat/vault/miya.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>

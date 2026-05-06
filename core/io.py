@@ -1,0 +1,168 @@
+"""core.io — shared tool helpers.
+
+Every agent in the mesh imports from this module. The intent is that
+`send`, `llm_client`, and `db()` are defined in exactly one place; if 20
+agents share Telegram and Gemini, they share the same connection-pooled
+client and the same `requests.post` call site.
+
+This is the "Tool Broker" from ADR-001 §3 — kept deliberately as one file
+until per-skill manifests earn their place (Later phase).
+
+NOTE on backwards compatibility:
+    The Scientist (`agents/the_scientist/main.py`) was originally written
+    with these helpers inlined. After the Phase Now refactor it imports
+    from here. Both paths produce identical wire output — the eval suite
+    asserts that.
+"""
+from __future__ import annotations
+
+import os
+import sqlite3
+from pathlib import Path
+from typing import Any
+
+import requests
+from dotenv import load_dotenv
+
+# Load .env once at import. Idempotent — safe to call from any agent.
+load_dotenv()
+
+# ─────────────────────────── Paths ───────────────────────────
+# Rahat root is two levels up from this file: core/io.py → core/ → repo root.
+ROOT = Path(__file__).resolve().parent.parent
+DB_PATH = ROOT / "vault" / "rahat.db"
+
+
+def db(path: Path | str | None = None) -> sqlite3.Connection:
+    """Open a connection to the intent ledger.
+
+    Pass `path` to override (used by the eval harness with an isolated DB).
+    Callers must close the connection — typically via try/finally.
+    """
+    return sqlite3.connect(str(path) if path else str(DB_PATH))
+
+
+# ─────────────────────────── Telegram ───────────────────────────
+# Token + chat id come from .env. Per-agent bot tokens are supported by
+# letting the agent pass a token explicitly; default is the Scientist's
+# legacy bot for backwards compatibility during the Now phase.
+DEFAULT_TG_TOKEN = os.getenv("SCIENTIST_BOT_TOKEN")
+DEFAULT_TG_CHAT  = os.getenv("TELEGRAM_CHAT_ID")
+
+
+def send(text: str,
+         *,
+         token: str | None = None,
+         chat_id: str | None = None,
+         parse_mode: str = "Markdown") -> dict[str, Any] | None:
+    """Send a Telegram message. Returns the API response JSON, or None
+    if no token is configured (dev mode — print to stdout instead).
+    """
+    tok = token or DEFAULT_TG_TOKEN
+    cid = chat_id or DEFAULT_TG_CHAT
+    if not (tok and cid):
+        print(text)
+        return None
+    r = requests.post(
+        f"https://api.telegram.org/bot{tok}/sendMessage",
+        json={"chat_id": cid, "text": text, "parse_mode": parse_mode},
+        timeout=10,
+    )
+    try:
+        return r.json()
+    except Exception:
+        return None
+
+
+def telegram_get_updates(*, token: str | None = None,
+                         offset: int = 0,
+                         timeout: int = 10) -> list[dict]:
+    """Long-poll the Telegram getUpdates endpoint. Returns the `result`
+    list (possibly empty). Raises on transport errors so the caller can
+    decide whether to retry.
+
+    The HTTP timeout is `timeout + 15` (e.g. 25s for a 10s long-poll) to
+    give Telegram and the network ample headroom. With a tight buffer
+    (≤5s) we'd routinely see ReadTimeout exceptions even on healthy
+    connections — the long-poll itself can take the full `timeout`
+    seconds, and the response + TLS round-trip can easily add 2-4s on
+    a residential connection.
+    """
+    tok = token or DEFAULT_TG_TOKEN
+    if not tok:
+        return []
+    r = requests.get(
+        f"https://api.telegram.org/bot{tok}/getUpdates"
+        f"?offset={offset}&timeout={timeout}",
+        timeout=timeout + 15,
+    )
+    return (r.json() or {}).get("result", [])
+
+
+def telegram_delete_webhook(*, token: str | None = None) -> None:
+    """Idempotent — clear any webhook so getUpdates polling works."""
+    tok = token or DEFAULT_TG_TOKEN
+    if not tok:
+        return
+    try:
+        requests.get(
+            f"https://api.telegram.org/bot{tok}/deleteWebhook",
+            timeout=10,
+        )
+    except Exception:
+        pass
+
+
+# ─────────────────────────── LLM client ───────────────────────────
+# Lazy + cached: the Gemini import is heavy and the eval suite stubs
+# google.genai entirely, so we only resolve the client on first use.
+_GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+_LLM_CLIENT = None
+_LLM_MODEL_ID = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+
+
+def llm_client():
+    """Return the singleton Gemini client. None if no API key configured."""
+    global _LLM_CLIENT
+    if _LLM_CLIENT is not None:
+        return _LLM_CLIENT
+    if not _GEMINI_API_KEY:
+        return None
+    from google import genai  # local import — keeps eval stubbing easy
+    _LLM_CLIENT = genai.Client(api_key=_GEMINI_API_KEY)
+    return _LLM_CLIENT
+
+
+def llm_pick_flash_model() -> str:
+    """Return the freshest Flash model available, or the configured
+    default. Cached after first call to avoid re-listing models on every
+    LLM call.
+    """
+    global _LLM_MODEL_ID
+    c = llm_client()
+    if not c:
+        return _LLM_MODEL_ID
+    try:
+        flash = [m.name for m in c.models.list() if "flash" in m.name.lower()]
+        if flash:
+            _LLM_MODEL_ID = sorted(flash)[-1]
+    except Exception:
+        pass
+    return _LLM_MODEL_ID
+
+
+def llm_generate(prompt: str, *, model: str | None = None) -> str:
+    """One-shot text generation. Returns the model's text, or "" if no
+    client is configured (dev / eval mode).
+    """
+    c = llm_client()
+    if not c:
+        return ""
+    try:
+        resp = c.models.generate_content(
+            model=model or llm_pick_flash_model(),
+            contents=prompt,
+        )
+        return getattr(resp, "text", "") or ""
+    except Exception as e:
+        return f"[llm-error: {e}]"
