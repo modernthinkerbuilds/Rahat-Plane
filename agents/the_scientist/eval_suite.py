@@ -304,6 +304,17 @@ TESTS: list[tuple[str, str, str]] = [
     ("what should I do",      "what should I do this week",                "Week recalibration"),
     ("hit my goal",           "how can I hit my weekly target",            "Week recalibration"),
 
+    # ─── X. Next-workout handler — production bug 2026-05 ─────
+    # "When is my next CrossFit session" used to fall through to the
+    # LLM which gave a generic "use these commands" response. Now it
+    # walks the plan and returns the next CF day with WOD details.
+    ("next crossfit",         "when is my next CrossFit session",          "Next CrossFit"),
+    ("next cf casual",        "next cf?",                                  "Next CrossFit"),
+    ("next workout",          "when is my next workout",                   "Next workout"),
+    ("my next cf",            "what's my next CrossFit day",               "Next CrossFit"),
+    ("next run",              "when is my next run",                       "Next Zone-2 run"),
+    ("next z2",               "next z2 day",                               "Next Zone-2 run"),
+
     # ─── S. Day-specific workout lookup ─────────
     # "What am I doing on Friday?" → that day's session details, not the
     # full weekly grid (PLAN_DAYS_RE) and not today's status (WORKOUT_TODAY).

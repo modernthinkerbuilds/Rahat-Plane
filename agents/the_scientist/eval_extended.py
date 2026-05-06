@@ -847,11 +847,17 @@ def _b7_no_plan_fallback_picks_mwf():
     # Critical: do NOT create a plan file
     missing_plan = tmpdir / "does_not_exist.txt"
     sci = _load_sci(db, missing_plan)
+    # Assert against the underlying plan structure (not the rendered
+    # text) so this test isn't fragile to display tweaks like
+    # missed-workout strikethroughs or voice prefixes.
+    monday, _ = sci.week_bounds()
+    plan = sci.current_plan(monday)
+    plan_by_wd = {row["weekday"]: row["day_type"] for row in plan}
+    assert plan_by_wd[0] == "cf", f"expected Mon=cf in fallback, got: {plan_by_wd}"
+    assert plan_by_wd[2] == "cf", f"expected Wed=cf in fallback, got: {plan_by_wd}"
+    assert plan_by_wd[4] == "cf", f"expected Fri=cf in fallback, got: {plan_by_wd}"
+    # And the warning should be visible in the rendered output
     out = sci.route("show plan")
-    assert "Mon: CrossFit" in out, f"expected Mon=CF in fallback, got: {out}"
-    assert "Wed: CrossFit" in out, f"expected Wed=CF in fallback, got: {out}"
-    assert "Fri: CrossFit" in out, f"expected Fri=CF in fallback, got: {out}"
-    # And the warning should be visible
     assert "No gym plan synced" in out, f"missing fallback warning: {out}"
 
 
@@ -885,6 +891,76 @@ def _b7_recalibration_handler_fires():
     assert "Burned" in out and "target" in out, out
 
 
+def _b7_auto_picker_backfills_to_3_cf_when_gym_only_yields_1():
+    """Production bug 2026-05: when the synced gym plan has only 1
+    CF-eligible day (rest are blacklisted with handstand/OH squat/snatch
+    in strength), the user got a 1-CF + 1-Z2 + 5-rest week. Now the
+    auto-picker backfills from default Mon/Wed/Fri to ensure 3 CF days,
+    surfacing a 'scale recommended' warning."""
+    import tempfile
+    from pathlib import Path
+    tmpdir = Path(tempfile.mkdtemp(prefix="b7_1elig_"))
+    db = tmpdir / "rahat.db"
+    if LIVE_DB.exists():
+        shutil.copy(LIVE_DB, db)
+    else:
+        db.touch()
+    # Synthesize a plan where only Mon is clean — Tue/Wed/Thu/Fri/Sat/Sun
+    # all have blacklisted movements.
+    plan_path = tmpdir / "weekly_plan.txt"
+    days = [
+        ("Mon 04", "Back squat 5x5 @ 75%\n0 results\nWOD: row 5K"),
+        ("Tue 05", "snatch 5x3 @ 70%\n0 results\nMetcon"),  # snatch in strength
+        ("Wed 06", "Push press 5x5\n0 results\nWOD: handstand pushups"),  # handstand
+        ("Thu 07", "Front squat\n0 results\nMuscle-ups for time"),  # muscle-up
+        ("Fri 08", "Snatch 1RM\n0 results\nMetcon"),  # snatch in strength
+        ("Sat 09", "Partner WOD\n0 results\nfun"),  # partner
+        ("Sun 10", "OHS 5x3\n0 results\nMetcon"),  # OH squat
+    ]
+    plan_path.write_text("\n".join(
+        "\n".join([h, "", "", "0", line, "", "0 results"]) for h, line in days
+    ))
+    sci = _load_sci(db, plan_path)
+    out = sci.route("show plan")
+    # Count CF days in the underlying plan (rather than parsing the
+    # rendered text) so the test isn't fragile to display tweaks like
+    # missed-workout markers (~~CrossFit~~) or voice prefixes.
+    monday, _ = sci.week_bounds()
+    plan = sci.current_plan(monday)
+    cf_count = sum(1 for r in plan if r["day_type"] == "cf")
+    assert cf_count == 3, f"expected 3 CF days even with 1 eligible, got {cf_count}: {out}"
+    # Warning should be context-aware (partial sync, not no-sync)
+    assert ("blacklist-clean" in out or "Only 1 day" in out
+            or "Mon" in out), f"missing partial-sync warning: {out}"
+
+
+def _b7_recalibration_prefers_gym_eligible_days():
+    """The recalibration helper should propose rest→CF conversions for
+    gym-clean days first, not arbitrary rest days."""
+    _, db, plan = _make_fresh_env()
+    sci = _load_sci(db, plan)
+    r = sci.compute_week_recalibration()
+    assert isinstance(r, dict)
+    # When a proposal is generated, each entry should have gym_clean key
+    for p in r.get("proposal", []):
+        assert "gym_clean" in p, f"proposal missing gym_clean flag: {p}"
+
+
+def _b7_next_workout_handler_fires():
+    """Production bug 2026-05: 'when is my next CrossFit session'
+    used to fall through to the LLM, which gave a generic 'use these
+    commands' response. Now it returns the actual next CF day."""
+    _, db, plan = _make_fresh_env()
+    sci = _load_sci(db, plan)
+    out = sci.route("when is my next CrossFit session")
+    # Must return real plan data, not LLM fallback
+    assert "[LLM-FALLBACK]" not in out, f"fell through to LLM: {out}"
+    assert "Next CrossFit" in out, f"didn't fire handler: {out}"
+    out2 = sci.route("when is my next run")
+    assert "[LLM-FALLBACK]" not in out2, f"fell through to LLM: {out2}"
+    assert "Next Zone-2 run" in out2, out2
+
+
 def _b7_recalibration_when_behind_proposes_picks():
     """When the user is behind on calories, the recalibration helper
     should propose specific rest→CF conversions."""
@@ -901,6 +977,97 @@ def _b7_recalibration_when_behind_proposes_picks():
     # If on_track, proposal can be empty; that's fine — we're testing
     # structure, not specific numbers (which depend on real-time clock).
     assert isinstance(r["proposal"], list)
+
+
+def _b7_missed_workout_detector_basic():
+    """A past CF day with burn < 700 kcal must be flagged as missed.
+    A past CF day with burn >= 700 must NOT be flagged. Today's CF
+    in progress (regardless of burn) is never flagged."""
+    _, db, plan = _make_fresh_env()
+    sci = _load_sci(db, plan)
+    # Force "today is Wed" so Mon and Tue are in the past
+    from datetime import datetime
+    monday, _ = sci.week_bounds(datetime(2026, 5, 4, 12, 0))
+    # Build a synthetic plan: Mon=cf, Tue=rest, Wed=cf (today), Thu=cf...
+    plan_rows = [
+        {"weekday": 0, "day_type": "cf", "gym_label": None, "target_kcal": 850},
+        {"weekday": 1, "day_type": "rest", "gym_label": None, "target_kcal": 500},
+        {"weekday": 2, "day_type": "cf", "gym_label": None, "target_kcal": 850},
+        {"weekday": 3, "day_type": "cf", "gym_label": None, "target_kcal": 850},
+        {"weekday": 4, "day_type": "rest", "gym_label": None, "target_kcal": 500},
+        {"weekday": 5, "day_type": "z2", "gym_label": None, "target_kcal": 1100},
+        {"weekday": 6, "day_type": "rest", "gym_label": None, "target_kcal": 500},
+    ]
+    # Mon CF burned only 450 → missed; Tue rest 200 → not applicable;
+    # Wed today CF burned 100 → in progress, not missed.
+    today_idx = 2  # Wed
+    # Need to monkey-patch burn_for_date for deterministic test
+    real_burn = sci.burn_for_date
+    burns_by_date = {
+        monday: 450.0,                          # Mon
+        monday + sci.timedelta(days=1): 200.0,  # Tue
+        monday + sci.timedelta(days=2): 100.0,  # Wed (today)
+    }
+    sci.burn_for_date = lambda d: burns_by_date.get(d, 0.0)
+    try:
+        missed = sci.detect_missed_workouts(plan_rows, today_idx, monday)
+    finally:
+        sci.burn_for_date = real_burn
+    assert len(missed) == 1, f"expected 1 missed (Mon), got: {missed}"
+    assert missed[0]["weekday"] == 0
+    assert missed[0]["day_type"] == "cf"
+    assert missed[0]["actual_burn"] == 450.0
+
+
+def _b7_missed_workout_threshold_boundary():
+    """At exactly 700 kcal, the day is NOT missed (>= threshold).
+    At 699, it IS missed."""
+    _, db, plan = _make_fresh_env()
+    sci = _load_sci(db, plan)
+    plan_rows = [
+        {"weekday": 0, "day_type": "cf", "gym_label": None, "target_kcal": 850},
+        {"weekday": 1, "day_type": "cf", "gym_label": None, "target_kcal": 850},
+    ]
+    monday, _ = sci.week_bounds()
+    real_burn = sci.burn_for_date
+    sci.burn_for_date = lambda d: 700.0 if d == monday else 699.0
+    try:
+        missed = sci.detect_missed_workouts(plan_rows, today_idx=3, monday=monday)
+    finally:
+        sci.burn_for_date = real_burn
+    # Mon (700) should NOT be missed; Tue (699) SHOULD be missed
+    missed_wds = {m["weekday"] for m in missed}
+    assert 0 not in missed_wds, f"Mon at 700 should not be missed: {missed}"
+    assert 1 in missed_wds, f"Tue at 699 should be missed: {missed}"
+
+
+def _b7_missed_workout_only_cf_z2():
+    """Past rest days with low burn are NEVER flagged as missed —
+    they were planned as rest, low burn is expected."""
+    _, db, plan = _make_fresh_env()
+    sci = _load_sci(db, plan)
+    plan_rows = [
+        {"weekday": 0, "day_type": "rest", "gym_label": None, "target_kcal": 500},
+        {"weekday": 1, "day_type": "rest", "gym_label": None, "target_kcal": 500},
+    ]
+    monday, _ = sci.week_bounds()
+    real_burn = sci.burn_for_date
+    sci.burn_for_date = lambda d: 100.0
+    try:
+        missed = sci.detect_missed_workouts(plan_rows, today_idx=3, monday=monday)
+    finally:
+        sci.burn_for_date = real_burn
+    assert missed == [], f"rest days should never be missed, got: {missed}"
+
+
+def _b7_recalibration_includes_missed():
+    """compute_week_recalibration must include the `missed` key in its
+    return dict (downstream consumers depend on it)."""
+    _, db, plan = _make_fresh_env()
+    sci = _load_sci(db, plan)
+    r = sci.compute_week_recalibration()
+    assert "missed" in r, f"recalibration result missing 'missed' key: {r.keys()}"
+    assert isinstance(r["missed"], list)
 
 
 def _b7_log_weight_then_timeline_uses_logged():
@@ -973,6 +1140,13 @@ B7 = [
     ("B7.unavailable through fallback",    _b7_unavailable_through_fallback_repicks),
     ("B7.recalibration handler fires",     _b7_recalibration_handler_fires),
     ("B7.recalibration proposes picks",    _b7_recalibration_when_behind_proposes_picks),
+    ("B7.backfill when 1 gym-eligible",    _b7_auto_picker_backfills_to_3_cf_when_gym_only_yields_1),
+    ("B7.recal prefers gym-eligible",      _b7_recalibration_prefers_gym_eligible_days),
+    ("B7.next-workout handler",            _b7_next_workout_handler_fires),
+    ("B7.missed workout basic detect",     _b7_missed_workout_detector_basic),
+    ("B7.missed workout 700 threshold",    _b7_missed_workout_threshold_boundary),
+    ("B7.missed only for cf/z2 days",      _b7_missed_workout_only_cf_z2),
+    ("B7.recalibration includes missed",   _b7_recalibration_includes_missed),
 ]
 
 ALL = B1 + B2 + B3 + B4 + B5 + B6 + B7

@@ -82,6 +82,7 @@ from agents.the_scientist.protocols import (  # noqa: E402
     Z2_RUN_KCAL_DEFAULT, NONWORKOUT_BURN_FLOOR,
     NUDGE_MORNING_HOUR, NUDGE_HOURLY_START, NUDGE_HOURLY_END,
     NUDGE_RECOVERY_HOUR, HAMMER_KCAL,
+    MISSED_WORKOUT_THRESHOLD_KCAL,
     DAY_TYPE_BY_TIER, DAY_TYPE_LABEL,
     WEEKDAY_INDEX, WEEKDAY_NAME, Z2_PREFERRED_WEEKDAY,
     week_bounds, hrv_band, fmt_kcal, fmt_lbs,
@@ -424,29 +425,54 @@ def replan_week(monday: datetime, *, force: bool = False) -> list[dict]:
                     break
                 if wd not in cf_wds:
                     cf_wds.append(wd)
-        elif eligible_wds:
-            # Normal path: gym plan synced + has CF-eligible days.
+        elif len(eligible_wds) >= 3:
+            # Normal path: gym plan synced + has 3+ CF-eligible days.
             cf_wds = list(eligible_wds[:3])
         else:
-            # Fallback: no gym plan synced (or every day is blacklisted)
-            # AND user hasn't set explicit picks. Default to the standard
-            # 3-CF cadence (Mon/Wed/Fri) — these are the most common CF
-            # programming days and give the user a sensible plan even
-            # without the SugarWOD sync. handle_show_plan surfaces a
-            # "sync the bookmarklet" warning when this path fires.
-            DEFAULT_CF_FALLBACK = [0, 2, 4]  # Mon, Wed, Fri
-            cf_wds = [wd for wd in DEFAULT_CF_FALLBACK
-                      if wd not in unavailable][:3]
-            # If the user has marked Mon/Wed/Fri unavailable, slide to the
-            # next-best 3 weekdays (skipping Sat for Z2).
+            # Either no gym plan synced, OR the gym programming has too
+            # many blacklisted movements this week (handstand, OH squat,
+            # snatch-in-strength, partner WODs) leaving fewer than 3
+            # CF-eligible days. Production bug 2026-05: this branch
+            # used to leave the user with only 1 CF day for the week.
+            # Now we ALWAYS pick 3 CF days: take the eligible days
+            # first (gym-aligned), then backfill from the standard
+            # Mon/Wed/Fri default to reach the locked cadence.
+            cf_wds = list(eligible_wds)
+            # User-configurable default cadence: if the user has set a
+            # `default_cf_pattern` (via "remember this pattern" or by
+            # picking the same days repeatedly), use that as the fallback
+            # instead of the standard Mon/Wed/Fri. This means a user
+            # who prefers Mon/Tue/Fri/Sun doesn't have to re-pick every
+            # week. Falls back to Mon/Wed/Fri if no pattern set.
+            default_pattern_str = state_get("default_cf_pattern", "")
+            if default_pattern_str:
+                try:
+                    DEFAULT_CF_FALLBACK = [int(x) for x in
+                                           default_pattern_str.split(",")
+                                           if x.strip().isdigit()]
+                except Exception:
+                    DEFAULT_CF_FALLBACK = [0, 2, 4]
+            else:
+                DEFAULT_CF_FALLBACK = [0, 2, 4]  # Mon, Wed, Fri
+            for wd in DEFAULT_CF_FALLBACK:
+                if len(cf_wds) >= 3:
+                    break
+                if wd in cf_wds or wd in unavailable or wd == 5:
+                    continue
+                cf_wds.append(wd)
+            # If still <3 (Mon/Wed/Fri all unavailable or already used),
+            # slide to Tue/Thu/Sun.
             if len(cf_wds) < 3:
-                for wd in [1, 3, 6, 0, 2, 4]:  # Tue, Thu, Sun, then defaults
+                for wd in [1, 3, 6]:
+                    if len(cf_wds) >= 3:
+                        break
                     if wd in cf_wds or wd in unavailable or wd == 5:
                         continue
                     cf_wds.append(wd)
-                    if len(cf_wds) >= 3:
-                        break
-            plan_fallback = True
+            # plan_fallback flag: True if we had to supplement at least
+            # one default day (i.e., not every CF day came from a clean
+            # gym pick). handle_show_plan surfaces a sync/scale warning.
+            plan_fallback = (len(eligible_wds) < 3)
         cf_picks = [(wd, gym_label_by_wd.get(wd)) for wd in cf_wds]
         cf_weekdays = {wd for wd, _ in cf_picks}
         backfilled = [wd for wd in cf_wds
@@ -523,6 +549,43 @@ def today_plan() -> dict:
 
 
 # ───────────────────── Week recalibration ─────────────────────
+def detect_missed_workouts(plan: list[dict], today_idx: int,
+                           monday: datetime) -> list[dict]:
+    """Find past CF/Z2 days where active burn is below the
+    "no workout happened" threshold (default 700 kcal). Per the
+    user's spec: at <700 kcal you're nowhere near the CF target
+    (850) or Z2 target (1100), so the workout almost certainly
+    didn't happen — and the plan should reflect that.
+
+    Critically: today is NEVER counted as missed (still in progress).
+    Only past days are evaluated.
+
+    Returns a list of dicts:
+        {weekday, weekday_name, day_type, target_kcal, actual_burn,
+         shortfall (target - actual)}
+    """
+    missed: list[dict] = []
+    for row in plan:
+        wd = row["weekday"]
+        if wd >= today_idx:
+            continue   # today and future are never "missed"
+        if row["day_type"] not in ("cf", "z2"):
+            continue   # rest days are not "missed" by definition
+        actual = burn_for_date(monday + timedelta(days=wd))
+        if actual >= MISSED_WORKOUT_THRESHOLD_KCAL:
+            continue
+        missed.append({
+            "weekday": wd,
+            "weekday_name": WEEKDAY_NAME[wd],
+            "day_type": row["day_type"],
+            "day_type_label": DAY_TYPE_LABEL[row["day_type"]],
+            "target_kcal": row["target_kcal"],
+            "actual_burn": actual,
+            "shortfall": max(row["target_kcal"] - actual, 0),
+        })
+    return missed
+
+
 def compute_week_recalibration(now: datetime | None = None) -> dict:
     """Daily review: am I on track to hit the weekly active-burn target?
 
@@ -578,11 +641,39 @@ def compute_week_recalibration(now: datetime | None = None) -> dict:
 
     proposal: list[dict] = []
     if not on_track and gap > 0:
-        # Behind. Convert future rest days to CF until the gap closes.
+        # Behind. Convert future rest days to CF until the gap closes —
+        # but ONLY days the user can actually do without scaling
+        # blacklisted movements. We re-run the gym blacklist filter
+        # against the user's tolerated_blacklist for this week.
         kcal_per_conversion = max(
             day_type_target("cf") - day_type_target("rest"), 1)
         needed = int(gap // kcal_per_conversion) + (
             1 if gap % kcal_per_conversion else 0)
+
+        # Get gym-eligible days for the week (after blacklist + tolerance
+        # filter). Same logic as replan_week's eligibility check.
+        monday_for_week, _ = week_bounds(now)
+        prefs = get_prefs(monday_for_week)
+        unavailable = set(prefs["unavailable_days"])
+        tolerated = {
+            normalize_blacklist_term(t)
+            for t in prefs["tolerated_blacklist"]
+        }
+        gym_days = parse_gym_plan()
+        gym_eligible: set[int] = set()
+        for d in gym_days:
+            wd = WEEKDAY_INDEX.get(d.weekday[:3])
+            if wd is None:
+                continue
+            blocked = False
+            for b in d.blockers:
+                core = b.split(" (")[0]
+                if normalize_blacklist_term(core) not in tolerated:
+                    blocked = True
+                    break
+            if not blocked and wd not in unavailable:
+                gym_eligible.add(wd)
+
         rest_priority = [0, 2, 4, 1, 3, 6]   # Mon, Wed, Fri, Tue, Thu, Sun
         future_rest_wds = [
             wd for wd in rest_priority
@@ -590,14 +681,24 @@ def compute_week_recalibration(now: datetime | None = None) -> dict:
             and any(p["weekday"] == wd and p["day_type"] == "rest"
                     for p in plan)
         ]
+        # Sort future rest days: gym-eligible first (no blacklist), then
+        # the rest. Gym-eligible days mean the user can do the CF without
+        # scaling, so they're strictly preferred.
+        future_rest_wds.sort(
+            key=lambda wd: (0 if wd in gym_eligible else 1,
+                            rest_priority.index(wd)))
         for wd in future_rest_wds[:needed]:
+            is_gym_clean = wd in gym_eligible
             proposal.append({
                 "weekday": wd,
                 "weekday_name": WEEKDAY_NAME[wd],
                 "from": "rest",
                 "to": "cf",
                 "delta_kcal": kcal_per_conversion,
-                "reason": f"close {fmt_kcal(gap)} gap",
+                "gym_clean": is_gym_clean,
+                "reason": ("gym programming clean"
+                           if is_gym_clean else
+                           "scale blacklisted movements"),
             })
 
     # Build a human summary.
@@ -634,6 +735,9 @@ def compute_week_recalibration(now: datetime | None = None) -> dict:
             f"already over-covers your weekly target. You can take a "
             f"rest day if HRV is low without losing the goal.")
 
+    # Also detect any missed workouts so callers can surface them.
+    missed_workouts = detect_missed_workouts(plan, today_idx, monday)
+
     return {
         "today_idx":         today_idx,
         "burned_so_far":     burned_so_far,
@@ -644,6 +748,7 @@ def compute_week_recalibration(now: datetime | None = None) -> dict:
         "on_track":          on_track,
         "proposal":          proposal,
         "summary":           summary,
+        "missed":            missed_workouts,
     }
 
 
@@ -658,16 +763,37 @@ def handle_recalibrate() -> str:
         f"{fmt_kcal(r['weekly_target'])} target.",
         f"Remaining to goal: *{fmt_kcal(r['remaining_to_goal'])}* | "
         f"Planned ahead: {fmt_kcal(r['remaining_planned'])}.",
-        "",
-        r["summary"],
     ]
+    # Surface missed workouts before the gap summary — they're often
+    # the root cause of the gap, and the user wants to see them
+    # explicitly per the 2026-05 spec ("if burn < 700 assume no
+    # workout happened and recalibrate").
+    if r.get("missed"):
+        names = ", ".join(
+            f"{m['weekday_name']} ({m['day_type_label']}, "
+            f"{fmt_kcal(m['actual_burn'])})"
+            for m in r["missed"])
+        lines.append("")
+        lines.append(
+            f"*⚠️ Missed: {names}.* "
+            f"Treating these as rest days — make-up picks below.")
+    lines.append("")
+    lines.append(r["summary"])
     if r["proposal"]:
         lines.append("")
         lines.append("*Suggested redistribution:*")
         for p in r["proposal"]:
+            tag = "✓ clean" if p.get("gym_clean") else "⚠️ scale needed"
             lines.append(
                 f"  • {p['weekday_name']}: {p['from']} → {p['to']} "
-                f"(+{fmt_kcal(p['delta_kcal'])})")
+                f"(+{fmt_kcal(p['delta_kcal'])}, {tag})")
+        # If any are scale-needed, suggest the tolerate command
+        if any(not p.get("gym_clean") for p in r["proposal"]):
+            lines.append("")
+            lines.append(
+                "_Some days have blacklisted movements (handstand, "
+                "OH squat, snatch in strength, etc.). Either scale, "
+                "or `tolerate <movement>` to widen picks._")
     return "\n".join(lines)
 
 
@@ -1287,25 +1413,92 @@ def handle_show_plan(next_week: bool = False) -> str:
         "",
     ]
     if is_fallback:
-        # No gym plan synced for this week — picks aren't blacklist-aware.
-        # Prompt the user to sync via the SugarWOD bookmarklet so future
-        # picks can avoid partner WODs / handstand pushups / etc.
-        lines.insert(1,
-            "_⚠️ No gym plan synced — using default Mon/Wed/Fri cadence._")
-        lines.insert(2,
-            "_Sync via the SugarWOD bookmarklet for blacklist-aware picks._")
+        # Either no gym plan synced, OR the synced plan had too many
+        # blacklisted movements this week to fill 3 CF days from gym
+        # programming alone. The plan picks 3 CF days regardless;
+        # surface a context-aware warning so the user knows whether
+        # to sync or scale.
+        #
+        # CRITICAL: count only CF days whose gym programming is
+        # blacklist-CLEAN (after applying tolerated_blacklist for
+        # this week). Days that have a gym_label but blacklisted
+        # movements don't count as "clean" — they require scaling
+        # so the user needs to know.
+        gym_days_for_warn = parse_gym_plan()
+        prefs_for_warn = get_prefs(monday)
+        tolerated_for_warn = {
+            normalize_blacklist_term(t)
+            for t in prefs_for_warn["tolerated_blacklist"]
+        }
+        clean_wds: set[int] = set()
+        for d in gym_days_for_warn:
+            wd_idx = WEEKDAY_INDEX.get(d.weekday[:3])
+            if wd_idx is None:
+                continue
+            blocked = False
+            for b in d.blockers:
+                core = b.split(" (")[0]
+                if normalize_blacklist_term(core) not in tolerated_for_warn:
+                    blocked = True
+                    break
+            if not blocked:
+                clean_wds.add(wd_idx)
+        clean_picks = sum(
+            1 for r in plan
+            if r.get("day_type") == "cf" and r["weekday"] in clean_wds)
+        if clean_picks == 0:
+            warning = ("_⚠️ No gym plan synced — using default "
+                       "Mon/Wed/Fri cadence._")
+            sub = ("_Sync via the SugarWOD bookmarklet for "
+                   "blacklist-aware picks._")
+        else:
+            warning = (
+                f"_⚠️ Only {clean_picks} day"
+                f"{'s' if clean_picks != 1 else ''} in this week's gym "
+                f"plan are blacklist-clean — backfilled the rest from "
+                f"default cadence._")
+            sub = ("_Tolerate a movement to widen picks: `tolerate "
+                   "muscle-up` or `tolerate handstand`._")
+        lines.insert(1, warning)
+        lines.insert(2, sub)
         lines.insert(3, "")
+    # Detect missed workouts (past CF/Z2 days where burn < threshold).
+    # We mark them in the plan view so the user sees reality, not what
+    # was scheduled. Today is never marked (still in progress).
+    if not next_week:
+        missed = detect_missed_workouts(plan, today_idx, monday)
+        missed_wds = {m["weekday"] for m in missed}
+        # Surface missed-workout banner near the top of the plan
+        if missed:
+            names = ", ".join(m["weekday_name"] for m in missed)
+            kcal_short = sum(m["shortfall"] for m in missed)
+            banner = (f"_⚠️ {len(missed)} missed workout"
+                      f"{'s' if len(missed) > 1 else ''}: {names} "
+                      f"(~{fmt_kcal(kcal_short)} short of plan)._")
+            # Insert banner above the day grid (after warnings if any)
+            insert_at = 4 if is_fallback else 2
+            lines.insert(insert_at, banner)
+            lines.insert(insert_at + 1, "")
+    else:
+        missed_wds = set()
+
     for row in plan:
-        is_today = (not next_week) and row["weekday"] == today_idx
+        wd = row["weekday"]
+        is_today = (not next_week) and wd == today_idx
         marker = "▶" if is_today else " "
-        name = WEEKDAY_NAME[row["weekday"]]
+        name = WEEKDAY_NAME[wd]
         kind = DAY_TYPE_LABEL[row["day_type"]]
         gym = f" ({row['gym_label']})" if row["gym_label"] else ""
         if not next_week:
-            actual = burn_for_date(monday + timedelta(days=row["weekday"]))
+            actual = burn_for_date(monday + timedelta(days=wd))
             actual_s = f" — burned {fmt_kcal(actual)}" if actual > 0 else ""
         else:
             actual_s = ""
+        # Past CF/Z2 day with burn below threshold: render as missed
+        # so the user sees "this didn't happen" instead of pretending
+        # the workout was done.
+        if wd in missed_wds:
+            kind = f"~~{kind}~~ ⚠️ missed"
         lines.append(
             f"{marker} {name}: {kind}{gym} → ideal "
             f"{fmt_kcal(row['target_kcal'])}{actual_s}")
@@ -1655,6 +1848,69 @@ def handle_workout_today(when: str = "today") -> str:
             "Get to the gym; bridge with a 20-min walk after if you can.")
 
 
+def handle_next_workout(kind_filter: str = "any") -> str:
+    """'When is my next CrossFit session?' / 'next workout?' / 'next run?'
+
+    kind_filter:
+        "cf"  — only look for CF days
+        "z2"  — only look for the Z2 day
+        "any" — any non-rest day (CF or Z2)
+
+    Walks forward from today through the current weekly_plan. If the
+    target day type is today, says so. If not, walks Tue→Sun then wraps.
+    Surfaces the gym pick + WOD details when available.
+
+    Production bug 2026-05: this question used to fall through to the LLM
+    which gave a generic 'use these commands' response instead of looking
+    at the actual plan. Now it consults the plan directly.
+    """
+    plan = current_plan()
+    today_idx = datetime.now().weekday()
+
+    target_kinds: tuple[str, ...]
+    label_text: str
+    if kind_filter == "cf":
+        target_kinds = ("cf",)
+        label_text = "CrossFit"
+    elif kind_filter == "z2":
+        target_kinds = ("z2",)
+        label_text = "Zone-2 run"
+    else:
+        target_kinds = ("cf", "z2")
+        label_text = "workout"
+
+    # Walk forward starting today, then wrap around to before-today.
+    order = [(today_idx + i) % 7 for i in range(7)]
+    for offset, wd in enumerate(order):
+        row = plan[wd]
+        if row["day_type"] not in target_kinds:
+            continue
+        kind_lbl = DAY_TYPE_LABEL[row["day_type"]]
+        gym = f" ({row['gym_label']})" if row["gym_label"] else ""
+        if offset == 0:
+            when = "today"
+        elif offset == 1:
+            when = "tomorrow"
+        else:
+            when = WEEKDAY_NAME[wd]
+        # If it's a CF day with a gym pick, surface the WOD details.
+        if row["day_type"] == "cf" and row["gym_label"]:
+            try:
+                summary = _extract_wod_summary(
+                    next((d.body for d in parse_gym_plan()
+                          if d.weekday[:3] == WEEKDAY_NAME[wd]), ""),
+                    max_workouts=2)
+            except Exception:
+                summary = ""
+            extra = f"\n\n{summary}" if summary else ""
+        else:
+            extra = ""
+        return (f"*Next {label_text}: {when}* — {kind_lbl}{gym}.\n"
+                f"Target ~{fmt_kcal(row['target_kcal'])}." + extra)
+    return (f"No {label_text} scheduled this week. Try `replan` to "
+            "refresh, or `show plan` to see the current week.")
+
+
 # Keep `handle_schedule` as an alias for back-compat with old chat shortcuts.
 handle_schedule = handle_show_plan
 
@@ -1825,6 +2081,21 @@ def _is_workout_on_day_query(m: str) -> int | None:
 # the day-marker. Without that anchor, generic "am I working out" gets shadowed
 # by scheduling questions like "which days am I working out" → those should
 # go to PLAN_DAYS_RE / handle_show_plan instead.
+# "When is my next CrossFit session" / "next workout" / "next run" /
+# "next cf?". Distinct from WORKOUT_TODAY_RE (only reads today's row);
+# this walks forward through the plan to find the next non-rest day.
+# The regex is permissive — any phrase with "next" + a workout-kind
+# token routes here. Tightened to allow trailing punctuation like "?"
+# after a bare "next cf".
+NEXT_WORKOUT_RE = re.compile(
+    r"\bnext\s+(?:crossfit|cf|wod|workout|run|z2|zone\s*2|gym)\b|"
+    r"\bwhen\s+is\s+(?:my\s+)?next\b|"
+    r"\bmy\s+next\s+(?:crossfit|cf|wod|workout|run|z2|zone\s*2|"
+    r"gym|session)\b|"
+    r"\b(?:when|what'?s)\s+(?:is\s+)?(?:the\s+)?next\s+"
+    r"(?:cf|crossfit|z2|run|workout)\b",
+    re.I)
+
 WORKOUT_TODAY_RE = re.compile(
     r"(?:"
     # "am I [verb] today/now"
@@ -1974,6 +2245,15 @@ def route(msg: str) -> str:
         return handle_manual_burn(float(mb.group(2)), kind="today")
 
     # --- specific lookups (must beat generic TODAY/REMAIN matches) ---
+    # "When is my next CrossFit session" — walks forward through the
+    # plan; must fire before WORKOUT_TODAY_RE (which only reads today's
+    # row) and before the LLM fallback (which would hallucinate).
+    if NEXT_WORKOUT_RE.search(m):
+        if re.search(r"\b(z2|zone\s*2|run)\b", m, re.I):
+            return handle_next_workout(kind_filter="z2")
+        if re.search(r"\b(crossfit|cf|wod|gym)\b", m, re.I):
+            return handle_next_workout(kind_filter="cf")
+        return handle_next_workout(kind_filter="any")
     # 02:19 AM bug fix: 'am I working out today' was returning the burn-so-far
     # because TODAY_RE matched first. Catch the workout-status question here.
     if WORKOUT_TODAY_RE.search(m):
@@ -2279,15 +2559,26 @@ def maybe_morning_briefing() -> str | None:
         f"Today: *{kind}*{gym}. Ideal burn: {fmt_kcal(row['target_kcal'])}.\n"
         f"Week so far: {fmt_kcal(burned)} / {fmt_kcal(target)}."
     )
-    if recalc["on_track"]:
+    extra_lines: list[str] = []
+    # Surface missed workouts FIRST — they're often the cause of the
+    # gap, and the user wants them called out explicitly per the
+    # 2026-05 spec ("if burn < 700, treat as missed and recalibrate").
+    if recalc.get("missed"):
+        names = ", ".join(
+            f"{m['weekday_name']} {m['day_type_label']} ({fmt_kcal(m['actual_burn'])})"
+            for m in recalc["missed"])
+        extra_lines.append("")
+        extra_lines.append(f"⚠️ *Missed: {names}.* Treating as rest days.")
+    if recalc["on_track"] and not recalc.get("missed"):
         return base
-    # Behind — append the redistribution proposal in a compact format.
-    extra_lines = ["", recalc["summary"]]
+    # Behind or has missed workouts — append the gap summary +
+    # redistribution proposal so the user has a concrete action.
+    extra_lines.append("")
+    extra_lines.append(recalc["summary"])
     if recalc["proposal"]:
         names = " ".join(p["weekday_name"] for p in recalc["proposal"])
         extra_lines.append(
-            f"_Apply with `pick {names} for crossfit` if you want to "
-            "lock it in._")
+            f"_Apply with `pick {names} for crossfit` to lock it in._")
     return base + "\n" + "\n".join(extra_lines)
 
 

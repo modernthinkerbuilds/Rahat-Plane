@@ -187,7 +187,17 @@ def dress(text: str, *, kind: str | None = None) -> str:
 
 def is_dressed(text: str) -> bool:
     """True if the text already contains a Hyderabadi opener — useful for
-    eval assertions and to avoid double-dressing in tests."""
-    return bool(re.search(r"\b(hau bhai|suno miya|bhidu|light lo|"
-                          r"chal bhai|hafta khatam|wajan|samjha)\b",
-                          text, re.I))
+    eval assertions and to avoid double-dressing in tests.
+
+    Comprehensive: matches every opener phrase in OPENERS plus the
+    distinctive closer phrases. Keeping this list explicit (rather than
+    derived from OPENERS) makes the dependency one-way: phrasebook can
+    grow without breaking is_dressed semantics; new phrases just need
+    to be added here too if they should count as "dressed".
+    """
+    return bool(re.search(
+        r"\b(hau bhai|suno miya|bhidu|light lo|chal bhai|hafta khatam|"
+        r"wajan|samjha|bole to|salaam miya|subah subah|raat ho gayi|"
+        r"plan dekh|hafte ka|done bhai|ho jayega|nakko|kal ki taiyari|"
+        r"naya hafta|trajectory pe|locked rate pe|scale bole)\b",
+        text, re.I))
