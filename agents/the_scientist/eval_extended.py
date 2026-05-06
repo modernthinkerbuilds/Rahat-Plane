@@ -257,6 +257,34 @@ def _b2_quiet_hours_vetoes_routine_nudge():
     assert "quiet" in v.reason.lower(), v.reason
 
 
+def _b2_quiet_hours_does_NOT_veto_user_reply():
+    """Regression for the 2026-05 production bug where user-asked
+    questions at 23:30 went unanswered. quiet_hours globs on
+    `notify.*.nudge` only — replies (`notify.user.reply`) must always
+    go through, regardless of time of day."""
+    from core import charter
+    from core.charter import WorkOrder
+    _, db, plan = _make_fresh_env()
+    from core import io as cio
+    cio.DB_PATH = db
+    # 23:30 — well into quiet hours
+    v = charter.review(
+        WorkOrder(kind="notify.user.reply",
+                  payload={"text": "Today is Tue: Active rest"},
+                  requester="miya", priority=5),
+        ctx={"now": datetime(2026, 5, 5, 23, 30)},
+        db_path=str(db))
+    assert v.approved, f"reply should never be vetoed by quiet hours: {v}"
+    # 03:00 AM — also quiet hours
+    v2 = charter.review(
+        WorkOrder(kind="notify.user.reply",
+                  payload={"text": "Current weight: 198"},
+                  requester="miya", priority=5),
+        ctx={"now": datetime(2026, 5, 5, 3, 0)},
+        db_path=str(db))
+    assert v2.approved, f"3am reply should still go: {v2}"
+
+
 def _b2_quiet_hours_bypassed_for_urgent():
     from core import charter
     from core.charter import WorkOrder
@@ -897,6 +925,7 @@ B1 = [
 ]
 B2 = [
     ("B2.quiet hours vetoes routine nudge",   _b2_quiet_hours_vetoes_routine_nudge),
+    ("B2.quiet hours does NOT veto reply",    _b2_quiet_hours_does_NOT_veto_user_reply),
     ("B2.quiet hours bypassed for urgent",    _b2_quiet_hours_bypassed_for_urgent),
     ("B2.HRV red blocks intensity",           _b2_hrv_red_blocks_intensity_pushes),
     ("B2.HRV green lets intensity through",   _b2_hrv_green_lets_intensity_through),

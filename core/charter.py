@@ -174,9 +174,18 @@ def _write_governance_log(wo: WorkOrder, v: Verdict, *,
 # this file. Keep the list small; new policies should land in the agent
 # that benefits or in a dedicated `policies/` module per organization.
 
-@policy("notify.*", name="quiet_hours")
+@policy("notify.*.nudge", name="quiet_hours")
 def quiet_hours(wo: WorkOrder, ctx: dict) -> Verdict:
-    """Suppress non-urgent notifications between 22:30 and 07:00 local."""
+    """Suppress *unsolicited* notifications between 22:30 and 07:00 local.
+
+    IMPORTANT: this policy intentionally globs on `notify.*.nudge`, not
+    `notify.*`. User-initiated replies (`notify.user.reply`) must NEVER
+    be vetoed by quiet hours — if you ask Miya a question at 23:30, you
+    get an answer. Only ambient/scheduled nudges respect the quiet
+    window. The 2026-05 production bug where user questions went
+    unanswered after 22:30 was caused by this policy globbing too
+    broadly; do not widen it back.
+    """
     now = ctx.get("now") or datetime.now()
     h, m = now.hour, now.minute
     minutes = h * 60 + m

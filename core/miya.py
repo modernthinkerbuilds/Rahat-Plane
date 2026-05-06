@@ -137,14 +137,23 @@ def route(msg: str, *,
 def _send_with_charter(reply: Reply, *,
                        requester: str,
                        trace_id: str,
+                       kind: str = "notify.user.reply",
                        priority: int = 5,
                        ctx: dict | None = None,
                        db_path: str | None = None) -> bool:
     """Pass an outbound message through the Charter, then send.
 
     Returns True if the message went out, False if vetoed.
+
+    `kind` distinguishes user-initiated replies from agent-initiated
+    nudges — the Charter's quiet_hours policy uses this to allow
+    replies at any time but mute ambient nudges between 22:30 and 07:00.
+
+    Use:
+        notify.user.reply  — for inbound message responses (default)
+        notify.user.nudge  — for unsolicited tick-emitted messages
     """
-    wo = WorkOrder(kind="notify.user.message",
+    wo = WorkOrder(kind=kind,
                    payload={"text": reply.text},
                    requester=requester,
                    priority=priority,
@@ -221,9 +230,15 @@ def run_loop(*, poll_timeout: int = 10,
                 tid = decisions.new_trace()
                 reply = route(txt, trace_id=tid)
                 if reply and reply.text:
-                    sent = _send_with_charter(reply, requester="miya",
-                                              trace_id=tid, priority=5,
-                                              ctx={"now": datetime.now()})
+                    # User-initiated reply — kind=notify.user.reply (default).
+                    # The Charter's quiet_hours policy explicitly allows
+                    # replies at any time; only ambient nudges get muted
+                    # at night. So a 23:30 question still gets answered.
+                    sent = _send_with_charter(
+                        reply, requester="miya",
+                        kind="notify.user.reply",
+                        trace_id=tid, priority=5,
+                        ctx={"now": datetime.now()})
                     print(f"[out] sent={sent} chars={len(reply.text)} "
                           f"preview={reply.text[:60]!r}")
                 else:
@@ -239,8 +254,13 @@ def run_loop(*, poll_timeout: int = 10,
                             decisions.log(a.name, "tick.nudge",
                                           trace_id=tid,
                                           input={"chars": len(nudge.text)})
+                            # Unsolicited tick-emitted nudge — kind=notify.user.nudge.
+                            # Subject to Charter's quiet_hours policy:
+                            # muted between 22:30 and 07:00 unless priority
+                            # is urgent (≤2).
                             _send_with_charter(
                                 nudge, requester=a.name,
+                                kind="notify.user.nudge",
                                 trace_id=tid,
                                 priority=5,
                                 ctx={"now": now})
