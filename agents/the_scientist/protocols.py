@@ -114,14 +114,28 @@ NUDGE_HOURLY_START    = 10
 NUDGE_HOURLY_END      = 20
 NUDGE_RECOVERY_HOUR   = 21
 HAMMER_KCAL           = 1000
+# A past CF/Z2 day with active burn below this threshold is treated as
+# "no workout happened" for plan-recalibration purposes. Per user spec:
+# at 700 kcal you're well below CF target (850) and Z2 target (1100),
+# so the workout almost certainly didn't happen.
+MISSED_WORKOUT_THRESHOLD_KCAL = int(
+    os.getenv("MISSED_WORKOUT_THRESHOLD", "700"))
 
 # Day-type per-day targets scale with the active tier.
+#
+# Tuning note (2026-05): user's actual CF burns sit closer to 1,150 than
+# the prior 850, so the performance tier was bumped to 1150 to reflect
+# real-world output. Plan total now lands at ~6,050 (3×1150 + 1×1100 +
+# 3×500), slightly over the locked weekly_target of 6,000 — a small
+# buffer rather than the previous ~850 kcal NEAT shortfall the user
+# had to make up via daily walks. Hammer bumped proportionally so it
+# stays above performance. Other tiers untouched (rare-use cases).
 DAY_TYPE_BY_TIER: dict[str, dict[str, int]] = {
     "survival":    {"cf": 0,    "z2": 0,    "rest": 500},
     "re_entry":    {"cf": 600,  "z2": 800,  "rest": 500},
     "baseline":    {"cf": 800,  "z2": 1100, "rest": 500},
-    "performance": {"cf": 850,  "z2": 1100, "rest": 500},
-    "hammer":      {"cf": 1100, "z2": 1400, "rest": 600},
+    "performance": {"cf": 1150, "z2": 1100, "rest": 500},
+    "hammer":      {"cf": 1300, "z2": 1400, "rest": 600},
 }
 DAY_TYPE_LABEL = {"cf": "CrossFit", "z2": "Zone-2 10K", "rest": "Active rest"}
 WEEKDAY_INDEX = {"Mon": 0, "Tue": 1, "Wed": 2, "Thu": 3,
