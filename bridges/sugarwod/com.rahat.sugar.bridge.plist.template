@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+    Launchd manifest TEMPLATE for the SugarWOD vitality bridge.
+    {{RAHAT_HOME}} is substituted by bootstrap.sh. The rendered file
+    (without .template suffix) is gitignored.
+-->
 <plist version="1.0">
 <dict>
     <key>Label</key>
@@ -8,11 +13,11 @@
     <key>ProgramArguments</key>
     <array>
         <string>/usr/bin/python3</string>
-        <string>/Users/venkat/developer/agency/rahat/bridges/sugarwod/server.py</string>
+        <string>{{RAHAT_HOME}}/bridges/sugarwod/server.py</string>
     </array>
 
     <key>WorkingDirectory</key>
-    <string>/Users/venkat/developer/agency/rahat</string>
+    <string>{{RAHAT_HOME}}</string>
 
     <key>RunAtLoad</key>
     <true/>
@@ -24,9 +29,9 @@
     <integer>10</integer>
 
     <key>StandardOutPath</key>
-    <string>/Users/venkat/developer/agency/rahat/vault/sugar-bridge.log</string>
+    <string>{{RAHAT_HOME}}/vault/sugar-bridge.log</string>
 
     <key>StandardErrorPath</key>
-    <string>/Users/venkat/developer/agency/rahat/vault/sugar-bridge.log</string>
+    <string>{{RAHAT_HOME}}/vault/sugar-bridge.log</string>
 </dict>
 </plist>

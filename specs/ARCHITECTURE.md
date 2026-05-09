@@ -96,6 +96,7 @@ Each principle below is paired with the alternative we rejected and the cost we 
 | **State-bus over RPC** | Agents call each other via in-process methods or HTTP | Slightly more ceremony to write a row than call a function. Worth it: agents stay fully decoupled, swap-in/swap-out is trivial. |
 | **Heartbeat-driven** | Cron / event-driven only | A 1-minute tick budget (we run on 1Hz inside the loop with minute-bucket dispatch). Worth it: nudges and recalibration *just happen*. |
 | **Manifest-free at small N** | Full TOML manifest registry + scope checks | Slightly higher coupling between agent and runtime. Worth it at N≤6 agents; we'll add manifests when N reaches the marketplace threshold. |
+| **Frictionless setup** | Per-machine `README` instructions and copy-paste config | One template-rendering step on first clone (`bootstrap.sh` substitutes `{{RAHAT_HOME}}` into `*.plist.template`). Worth it: anyone can clone, run `bootstrap.sh`, and reach a green hermetic test suite without editing a single tracked file. Concretely enforced by: templated launchd plists, `.env.example` documenting every key, `skills/vitals_listener.py` deriving paths from the repo root, and the kill-list rule that no tracked file may contain a hardcoded `/Users/<name>/...` path. |
 
 ---
 

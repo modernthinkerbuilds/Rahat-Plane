@@ -7,5 +7,12 @@ staging/
 __pycache__/
 *.pyc
 .env*
+!.env.example
 .pytest_cache/
 pytest-cache-files-*/
+
+# Rendered launchd plists — generated from *.plist.template by bootstrap.sh.
+# The templates are tracked; the rendered files contain machine-specific
+# absolute paths and must NEVER be committed.
+core/com.rahat.miya.plist
+bridges/sugarwod/com.rahat.sugar.bridge.plist

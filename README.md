@@ -38,6 +38,29 @@ Rahat is the runtime that fixes all three. **Cognitive offload, by design.**
 
 ---
 
+## 🚀 Quickstart
+
+Rahat is built around the **Frictionless Setup** principle: anyone with a fresh clone should be able to get a green test suite without editing any code or doc paths. Five steps, one command for most:
+
+```bash
+git clone https://github.com/modernthinkerbuilds/Rahat-Plane.git rahat
+cd rahat
+bash bootstrap.sh                                # creates venv, installs deps, renders plists, runs tests
+# fill in API keys in .env (created from .env.example)
+RAHAT_TEST_MODE=1 ./venv/bin/python -m tests.run_all   # re-run anytime
+```
+
+`bootstrap.sh` is idempotent — re-run it whenever requirements change. Every machine-specific path lives in templates (`*.plist.template`) and gets rendered with your local `RAHAT_HOME` on first run; the rendered plists are gitignored so they never travel with the repo. The hermetic test stack runs without a Gemini API key (it stubs `google.genai`).
+
+To wire the launchd services on macOS once tests are green:
+
+```bash
+cp core/com.rahat.miya.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.rahat.miya.plist
+```
+
+---
+
 ## 🏗️ Architecture: Four Layers
 
 The original three-plane model held until I hit a wall: agents need to *actively manage their own memory* the way a human coach remembers your goals, your commitments, and last week's conversation. Memory isn't passive infrastructure — it's an agent-facing responsibility. So Rahat now has four conceptual layers:

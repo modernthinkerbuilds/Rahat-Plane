@@ -1,8 +1,15 @@
 import os, sqlite3
+from pathlib import Path
 from flask import Flask, request, jsonify
 
 app = Flask(__name__)
-DB_PATH = os.path.expanduser("~/developer/agency/rahat/vault/rahat.db")
+
+# DB path resolution mirrors core/io.py:
+#   1. RAHAT_DB_PATH env var wins if set (lets ops point at a custom DB),
+#   2. otherwise resolve repo-relative to vault/rahat.db.
+# This file lives at skills/vitals_listener.py so the repo root is parent.parent.
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+DB_PATH = os.environ.get("RAHAT_DB_PATH") or str(_REPO_ROOT / "vault" / "rahat.db")
 
 @app.route('/vitals', methods=['POST'])
 def ingest_vitals():

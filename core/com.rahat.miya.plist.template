@@ -1,5 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+    Launchd manifest TEMPLATE for the Miya orchestrator.
+    {{RAHAT_HOME}} is substituted by bootstrap.sh with the absolute path
+    of the repo root on this machine. The rendered file (without
+    .template suffix) is gitignored — never check rendered plists in.
+
+    To install:
+        bash bootstrap.sh                                  # renders templates
+        cp core/com.rahat.miya.plist ~/Library/LaunchAgents/
+        launchctl load ~/Library/LaunchAgents/com.rahat.miya.plist
+-->
 <plist version="1.0">
 <dict>
     <key>Label</key>
@@ -18,11 +29,11 @@
         <string>-imd</string>
         <string>/usr/bin/python3</string>
         <string>-u</string>
-        <string>/Users/venkat/developer/agency/rahat/core/miya_main.py</string>
+        <string>{{RAHAT_HOME}}/core/miya_main.py</string>
     </array>
 
     <key>WorkingDirectory</key>
-    <string>/Users/venkat/developer/agency/rahat</string>
+    <string>{{RAHAT_HOME}}</string>
 
     <key>RunAtLoad</key>
     <true/>
@@ -37,9 +48,9 @@
     <integer>10</integer>
 
     <key>StandardOutPath</key>
-    <string>/Users/venkat/developer/agency/rahat/vault/miya.log</string>
+    <string>{{RAHAT_HOME}}/vault/miya.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/venkat/developer/agency/rahat/vault/miya.log</string>
+    <string>{{RAHAT_HOME}}/vault/miya.log</string>
 
     <key>EnvironmentVariables</key>
     <dict>
