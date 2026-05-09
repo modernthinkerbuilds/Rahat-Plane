@@ -7,3 +7,5 @@ staging/
 __pycache__/
 *.pyc
 .env*
+.pytest_cache/
+pytest-cache-files-*/
