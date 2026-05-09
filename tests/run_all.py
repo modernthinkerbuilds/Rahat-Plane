@@ -51,15 +51,19 @@ class LayerSpec:
 LAYERS: list[LayerSpec] = [
     LayerSpec(
         name="unit",
-        description="Pure-function unit tests (voice, helpers, no I/O).",
-        paths=["tests/test_voice.py"],
+        description="Pure-function unit tests (voice, cost, helpers, no I/O).",
+        paths=[
+            "tests/test_voice.py",
+            "tests/test_cost.py",
+        ],
     ),
     LayerSpec(
         name="contract",
-        description="Agent ABI + Charter ABI invariants.",
+        description="Agent ABI + Charter ABI + decisions-ledger invariants.",
         paths=[
             "tests/test_miya_routing.py",
             "tests/test_charter_policies.py",
+            "tests/test_decisions.py",
         ],
     ),
     LayerSpec(

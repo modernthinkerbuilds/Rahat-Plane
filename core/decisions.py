@@ -114,13 +114,21 @@ def tail(n: int = 50, *, actor: str | None = None,
     con = cio.db(db_path) if db_path else cio.db()
     try:
         _ensure_schema(con)
+        # Order by ts DESC, decision_id DESC — the secondary key is the
+        # tiebreaker for rows that landed in the same wall-clock second
+        # (DEFAULT CURRENT_TIMESTAMP is second-resolution in SQLite).
+        # Without it, callers that assume "newest first" see undefined
+        # order for sub-second bursts. by_trace() has the same tiebreaker
+        # in ASC; this is the matching DESC pair.
         if actor:
             rows = con.execute(
-                "SELECT * FROM decisions WHERE actor=? ORDER BY ts DESC LIMIT ?",
+                "SELECT * FROM decisions WHERE actor=? "
+                "ORDER BY ts DESC, decision_id DESC LIMIT ?",
                 (actor, n)).fetchall()
         else:
             rows = con.execute(
-                "SELECT * FROM decisions ORDER BY ts DESC LIMIT ?",
+                "SELECT * FROM decisions "
+                "ORDER BY ts DESC, decision_id DESC LIMIT ?",
                 (n,)).fetchall()
         cols = [d[0] for d in con.execute("SELECT * FROM decisions LIMIT 0").description]
         return [dict(zip(cols, r)) for r in rows]

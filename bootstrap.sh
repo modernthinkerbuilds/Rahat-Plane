@@ -56,7 +56,11 @@ echo "    deps installed (runtime + dev)."
 echo ""
 echo "── 4. rendering launchd plists from templates ──"
 for tmpl in core/com.rahat.miya.plist.template \
-            bridges/sugarwod/com.rahat.sugar.bridge.plist.template; do
+            bridges/sugarwod/com.rahat.sugar.bridge.plist.template \
+            scripts/jobs/com.rahat.regression.plist.template \
+            scripts/jobs/com.rahat.greenstreak.plist.template \
+            scripts/jobs/com.rahat.hygiene.plist.template \
+            scripts/jobs/com.rahat.evolve.plist.template; do
   if [ ! -f "$tmpl" ]; then
     echo "    skipped (no template): $tmpl"
     continue
@@ -65,6 +69,9 @@ for tmpl in core/com.rahat.miya.plist.template \
   sed "s|{{RAHAT_HOME}}|${RAHAT_HOME}|g" "$tmpl" > "$out"
   echo "    rendered: $out"
 done
+
+# Make the job scripts executable.
+chmod +x scripts/jobs/*.sh 2>/dev/null || true
 
 # ── 5. .env scaffolding ─────────────────────────────────────────────────
 echo ""
@@ -92,6 +99,17 @@ echo ""
 echo "  To install the launchd services on macOS:"
 echo "      cp core/com.rahat.miya.plist ~/Library/LaunchAgents/"
 echo "      launchctl load ~/Library/LaunchAgents/com.rahat.miya.plist"
+echo ""
+echo "  To install the four nightly jobs (tests, greenstreak, hygiene, evolve):"
+echo "      cp scripts/jobs/com.rahat.regression.plist  ~/Library/LaunchAgents/"
+echo "      cp scripts/jobs/com.rahat.greenstreak.plist ~/Library/LaunchAgents/"
+echo "      cp scripts/jobs/com.rahat.hygiene.plist     ~/Library/LaunchAgents/"
+echo "      cp scripts/jobs/com.rahat.evolve.plist      ~/Library/LaunchAgents/"
+echo "      for j in regression greenstreak hygiene evolve; do"
+echo "          launchctl load ~/Library/LaunchAgents/com.rahat.\$j.plist"
+echo "      done"
+echo ""
+echo "  See scripts/jobs/JOBS.md for the full operations guide."
 echo ""
 echo "  To run tests anytime:"
 echo "      RAHAT_TEST_MODE=1 ./venv/bin/python -m tests.run_all"
