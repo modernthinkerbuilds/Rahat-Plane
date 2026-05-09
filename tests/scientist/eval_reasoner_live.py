@@ -46,6 +46,7 @@ import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Callable
+from core import io as cio
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
@@ -104,7 +105,7 @@ def _load_sci(test_db: Path, plan: Path):
         "sci", ROOT / "agents" / "the_scientist" / "main.py")
     sci = importlib.util.module_from_spec(spec); sys.modules["sci"] = sci
     spec.loader.exec_module(sci)
-    sci.DB_PATH = test_db
+    cio.DB_PATH = test_db
     sci.PLAN_PATH = plan
     sci._db().close()
     con = sqlite3.connect(str(test_db))

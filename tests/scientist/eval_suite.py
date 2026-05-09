@@ -23,6 +23,7 @@ import tempfile
 import types
 from datetime import datetime
 from pathlib import Path
+from core import io as cio
 
 # Stub google.genai so we don't need GEMINI_API_KEY for offline tests.
 g = types.ModuleType("google"); sys.modules["google"] = g
@@ -80,7 +81,7 @@ spec = importlib.util.spec_from_file_location(
     "sci", ROOT / "agents" / "the_scientist" / "main.py")
 sci = importlib.util.module_from_spec(spec); sys.modules["sci"] = sci
 spec.loader.exec_module(sci)
-sci.DB_PATH = TEST_DB
+cio.DB_PATH = TEST_DB
 sci.PLAN_PATH = PLAN_FILE
 
 # Reset volatile state for predictable tests.

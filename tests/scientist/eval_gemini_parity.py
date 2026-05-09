@@ -36,6 +36,7 @@ import types
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
+from core import io as cio
 
 # ─────────────────────────── Setup (mirrors eval_reasoner_robust.py) ───────────────────────────
 g = types.ModuleType("google"); sys.modules["google"] = g
@@ -92,7 +93,7 @@ def _load_sci(test_db: Path, plan: Path):
         "sci", ROOT / "agents" / "the_scientist" / "main.py")
     sci = importlib.util.module_from_spec(spec); sys.modules["sci"] = sci
     spec.loader.exec_module(sci)
-    sci.DB_PATH = test_db
+    cio.DB_PATH = test_db
     sci.PLAN_PATH = plan
     sci._db().close()
     con = sqlite3.connect(str(test_db))

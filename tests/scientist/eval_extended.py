@@ -31,6 +31,7 @@ import types
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable
+from core import io as cio
 
 # ─────────────────────────── Setup (mirrors eval_suite.py) ───────────────────────────
 # Force legacy regex dispatch — this suite asserts the deterministic
@@ -92,7 +93,7 @@ def _load_sci(test_db: Path, plan: Path):
         "sci", ROOT / "agents" / "the_scientist" / "main.py")
     sci = importlib.util.module_from_spec(spec); sys.modules["sci"] = sci
     spec.loader.exec_module(sci)
-    sci.DB_PATH = test_db
+    cio.DB_PATH = test_db
     sci.PLAN_PATH = plan
     # Reset volatile state. raw_vitals included so manual `wt:` writes
     # via handle_weight() are authoritative for tests — otherwise the
@@ -527,7 +528,7 @@ def _b3_tier_survives_full_restart():
         "sci", ROOT / "agents" / "the_scientist" / "main.py")
     sci = importlib.util.module_from_spec(spec); sys.modules["sci"] = sci
     spec.loader.exec_module(sci)
-    sci.DB_PATH = db; sci.PLAN_PATH = plan
+    cio.DB_PATH = db; sci.PLAN_PATH = plan
     con = sqlite3.connect(str(db))
     for t in ("user_state", "nudge_log", "weekly_plan",
               "week_preferences", "intents", "weighin_log"):
@@ -726,7 +727,7 @@ def _b5_recalibrate_with_no_weight():
         "sci", ROOT / "agents" / "the_scientist" / "main.py")
     sci = importlib.util.module_from_spec(spec); sys.modules["sci"] = sci
     spec.loader.exec_module(sci)
-    sci.DB_PATH = db; sci.PLAN_PATH = plan
+    cio.DB_PATH = db; sci.PLAN_PATH = plan
     con = sqlite3.connect(str(db))
     for t in ("user_state","nudge_log","weekly_plan","week_preferences",
               "intents","weighin_log","raw_vitals"):

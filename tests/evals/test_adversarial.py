@@ -33,6 +33,7 @@ import pytest
 
 from core import miya
 from core.agent import Agent, Reply
+from core import io as cio
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -70,7 +71,7 @@ def sci_module(tmp_path_factory):
     sci = importlib.util.module_from_spec(spec)
     sys.modules["sci"] = sci
     spec.loader.exec_module(sci)
-    sci.DB_PATH = test_db
+    cio.DB_PATH = test_db
     sci.PLAN_PATH = plan_path
 
     con = sqlite3.connect(str(test_db))

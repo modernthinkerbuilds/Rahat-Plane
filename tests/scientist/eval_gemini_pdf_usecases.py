@@ -26,6 +26,7 @@ import types
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Callable
+from core import io as cio
 
 # ─── Setup ───
 g = types.ModuleType("google"); sys.modules["google"] = g
@@ -92,7 +93,7 @@ def _scientist_module():
     sci = importlib.util.module_from_spec(spec); sys.modules["sci"] = sci
     spec.loader.exec_module(sci)
     from core import io as cio
-    sci.DB_PATH = cio.DB_PATH
+    cio.DB_PATH = cio.DB_PATH
     sci.PLAN_PATH = plan
     # Seed raw_vitals so latest_weight() and burn_for_range work.
     import sqlite3

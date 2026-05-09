@@ -94,13 +94,20 @@ from agents.the_scientist.protocols import (  # noqa: E402
     eligible_cf_days as _proto_eligible_cf_days,
 )
 
+# core.io is the single source of truth for DB_PATH (centralized
+# 2026-05-09 to retire the parallel sci.DB_PATH module attribute that
+# 12 test sites used to patch). _db() and the startup banner read
+# cio.DB_PATH at call time, so RAHAT_TEST_MODE / RAHAT_DB_PATH overrides
+# and per-test cio.DB_PATH = X patches both work without any further
+# wiring inside this module.
+from core import io as cio  # noqa: E402
+
 # ─────────────────────────── Config ───────────────────────────
 load_dotenv()
 API_KEY  = os.getenv("GEMINI_API_KEY")
 TOKEN    = os.getenv("SCIENTIST_BOT_TOKEN")
 CHAT_ID  = os.getenv("TELEGRAM_CHAT_ID")
 HOME     = Path.home()
-DB_PATH  = HOME / "developer/agency/rahat/vault/rahat.db"
 PLAN_PATH = HOME / "developer/agency/rahat/staging/workspace/gym-programming/weekly_plan.txt"
 
 
@@ -148,7 +155,7 @@ def _db():
     The Scientist's own state (recovery_tier, weekly plan, nudge throttling)
     lives alongside but is not part of the cross-agent ledger surface.
     """
-    con = sqlite3.connect(DB_PATH)
+    con = sqlite3.connect(str(cio.DB_PATH))
     con.executescript(
         # Watch / ingestor tables — owned upstream but auto-migrated
         # here so a freshly-initialized DB doesn't fail when tests
@@ -2875,7 +2882,7 @@ def start():
     if TOKEN:
         requests.get(f"https://api.telegram.org/bot{TOKEN}/deleteWebhook")
     tier = state_get("recovery_tier", DEFAULT_TIER)
-    print(f"🔬 Scientist live | model={MODEL_ID} | tier={tier} | db={DB_PATH}")
+    print(f"🔬 Scientist live | model={MODEL_ID} | tier={tier} | db={cio.DB_PATH}")
     last_id = 0
     last_tick_minute = -1
     while True:
