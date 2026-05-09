@@ -13,7 +13,7 @@ Five primitives, agent-agnostic, all in SQLite:
     preferences    — sticky k/v per agent with confidence decay.
     relationships  — entity-to-entity links, can cross agents.
 
-Plus a sixth (in `core/archival.py`) for long-term semantic memory.
+Plus a sixth in the sibling `archival` submodule for long-term semantic memory.
 
 Design notes (see specs/SOTA-AGENT-ARCHITECTURE-REVIEW.md §7):
     - The substrate is intentionally agent-agnostic. The Scientist's
