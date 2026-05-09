@@ -18,11 +18,14 @@ from __future__ import annotations
 
 import os
 import sqlite3
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import requests
 from dotenv import load_dotenv
+
+from core import cost as ccost
 
 # Load .env once at import. Idempotent — safe to call from any agent.
 load_dotenv()
@@ -196,12 +199,9 @@ def llm_generate(prompt: str, *, model: str | None = None) -> str:
 def llm_generate_with_usage(prompt: str, *,
                             model: str | None = None) -> "GeminiUsage":
     """Like `llm_generate` but returns a `GeminiUsage` carrying token
-    counts and the dollar cost. Mirrors `core.anthropic_io.Usage` so
-    callers can write a single `decisions.span` exit no matter which
-    provider they used.
+    counts and the dollar cost, so callers can write a single
+    `decisions.span` exit with full telemetry.
     """
-    from core import cost as ccost  # local import — avoid a cycle on first import
-
     model_id = model or llm_pick_flash_model()
     c = llm_client()
     if not c:
@@ -226,12 +226,9 @@ def llm_generate_with_usage(prompt: str, *,
     )
 
 
-# Lightweight return type — kept here (not in core/cost.py) so callers
-# only need to import `core.io` for Gemini calls. Anthropic has a richer
-# `Usage` (cache fields) in `core.anthropic_io`.
-from dataclasses import dataclass
-
-
+# Lightweight return type — kept here (not in core.cost) so callers only
+# need to import `core.io` for Gemini calls. The cost field is filled by
+# `ccost.cost_usd` above; token counts come from Gemini's usage_metadata.
 @dataclass
 class GeminiUsage:
     text: str = ""
