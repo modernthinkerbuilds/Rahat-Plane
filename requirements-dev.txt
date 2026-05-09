@@ -1,0 +1,19 @@
+# Rahat dev/test dependencies.
+#
+# Install with:
+#     ./venv/bin/pip install -r requirements-dev.txt
+#
+# This file inherits everything in requirements.txt so a fresh dev box
+# only needs one install command. Production / launchd installs use
+# requirements.txt directly — they should never pull pytest.
+#
+# Roles:
+#   - pytest — five-layer test runner (tests/run_all.py shells out to
+#     `python -m pytest -q <layer-paths>`).
+#
+# Add pytest plugins here as the test stack grows (pytest-asyncio,
+# pytest-cov, etc.). Keep them dev-only — the runtime image stays lean.
+
+-r requirements.txt
+
+pytest>=8.0.0
