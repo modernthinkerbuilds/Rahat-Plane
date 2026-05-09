@@ -146,6 +146,17 @@ Read the most recent (user message, agent reply) turn. Extract any \
 state changes that should persist across future turns. Be conservative: \
 only extract what's CLEARLY in the turn; don't infer.
 
+DATE-RESOLUTION RULES (CRITICAL — break these and goals get the wrong year):
+  - The current date is given inline below as "Today: YYYY-MM-DD". USE IT.
+  - When the user gives a month/day with no year ("May 18", "05/18"), the
+    year is the NEXT FUTURE occurrence relative to Today. Never default to
+    the year you were trained on. Never produce a target_date_iso in the
+    past.
+  - When the user says "in N weeks" / "by EOM" / "next Friday", compute
+    the actual ISO date relative to Today.
+  - If you cannot confidently resolve the year, OMIT target_date_iso. Do
+    NOT guess.
+
 Schema:
 {
   "new_goal": {                         // null if no change
@@ -215,8 +226,10 @@ def _llm_extract_state(user_msg: str, bot_reply: str) -> dict:
     client = cio.llm_client()
     if not client:
         return {}
+    today_iso = datetime.now().strftime("%Y-%m-%d")
     prompt = (_EXTRACTOR_PROMPT +
-              f"\n\nUser message: {user_msg!r}\n\n"
+              f"\n\nToday: {today_iso}\n\n"
+              f"User message: {user_msg!r}\n\n"
               f"Agent reply: {bot_reply!r}\n\nJSON:")
     try:
         # Use generation_config to request JSON mime type.
@@ -261,6 +274,28 @@ def extract_state(user_msg: str, bot_reply: str,
     # New goal
     g = parsed.get("new_goal")
     if g and (g.get("target_lbs") or g.get("target_kg")):
+        # Date sanity check — reject hallucinated past dates. The
+        # extractor sometimes defaults the year to its training-era
+        # anchor (2024) when the user gives a month-day with no year.
+        # Better to drop the date than write a goal that's already
+        # "in the past" the moment it lands.
+        td = g.get("target_date_iso")
+        if td:
+            try:
+                target_dt = datetime.fromisoformat(str(td)[:10])
+                today_dt = datetime.now().replace(
+                    hour=0, minute=0, second=0, microsecond=0)
+                if target_dt < today_dt:
+                    print(f"[extractor] rejecting past target_date_iso={td} "
+                          f"(today={today_dt.date()}); dropping date field")
+                    g = dict(g)              # don't mutate parsed dict
+                    g.pop("target_date_iso", None)
+                    g.setdefault("rationale", "")
+                    g["rationale"] = (g["rationale"] +
+                                      " [date dropped: past]").strip()
+            except Exception:
+                # Malformed date string — drop it rather than poison memory.
+                g = dict(g); g.pop("target_date_iso", None)
         rationale = g.get("rationale", "")
         eid = mem.put_entity(AGENT, Types.GOAL, g,
                              rationale=rationale, db_path=db_path)

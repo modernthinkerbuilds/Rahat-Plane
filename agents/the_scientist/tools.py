@@ -159,8 +159,17 @@ def get_active_goal() -> dict:
 
     sci = _sci()
     current = sci.latest_weight()
+    # Field names: extractor writes target_date_iso (canonical, matches the
+    # assembler in memory.py); some older callers wrote target_date. Accept
+    # both so we never miss a goal because of a naming drift.
     target_lbs = payload.get("target_lbs")
-    target_date = payload.get("target_date")
+    if target_lbs is None and payload.get("target_kg"):
+        try:
+            target_lbs = round(float(payload["target_kg"]) * 2.20462, 1)
+        except Exception:
+            pass
+    target_date = (payload.get("target_date_iso")
+                   or payload.get("target_date"))
     weeks_to = None
     pace_needed = None
     if isinstance(target_lbs, (int, float)) and target_date:
@@ -195,15 +204,17 @@ def get_active_goal() -> dict:
         "active": True,
         "current_lbs": round(current, 1),
         "target_lbs": target_lbs,
-        "target_date": target_date,
+        "target_date": target_date,                  # canonicalized
+        "target_date_iso": target_date,              # alias for assembler parity
         "weeks_to_target": weeks_to,
         "pace_needed_lb_per_week": pace_needed,
         "daily_intake_kcal": payload.get("daily_intake_kcal"),
         "weekly_active_kcal": payload.get("weekly_active_kcal") or weekly_committed,
         "weekly_active_committed_kcal": weekly_committed,
-        "tier": payload.get("tier"),
+        "tier": payload.get("recommended_tier") or payload.get("tier"),
         "committed_at": ent.get("created_at"),
-        "note": payload.get("note"),
+        "rationale": ent.get("rationale"),
+        "note": payload.get("note") or payload.get("rationale"),
     }
 
 
@@ -589,6 +600,103 @@ def set_recovery_tier(tier: str) -> dict:
         return {"ok": False, "reason": reason}
     text = sci.handle_set_tier(tier)
     return {"ok": True, "result_text": text, "charter_reason": reason}
+
+
+def commit_goal(target_lbs: float,
+                target_date_iso: str,
+                daily_intake_kcal: int | None = None,
+                weekly_active_kcal: int | None = None,
+                tier: str | None = None,
+                rationale: str = "") -> dict:
+    """Tool: write a goal to the memory substrate. Charter-gated.
+
+    The DETERMINISTIC path for capturing a user goal — call this when the
+    user clearly states a target ("I want to hit 198 by May 22"). Don't
+    rely on the post-hoc state extractor to catch it; that extractor uses
+    Gemini and can hallucinate years. This call is exact.
+
+    All fields validated:
+      - target_lbs:        70 ≤ x ≤ 400.
+      - target_date_iso:   YYYY-MM-DD; MUST be in the future. If the user
+                           gave a month-day without a year, the model
+                           must compute the next future occurrence based
+                           on the [Today: YYYY-MM-DD] stamp injected
+                           into every turn — never assume year 2024.
+      - daily_intake_kcal: 1200 ≤ x ≤ 4000 (when given).
+      - weekly_active_kcal: 1500 ≤ x ≤ 12000 (when given).
+      - tier:              one of the known tier names.
+
+    Auto-supersedes any prior active goal. Writes a goal entity + a
+    goal.committed event to the substrate. Subsequent get_active_goal()
+    calls and morning briefs will reflect it immediately.
+    """
+    # Range validation
+    if not (70 <= float(target_lbs) <= 400):
+        return {"ok": False, "reason": f"target_lbs out of range: {target_lbs}"}
+    try:
+        target_dt = datetime.fromisoformat(str(target_date_iso)[:10])
+    except Exception:
+        return {"ok": False,
+                "reason": f"target_date_iso must be YYYY-MM-DD, got {target_date_iso!r}"}
+    today_dt = datetime.now().replace(hour=0, minute=0, second=0,
+                                      microsecond=0)
+    if target_dt < today_dt:
+        return {"ok": False,
+                "reason": (f"target_date_iso {target_date_iso} is in the past "
+                           f"(today={today_dt.date()}). Did you mean "
+                           f"{target_date_iso[:4][:-1]}{int(target_date_iso[3])+1}"
+                           f"{target_date_iso[4:]}? Confirm the year.")}
+    if daily_intake_kcal is not None and not (1200 <= int(daily_intake_kcal) <= 4000):
+        return {"ok": False,
+                "reason": f"daily_intake_kcal out of range: {daily_intake_kcal}"}
+    if weekly_active_kcal is not None and not (1500 <= int(weekly_active_kcal) <= 12000):
+        return {"ok": False,
+                "reason": f"weekly_active_kcal out of range: {weekly_active_kcal}"}
+    valid_tiers = {"baseline", "performance", "hammer", "re_entry", "survival"}
+    if tier is not None and tier not in valid_tiers:
+        return {"ok": False,
+                "reason": f"unknown tier {tier!r}; expected one of {valid_tiers}"}
+
+    payload = {"target_lbs": float(target_lbs),
+               "target_date_iso": target_date_iso}
+    if daily_intake_kcal is not None:
+        payload["daily_intake_kcal"] = int(daily_intake_kcal)
+    if weekly_active_kcal is not None:
+        payload["weekly_active_kcal"] = int(weekly_active_kcal)
+    if tier:
+        payload["tier"] = tier
+        payload["recommended_tier"] = tier
+    payload["rationale"] = rationale or "user committed in chat"
+
+    ok, reason = _charter_check("commit_goal", payload)
+    if not ok:
+        return {"ok": False, "reason": reason}
+
+    try:
+        from core import memory as _mem
+        eid = _mem.put_entity("scientist", "goal", payload,
+                              rationale=payload["rationale"])
+        _mem.add_event("scientist", "goal.committed",
+                       payload={"entity_id": eid, "goal": payload})
+    except Exception as e:
+        return {"ok": False, "reason": f"memory write failed: {type(e).__name__}: {e}"}
+
+    # Compute weeks-to-target + pace-needed for the result.
+    sci = _sci()
+    current = sci.latest_weight()
+    days_to = max((target_dt - today_dt).days, 0)
+    weeks_to = round(days_to / 7.0, 1) if days_to else 0
+    pace = round((current - float(target_lbs)) / weeks_to, 2) if weeks_to else None
+
+    return {
+        "ok": True,
+        "entity_id": eid,
+        "goal": payload,
+        "current_lbs": round(current, 1),
+        "weeks_to_target": weeks_to,
+        "pace_needed_lb_per_week": pace,
+        "charter_reason": reason,
+    }
 
 
 def log_workout(kind: str, kcal: float, when: str = "today") -> dict:
@@ -1684,6 +1792,60 @@ SCHEMAS: list[dict] = [
         },
     },
     {
+        "name": "commit_goal",
+        "description": (
+            "Lock a weight-goal in the memory substrate. CHARTER-GATED. "
+            "ALWAYS call this when the user clearly states a target "
+            "('I want to hit 198 by May 22', 'goal: 80kg by EOY', 'aim "
+            "for 185 in 4 months'). This is the DETERMINISTIC commit "
+            "path — don't rely on the post-hoc state extractor; call "
+            "this explicitly. CRITICAL on dates: read the [Today: "
+            "YYYY-MM-DD] stamp injected in the user message; if the "
+            "user gives a month/day with no year, the year is the next "
+            "future occurrence after Today — never default to 2024 or "
+            "any past year. The tool rejects past dates; if you guess "
+            "wrong, you'll get a structured error and must ask the user "
+            "to confirm. After committing, surface the goal back to the "
+            "user (target_lbs, target_date, weeks_to_target, pace_needed)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "target_lbs": {
+                    "type": "number",
+                    "description": "Target weight in pounds (70-400)."
+                },
+                "target_date_iso": {
+                    "type": "string",
+                    "description": ("Target date as YYYY-MM-DD. Must be "
+                                    "in the future relative to Today.")
+                },
+                "daily_intake_kcal": {
+                    "type": "integer",
+                    "description": ("Daily intake in kcal that supports "
+                                    "the goal (1200-4000). Optional.")
+                },
+                "weekly_active_kcal": {
+                    "type": "integer",
+                    "description": ("Weekly active-burn target in kcal "
+                                    "(1500-12000). Optional.")
+                },
+                "tier": {
+                    "type": "string",
+                    "enum": ["baseline", "performance", "hammer",
+                             "re_entry", "survival"],
+                    "description": "Recommended tier for this goal."
+                },
+                "rationale": {
+                    "type": "string",
+                    "description": ("Why the user chose this — verbatim "
+                                    "or paraphrased from chat.")
+                },
+            },
+            "required": ["target_lbs", "target_date_iso"],
+        },
+    },
+    {
         "name": "tolerate_movement",
         "description": (
             "Add a movement (e.g. 'snatch in strength') to this week's "
@@ -1834,6 +1996,7 @@ _DISPATCH: dict[str, Callable[..., Any]] = {
     "analyze_diet":                        analyze_diet,
     # Write tools.
     "commit_picks":                        commit_picks,
+    "commit_goal":                         commit_goal,
     "tolerate_movement":                   tolerate_movement,
     "log_weight":                          log_weight,
     "log_workout":                         log_workout,
@@ -1874,6 +2037,6 @@ def to_json(obj: Any) -> str:
 
 
 # Names of write tools — for charter logging + safety filtering.
-WRITE_TOOLS = {"commit_picks", "tolerate_movement", "log_weight",
-               "log_workout", "log_hrv",
+WRITE_TOOLS = {"commit_picks", "commit_goal", "tolerate_movement",
+               "log_weight", "log_workout", "log_hrv",
                "swap_day", "set_recovery_tier"}

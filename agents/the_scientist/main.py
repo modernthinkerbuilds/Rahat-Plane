@@ -2633,7 +2633,14 @@ def maybe_morning_briefing() -> str | None:
         for ent in _mem.list_entities("scientist", type="goal"):
             payload = ent.get("payload") or {}
             tlbs = payload.get("target_lbs")
-            tdate = payload.get("target_date")
+            if tlbs is None and payload.get("target_kg"):
+                try:
+                    tlbs = round(float(payload["target_kg"]) * 2.20462, 1)
+                except Exception:
+                    pass
+            # Extractor canonical key is target_date_iso; tolerate target_date too.
+            tdate = (payload.get("target_date_iso")
+                     or payload.get("target_date"))
             if tlbs and tdate:
                 goal_line = (f"\n🎯 Goal: *{tlbs} lbs by "
                              f"{str(tdate)[:10]}* (committed).")
