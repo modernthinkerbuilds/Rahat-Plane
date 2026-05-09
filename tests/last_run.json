@@ -1,0 +1,52 @@
+[
+  {
+    "name": "unit",
+    "passed": true,
+    "duration_s": 0.15350914001464844,
+    "summary": "12 passed in 0.04s",
+    "n_passed": 12,
+    "n_failed": 0,
+    "n_skipped": 0,
+    "raw_output": "............                                                             [100%]\n12 passed in 0.04s\n"
+  },
+  {
+    "name": "contract",
+    "passed": true,
+    "duration_s": 0.22484683990478516,
+    "summary": "30 passed in 0.12s",
+    "n_passed": 30,
+    "n_failed": 0,
+    "n_skipped": 0,
+    "raw_output": "..............................                                           [100%]\n30 passed in 0.12s\n"
+  },
+  {
+    "name": "eval",
+    "passed": true,
+    "duration_s": 0.23749661445617676,
+    "summary": "43 passed, 1 skipped in 0.13s",
+    "n_passed": 43,
+    "n_failed": 0,
+    "n_skipped": 1,
+    "raw_output": "...........................................s                             [100%]\n=========================== short test summary info ============================\nSKIPPED [1] ../../../awesome-serene-sagan/mnt/rahat/tests/evals/test_scientist_conversation.py:409: LLM-as-judge disabled (set GEMINI_API_KEY + RAHAT_RUN_JUDGE=1)\n43 passed, 1 skipped in 0.13s\n"
+  },
+  {
+    "name": "adversarial",
+    "passed": true,
+    "duration_s": 0.2619662284851074,
+    "summary": "14 passed in 0.15s",
+    "n_passed": 14,
+    "n_failed": 0,
+    "n_skipped": 0,
+    "raw_output": "..............                                                           [100%]\n14 passed in 0.15s\n"
+  },
+  {
+    "name": "regression",
+    "passed": true,
+    "duration_s": 0.2068636417388916,
+    "summary": "17 passed in 0.09s",
+    "n_passed": 17,
+    "n_failed": 0,
+    "n_skipped": 0,
+    "raw_output": ".................                                                        [100%]\n17 passed in 0.09s\n"
+  }
+]

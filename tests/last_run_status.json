@@ -1,0 +1,47 @@
+{
+  "pass": true,
+  "rc": 0,
+  "date": "2026-05-09",
+  "time": "0930",
+  "branch": "nightly/2026-05-09",
+  "had_uncommitted": true,
+  "auto_commit_disabled": false,
+  "layers": [
+    {
+      "name": "unit",
+      "passed": true,
+      "n_passed": 12,
+      "n_failed": 0,
+      "n_skipped": 0
+    },
+    {
+      "name": "contract",
+      "passed": true,
+      "n_passed": 30,
+      "n_failed": 0,
+      "n_skipped": 0
+    },
+    {
+      "name": "eval",
+      "passed": true,
+      "n_passed": 43,
+      "n_failed": 0,
+      "n_skipped": 1
+    },
+    {
+      "name": "adversarial",
+      "passed": true,
+      "n_passed": 14,
+      "n_failed": 0,
+      "n_skipped": 0
+    },
+    {
+      "name": "regression",
+      "passed": true,
+      "n_passed": 17,
+      "n_failed": 0,
+      "n_skipped": 0
+    }
+  ],
+  "failed_layers": []
+}

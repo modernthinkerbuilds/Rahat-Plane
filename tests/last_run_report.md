@@ -2,12 +2,12 @@
 
 | Layer | Status | Passed | Failed | Skipped | Time |
 |---|---|---:|---:|---:|---:|
-| `unit` | ✅ | 12 | 0 | 0 | 0.17s |
-| `contract` | ✅ | 30 | 0 | 0 | 0.26s |
-| `eval` | ✅ | 43 | 0 | 1 | 0.26s |
-| `adversarial` | ✅ | 14 | 0 | 0 | 0.32s |
-| `regression` | ✅ | 17 | 0 | 0 | 0.22s |
-| **total** | ✅ | **116** | **0** | **1** | **1.23s** |
+| `unit` | ✅ | 12 | 0 | 0 | 0.15s |
+| `contract` | ✅ | 30 | 0 | 0 | 0.22s |
+| `eval` | ✅ | 43 | 0 | 1 | 0.24s |
+| `adversarial` | ✅ | 14 | 0 | 0 | 0.26s |
+| `regression` | ✅ | 17 | 0 | 0 | 0.21s |
+| **total** | ✅ | **116** | **0** | **1** | **1.08s** |
 
 ## Layers
 - **unit** — Pure-function unit tests (voice, helpers, no I/O).
