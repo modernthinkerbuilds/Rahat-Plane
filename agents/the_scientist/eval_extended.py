@@ -33,6 +33,12 @@ from pathlib import Path
 from typing import Any, Callable
 
 # ─────────────────────────── Setup (mirrors eval_suite.py) ───────────────────────────
+# Force legacy regex dispatch — this suite asserts the deterministic
+# handler-level contract. The model-first reasoner has its own suite
+# in `eval_reasoner.py` (B8 cases). Without this flag, sci.route() goes
+# through the reasoner → Gemini stub → garbled assertions.
+os.environ.setdefault("RAHAT_LEGACY_DISPATCH", "1")
+
 g = types.ModuleType("google"); sys.modules["google"] = g
 ga = types.ModuleType("google.genai"); sys.modules["google.genai"] = ga
 class _StubClient:
@@ -815,8 +821,13 @@ def _b7_pick_then_swap_then_show():
     sci.route("pick Mon Tue Fri for crossfit")
     sci.route("swap Tue for Wed")
     out = sci.route("show plan")
-    # Wed should now be a CF day
-    assert "Wed: CrossFit" in out, out
+    # Wed should now be a CF day. Note: when Wed is in the past with
+    # zero burn (no raw_vitals data in this fixture), the missed-
+    # workout detector strikes through the label — that's correct
+    # behavior, but the underlying day_type is still 'cf'. Match either
+    # plain or strikethrough form.
+    import re as _re
+    assert _re.search(r"Wed:\s*~?~?CrossFit", out), out
 
 
 def _b7_clear_after_overrides_resets():

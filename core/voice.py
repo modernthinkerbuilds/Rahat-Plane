@@ -138,16 +138,27 @@ def _classify(text: str) -> str:
 #   - LLM fallback responses (the LLM already speaks Hyderabadi via prompt)
 #   - Error messages
 #   - Already-Hyderabadi messages (idempotent — don't double-dress)
+#
+# `_SKIP_PATTERNS` only carries the non-Hyderabadi triggers (errors,
+# llm-error prefixes). Already-dressed detection is delegated to
+# `is_dressed()` so the comprehensive opener phrasebook is the single
+# source of truth — adding a phrase to OPENERS only requires updating
+# is_dressed(), not this list. Otherwise non-listed openers (e.g.
+# "*Scale bole to*" for weight) survive _should_skip and the second
+# dress() pass stacks another opener on top — a silent idempotency bug.
 _SKIP_PATTERNS = [
     re.compile(r"^❌"),                             # error
     re.compile(r"^\[llm-error", re.I),              # llm error
-    re.compile(r"\bhau bhai\b", re.I),              # already dressed
-    re.compile(r"\bsuno miya\b", re.I),             # already dressed
 ]
 
 
 def _should_skip(text: str) -> bool:
-    return any(p.search(text) for p in _SKIP_PATTERNS)
+    if any(p.search(text) for p in _SKIP_PATTERNS):
+        return True
+    # Comprehensive "already dressed" check via the public is_dressed
+    # phrasebook — defined below; safe because _should_skip is only
+    # called from dress() which runs at function-call time.
+    return is_dressed(text)
 
 
 # ─────────────────────────── Public API ───────────────────────────

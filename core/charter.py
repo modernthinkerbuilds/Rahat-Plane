@@ -131,6 +131,12 @@ def review(wo: WorkOrder, *, ctx: dict | None = None,
             running_payload.update(v.patch)
             reasons.append(f"{name}: {v.reason}")
             final = Verdict("modified", "; ".join(reasons), patch=running_payload)
+        # Approve verdicts that carry a reason (e.g. "urgent — bypassed
+        # quiet hours") must surface in the audit log too. Without this,
+        # reading governance_log gives "approved" with no insight into
+        # which policy chose to make an exception or why.
+        if v.decision == "approved" and v.reason:
+            reasons.append(f"{name}: {v.reason}")
 
     if final.decision == "approved" and reasons:
         # Carry forward "approved with notes" so audit shows what fired.

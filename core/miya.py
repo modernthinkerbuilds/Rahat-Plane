@@ -57,6 +57,86 @@ def clear_registry() -> None:
     _AGENTS.clear()
 
 
+# ─────────────────────────── Supervisor formalization (2026-05-08) ───────────────────────────
+# Miya is the supervisor in the LangGraph sense: an explicit router
+# with declared agent capabilities. Today this is regex + LLM
+# classifier. Below we add an explicit capability registry and a
+# cross-agent memory broker so future agents (Bajrangi, Foodie, etc.)
+# plug in cleanly without touching Miya core.
+
+def list_capabilities() -> list[dict]:
+    """Return a manifest of every registered agent's capabilities.
+    Used by `rahat agents` CLI and by cross-agent reasoning."""
+    return [
+        {
+            "name":        a.name,
+            "version":     getattr(a, "version", "0.0.0"),
+            "description": a.description,
+            "triggers":    list(a.triggers),
+        }
+        for a in _AGENTS
+    ]
+
+
+def cross_agent_query(*,
+                      type: str | None = None,
+                      requesting_agent: str = "miya",
+                      db_path: str | None = None) -> list[dict]:
+    """Cross-agent broker: another agent (or Miya itself) asks for
+    entities of `type` across the whole mesh. Logs the read for
+    observability — eventually we'll add capability checks here so
+    e.g. the Scientist can't read Bajrangi's private state without a
+    declared dependency.
+    """
+    from core import memory as mem
+    results = mem.cross_agent_list(type=type, db_path=db_path)
+    mem.add_event(
+        "miya", "cross_agent.query",
+        payload={"type": type, "requesting": requesting_agent,
+                 "n_results": len(results)},
+        db_path=db_path)
+    return results
+
+
+def cross_agent_recent_events(*,
+                              kinds: list[str] | None = None,
+                              since_hours: int = 24,
+                              requesting_agent: str = "miya",
+                              limit: int = 50,
+                              db_path: str | None = None) -> list[dict]:
+    """Cross-agent broker for events. Useful when one agent needs
+    recent activity from another (e.g. Scientist asking 'has Bajrangi
+    flagged anything in the last 24h?').
+    """
+    from core import memory as mem
+    # No agent filter — read across all agents.
+    where = ["ts >= datetime('now', ?)"]
+    params = [f"-{int(since_hours)} hours"]
+    if kinds:
+        placeholders = ",".join("?" for _ in kinds)
+        where.append(f"kind IN ({placeholders})")
+        params.extend(kinds)
+    sql = (f"SELECT * FROM memory_events WHERE {' AND '.join(where)} "
+           f"ORDER BY event_id DESC LIMIT ?")
+    params.append(int(limit))
+    con = mem._connect(db_path)
+    try:
+        cur = con.execute(sql, params)
+        rows = []
+        for row in cur.fetchall():
+            d = {col[0]: v for col, v in zip(cur.description, row)}
+            d["payload"] = mem._parse_payload(d.get("payload"))
+            rows.append(d)
+        return rows
+    finally:
+        con.close()
+    mem.add_event(
+        "miya", "cross_agent.events",
+        payload={"kinds": kinds, "since_hours": since_hours,
+                 "requesting": requesting_agent, "n": len(rows)},
+        db_path=db_path)
+
+
 # ─────────────────────────── Routing ───────────────────────────
 def _matching_agents(msg: str) -> list[Agent]:
     return [a for a in _AGENTS if a.matches(msg)]

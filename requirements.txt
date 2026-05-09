@@ -1,0 +1,22 @@
+# Rahat runtime dependencies.
+#
+# Pin to floor versions; Google moves fast and we want Dependabot/manual
+# upgrades to be conscious. CI re-runs the eval suite on every dep bump
+# so regressions surface quickly.
+#
+# Generated 2026-05-07, updated 2026-05-08 to remove anthropic. See
+# specs/MODEL-FIRST-PIVOT.md §1 for the strategic context.
+#
+# Roles:
+#   - google-genai — primary reasoner (Gemini 2.5 Flash default, 2.5 Pro
+#     for high-stakes intents) + Miya classifier
+#   - requests, fastapi, uvicorn — Telegram poll loop + SugarWOD bridge HTTP
+#   - python-dotenv — per-machine .env loading
+#   - pydantic — typed payloads for the bridge
+
+google-genai>=0.3.0
+requests>=2.31.0
+python-dotenv>=1.0.0
+fastapi>=0.110.0
+uvicorn>=0.27.0
+pydantic>=2.6.0

@@ -30,7 +30,26 @@ load_dotenv()
 # ─────────────────────────── Paths ───────────────────────────
 # Rahat root is two levels up from this file: core/io.py → core/ → repo root.
 ROOT = Path(__file__).resolve().parent.parent
-DB_PATH = ROOT / "vault" / "rahat.db"
+
+# Test-mode guard. When `RAHAT_TEST_MODE=1` is set, the live DB path is
+# replaced by a per-process temp file so eval suites and ad-hoc smoke
+# tests can never accidentally pollute the production DB. The 2026-05-08
+# corruption incident was caused by smoke tests writing through Path.home()
+# into the live vault/rahat.db; this guard makes that class of error
+# impossible regardless of how DB_PATH gets set later.
+def _resolve_db_path() -> Path:
+    if os.environ.get("RAHAT_TEST_MODE", "").lower() in ("1", "true", "yes"):
+        import tempfile
+        # One sandbox per process — each test process gets its own.
+        sandbox = Path(tempfile.gettempdir()) / f"rahat_test_{os.getpid()}.db"
+        return sandbox
+    explicit = os.environ.get("RAHAT_DB_PATH")
+    if explicit:
+        return Path(explicit)
+    return ROOT / "vault" / "rahat.db"
+
+
+DB_PATH = _resolve_db_path()
 
 
 def db(path: Path | str | None = None) -> sqlite3.Connection:
@@ -38,8 +57,20 @@ def db(path: Path | str | None = None) -> sqlite3.Connection:
 
     Pass `path` to override (used by the eval harness with an isolated DB).
     Callers must close the connection — typically via try/finally.
+
+    Safety: if `RAHAT_TEST_MODE=1` is set, even calls with an explicit
+    path that points at the live `vault/rahat.db` get redirected to the
+    per-process sandbox. This prevents accidental writes to production.
     """
-    return sqlite3.connect(str(path) if path else str(DB_PATH))
+    if path is None:
+        return sqlite3.connect(str(DB_PATH))
+    target = Path(path)
+    if (os.environ.get("RAHAT_TEST_MODE", "").lower() in ("1", "true", "yes")
+            and target.name == "rahat.db"
+            and "vault" in str(target)):
+        # Caller meant the live DB but we're in test mode — sandbox it.
+        target = _resolve_db_path()
+    return sqlite3.connect(str(target))
 
 
 # ─────────────────────────── Telegram ───────────────────────────
@@ -154,15 +185,58 @@ def llm_pick_flash_model() -> str:
 def llm_generate(prompt: str, *, model: str | None = None) -> str:
     """One-shot text generation. Returns the model's text, or "" if no
     client is configured (dev / eval mode).
+
+    NOTE: This is the legacy contract — string in, string out. New callers
+    should prefer `llm_generate_with_usage` so token + cost telemetry can
+    flow into the decisions ledger.
     """
+    return llm_generate_with_usage(prompt, model=model).text
+
+
+def llm_generate_with_usage(prompt: str, *,
+                            model: str | None = None) -> "GeminiUsage":
+    """Like `llm_generate` but returns a `GeminiUsage` carrying token
+    counts and the dollar cost. Mirrors `core.anthropic_io.Usage` so
+    callers can write a single `decisions.span` exit no matter which
+    provider they used.
+    """
+    from core import cost as ccost  # local import — avoid a cycle on first import
+
+    model_id = model or llm_pick_flash_model()
     c = llm_client()
     if not c:
-        return ""
+        return GeminiUsage(text="", model=model_id, error="gemini-not-configured")
     try:
-        resp = c.models.generate_content(
-            model=model or llm_pick_flash_model(),
-            contents=prompt,
-        )
-        return getattr(resp, "text", "") or ""
+        resp = c.models.generate_content(model=model_id, contents=prompt)
     except Exception as e:
-        return f"[llm-error: {e}]"
+        return GeminiUsage(text="", model=model_id,
+                           error=f"{type(e).__name__}: {e}")
+
+    text = getattr(resp, "text", "") or ""
+    # Gemini exposes usage as `usage_metadata.{prompt,candidates,total}_token_count`.
+    u = getattr(resp, "usage_metadata", None)
+    tokens_in = int(getattr(u, "prompt_token_count", 0) or 0) if u else 0
+    tokens_out = int(getattr(u, "candidates_token_count", 0) or 0) if u else 0
+    return GeminiUsage(
+        text=text,
+        model=model_id,
+        tokens_in=tokens_in,
+        tokens_out=tokens_out,
+        cost_usd=ccost.cost_usd(model_id, tokens_in, tokens_out),
+    )
+
+
+# Lightweight return type — kept here (not in core/cost.py) so callers
+# only need to import `core.io` for Gemini calls. Anthropic has a richer
+# `Usage` (cache fields) in `core.anthropic_io`.
+from dataclasses import dataclass
+
+
+@dataclass
+class GeminiUsage:
+    text: str = ""
+    model: str = ""
+    tokens_in: int = 0
+    tokens_out: int = 0
+    cost_usd: float = 0.0
+    error: str | None = None

@@ -150,6 +150,16 @@ def _db():
     """
     con = sqlite3.connect(DB_PATH)
     con.executescript(
+        # Watch / ingestor tables — owned upstream but auto-migrated
+        # here so a freshly-initialized DB doesn't fail when tests
+        # (or first-boot Scientist) reads from them.
+        "CREATE TABLE IF NOT EXISTS raw_vitals ("
+        " metric_type TEXT, value REAL, timestamp TEXT);"
+        "CREATE TABLE IF NOT EXISTS weekly_campaigns ("
+        " week_start DATE PRIMARY KEY,"
+        " target_active_calories REAL NOT NULL,"
+        " created_at DATETIME DEFAULT CURRENT_TIMESTAMP);"
+        # Scientist-owned state below.
         "CREATE TABLE IF NOT EXISTS nudge_log ("
         " kind TEXT, sent_at DATETIME DEFAULT CURRENT_TIMESTAMP, day DATE);"
         "CREATE TABLE IF NOT EXISTS hrv_log ("
@@ -319,14 +329,42 @@ def burn_last_week() -> tuple[float, datetime, datetime]:
 
 
 def weekly_target() -> float:
-    """User's locked weekly active-burn target. Sourced from the active tier
-    (performance=6000, baseline=5500, hammer=6500, …). The plan's day-type
-    sum (~5,150 for performance) only captures *scheduled* sessions; the
-    extra ~850 is daily NEAT. Returning the tier value keeps the headline
-    target (6,000) consistent with what the user committed to."""
+    """User's currently-active weekly active-burn target. Layered:
+
+      1. **Active commitment in memory substrate** (highest priority):
+         If the user has committed to a custom weekly_target ("I'll do
+         7,000 kcal/wk for 2 weeks" → memory_entities row of type
+         'commitment' with kind='weekly_target' and a future
+         valid_until), use THAT. This is the v2.0 model-first path.
+      2. **Tier table:** otherwise the active tier's `weekly` value
+         (performance=6000, baseline=5500, hammer=6500, etc.).
+      3. **Legacy weekly_campaigns table:** last-resort fallback for
+         databases that predate the tier system.
+
+    Tick nudges (pace check, morning brief) and `propose_replan` all
+    funnel through this single function so the user's active commitment
+    is respected by every calc-side path.
+    """
+    # ─── (1) Active commitment in memory substrate ───
+    try:
+        from core import memory as _mem
+        for ent in _mem.list_entities("scientist", type="commitment"):
+            payload = ent.get("payload") or {}
+            if payload.get("kind") == "weekly_target":
+                v = payload.get("value")
+                if isinstance(v, (int, float)) and v > 0:
+                    return float(v)
+    except Exception:
+        # Memory substrate unavailable (test env, fresh DB, etc.).
+        # Fall through silently to tier-based default.
+        pass
+
+    # ─── (2) Active tier ───
     tier = state_get("recovery_tier", DEFAULT_TIER)
     if tier in TIERS:
         return float(TIERS[tier]["weekly"])
+
+    # ─── (3) Legacy weekly_campaigns ───
     con = _db()
     try:
         row = con.execute(
@@ -2220,6 +2258,34 @@ def _parse_date(s: str) -> datetime | None:
 
 
 def route(msg: str) -> str:
+    """Top-level inbound dispatcher.
+
+    Phase 4 (model-first): default path is the reasoner in
+    `agents.the_scientist.reasoner.reason()`. Set
+    `RAHAT_LEGACY_DISPATCH=1` in env to fall back to the regex+handler
+    dispatcher (preserved as `_legacy_route` below). The legacy path
+    will be deleted after the reasoner has logged a clean week per
+    specs/MODEL-FIRST-PIVOT.md §6 Phase 4.
+
+    Reasoner failures (Anthropic + Gemini both down) automatically
+    cascade into the legacy path, so this is also the live resilience
+    boundary.
+    """
+    if os.getenv("RAHAT_LEGACY_DISPATCH", "").lower() in ("1", "true", "yes"):
+        return _legacy_route(msg)
+    try:
+        from agents.the_scientist import reasoner
+        return reasoner.reason(msg)
+    except Exception as e:
+        # Hard fail in the reasoner code itself (not a model error) — last
+        # resort to legacy. Tools' charter / DB errors are caught inside
+        # the reasoner and should never bubble here, but if they do we
+        # don't want the user to see a stack trace in Telegram.
+        print(f"[scientist.route] reasoner crash, falling back: {e}")
+        return _legacy_route(msg)
+
+
+def _legacy_route(msg: str) -> str:
     # Normalize iOS / Telegram autocorrect characters BEFORE any regex runs
     # — most regexes assume ASCII apostrophes. Curly apostrophe (U+2019)
     # in "can't" was the cause of the 02:19 AM bug where "I can't workout
@@ -2554,10 +2620,31 @@ def maybe_morning_briefing() -> str | None:
     # to close the gap. This is the "review every morning + tell me how
     # to get to the goal" loop.
     recalc = compute_week_recalibration(now)
+    # Surface the active goal/commitment if one exists in the memory
+    # substrate — so morning briefs reflect the user's real-time intent
+    # (e.g. hammer week pushing for 198 lbs by May 22) rather than just
+    # the locked default plan.
+    goal_line = ""
+    try:
+        from core import memory as _mem
+        # list_entities() defaults to status='active' and excludes
+        # entities past their valid_until — anything returned here is
+        # currently in force.
+        for ent in _mem.list_entities("scientist", type="goal"):
+            payload = ent.get("payload") or {}
+            tlbs = payload.get("target_lbs")
+            tdate = payload.get("target_date")
+            if tlbs and tdate:
+                goal_line = (f"\n🎯 Goal: *{tlbs} lbs by "
+                             f"{str(tdate)[:10]}* (committed).")
+                break
+    except Exception:
+        pass
     base = (
         f"☀️ *Morning brief — {WEEKDAY_NAME[row['weekday']]}*\n"
         f"Today: *{kind}*{gym}. Ideal burn: {fmt_kcal(row['target_kcal'])}.\n"
         f"Week so far: {fmt_kcal(burned)} / {fmt_kcal(target)}."
+        f"{goal_line}"
     )
     extra_lines: list[str] = []
     # Surface missed workouts FIRST — they're often the cause of the
@@ -2709,13 +2796,72 @@ def maybe_weekly_reset() -> str | None:
 
 
 # ─────────────────────────── Loop ─────────────────────────────
+# Telegram has a hard 4096-char per-message limit. Long-form coaching
+# replies (Gemini-style meal plans + weekly schedule + roadmap) can run
+# 5–8K chars. We split on paragraph boundaries to preserve readability,
+# fall back to mid-message splits if a single paragraph exceeds the
+# cap, and log every send result so failures surface in the log.
+_TELEGRAM_MAX_CHARS = 4000  # 96-char headroom for the parse_mode wrapper
+
+
+def _split_for_telegram(text: str, limit: int = _TELEGRAM_MAX_CHARS) -> list[str]:
+    """Split `text` into <= limit-char chunks. Prefer paragraph
+    boundaries (\\n\\n), fall back to single newlines, then to hard
+    char cuts as a last resort. Markdown formatting is preserved as
+    long as code-fence and bold-pair boundaries don't fall mid-chunk
+    — for that level of safety we'd need a markdown-aware splitter,
+    but at our message shapes paragraph splits are sufficient.
+    """
+    if len(text) <= limit:
+        return [text]
+    chunks: list[str] = []
+    remaining = text
+    while len(remaining) > limit:
+        # Try paragraph split first.
+        cut = remaining.rfind("\n\n", 0, limit)
+        if cut < limit // 2:  # too early — try line split
+            cut = remaining.rfind("\n", 0, limit)
+        if cut < limit // 2:  # still too early — hard cut at space
+            cut = remaining.rfind(" ", 0, limit)
+        if cut < 1:
+            cut = limit  # last resort — split mid-token
+        chunks.append(remaining[:cut].rstrip())
+        remaining = remaining[cut:].lstrip()
+    if remaining:
+        chunks.append(remaining)
+    return chunks
+
+
 def send(text: str) -> None:
     if not (TOKEN and CHAT_ID):
         print(text)
         return
-    requests.post(
-        f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-        json={"chat_id": CHAT_ID, "text": text, "parse_mode": "Markdown"})
+    chunks = _split_for_telegram(text)
+    for i, chunk in enumerate(chunks):
+        try:
+            r = requests.post(
+                f"https://api.telegram.org/bot{TOKEN}/sendMessage",
+                json={"chat_id": CHAT_ID, "text": chunk,
+                      "parse_mode": "Markdown"},
+                timeout=15)
+            if not r.ok:
+                # Telegram returns 400 for malformed Markdown — retry
+                # without parse_mode so the user sees the text rather
+                # than nothing.
+                print(f"[send] HTTP {r.status_code}: {r.text[:200]} — "
+                      f"retrying chunk {i+1}/{len(chunks)} as plain text")
+                r2 = requests.post(
+                    f"https://api.telegram.org/bot{TOKEN}/sendMessage",
+                    json={"chat_id": CHAT_ID, "text": chunk},
+                    timeout=15)
+                if not r2.ok:
+                    print(f"[send] FALLBACK FAILED: HTTP {r2.status_code}: "
+                          f"{r2.text[:200]}")
+            elif len(chunks) > 1:
+                print(f"[out] sent chunk {i+1}/{len(chunks)} ({len(chunk)} chars)")
+        except Exception as e:
+            print(f"[send] EXCEPTION on chunk {i+1}/{len(chunks)}: "
+                  f"{type(e).__name__}: {e}")
 
 
 def start():

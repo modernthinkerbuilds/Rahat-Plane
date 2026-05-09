@@ -4,12 +4,18 @@ Runs against an ISOLATED copy of vault/rahat.db (never touches the live
 file — lesson learned the hard way). Each test asserts a substring is
 present in the response. ~60 cases organized by category.
 
+Asserts the legacy regex+handler dispatch contract. The model-first
+reasoner has its own suite in `eval_reasoner.py` (B8 cases). Forcing
+`RAHAT_LEGACY_DISPATCH=1` here keeps the contract crisp regardless of
+which dispatcher is the production default.
+
 Run: python3 agents/the_scientist/eval_suite.py
 """
 from __future__ import annotations
 
 import importlib.util
 import os
+os.environ.setdefault("RAHAT_LEGACY_DISPATCH", "1")
 import shutil
 import sqlite3
 import sys
