@@ -607,8 +607,8 @@ A test-isolation guard (`RAHAT_TEST_MODE=1` in env, implemented in `core/io.py`)
 
 ### 11.7 Coverage
 
-- `agents/the_scientist/eval_memory.py` — 22 cases (M1–M6) covering substrate primitives, archival, adapters, sleep-time consolidation, cross-agent broker, reasoner integration
-- `agents/the_scientist/eval_gemini_pdf_usecases.py` — 33 cases (P1–P33) verifying every conversational pattern from the reference Gemini coaching thread is supported (P1–P27 from the PDF + P28–P33 enabled by the new memory layer)
+- `tests/scientist/eval_memory.py` — 22 cases (M1–M6) covering substrate primitives, archival, adapters, sleep-time consolidation, cross-agent broker, reasoner integration
+- `tests/scientist/eval_gemini_pdf_usecases.py` — 33 cases (P1–P33) verifying every conversational pattern from the reference Gemini coaching thread is supported (P1–P27 from the PDF + P28–P33 enabled by the new memory layer)
 
 ---
 
@@ -752,14 +752,13 @@ This is the architecture's leverage. The cost of agent #20 should be roughly the
 ## 14. Appendix: test inventory (v2.0)
 
 ```
-agents/the_scientist/eval_suite.py                — 148 cases — legacy regex dispatcher
-agents/the_scientist/eval_via_agent.py            — 148 cases — wrapper parity
-agents/the_scientist/eval_extended.py             —  54 cases — 7-dim regression (B1–B7)
-agents/the_scientist/eval_reasoner.py             —  10 cases — model-first loop (B8)
-agents/the_scientist/eval_reasoner_robust.py      —  21 cases — adversarial / fuzz / charter (R1–R8)
-agents/the_scientist/eval_gemini_parity.py        —  39 cases — coaching patterns + invariants (G1–G38)
-agents/the_scientist/eval_memory.py               —  22 cases — memory architecture (M1–M6)
-agents/the_scientist/eval_gemini_pdf_usecases.py  —  33 cases — PDF use-case coverage (P1–P33)
+tests/scientist/eval_suite.py                — 148 cases — legacy regex dispatcher
+tests/scientist/eval_extended.py             —  54 cases — 7-dim regression (B1–B7)
+tests/scientist/eval_reasoner.py             —  10 cases — model-first loop (B8)
+tests/scientist/eval_reasoner_robust.py      —  21 cases — adversarial / fuzz / charter (R1–R8)
+tests/scientist/eval_gemini_parity.py        —  39 cases — coaching patterns + invariants (G1–G38)
+tests/scientist/eval_memory.py               —  22 cases — memory architecture (M1–M6)
+tests/scientist/eval_gemini_pdf_usecases.py  —  33 cases — PDF use-case coverage (P1–P33)
                                                   ─────
                                                     475 — total, 100% passing
 ```
@@ -801,7 +800,7 @@ for s in suites:
 CI-gate this set; refuse to merge or deploy on red. Live eval is the recommended post-deploy smoke test:
 
 ```bash
-RAHAT_EVAL_LIVE=1 python3 agents/the_scientist/eval_reasoner_live.py
+RAHAT_EVAL_LIVE=1 python3 tests/scientist/eval_reasoner_live.py
 ```
 
 — End of architecture document v2.0 —

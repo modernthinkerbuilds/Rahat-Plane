@@ -29,9 +29,9 @@ touching the launchd config again.
 
 ```bash
 cd ~/developer/agency/rahat
-python3 agents/the_scientist/eval_suite.py     # → 125/125
-python3 agents/the_scientist/eval_via_agent.py # → 125/125
-python3 agents/the_scientist/eval_extended.py  # → 36/36
+python3 tests/scientist/eval_suite.py     # → 125/125
+python3 tests/scientist/eval_via_agent.py # → 125/125
+python3 tests/scientist/eval_extended.py  # → 36/36
 ```
 
 If any of those are red, **stop**. The cutover is not safe.

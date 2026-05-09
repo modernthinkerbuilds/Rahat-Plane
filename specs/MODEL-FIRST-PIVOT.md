@@ -33,7 +33,7 @@
 >     a single concatenated string (Gemini's `system_instruction` shape).
 >   - `agents/the_scientist/reasoner.py` — Gemini-primary, two-tier
 >     fallback ladder is now Gemini → legacy regex. No third tier.
->   - `agents/the_scientist/eval_reasoner.py` — same 10 B8 tests, same
+>   - `tests/scientist/eval_reasoner.py` — same 10 B8 tests, same
 >     contract, Gemini-shaped stubs.
 >   - `requirements.txt` — `anthropic` dropped.
 >

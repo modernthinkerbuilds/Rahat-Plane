@@ -369,7 +369,7 @@ core/decisions.py                          modify — populate tokens/cost on sp
 core/miya.py                               modify — LRU cache + smaller prompt path
 agents/the_scientist/main.py               modify — llm_coach → Haiku, prompt restructured
 agents/the_scientist/coach_system.py       new    — extracted static system prompt
-agents/the_scientist/eval_extended.py      modify — live-mode Hyderabadi assertion
+tests/scientist/eval_extended.py      modify — live-mode Hyderabadi assertion
 scripts/llm_cost_report.py                 new    — daily cost CLI
 specs/LLM-COST-OPTIMIZATION.md             this doc
 ```

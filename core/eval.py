@@ -1,6 +1,6 @@
 """core.eval — generalized eval harness for any agent.
 
-Lifts the pattern from `agents/the_scientist/eval_suite.py` so every
+Lifts the pattern from `tests/scientist/eval_suite.py` so every
 agent can ship its own cases without re-implementing isolation, DB
 seeding, or reporting. The Scientist's existing 125-case suite remains
 the gold standard for behavioral expectations; new agents add their own
@@ -218,7 +218,7 @@ def _main(argv: list[str]) -> int:
     """python -m core.eval <agent_dotted_path> [--cases path/to/cases.yaml]
 
     For Phase Now, the Scientist's cases are still in
-    `agents/the_scientist/eval_suite.py` (the gold-standard). This CLI
+    `tests/scientist/eval_suite.py` (the gold-standard). This CLI
     is the entry point for new agents to plug their cases.yaml in
     once the loader lands (Next phase).
     """

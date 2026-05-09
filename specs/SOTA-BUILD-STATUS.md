@@ -183,7 +183,7 @@ python3 scripts/memory_consolidate.py --skip-summaries
 # the structured state from the previous turns.
 
 # 5. (Optional) Run the live eval suite to confirm tool selection.
-RAHAT_EVAL_LIVE=1 python3 agents/the_scientist/eval_reasoner_live.py
+RAHAT_EVAL_LIVE=1 python3 tests/scientist/eval_reasoner_live.py
 
 # 6. Inspect memory state at any time.
 sqlite3 vault/rahat.db "SELECT type, COUNT(*) FROM memory_entities GROUP BY type"
@@ -201,8 +201,8 @@ agents/the_scientist/memory.py                       280 LOC
 agents/bajrangi/__init__.py                          11 LOC
 agents/bajrangi/memory.py                            120 LOC
 scripts/memory_consolidate.py                        250 LOC
-agents/the_scientist/eval_memory.py                  450 LOC
-agents/the_scientist/eval_gemini_pdf_usecases.py     500 LOC
+tests/scientist/eval_memory.py                  450 LOC
+tests/scientist/eval_gemini_pdf_usecases.py     500 LOC
 specs/SOTA-AGENT-ARCHITECTURE-REVIEW.md              350 LOC
 specs/MEMORY-AND-STATE-ARCHITECTURE.md (rev 2)       400 LOC
 specs/SOTA-BUILD-STATUS.md (this file)               180 LOC
