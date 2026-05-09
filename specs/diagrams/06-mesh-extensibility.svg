@@ -1,0 +1,188 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 1200 760" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="t6 d6">
+  <title id="t6">Rahat mesh extensibility — per-agent adapters over a shared substrate, ~1 day to onboard each new agent</title>
+  <desc id="d6">Scientist (live) and Bajrangi (stub) prove the architecture composes. Curriculum, Foodie, Voyager, Concierge plug in via the same pattern.</desc>
+
+  <style>
+    .bg { fill: #ffffff; }
+    .panel { fill: #f7f6f2; stroke: #e6e3da; stroke-width: 1; }
+    .panel-accent { fill: #fdf6f0; stroke: #d97757; stroke-width: 1.5; }
+    .accent { fill: #d97757; }
+    .ink { fill: #1a1a1a; font-family: ui-sans-serif, system-ui, sans-serif; }
+    .muted { fill: #6b6b6b; font-family: ui-sans-serif, system-ui, sans-serif; }
+    .h1 { font-weight: 600; font-size: 16px; }
+    .h2 { font-weight: 600; font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; }
+    .lbl { font-size: 11px; font-weight: 500; }
+    .small { font-size: 10px; }
+    .tiny { font-size: 9px; }
+    .box { fill: #ffffff; stroke: #e6e3da; stroke-width: 1; }
+    .box-accent { fill: #ffffff; stroke: #d97757; stroke-width: 1.5; }
+    .box-blue { fill: #f0f5fa; stroke: #6b88a8; stroke-width: 1; }
+    .arrow { stroke: #b8b3a6; stroke-width: 1.2; fill: none; }
+    .arrow-accent { stroke: #d97757; stroke-width: 1.4; fill: none; }
+    .arrow-blue { stroke: #6b88a8; stroke-width: 1.4; fill: none; }
+    .dashed { stroke-dasharray: 4 3; }
+  </style>
+
+  <defs>
+    <marker id="arr6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#b8b3a6"/>
+    </marker>
+    <marker id="arra6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#d97757"/>
+    </marker>
+    <marker id="arrb6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#6b88a8"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" width="1200" height="760"/>
+
+  <text class="ink h1" x="40" y="34">Mesh extensibility — same substrate, agent-specific lenses</text>
+  <text class="muted small" x="40" y="52">After the SOTA build: each future agent is ~1 day of work, not days. Compounding starts now.</text>
+
+  <!-- Top: Miya supervisor -->
+  <rect class="box-accent" x="380" y="80" width="440" height="64" rx="8"/>
+  <text class="ink lbl" x="600" y="106" text-anchor="middle" font-weight="600">Miya — single user-facing voice (supervisor)</text>
+  <text class="muted small" x="600" y="124" text-anchor="middle">routes inbound · brokers cross-agent reads · enforces Charter</text>
+  <text class="accent tiny" x="600" y="138" text-anchor="middle">declared capabilities · cross_agent_query · cross_agent_recent_events</text>
+
+  <!-- Live agents -->
+  <rect class="box-accent" x="60" y="180" width="240" height="200" rx="8"/>
+  <text class="ink lbl" x="180" y="202" text-anchor="middle" font-weight="600">Scientist</text>
+  <text class="accent tiny" x="180" y="216" text-anchor="middle">LIVE · 25 tools</text>
+  <line x1="76" y1="226" x2="284" y2="226" stroke="#e6e3da"/>
+  <text class="ink small" x="76" y="246">entity types:</text>
+  <text class="muted small" x="76" y="262">  goal · plan · commitment</text>
+  <text class="muted small" x="76" y="276">  tier_change</text>
+  <text class="ink small" x="76" y="298">tools (read):</text>
+  <text class="muted tiny" x="76" y="312">  get_week_burn · get_today_target</text>
+  <text class="muted tiny" x="76" y="324">  get_weight_timeline · assess_recovery</text>
+  <text class="ink small" x="76" y="346">tools (write, charter-gated):</text>
+  <text class="muted tiny" x="76" y="360">  log_weight · log_workout · log_hrv</text>
+  <text class="muted tiny" x="76" y="372">  commit_picks · swap_day</text>
+
+  <rect class="box-accent" x="320" y="180" width="240" height="200" rx="8"/>
+  <text class="ink lbl" x="440" y="202" text-anchor="middle" font-weight="600">Bajrangi</text>
+  <text class="accent tiny" x="440" y="216" text-anchor="middle">STUB · ~1 day to fill in</text>
+  <line x1="336" y1="226" x2="544" y2="226" stroke="#e6e3da"/>
+  <text class="ink small" x="336" y="246">entity types:</text>
+  <text class="muted small" x="336" y="262">  recovery_protocol</text>
+  <text class="muted small" x="336" y="276">  sleep_concern · hrv_window</text>
+  <text class="ink small" x="336" y="298">tools (planned):</text>
+  <text class="muted tiny" x="336" y="312">  get_hrv_trend · get_sleep_quality</text>
+  <text class="muted tiny" x="336" y="324">  prescribe_recovery · flag_concern</text>
+  <text class="muted tiny" x="336" y="336">  declare_protocol</text>
+  <text class="muted small" x="336" y="362">demonstrates: substrate composes</text>
+  <text class="muted tiny" x="336" y="374">  for non-Scientist agents</text>
+
+  <!-- Future agents -->
+  <rect class="box dashed" x="580" y="180" width="200" height="200" rx="8" stroke-dasharray="4 3"/>
+  <text class="ink lbl" x="680" y="202" text-anchor="middle" font-weight="600">Curriculum</text>
+  <text class="muted tiny" x="680" y="216" text-anchor="middle">Months 1–3</text>
+  <line x1="596" y1="226" x2="764" y2="226" stroke="#e6e3da" stroke-dasharray="2 2"/>
+  <text class="ink small" x="596" y="246">entity types:</text>
+  <text class="muted small" x="596" y="262">  lesson · milestone</text>
+  <text class="muted small" x="596" y="276">  behavior_log</text>
+  <text class="muted small" x="596" y="298">family-context aware:</text>
+  <text class="muted tiny" x="596" y="312">  toddler (3yr) + newborn</text>
+  <text class="muted tiny" x="596" y="324">  fragmented sleep impact</text>
+  <text class="accent tiny" x="680" y="362" text-anchor="middle">~1 day to onboard</text>
+
+  <rect class="box dashed" x="800" y="180" width="180" height="200" rx="8" stroke-dasharray="4 3"/>
+  <text class="ink lbl" x="890" y="202" text-anchor="middle" font-weight="600">Foodie</text>
+  <text class="muted tiny" x="890" y="216" text-anchor="middle">Months 3–6</text>
+  <line x1="816" y1="226" x2="964" y2="226" stroke="#e6e3da" stroke-dasharray="2 2"/>
+  <text class="ink small" x="816" y="246">entity types:</text>
+  <text class="muted small" x="816" y="262">  cuisine_focus</text>
+  <text class="muted small" x="816" y="276">  meal_log</text>
+  <text class="muted small" x="816" y="290">  dietary_phase</text>
+  <text class="muted small" x="816" y="312">vision-based meal audits</text>
+  <text class="muted tiny" x="816" y="326">  Photos integration</text>
+  <text class="accent tiny" x="890" y="362" text-anchor="middle">~1 day to onboard</text>
+
+  <rect class="box dashed" x="1000" y="180" width="160" height="200" rx="8" stroke-dasharray="4 3"/>
+  <text class="ink lbl" x="1080" y="202" text-anchor="middle" font-weight="600">Voyager</text>
+  <text class="muted tiny" x="1080" y="216" text-anchor="middle">Months 3–6</text>
+  <line x1="1016" y1="226" x2="1144" y2="226" stroke="#e6e3da" stroke-dasharray="2 2"/>
+  <text class="ink small" x="1016" y="246">entity types:</text>
+  <text class="muted small" x="1016" y="262">  trip · stop</text>
+  <text class="muted small" x="1016" y="276">  recall_corpus</text>
+  <text class="muted small" x="1016" y="298">"Find that Tokyo</text>
+  <text class="muted small" x="1016" y="312">  coffee place I bookmarked"</text>
+  <text class="accent tiny" x="1080" y="362" text-anchor="middle">~1 day to onboard</text>
+
+  <!-- Routing arrows from Miya to agents -->
+  <path class="arrow-accent" d="M 600 144 L 180 178" marker-end="url(#arra6)"/>
+  <path class="arrow-accent" d="M 600 144 L 440 178" marker-end="url(#arra6)"/>
+  <path class="arrow" d="M 600 144 L 680 178" marker-end="url(#arr6)"/>
+  <path class="arrow" d="M 600 144 L 890 178" marker-end="url(#arr6)"/>
+  <path class="arrow" d="M 600 144 L 1080 178" marker-end="url(#arr6)"/>
+
+  <!-- Universal substrate at the bottom -->
+  <rect class="panel-accent" x="40" y="420" width="1120" height="160" rx="8"/>
+  <text class="ink h2" x="60" y="444">Universal memory substrate (core/memory.py + core/archival.py)</text>
+  <text class="muted small" x="60" y="460">six primitives, agent-agnostic, single SQLite namespace, observable via decisions ledger + memory_events stream</text>
+
+  <rect class="box-blue" x="60" y="476" width="160" height="86" rx="6"/>
+  <text class="ink small" x="140" y="494" text-anchor="middle" font-weight="600">events</text>
+  <text class="muted tiny" x="140" y="508" text-anchor="middle">recall memory</text>
+  <text class="muted tiny" x="140" y="522" text-anchor="middle">append-only</text>
+  <text class="muted tiny" x="140" y="536" text-anchor="middle">~5K rows / day</text>
+
+  <rect class="box-blue" x="232" y="476" width="160" height="86" rx="6"/>
+  <text class="ink small" x="312" y="494" text-anchor="middle" font-weight="600">entities</text>
+  <text class="muted tiny" x="312" y="508" text-anchor="middle">core memory</text>
+  <text class="muted tiny" x="312" y="522" text-anchor="middle">JSON payload, lifecycle</text>
+  <text class="muted tiny" x="312" y="536" text-anchor="middle">~50 / agent / week</text>
+
+  <rect class="box-blue" x="404" y="476" width="160" height="86" rx="6"/>
+  <text class="ink small" x="484" y="494" text-anchor="middle" font-weight="600">threads</text>
+  <text class="muted tiny" x="484" y="508" text-anchor="middle">episodic memory</text>
+  <text class="muted tiny" x="484" y="522" text-anchor="middle">topic + summary</text>
+  <text class="muted tiny" x="484" y="536" text-anchor="middle">~10 / week</text>
+
+  <rect class="box-blue" x="576" y="476" width="160" height="86" rx="6"/>
+  <text class="ink small" x="656" y="494" text-anchor="middle" font-weight="600">preferences</text>
+  <text class="muted tiny" x="656" y="508" text-anchor="middle">semantic memory</text>
+  <text class="muted tiny" x="656" y="522" text-anchor="middle">sticky k/v</text>
+  <text class="muted tiny" x="656" y="536" text-anchor="middle">decay over time</text>
+
+  <rect class="box-blue" x="748" y="476" width="160" height="86" rx="6"/>
+  <text class="ink small" x="828" y="494" text-anchor="middle" font-weight="600">archival</text>
+  <text class="muted tiny" x="828" y="508" text-anchor="middle">long-term facts</text>
+  <text class="muted tiny" x="828" y="522" text-anchor="middle">vector-searchable</text>
+  <text class="muted tiny" x="828" y="536" text-anchor="middle">Gemini text-emb-004</text>
+
+  <rect class="box-blue" x="920" y="476" width="180" height="86" rx="6"/>
+  <text class="ink small" x="1010" y="494" text-anchor="middle" font-weight="600">relationships</text>
+  <text class="muted tiny" x="1010" y="508" text-anchor="middle">entity graph</text>
+  <text class="muted tiny" x="1010" y="522" text-anchor="middle">cross-agent links</text>
+  <text class="muted tiny" x="1010" y="536" text-anchor="middle">"Foodie trip ↔ Sci jet-lag"</text>
+
+  <!-- Arrows from agents down to substrate -->
+  <path class="arrow-blue" d="M 180 380 L 180 470" marker-end="url(#arrb6)"/>
+  <path class="arrow-blue" d="M 440 380 L 350 470" marker-end="url(#arrb6)"/>
+  <path class="arrow-blue dashed" d="M 680 380 L 520 470" marker-end="url(#arrb6)"/>
+  <path class="arrow-blue dashed" d="M 890 380 L 800 470" marker-end="url(#arrb6)"/>
+  <path class="arrow-blue dashed" d="M 1080 380 L 1010 470" marker-end="url(#arrb6)"/>
+
+  <!-- Sleep-time + cross-agent at bottom -->
+  <rect class="panel" x="40" y="600" width="540" height="120" rx="8"/>
+  <text class="ink h2" x="60" y="624">Sleep-time consolidation (cron 03:00)</text>
+  <text class="muted small" x="60" y="640">scripts/memory_consolidate.py — keeps memory dense across agents</text>
+  <text class="muted small" x="60" y="660">  · summarize threads (Gemini Flash, ~$0.001/run)</text>
+  <text class="muted small" x="60" y="676">  · decay preferences not reinforced &gt; 7d</text>
+  <text class="muted small" x="60" y="692">  · archive expired entities, GC events &gt; 365d</text>
+  <text class="muted small" x="60" y="708">  · purge unused archival entries</text>
+
+  <rect class="panel-accent" x="600" y="600" width="560" height="120" rx="8"/>
+  <text class="ink h2" x="620" y="624">Cross-agent reasoning (Miya broker)</text>
+  <text class="muted small" x="620" y="640">unlocked by unified substrate — was impossible with per-agent schemas</text>
+  <text class="muted small" x="620" y="660">  · "user mentioned Japan trip to Foodie" → Sci sees it for jet-lag</text>
+  <text class="muted small" x="620" y="676">  · "Bajrangi flagged HRV crash" → Sci tier defaults to re_entry</text>
+  <text class="muted small" x="620" y="692">  · "Curriculum noted toddler regression" → Bajrangi factors sleep</text>
+  <text class="muted small" x="620" y="708">  · all reads logged via memory_events for audit</text>
+
+  <text class="accent small" x="60" y="746">Year-1 target: ~20 agents. After this build: each new agent is 1 day to onboard. Compounding from agent #4.</text>
+</svg>

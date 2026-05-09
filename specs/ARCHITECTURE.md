@@ -1,15 +1,26 @@
 # Rahat: A Sovereign Intent Runtime for Personal AI Agents
 
 **Document Class:** Architecture Review (ARB-grade)
-**Version:** 1.0 (May 2026)
+**Version:** 2.0 (May 2026 — model-first reasoner + SOTA memory architecture)
 **Author:** Venkat Sadras, with architecture review by Claude (L8 framing)
-**Status:** Now-phase shipped; Next-phase deferred until trigger conditions land
+**Status:** Now-phase shipped; model-first pivot live; mesh-wide memory architecture shipped; Next-phase agents (Bajrangi, Curriculum, Foodie) ~1 day each to onboard.
+
+> **v2.0 update note (2026-05-08).** Three structural changes since v1.0:
+>
+>   1. **Model-first reasoner pivot.** The Scientist's regex-first dispatcher was inverted: every inbound message now goes to a Gemini 2.5 Flash reasoner with a tool catalog, with the regex dispatcher kept as a fallback behind `RAHAT_LEGACY_DISPATCH=1`. See §12 + `MODEL-FIRST-PIVOT.md`.
+>   2. **Mesh-wide memory architecture (SOTA).** Five-primitive substrate (events, entities, threads, preferences, relationships) + archival memory + per-agent adapters + sleep-time consolidation + Miya as supervisor with cross-agent broker. See §11 + `MEMORY-AND-STATE-ARCHITECTURE.md` + `SOTA-AGENT-ARCHITECTURE-REVIEW.md`.
+>   3. **Eval coverage grew from 330 → 475 hermetic cases** across 8 suites, all 100% green. Plus an opt-in live suite (`eval_reasoner_live.py`) gated behind `RAHAT_EVAL_LIVE=1`.
+>
+> The earlier sections (§1–§10) have been kept structurally so v1.0 readers don't lose their place; they're updated where v2.0 changed the answer. Three new sections (§11–§13) cover memory, the reasoner, and mesh extensibility.
 
 **Companion diagrams** (`specs/diagrams/`):
 
 - `01-three-plane-architecture.svg` — referenced in §4 (the three-plane decomposition)
 - `02-now-next-later-roadmap.svg` — referenced in §6 (the roadmap)
-- `03-routing-and-trace-flow.svg` — referenced in §5 (component deep-dives) and §8.3 (decision tracing)
+- `03-routing-and-trace-flow.svg` — referenced in §5 (component deep-dives) and §8.3 (decision tracing) — **legacy regex path; valid behind `RAHAT_LEGACY_DISPATCH=1`**
+- `04-memory-architecture.svg` — referenced in §11 (mesh-wide memory)
+- `05-model-first-reasoner-flow.svg` — referenced in §12 (model-first reasoner)
+- `06-mesh-extensibility.svg` — referenced in §13 (extensibility / per-agent adapters)
 
 See `specs/diagrams/README.md` for embedding notes.
 
@@ -22,12 +33,14 @@ Rahat is a multi-agent runtime that runs locally on a single Mac Mini (M-series 
 The current shipped state ("Now") includes:
 
 - A **three-plane control-plane architecture** (Control, Data, Runtime) that separates declarative policy from ephemeral compute from durable state.
-- **Miya as the orchestrator** — single user-facing process, single Telegram inbox, single voice (Hyderabadi/Dakhini register).
+- **Miya as the orchestrator AND supervisor** — single user-facing process, single Telegram inbox, single voice (Hyderabadi/Dakhini register), plus declared capability registry and cross-agent memory broker (§13).
 - **The Charter as a policy chokepoint** — every outbound work-order passes through a Python predicate registry that can approve, modify, or veto, with an audit trail in `governance_log`.
 - **Decision tracing** — every event in the runtime gets a `trace_id`, every routing decision and tool call writes a row in the `decisions` table, enabling replay and grading.
-- **Episodic memory primitives** — first-class support for bounded life-slices (a trip, a training cycle, a sleep regression) shared across agents.
-- **A 330-case eval harness** — three independent paths (legacy router, agent wrapper, generalized harness) plus 7-dimensional regression sweep, all 100% green.
-- **The Sports Scientist as the reference agent** — refactored to consume the new contract, with its 2,400 LOC monolith split into pure protocols (math, constants) and runtime concerns (handlers, ticks).
+- **Mesh-wide memory architecture (v2.0)** — Letta-style four-tier hierarchy (working / recall / archival / procedural) over a unified SQLite substrate, with per-agent adapters, sleep-time consolidation, and cross-agent reasoning. See §11.
+- **Model-first reasoner (v2.0)** — Gemini 2.5 Flash (default) / 2.5 Pro (high-stakes) with 25-tool catalog, structured-output state extraction, anti-hallucination contract, and a two-tier fallback ladder. See §12.
+- **A 475-case eval harness across 8 hermetic suites** plus 1 opt-in live suite — all 100% green: 148 legacy regex, 148 wrapper, 54 extended (B1–B7), 10 reasoner B8, 21 robust R1–R8, 39 Gemini-parity G1–G38, 22 memory M1–M6, 33 PDF use cases P1–P33.
+- **The Sports Scientist as the reference agent** — refactored to consume the new contract, with its 2,400 LOC monolith split into pure protocols (math, constants) and runtime concerns (handlers, ticks). All Gemini-PDF coaching patterns now structurally supported.
+- **Bajrangi stub** — minimal HRV/sleep agent demonstrating mesh-extensibility: same substrate, completely different domain entities (`recovery_protocol`, `sleep_concern`, `hrv_window`). See §13.
 
 The document below justifies every meaningful design choice against the alternatives we considered, and frames the system in language an ARB-style review would expect: trade-offs, failure modes, operational maturity, and a clear migration path to mobile and multi-tenant in 12+ months.
 
@@ -503,17 +516,257 @@ These are decisions that don't need to be made now but will need to be made.
 
 ---
 
-## 11. Appendix: test inventory
+## 11. Memory architecture (v2.0)
+
+> **Companion diagram:** `specs/diagrams/04-memory-architecture.svg` · **Companion specs:** `specs/MEMORY-AND-STATE-ARCHITECTURE.md` (rev 2), `specs/SOTA-AGENT-ARCHITECTURE-REVIEW.md`
+
+Pre-v2.0, every Telegram turn was treated as a stateless query. The reasoner had to re-discover the user's active goal, committed plan, weekday preferences, and recent decisions from raw chat history every turn. This produced a recurring class of bugs (date hallucinations, lecture-after-commit, ignored preferences, plan totals that don't add up) that prompt-engineering only papered over.
+
+The v2.0 fix is structural: a Letta-style four-tier memory hierarchy over a single SQLite substrate, with per-agent adapters and a sleep-time consolidation worker.
+
+### 11.1 The four tiers
+
+| Tier | Where it lives | Purpose |
+|---|---|---|
+| Working memory | `messages` list during one `reason()` call | Current turn's tool outputs and intermediate reasoning |
+| Recall memory | `memory_events` (firehose) + `memory_threads` (topic + summary) | Recent conversation, what just happened |
+| Semantic memory | `memory_preferences` (sticky k/v, confidence-decayed) | Accumulated user preferences across time |
+| Procedural memory | `memory_entities` (typed objects, lifecycle) | Active goal, plan, commitments, tier — the structured state |
+| Archival memory | `memory_archival` (text + 768-d embedding, vector-searchable) | Long-term facts retrievable by semantic similarity |
+| Entity graph | `memory_relationships` (links, may cross agents) | Cross-conversation knowledge graph |
+
+All six primitives live in the same SQLite namespace as `decisions` and `governance_log`. Auto-migrating, observable, single-binary-deployable.
+
+### 11.2 Universal substrate API
+
+```python
+# core/memory.py — agent-scoped by default
+memory.add_event(agent, kind, payload, ...)
+memory.recent_events(agent, since_minutes=..., kinds=[...])
+memory.put_entity(agent, type, payload, valid_until=..., supersede_existing=True)
+memory.list_entities(agent, type=..., status='active')
+memory.update_entity(entity_id, ...)
+memory.thread_for(agent, topic)
+memory.update_thread(thread_id, summary=..., open_questions=...)
+memory.upsert_pref(agent, key, value, confidence=1.0)
+memory.list_prefs(agent, min_confidence=0.3)
+memory.decay_prefs(factor=0.95, older_than_days=7)
+memory.link(entity_a, entity_b, kind='references')
+memory.cross_agent_list(type=..., status='active')   # Miya broker only
+
+# core/archival.py — Letta-style long-term
+archival.archival_insert(agent, text, importance=0.5)
+archival.archival_search(agent, query, top_k=5)
+```
+
+### 11.3 Per-agent adapters
+
+Each agent that wants memory writes a small adapter at `agents/<name>/memory.py` defining:
+
+- **Entity types** — what objects this agent persists (Scientist: `goal`, `plan`, `commitment`, `tier_change`. Bajrangi: `recovery_protocol`, `sleep_concern`, `hrv_window`).
+- **`assemble_context()`** — pure-Python state-block builder. Queries the substrate, formats as text, returns the string prepended to every reasoner turn.
+- **`extract_state(user_msg, bot_reply)`** — runs after each turn. Calls Gemini Flash with structured-output JSON to parse new commitments, goals, plans, or preferences from the (input, output) pair, then writes to the substrate.
+
+The substrate doesn't impose a schema. Bajrangi has no concept of "active goal" — and that's fine. None of the adapters share a forced shape.
+
+### 11.4 Sleep-time consolidation
+
+`scripts/memory_consolidate.py` — cron'able background worker (recommended 03:00 daily):
+
+- Summarizes threads inactive >24h via Gemini Flash (~$0.001/run total)
+- Marks threads inactive >7d as resolved
+- Decays preferences not reinforced in the last 7d (factor 0.95/wk)
+- Archives entities past their `valid_until`
+- GCs events older than 365 days
+- Purges archival entries that are old AND never accessed
+
+Idempotent. Dry-run mode. Logs to `vault/consolidate.log`.
+
+### 11.5 Cross-agent reasoning (Miya as broker)
+
+Because the substrate is unified, cross-agent reasoning becomes possible without coupling. Miya exposes:
+
+```python
+miya.list_capabilities()                    # manifest of every registered agent
+miya.cross_agent_query(type='hrv_window')   # reads across all agents
+miya.cross_agent_recent_events(kinds=[...]) # event stream across agents
+```
+
+Use cases this enables (impossible with the previous Scientist-only design):
+
+- "User mentioned a Japan trip to Foodie 3 weeks ago" → Scientist surfaces it for jet-lag recovery
+- "Bajrangi flagged HRV crash" → Scientist's tier defaults to `re_entry`
+- "Curriculum noted toddler regression" → Bajrangi factors fragmented sleep impact
+- "User's preferences across all agents" → one query
+
+All cross-agent reads are logged via `memory_events` for audit.
+
+### 11.6 The DB-corruption guard
+
+A test-isolation guard (`RAHAT_TEST_MODE=1` in env, implemented in `core/io.py`) redirects ALL DB connections to a per-process sandbox under `/tmp/rahat_test_<pid>.db`, regardless of the path the caller passes. Tests cannot write to the live `vault/rahat.db` even if they explicitly try to. This was added after a one-time smoke-test pollution incident on 2026-05-08; the corruption was fully recovered (all user data preserved) and the guard now prevents recurrence.
+
+### 11.7 Coverage
+
+- `agents/the_scientist/eval_memory.py` — 22 cases (M1–M6) covering substrate primitives, archival, adapters, sleep-time consolidation, cross-agent broker, reasoner integration
+- `agents/the_scientist/eval_gemini_pdf_usecases.py` — 33 cases (P1–P33) verifying every conversational pattern from the reference Gemini coaching thread is supported (P1–P27 from the PDF + P28–P33 enabled by the new memory layer)
+
+---
+
+## 12. Model-first reasoner (v2.0)
+
+> **Companion diagram:** `specs/diagrams/05-model-first-reasoner-flow.svg` · **Companion spec:** `specs/MODEL-FIRST-PIVOT.md`
+
+### 12.1 The pivot
+
+Pre-v2.0, the Scientist was a regex-first dispatcher with the LLM bolted on as a fallback. ~25 deterministic handlers; the LLM was reserved for whatever the regexes missed. This produced a recurring failure mode: the dispatcher pattern-matched a single intent and discarded the rest of a multi-clause sentence ("Replan to get 1016 calories per day" → matched `Replan`, ignored the constraint).
+
+v2.0 inverts this: every inbound user message goes to a **tool-using reasoner** with Gemini 2.5 Flash as the default model. The deterministic handlers become **tools** the model calls when it needs them. The model orchestrates; the tools provide facts.
+
+### 12.2 The flow (one inbound message, end to end)
 
 ```
-agents/the_scientist/eval_suite.py        — 142 cases — legacy router
-agents/the_scientist/eval_via_agent.py    — 142 cases — wrapper parity
-agents/the_scientist/eval_extended.py     —  46 cases — 7-dim regression
-                                          ─────
-                                            330 — total, 100% passing
+1. Telegram receives message
+2. Context Assembler builds [Today][Active goal][Commitments][Plan][Prefs][Thread] block
+3. Date stamp injected as inline prefix to user message
+   (prevents 2024-anchor hallucination)
+4. Reasoner loop (Gemini 2.5 Flash, max 8 hops, 3000 max_tokens):
+   - Hop 0: model emits tool_use blocks (e.g. compute_goal_plan)
+   - Tool dispatch: deterministic Python wrappers around legacy helpers
+   - Hop 1: model composes final text with Telegram-V1 Markdown
+            + Hyderabadi voice
+5. State Extractor (Gemini Flash, JSON mode):
+   parse (msg, reply) → write entities/prefs to substrate
+6. Voice layer wraps reply (idempotent)
+7. Telegram splitter (paragraph-aware, ≤4000 chars per chunk)
+8. Send via Telegram API with per-chunk retry-as-plain-text on Markdown error
 ```
 
-Categories in the legacy suite (A–W):
+### 12.3 Two-tier fallback ladder
+
+```
+Gemini 2.5 Flash (default reasoner)
+  ↓ on 5xx / no key / SDK error
+Legacy regex dispatcher (_legacy_route)
+  ↓ on legacy crash
+_ensure_nonempty()  — never-empty contract
+```
+
+`RAHAT_LEGACY_DISPATCH=1` in env bypasses the reasoner entirely — instant rollback hatch.
+
+### 12.4 Tool catalog (25 tools)
+
+All registered in `agents/the_scientist/tools.SCHEMAS` in MCP-shaped JSON-schema format:
+
+- **Read tools (data, no side effects):** `get_week_burn`, `get_today_target`, `get_weight_timeline`, `get_eligible_cf_days`, `get_missed_workouts`, `get_recalibration`, `get_blacklist`, `get_recovery_tier`, `get_recent_actions`
+- **Compute tools (deterministic math):** `compute_remaining_burn_given_schedule`, `compute_what_if`, `compute_goal_plan`, `assess_recovery`
+- **Plan tools:** `propose_replan` (returns 3 candidate paths)
+- **Write tools (charter-gated):** `commit_picks`, `tolerate_movement`, `log_weight`, `log_workout`, `log_hrv`, `swap_day`, `set_recovery_tier`
+
+Four template tools (`generate_recovery_routine`, `generate_breathing_protocol`, `generate_wod`, `analyze_diet`) are intentionally hidden from the catalog — coaching content is reasoned, not templated.
+
+### 12.5 System prompt (~5K tokens, ~22K chars)
+
+Five blocks, concatenated each call:
+
+1. **Current date + date-resolution rules** — prevents 2024-anchor hallucinations
+2. **Athlete identity** — body, mobility, diet, life context, tier vocabulary
+3. **Coaching mindset** — REASON not template; CONNECT DOTS; TEACH science; PERSONALIZE; PROACTIVE FOLLOW-UP
+4. **Voice + format** — Hyderabadi register, Telegram-V1 Markdown rules
+5. **Anti-hallucination contract** — DATA tools must be called for numeric facts; COACHING content reasoned; PLAN-TOTAL VERIFICATION; CONVERSATIONAL CONTINUITY; NO FALSE CELEBRATION; USER DRIVES — DON'T REROUTE
+
+### 12.6 Cost + latency
+
+- ~$0.001 per turn at 2.5 Flash pricing (1–3 hops typical)
+- 2–6 seconds total reasoning latency
+- Telegram delivery: ~200ms per chunk
+- State extractor adds ~$0.0001 per turn
+
+Monthly projection at 50 inbound msgs/day: **~$1.50/month.**
+
+### 12.7 Coverage
+
+- `eval_reasoner.py` (B8) — 10 cases for the loop
+- `eval_reasoner_robust.py` (R1–R8) — 21 cases (never-empty, prompt injection, fuzz, schema, multi-message, charter fail-closed, propose_replan invariants)
+- `eval_gemini_parity.py` (G1–G38) — 39 cases for coaching patterns + invariants
+- `eval_reasoner_live.py` (L1–L7) — 10 opt-in cases gated by `RAHAT_EVAL_LIVE=1`; calls real Gemini, asserts tool selection + voice register + multi-part decomposition
+
+---
+
+## 13. Mesh extensibility (v2.0)
+
+> **Companion diagram:** `specs/diagrams/06-mesh-extensibility.svg`
+
+### 13.1 The compounding thesis
+
+Year-1 target is ~20 agents. Pre-v2.0, each agent was a fresh build of state-management, prompt engineering, tool integration. After v2.0, the substrate + reasoner + voice + charter + ledger compose; each new agent is a thin lens over the same machinery.
+
+**Estimated cost per future agent: ~1 day.** Compounding starts at agent #4 — the time saved on agents #4–#20 vs. a from-scratch approach is roughly 30 person-days.
+
+### 13.2 The pattern (every new agent)
+
+```
+1. Define entity types (the agent's domain objects)               ~30 LOC
+2. Write assemble_context() — pure-Python state formatting        ~80 LOC
+3. Write extract_state() — Gemini Flash JSON-mode parsing         ~80 LOC
+4. Define the agent's tool catalog (read + compute + write)   150–300 LOC
+5. Write the agent's reasoner persona + system prompt blocks  500–1000 LOC
+6. Add B-cases to the eval suite                                 ~200 LOC
+7. Register with Miya, declare capabilities
+─────────────────────────────────────
+~1 day of focused work
+```
+
+### 13.3 Bajrangi (stub today, full agent ~1 day)
+
+Demonstrates the pattern for non-Scientist domains:
+
+- Entity types: `recovery_protocol`, `sleep_concern`, `hrv_window` (zero overlap with Scientist's `goal`/`plan`/`commitment`)
+- Assembler outputs HRV-focused state (not goal-focused)
+- Tools (planned): `get_hrv_trend`, `get_sleep_quality`, `prescribe_recovery`, `flag_concern`, `declare_protocol`
+
+### 13.4 Future agents (scoped, not yet built)
+
+| Agent | Months | Entity types | Cross-agent reads |
+|---|---|---|---|
+| Bajrangi (full) | 1–3 | recovery_protocol, sleep_concern, hrv_window | Scientist's goal, tier_change |
+| Curriculum | 1–3 | lesson, milestone, behavior_log | Family-context shared |
+| Foodie | 3–6 | cuisine_focus, meal_log, dietary_phase | Scientist's intake target |
+| Voyager | 3–6 | trip, stop, recall_corpus | Cross-domain |
+| Concierge | 6–12 | recommendation, saved_place, social_event | All-mesh |
+
+### 13.5 What stays single-source
+
+Across all agents:
+
+- Charter (one policy plane)
+- Voice (one user-facing register)
+- Decisions ledger (one observability surface)
+- Memory substrate (one state home)
+- Eval discipline (one gate)
+- Telegram (one inbox)
+
+This is the architecture's leverage. The cost of agent #20 should be roughly the same as the cost of agent #2.
+
+---
+
+## 14. Appendix: test inventory (v2.0)
+
+```
+agents/the_scientist/eval_suite.py                — 148 cases — legacy regex dispatcher
+agents/the_scientist/eval_via_agent.py            — 148 cases — wrapper parity
+agents/the_scientist/eval_extended.py             —  54 cases — 7-dim regression (B1–B7)
+agents/the_scientist/eval_reasoner.py             —  10 cases — model-first loop (B8)
+agents/the_scientist/eval_reasoner_robust.py      —  21 cases — adversarial / fuzz / charter (R1–R8)
+agents/the_scientist/eval_gemini_parity.py        —  39 cases — coaching patterns + invariants (G1–G38)
+agents/the_scientist/eval_memory.py               —  22 cases — memory architecture (M1–M6)
+agents/the_scientist/eval_gemini_pdf_usecases.py  —  33 cases — PDF use-case coverage (P1–P33)
+                                                  ─────
+                                                    475 — total, 100% passing
+```
+
+Plus an opt-in live eval suite gated by `RAHAT_EVAL_LIVE=1` (~$0.02 per run, calls real Gemini).
+
+Categories in the legacy suite (A–W) — kept here for v1.0 reference:
 
 ```
 A. Daily burn lookups          (5)    L. LLM fallback                (2)
@@ -528,18 +781,27 @@ I. Tier management             (3)    T. Typo tolerance              (4)
 J. Manual logging              (4)    U. Hindi / Dakhini routing     (6)
 K. Robustness                  (2)    V. LLM anti-hallucination      (2)
                                       W. Recalibration handler       (5)
-                                      O.fallback: 4 in extended (B7)
+                                      X. Next-workout handler        (6)
 ```
 
-Run all three in 30 seconds:
+Run all hermetic suites in ~45 seconds:
 
 ```bash
 cd ~/developer/agency/rahat
-python3 agents/the_scientist/eval_suite.py
-python3 agents/the_scientist/eval_via_agent.py
-python3 agents/the_scientist/eval_extended.py
+RAHAT_TEST_MODE=1 python3 -c "
+import subprocess
+suites = ['eval_suite', 'eval_via_agent', 'eval_extended', 'eval_reasoner',
+          'eval_reasoner_robust', 'eval_gemini_parity', 'eval_memory',
+          'eval_gemini_pdf_usecases']
+for s in suites:
+    subprocess.run(['python3', f'agents/the_scientist/{s}.py'])
+"
 ```
 
-CI-gate this trio; refuse to merge or deploy on red.
+CI-gate this set; refuse to merge or deploy on red. Live eval is the recommended post-deploy smoke test:
 
-— End of architecture document —
+```bash
+RAHAT_EVAL_LIVE=1 python3 agents/the_scientist/eval_reasoner_live.py
+```
+
+— End of architecture document v2.0 —
