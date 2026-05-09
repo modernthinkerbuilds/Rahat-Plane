@@ -506,6 +506,120 @@ def _m7_morning_brief_surfaces_goal_line():
     assert "🎯 Goal" in src, "morning-brief missing goal emoji"
 
 
+# ─── M8 — commit_goal write tool + extractor date guard ───
+def _m8_commit_goal_writes_substrate():
+    """commit_goal must persist a future-dated goal to the substrate
+    and round-trip cleanly through get_active_goal."""
+    _isolate(_fresh_db())
+    from agents.the_scientist import tools as t
+    future = (datetime.now() + timedelta(days=14)).strftime("%Y-%m-%d")
+    out = t.commit_goal(target_lbs=198,
+                        target_date_iso=future,
+                        daily_intake_kcal=1957,
+                        weekly_active_kcal=7000,
+                        tier="hammer",
+                        rationale="user committed in chat")
+    assert out.get("ok") is True, out
+    assert out["goal"]["target_lbs"] == 198.0
+    assert out["goal"]["target_date_iso"] == future
+    active = t.get_active_goal()
+    assert active.get("active") is True
+    assert active.get("target_lbs") == 198.0
+    assert active.get("target_date") == future
+    assert active.get("tier") == "hammer"
+
+
+def _m8_commit_goal_rejects_past_date():
+    """The most-common LLM bug — year hallucination — must be caught
+    at the tool boundary, not silently written to memory."""
+    _isolate(_fresh_db())
+    from agents.the_scientist import tools as t
+    out = t.commit_goal(target_lbs=198, target_date_iso="2024-05-23")
+    assert out.get("ok") is False, out
+    assert "past" in (out.get("reason") or "").lower(), out
+
+
+def _m8_commit_goal_rejects_out_of_range():
+    """Range validation: target weight, intake, weekly burn, tier all
+    have plausibility bands."""
+    _isolate(_fresh_db())
+    from agents.the_scientist import tools as t
+    future = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
+    assert t.commit_goal(target_lbs=50, target_date_iso=future).get("ok") is False
+    assert t.commit_goal(target_lbs=180, target_date_iso=future,
+                         daily_intake_kcal=500).get("ok") is False
+    assert t.commit_goal(target_lbs=180, target_date_iso=future,
+                         weekly_active_kcal=20000).get("ok") is False
+    assert t.commit_goal(target_lbs=180, target_date_iso=future,
+                         tier="elite").get("ok") is False
+
+
+def _m8_commit_goal_supersedes_old():
+    """A new commit_goal must auto-supersede prior active goals so
+    'most recent wins' is deterministic."""
+    _isolate(_fresh_db())
+    from agents.the_scientist import tools as t
+    far = (datetime.now() + timedelta(days=180)).strftime("%Y-%m-%d")
+    near = (datetime.now() + timedelta(days=14)).strftime("%Y-%m-%d")
+    t.commit_goal(target_lbs=185, target_date_iso=far)
+    t.commit_goal(target_lbs=198, target_date_iso=near)
+    active = t.get_active_goal()
+    assert active.get("target_lbs") == 198.0, active
+
+
+def _m8_commit_goal_in_dispatch_and_schemas():
+    """Plumbing check for the new write tool."""
+    from agents.the_scientist import tools as t
+    assert "commit_goal" in t._DISPATCH, "commit_goal missing from _DISPATCH"
+    assert "commit_goal" in t.WRITE_TOOLS, "commit_goal missing from WRITE_TOOLS"
+    names = {s["name"] for s in t.SCHEMAS}
+    assert "commit_goal" in names, "commit_goal missing from SCHEMAS"
+
+
+def _m8_extractor_prompt_has_date_rules():
+    """The extractor prompt must include the date-resolution rules so
+    the underlying Gemini call doesn't hallucinate the year."""
+    src = (ROOT / "agents" / "the_scientist" / "memory.py").read_text()
+    assert "DATE-RESOLUTION RULES" in src, (
+        "extractor prompt missing date-resolution section")
+    assert "next future occurrence" in src.lower(), (
+        "extractor prompt missing 'next future occurrence' guidance")
+
+
+def _m8_extractor_rejects_past_target_date():
+    """The runtime guard in extract_state must drop a hallucinated
+    past date rather than writing it to memory."""
+    _isolate(_fresh_db())
+    from agents.the_scientist import memory as smem
+    orig = smem._llm_extract_state
+    smem._llm_extract_state = lambda u, b: {
+        "new_goal": {"target_lbs": 198,
+                     "target_date_iso": "2024-05-23",
+                     "rationale": "test"}
+    }
+    try:
+        out = smem.extract_state("I want to hit 198 by May 23",
+                                 "OK, here's the plan...")
+        assert out.get("goal") is True, out
+        from core import memory as mem
+        rows = mem.list_entities("scientist", type="goal")
+        assert len(rows) == 1, rows
+        assert "target_date_iso" not in rows[0]["payload"], (
+            f"past date should have been dropped, got {rows[0]['payload']}")
+    finally:
+        smem._llm_extract_state = orig
+
+
+def _m8_system_prompt_instructs_commit_goal():
+    """The reasoner system prompt must tell the model to use commit_goal
+    when the user states a target weight + date."""
+    src = (ROOT / "agents" / "the_scientist" / "coach_system.py").read_text()
+    assert "commit_goal" in src, (
+        "system prompt doesn't mention commit_goal — model won't call it")
+    assert "YEAR DISAMBIGUATION" in src or "next future occurrence" in src, (
+        "system prompt missing year-disambiguation guidance")
+
+
 # ─────────────────────────── Manifest ───────────────────────────
 SUITE = [
     # M1 — substrate
@@ -545,6 +659,15 @@ SUITE = [
     ("M7.superseded goals excluded",            _m7_active_goal_supersession_excluded),
     ("M7.morning brief uses weekly_target",     _m7_morning_brief_uses_active_target),
     ("M7.morning brief surfaces goal line",     _m7_morning_brief_surfaces_goal_line),
+    # M8 — commit_goal write tool + extractor date guard
+    ("M8.commit_goal writes substrate",         _m8_commit_goal_writes_substrate),
+    ("M8.commit_goal rejects past date",        _m8_commit_goal_rejects_past_date),
+    ("M8.commit_goal range validation",         _m8_commit_goal_rejects_out_of_range),
+    ("M8.commit_goal supersedes old",           _m8_commit_goal_supersedes_old),
+    ("M8.commit_goal in dispatch+schemas",      _m8_commit_goal_in_dispatch_and_schemas),
+    ("M8.extractor prompt has date rules",      _m8_extractor_prompt_has_date_rules),
+    ("M8.extractor rejects past target_date",   _m8_extractor_rejects_past_target_date),
+    ("M8.system prompt has commit_goal guide",  _m8_system_prompt_instructs_commit_goal),
 ]
 
 

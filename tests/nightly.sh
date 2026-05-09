@@ -48,6 +48,14 @@ set -euo pipefail
 # ─── locate repo ────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# ─── pick a Python with pytest ──────────────────────────────────────
+# Prefer the repo venv (where requirements-dev.txt installed pytest);
+# fall back to system python3 if no venv. Set NIGHTLY_PYTHON to override.
+NIGHTLY_PYTHON="${NIGHTLY_PYTHON:-${REPO_ROOT}/venv/bin/python}"
+if [ ! -x "$NIGHTLY_PYTHON" ]; then
+    NIGHTLY_PYTHON="$(command -v python3)"
+fi
 cd "$REPO_ROOT"
 
 if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
@@ -192,12 +200,12 @@ JSON_PATH="$REPO_ROOT/tests/last_run.json"
 LOG_PATH="$REPO_ROOT/tests/last_run_stdout.log"
 
 set +e
-python3 -m tests.run_all --json "$JSON_PATH" --report "$REPORT_PATH" \
+"$NIGHTLY_PYTHON" -m tests.run_all --json "$JSON_PATH" --report "$REPORT_PATH" \
     > "$LOG_PATH" 2>&1
 RUN_RC=$?
 set -e
 
-python3 - <<PYEOF
+"$NIGHTLY_PYTHON" - <<PYEOF
 import json, pathlib
 report = pathlib.Path("$JSON_PATH")
 status = pathlib.Path("$STATUS_PATH")
@@ -301,7 +309,7 @@ if ! git diff --cached --quiet; then
             MSG="Nightly: PASS ($DATE_TAG $TIME_TAG) — all layers green"
         fi
     else
-        FAILED_LAYERS="$(python3 -c "import json; d=json.load(open('$STATUS_PATH')); print(','.join(d.get('failed_layers',[])))")"
+        FAILED_LAYERS="$("$NIGHTLY_PYTHON" -c "import json; d=json.load(open('$STATUS_PATH')); print(','.join(d.get('failed_layers',[])))")"
         MSG="Nightly: FAIL ($DATE_TAG $TIME_TAG) — failures in: $FAILED_LAYERS"
     fi
     git commit -m "$MSG" >/dev/null
