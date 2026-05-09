@@ -165,7 +165,7 @@ def _m1_relationships():
 # ─── M2 — Archival memory ───
 def _m2_archival_insert_search_fallback():
     _isolate(_fresh_db())
-    from core import archival
+    from core.memory import archival
     # No real embedding — fallback to recency.
     a1 = archival.archival_insert("scientist", "goal: 198 by 5/22")
     a2 = archival.archival_insert("scientist", "newborn April 17")
@@ -176,14 +176,14 @@ def _m2_archival_insert_search_fallback():
 
 
 def _m2_cosine_similarity():
-    from core import archival
+    from core.memory import archival
     assert abs(archival._cosine([1.0, 0.0], [1.0, 0.0]) - 1.0) < 1e-9
     assert abs(archival._cosine([1.0, 0.0], [0.0, 1.0])) < 1e-9
     assert abs(archival._cosine([1.0, 0.0], [-1.0, 0.0]) + 1.0) < 1e-9
 
 
 def _m2_pack_unpack_roundtrip():
-    from core import archival
+    from core.memory import archival
     vec = [0.1, -0.2, 0.3, 1e-7]
     packed = archival._pack_vec(vec)
     unpacked = archival._unpack_vec(packed)
@@ -392,13 +392,16 @@ def _m7_get_active_goal_reads_substrate():
     like in production."""
     _isolate(_fresh_db())
     from core import memory as mem
+    # Canonical extractor schema — target_date_iso, recommended_tier.
+    # This is what the LLM extractor in agents/the_scientist/memory.py
+    # actually writes, so the eval needs to mirror that schema.
     mem.put_entity("scientist", "goal",
                    {"target_lbs": 198,
-                    "target_date": "2026-05-22",
+                    "target_date_iso": "2026-05-22",
                     "daily_intake_kcal": 2400,
                     "weekly_active_kcal": 7000,
-                    "tier": "hammer",
-                    "note": "user committed in chat"})
+                    "recommended_tier": "hammer",
+                    "rationale": "user committed in chat"})
     from agents.the_scientist import tools as t
     out = t.get_active_goal()
     assert out.get("active") is True, out
@@ -439,8 +442,8 @@ def _m7_weight_timeline_includes_active_goal():
     from core import memory as mem
     mem.put_entity("scientist", "goal",
                    {"target_lbs": 198,
-                    "target_date": "2026-05-22",
-                    "tier": "hammer"})
+                    "target_date_iso": "2026-05-22",
+                    "recommended_tier": "hammer"})
     from agents.the_scientist import tools as t
     out = t.get_weight_timeline()
     assert "active_goal" in out, (
@@ -470,10 +473,10 @@ def _m7_active_goal_supersession_excluded():
     # when the user updates their goal mid-program.
     mem.put_entity("scientist", "goal",
                    {"target_lbs": 185,
-                    "target_date": "2026-10-14"})
+                    "target_date_iso": "2026-10-14"})
     mem.put_entity("scientist", "goal",
                    {"target_lbs": 198,
-                    "target_date": "2026-05-22"})
+                    "target_date_iso": "2026-05-22"})
     from agents.the_scientist import tools as t
     out = t.get_active_goal()
     assert out.get("active") is True, out

@@ -17,8 +17,8 @@ plus a shared toolbelt:
     Substrate
         agent        — base contract (name, triggers, route, tick) every agent subclasses
         io           — tool helpers (Telegram send, Gemini client, DB connection)
-        memory       — tiered store (working / episodic / archival) with promotion + decay
-        archival     — cold-store writer for memories aged out of the hot tier
+        memory       — tiered store package (events / entities / threads / prefs /
+                       relationships in __init__; archival submodule for long-term)
         gemini_reasoner_io — primary LLM adapter (Flash default, Pro high-stakes)
         cost         — per-call cost ledger
         eval         — generalized eval harness for any agent

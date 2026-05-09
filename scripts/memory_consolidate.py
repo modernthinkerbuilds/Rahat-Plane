@@ -33,7 +33,7 @@ if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 
 from core import memory as mem
-from core import archival
+from core.memory import archival
 from core import io as cio
 
 

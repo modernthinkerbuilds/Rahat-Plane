@@ -452,7 +452,7 @@ def _p31_preferences_decay_after_a_week():
 
 def _p32_archival_recall():
     _isolate(_fresh_db())
-    from core import archival
+    from core.memory import archival
     archival.archival_insert("scientist", "User reached 200 lbs in March 2026")
     archival.archival_insert("scientist", "Newborn born April 17 2026")
     out = archival.archival_search("scientist", "weight in March", top_k=2)
