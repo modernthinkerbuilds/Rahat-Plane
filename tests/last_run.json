@@ -1,52 +1,52 @@
 [
   {
     "name": "unit",
-    "passed": false,
-    "duration_s": 0.00725865364074707,
-    "summary": "return-code=1",
-    "n_passed": 0,
+    "passed": true,
+    "duration_s": 0.14139509201049805,
+    "summary": "28 passed in 0.05s",
+    "n_passed": 28,
     "n_failed": 0,
     "n_skipped": 0,
-    "raw_output": "\n/usr/bin/python3: No module named pytest\n"
+    "raw_output": "............................                                             [100%]\n28 passed in 0.05s\n"
   },
   {
     "name": "contract",
-    "passed": false,
-    "duration_s": 0.006827831268310547,
-    "summary": "return-code=1",
-    "n_passed": 0,
+    "passed": true,
+    "duration_s": 0.24286150932312012,
+    "summary": "40 passed in 0.16s",
+    "n_passed": 40,
     "n_failed": 0,
     "n_skipped": 0,
-    "raw_output": "\n/usr/bin/python3: No module named pytest\n"
+    "raw_output": "........................................                                 [100%]\n40 passed in 0.16s\n"
   },
   {
     "name": "eval",
-    "passed": false,
-    "duration_s": 0.006469249725341797,
-    "summary": "return-code=1",
-    "n_passed": 0,
+    "passed": true,
+    "duration_s": 0.21367383003234863,
+    "summary": "43 passed, 1 skipped in 0.13s",
+    "n_passed": 43,
     "n_failed": 0,
-    "n_skipped": 0,
-    "raw_output": "\n/usr/bin/python3: No module named pytest\n"
+    "n_skipped": 1,
+    "raw_output": "...........................................s                             [100%]\n=========================== short test summary info ============================\nSKIPPED [1] tests/evals/test_scientist_conversation.py:410: LLM-as-judge disabled (set GEMINI_API_KEY + RAHAT_RUN_JUDGE=1)\n43 passed, 1 skipped in 0.13s\n"
   },
   {
     "name": "adversarial",
-    "passed": false,
-    "duration_s": 0.006093740463256836,
-    "summary": "return-code=1",
-    "n_passed": 0,
+    "passed": true,
+    "duration_s": 0.24098682403564453,
+    "summary": "14 passed in 0.16s",
+    "n_passed": 14,
     "n_failed": 0,
     "n_skipped": 0,
-    "raw_output": "\n/usr/bin/python3: No module named pytest\n"
+    "raw_output": "..............                                                           [100%]\n14 passed in 0.16s\n"
   },
   {
     "name": "regression",
-    "passed": false,
-    "duration_s": 0.006632566452026367,
-    "summary": "return-code=1",
-    "n_passed": 0,
+    "passed": true,
+    "duration_s": 0.17139577865600586,
+    "summary": "17 passed in 0.09s",
+    "n_passed": 17,
     "n_failed": 0,
     "n_skipped": 0,
-    "raw_output": "\n/usr/bin/python3: No module named pytest\n"
+    "raw_output": ".................                                                        [100%]\n17 passed in 0.09s\n"
   }
 ]

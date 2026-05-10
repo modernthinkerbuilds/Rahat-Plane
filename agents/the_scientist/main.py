@@ -1147,7 +1147,8 @@ def handle_weighin_when() -> str:
         return (
             f"Last hammer: {last.strftime('%a %b %-d')} ({hours_since:.0f}h ago). "
             f"Inflammation peaks at 24–36h. Wait until *{when.strftime('%a %b %-d')}* "
-            "morning. Tonight: low sodium, 3L water, 7/15 breathing, dinner by 7pm."
+            "morning to weigh in. Tonight: low sodium, 3L water, 7/15 breathing, "
+            "dinner by 7pm."
         )
     if hours_since < 60:
         return (

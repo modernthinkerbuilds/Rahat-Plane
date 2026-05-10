@@ -1,13 +1,13 @@
 ==> unit: Pure-function unit tests (voice, cost, helpers, no I/O).
-    [FAIL] return-code=1 (0.01s)
+    [PASS] 28 passed in 0.05s (0.14s)
 ==> contract: Agent ABI + Charter ABI + decisions-ledger invariants.
-    [FAIL] return-code=1 (0.01s)
+    [PASS] 40 passed in 0.16s (0.24s)
 ==> eval: Scenario-fidelity evals against the Sports Scientist.
-    [FAIL] return-code=1 (0.01s)
+    [PASS] 43 passed, 1 skipped in 0.13s (0.21s)
 ==> adversarial: Prompt injection / jailbreak / PII / hallucination probes.
-    [FAIL] return-code=1 (0.01s)
+    [PASS] 14 passed in 0.16s (0.24s)
 ==> regression: Replay regression — golden fixtures vs. live router.
-    [FAIL] return-code=1 (0.01s)
+    [PASS] 17 passed in 0.09s (0.17s)
 
-Markdown report → /sessions/confident-loving-faraday/mnt/rahat/tests/last_run_report.md
-JSON report → /sessions/confident-loving-faraday/mnt/rahat/tests/last_run.json
+Markdown report → tests/last_run_report.md
+JSON report → tests/last_run.json
