@@ -1,43 +1,53 @@
 {
-  "pass": true,
-  "rc": 0,
-  "ts": "2026-05-10T06:00:03.575545Z",
+  "pass": false,
+  "rc": 1,
+  "date": "2026-05-10",
+  "time": "0922",
+  "branch": "nightly/2026-05-10",
+  "had_uncommitted": false,
+  "auto_commit_disabled": false,
   "layers": [
     {
       "name": "unit",
-      "passed": true,
-      "n_passed": 28,
+      "passed": false,
+      "n_passed": 0,
       "n_failed": 0,
       "n_skipped": 0
     },
     {
       "name": "contract",
-      "passed": true,
-      "n_passed": 40,
+      "passed": false,
+      "n_passed": 0,
       "n_failed": 0,
       "n_skipped": 0
     },
     {
       "name": "eval",
-      "passed": true,
-      "n_passed": 43,
+      "passed": false,
+      "n_passed": 0,
       "n_failed": 0,
-      "n_skipped": 1
+      "n_skipped": 0
     },
     {
       "name": "adversarial",
-      "passed": true,
-      "n_passed": 14,
+      "passed": false,
+      "n_passed": 0,
       "n_failed": 0,
       "n_skipped": 0
     },
     {
       "name": "regression",
-      "passed": true,
-      "n_passed": 17,
+      "passed": false,
+      "n_passed": 0,
       "n_failed": 0,
       "n_skipped": 0
     }
   ],
-  "failed_layers": []
+  "failed_layers": [
+    "unit",
+    "contract",
+    "eval",
+    "adversarial",
+    "regression"
+  ]
 }
