@@ -2,51 +2,51 @@
   {
     "name": "unit",
     "passed": true,
-    "duration_s": 0.16208219528198242,
-    "summary": "28 passed in 0.05s",
+    "duration_s": 0.25913119316101074,
+    "summary": "28 passed in 0.08s",
     "n_passed": 28,
     "n_failed": 0,
     "n_skipped": 0,
-    "raw_output": "............................                                             [100%]\n28 passed in 0.05s\n"
+    "raw_output": "............................                                             [100%]\n28 passed in 0.08s\n"
   },
   {
     "name": "contract",
     "passed": true,
-    "duration_s": 0.27802324295043945,
-    "summary": "40 passed in 0.17s",
+    "duration_s": 0.22716498374938965,
+    "summary": "40 passed, 34 warnings in 0.10s",
     "n_passed": 40,
     "n_failed": 0,
     "n_skipped": 0,
-    "raw_output": "........................................                                 [100%]\n40 passed in 0.17s\n"
+    "raw_output": "........................................                                 [100%]\n=============================== warnings summary ===============================\ntests/test_miya_routing.py: 12 warnings\ntests/test_decisions.py: 5 warnings\n  /Users/venkat/developer/agency/rahat/core/decisions.py:181: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).\n    self._start = datetime.utcnow()\n\ntests/test_miya_routing.py: 12 warnings\ntests/test_decisions.py: 5 warnings\n  /Users/venkat/developer/agency/rahat/core/decisions.py:188: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).\n    (datetime.utcnow() - self._start).total_seconds() * 1000)\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n40 passed, 34 warnings in 0.10s\n"
   },
   {
     "name": "eval",
     "passed": true,
-    "duration_s": 0.24655413627624512,
-    "summary": "43 passed, 1 skipped in 0.14s",
+    "duration_s": 0.2311110496520996,
+    "summary": "43 passed, 1 skipped in 0.11s",
     "n_passed": 43,
     "n_failed": 0,
     "n_skipped": 1,
-    "raw_output": "...........................................s                             [100%]\n=========================== short test summary info ============================\nSKIPPED [1] ../../../awesome-serene-sagan/mnt/rahat/tests/evals/test_scientist_conversation.py:409: LLM-as-judge disabled (set GEMINI_API_KEY + RAHAT_RUN_JUDGE=1)\n43 passed, 1 skipped in 0.14s\n"
+    "raw_output": "...........................................s                             [100%]\n=========================== short test summary info ============================\nSKIPPED [1] tests/evals/test_scientist_conversation.py:410: LLM-as-judge disabled (set GEMINI_API_KEY + RAHAT_RUN_JUDGE=1)\n43 passed, 1 skipped in 0.11s\n"
   },
   {
     "name": "adversarial",
     "passed": true,
-    "duration_s": 0.2495708465576172,
-    "summary": "14 passed in 0.14s",
+    "duration_s": 0.22975420951843262,
+    "summary": "14 passed, 6 warnings in 0.11s",
     "n_passed": 14,
     "n_failed": 0,
     "n_skipped": 0,
-    "raw_output": "..............                                                           [100%]\n14 passed in 0.14s\n"
+    "raw_output": "..............                                                           [100%]\n=============================== warnings summary ===============================\ntests/evals/test_adversarial.py::TestTraceForgery::test_user_text_does_not_become_trace_id\ntests/evals/test_adversarial.py::TestMiyaRegexThenLLM::test_unique_regex_match_skips_llm\ntests/evals/test_adversarial.py::TestMiyaRegexThenLLM::test_unique_regex_match_skips_llm\n  /Users/venkat/developer/agency/rahat/core/decisions.py:181: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).\n    self._start = datetime.utcnow()\n\ntests/evals/test_adversarial.py::TestTraceForgery::test_user_text_does_not_become_trace_id\ntests/evals/test_adversarial.py::TestMiyaRegexThenLLM::test_unique_regex_match_skips_llm\ntests/evals/test_adversarial.py::TestMiyaRegexThenLLM::test_unique_regex_match_skips_llm\n  /Users/venkat/developer/agency/rahat/core/decisions.py:188: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).\n    (datetime.utcnow() - self._start).total_seconds() * 1000)\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n14 passed, 6 warnings in 0.11s\n"
   },
   {
     "name": "regression",
     "passed": true,
-    "duration_s": 0.20714926719665527,
-    "summary": "17 passed in 0.10s",
+    "duration_s": 0.24888396263122559,
+    "summary": "17 passed, 4 warnings in 0.11s",
     "n_passed": 17,
     "n_failed": 0,
     "n_skipped": 0,
-    "raw_output": ".................                                                        [100%]\n17 passed in 0.10s\n"
+    "raw_output": ".................                                                        [100%]\n=============================== warnings summary ===============================\ntests/test_replay_regression.py::test_decisions_log_round_trip\ntests/test_replay_regression.py::test_decisions_log_records_error_on_exception\n  /Users/venkat/developer/agency/rahat/core/decisions.py:181: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).\n    self._start = datetime.utcnow()\n\ntests/test_replay_regression.py::test_decisions_log_round_trip\ntests/test_replay_regression.py::test_decisions_log_records_error_on_exception\n  /Users/venkat/developer/agency/rahat/core/decisions.py:188: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).\n    (datetime.utcnow() - self._start).total_seconds() * 1000)\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n17 passed, 4 warnings in 0.11s\n"
   }
 ]
