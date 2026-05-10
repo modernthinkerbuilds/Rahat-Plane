@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+    Launchd manifest TEMPLATE for the daily greenstreak (auto-commit) job.
+    Runs at 23:30 — half an hour after regression.sh, so the suite has
+    finished and tests/last_run_status.json is fresh.
+
+    The script no-ops gracefully if status.pass is false. So even if
+    regression.sh runs long, greenstreak just waits a day.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.rahat.greenstreak</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/venkat/developer/agency/rahat/scripts/jobs/greenstreak.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/venkat/developer/agency/rahat</string>
+
+    <!-- 23:30 daily -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key><integer>23</integer>
+        <key>Minute</key><integer>30</integer>
+    </dict>
+
+    <key>RunAtLoad</key><false/>
+    <key>KeepAlive</key><false/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/venkat/developer/agency/rahat/vault/jobs/greenstreak.launchd.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/venkat/developer/agency/rahat/vault/jobs/greenstreak.launchd.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <!-- Set to "1" to switch to docs/tests/specs only. Default 0 = aggressive. -->
+        <key>GREENSTREAK_DOCS_ONLY</key><string>0</string>
+        <!-- Set to "0" to commit locally without pushing. -->
+        <key>GREENSTREAK_PUSH</key><string>1</string>
+    </dict>
+</dict>
+</plist>

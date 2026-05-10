@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+    Launchd manifest TEMPLATE for the every-other-night evolve job.
+    Runs at 02:00 on odd-numbered days of the month — close enough to
+    "every other day" without needing a stateful scheduler.
+
+    NOTE: this script is currently in scaffold mode (writes a proposal
+    file, does not author tests automatically). Safe to install but
+    won't do real work until the auto-author step is wired up.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.rahat.evolve</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/venkat/developer/agency/rahat/scripts/jobs/evolve.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/venkat/developer/agency/rahat</string>
+
+    <!-- 02:00 on the 1st, 3rd, 5th… of the month. Approximate every-other-day. -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Hour</key><integer>2</integer><key>Minute</key><integer>0</integer><key>Day</key><integer>1</integer></dict>
+        <dict><key>Hour</key><integer>2</integer><key>Minute</key><integer>0</integer><key>Day</key><integer>3</integer></dict>
+        <dict><key>Hour</key><integer>2</integer><key>Minute</key><integer>0</integer><key>Day</key><integer>5</integer></dict>
+        <dict><key>Hour</key><integer>2</integer><key>Minute</key><integer>0</integer><key>Day</key><integer>7</integer></dict>
+        <dict><key>Hour</key><integer>2</integer><key>Minute</key><integer>0</integer><key>Day</key><integer>9</integer></dict>
+        <dict><key>Hour</key><integer>2</integer><key>Minute</key><integer>0</integer><key>Day</key><integer>11</integer></dict>
+        <dict><key>Hour</key><integer>2</integer><key>Minute</key><integer>0</integer><key>Day</key><integer>13</integer></dict>
+        <dict><key>Hour</key><integer>2</integer><key>Minute</key><integer>0</integer><key>Day</key><integer>15</integer></dict>
+        <dict><key>Hour</key><integer>2</integer><key>Minute</key><integer>0</integer><key>Day</key><integer>17</integer></dict>
+        <dict><key>Hour</key><integer>2</integer><key>Minute</key><integer>0</integer><key>Day</key><integer>19</integer></dict>
+        <dict><key>Hour</key><integer>2</integer><key>Minute</key><integer>0</integer><key>Day</key><integer>21</integer></dict>
+        <dict><key>Hour</key><integer>2</integer><key>Minute</key><integer>0</integer><key>Day</key><integer>23</integer></dict>
+        <dict><key>Hour</key><integer>2</integer><key>Minute</key><integer>0</integer><key>Day</key><integer>25</integer></dict>
+        <dict><key>Hour</key><integer>2</integer><key>Minute</key><integer>0</integer><key>Day</key><integer>27</integer></dict>
+        <dict><key>Hour</key><integer>2</integer><key>Minute</key><integer>0</integer><key>Day</key><integer>29</integer></dict>
+        <dict><key>Hour</key><integer>2</integer><key>Minute</key><integer>0</integer><key>Day</key><integer>31</integer></dict>
+    </array>
+
+    <key>RunAtLoad</key><false/>
+    <key>KeepAlive</key><false/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/venkat/developer/agency/rahat/vault/jobs/evolve.launchd.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/venkat/developer/agency/rahat/vault/jobs/evolve.launchd.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>
