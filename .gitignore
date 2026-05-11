@@ -16,3 +16,8 @@ pytest-cache-files-*/
 # absolute paths and must NEVER be committed.
 core/com.rahat.miya.plist
 bridges/sugarwod/com.rahat.sugar.bridge.plist
+skills/com.rahat.vitals.plist
+scripts/jobs/com.rahat.regression.plist
+scripts/jobs/com.rahat.greenstreak.plist
+scripts/jobs/com.rahat.hygiene.plist
+scripts/jobs/com.rahat.evolve.plist
