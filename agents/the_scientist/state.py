@@ -36,13 +36,62 @@ from datetime import datetime, timedelta
 from core import io as cio
 
 from agents.the_scientist.protocols import (
-    DEFAULT_TIER,
-    INTENT_INTERMEDIATE_DATE, INTENT_INTERMEDIATE_KG,
-    INTENT_TARGET_DATE, INTENT_TARGET_KG,
-    TIERS,
+    KCAL_PER_LB_FAT,
+    KCAL_PER_KG_FAT,
     WEEKLY_ACTIVE_TARGET_KCAL,
+    DAILY_INTAKE_KCAL,
+    INTENT_INTERMEDIATE_KG,
+    INTENT_INTERMEDIATE_LBS,
+    INTENT_TARGET_KG,
+    INTENT_TARGET_LBS,
+    INTENT_INTERMEDIATE_DATE,
+    INTENT_TARGET_DATE,
+    TARGET_LBS,
+    EASY_LOSS_LB_PER_WEEK,
+    MAX_LOSS_LB_PER_WEEK,
+    LOCKED_LOSS_LB_PER_WEEK,
+    TYPICAL_BURN,
+    TIERS,
+    DEFAULT_TIER,
+    HRV_RED,
+    HRV_YELLOW,
+    HRV_GREEN,
+    HRV_ELITE,
+    BLACKLIST,
+    STRENGTH_BLACKLIST,
+    Z2_RUN_KCAL_DEFAULT,
+    NONWORKOUT_BURN_FLOOR,
+    NUDGE_MORNING_HOUR,
+    NUDGE_HOURLY_START,
+    NUDGE_HOURLY_END,
+    NUDGE_RECOVERY_HOUR,
+    HAMMER_KCAL,
+    MISSED_WORKOUT_THRESHOLD_KCAL,
+    DAY_TYPE_BY_TIER,
+    DAY_TYPE_LABEL,
+    WEEKDAY_INDEX,
+    WEEKDAY_NAME,
+    Z2_PREFERRED_WEEKDAY,
     week_bounds,
+    hrv_band,
+    fmt_kcal,
+    fmt_lbs,
+    _empty_prefs,
+    _eta_at_locked_rate,
+    _locked_intake,
+    _WEEKDAY_LOOKUP,
+    _WEEKDAY_TOKEN_RE,
+    parse_weekdays,
+    _BLACKLIST_NORMALIZE,
+    normalize_blacklist_term,
+    DAY_HEADER,
+    GymDay,
+    parse_gym_plan,
+    eligible_cf_days,
 )
+
+# ─── private aliases inherited from main.py Section 6 ───
+import json as _json  # local alias to avoid touching the import block
 
 __all__ = [
     "_db",
@@ -51,9 +100,20 @@ __all__ = [
     "burn_last_week",
     "burn_this_week",
     "check_external_veto",
+    "clear_prefs",
     "get_active_intent",
+    "get_prefs",
+    "last_hammer_day",
+    "latest_weight",
+    "log_hrv",
+    "log_workout",
+    "mark_nudge",
+    "nudge_already_sent",
+    "recalibrate_intents",
+    "set_prefs",
     "state_get",
     "state_set",
+    "sync_weight",
     "weekly_target",
 ]
 
@@ -292,6 +352,218 @@ def weekly_target() -> float:
             "SELECT target_active_calories FROM weekly_campaigns "
             "ORDER BY week_start DESC LIMIT 1").fetchone()
         return float(row[0]) if row else float(WEEKLY_ACTIVE_TARGET_KCAL)
+    finally:
+        con.close()
+
+
+
+
+# ─── per-week preferences + log helpers (Phase 4d R1 Step 1b) ───
+# Section 6 of agents/the_scientist/main.py prior to the god-file
+# split. Same DB-I/O substrate as Step 1a functions.
+
+# These let the user say "I can't make it on day X this week" or "pick days
+# X/Y/Z for CF instead". They auto-expire at the Sunday reset because the
+# row is keyed on week_start.
+# _WEEKDAY_LOOKUP, _WEEKDAY_TOKEN_RE, parse_weekdays,
+# _BLACKLIST_NORMALIZE, normalize_blacklist_term, _empty_prefs
+# all imported from protocols.py (top of file).
+
+def get_prefs(monday: datetime) -> dict:
+    week_key = monday.strftime("%Y-%m-%d")
+    con = _db()
+    try:
+        row = con.execute(
+            "SELECT unavailable_days, forced_cf_days, forced_z2_day, "
+            "tolerated_blacklist FROM week_preferences WHERE week_start=?",
+            (week_key,)).fetchone()
+    finally:
+        con.close()
+    if not row:
+        return _empty_prefs()
+    return {
+        "unavailable_days":    _json.loads(row[0]) if row[0] else [],
+        "forced_cf_days":      _json.loads(row[1]) if row[1] else [],
+        "forced_z2_day":       row[2],
+        "tolerated_blacklist": _json.loads(row[3]) if row[3] else [],
+    }
+
+
+def set_prefs(monday: datetime, **updates) -> dict:
+    """Merge updates into the week's pref row and return the merged result."""
+    week_key = monday.strftime("%Y-%m-%d")
+    cur = get_prefs(monday)
+    cur.update(updates)
+    con = _db()
+    try:
+        con.execute(
+            "INSERT INTO week_preferences "
+            "(week_start, unavailable_days, forced_cf_days, "
+            " forced_z2_day, tolerated_blacklist) VALUES (?,?,?,?,?) "
+            "ON CONFLICT(week_start) DO UPDATE SET "
+            "unavailable_days=excluded.unavailable_days, "
+            "forced_cf_days=excluded.forced_cf_days, "
+            "forced_z2_day=excluded.forced_z2_day, "
+            "tolerated_blacklist=excluded.tolerated_blacklist",
+            (week_key,
+             _json.dumps(cur["unavailable_days"]),
+             _json.dumps(cur["forced_cf_days"]),
+             cur["forced_z2_day"],
+             _json.dumps(cur["tolerated_blacklist"])))
+        con.commit()
+    finally:
+        con.close()
+    return cur
+
+
+def clear_prefs(monday: datetime) -> None:
+    con = _db()
+    try:
+        con.execute("DELETE FROM week_preferences WHERE week_start=?",
+                    (monday.strftime("%Y-%m-%d"),))
+        con.commit()
+    finally:
+        con.close()
+
+
+def latest_weight() -> float:
+    """Authoritative weight read.
+
+    Apple Watch (raw_vitals via vitals_listener) is the source of truth.
+    Manual `wt:` entries (weighin_log) are stop-gaps for when the watch
+    hasn't synced. The vitals_listener writes date-only timestamps
+    ('2026-05-04') while weighin_log writes full datetimes
+    ('2026-05-04 20:14:21'); naive lexical comparison would make the
+    longer string win, so manual would always shadow same-day watch
+    syncs. We compare on the date prefix and prefer watch when its
+    date is on or after the manual entry's date.
+    """
+    con = _db()
+    try:
+        watch = con.execute("""
+            SELECT value, substr(timestamp, 1, 10) AS day, timestamp
+            FROM raw_vitals
+            WHERE metric_type='weight'
+            ORDER BY day DESC, timestamp DESC, rowid DESC
+            LIMIT 1
+        """).fetchone()
+        manual = con.execute("""
+            SELECT weight_lbs, substr(ts, 1, 10) AS day, ts
+            FROM weighin_log
+            ORDER BY day DESC, ts DESC, rowid DESC
+            LIMIT 1
+        """).fetchone()
+        if watch and manual:
+            # Watch wins ties — it's the authoritative source.
+            return float(watch[0]) if watch[1] >= manual[1] else float(manual[0])
+        if watch:
+            return float(watch[0])
+        if manual:
+            return float(manual[0])
+        return 198.0
+    finally:
+        con.close()
+
+
+def sync_weight(val: float) -> None:
+    """Log a new weight and trigger intent recalibration so the projected
+    target dates always reflect the latest reading."""
+    con = _db()
+    try:
+        con.execute("INSERT INTO weighin_log (weight_lbs) VALUES (?)", (val,))
+        con.commit()
+    finally:
+        con.close()
+    recalibrate_intents()
+
+
+def recalibrate_intents() -> dict[str, str]:
+    """Project new target_date for both weight intents from current weight
+    at the locked sustainable rate. Returns a {kind: new_date} mapping for
+    callers that want to surface the change. Marks an intent 'met' if the
+    user is already at or below the target."""
+    current = latest_weight()
+    today = datetime.now()
+    updates: dict[str, str] = {}
+    spec = [
+        ("weight_intermediate_kg", INTENT_INTERMEDIATE_LBS),
+        ("weight_kg",              INTENT_TARGET_LBS),
+    ]
+    con = _db()
+    try:
+        for kind, target_lbs in spec:
+            if current <= target_lbs:
+                new_date = today.strftime("%Y-%m-%d")
+                status = "met"
+            else:
+                weeks = (current - target_lbs) / LOCKED_LOSS_LB_PER_WEEK
+                new_date = (today + timedelta(weeks=weeks)).strftime("%Y-%m-%d")
+                status = "active"
+            con.execute(
+                "UPDATE intents SET target_date=?, status=? WHERE kind=?",
+                (new_date, status, kind))
+            updates[kind] = new_date
+        con.commit()
+    finally:
+        con.close()
+    return updates
+
+
+def log_hrv(val: float) -> None:
+    con = _db()
+    try:
+        con.execute("INSERT INTO hrv_log (value) VALUES (?)", (val,))
+        con.commit()
+    finally:
+        con.close()
+
+
+def log_workout(kind: str, kcal: float) -> None:
+    con = _db()
+    try:
+        con.execute("INSERT INTO workout_log (kind, kcal) VALUES (?, ?)",
+                    (kind, kcal))
+        con.commit()
+    finally:
+        con.close()
+
+
+def last_hammer_day() -> datetime | None:
+    """Most recent calendar date where the user burned ≥ HAMMER_KCAL."""
+    con = _db()
+    try:
+        # check the last 14 days
+        for i in range(14):
+            d = (datetime.now() - timedelta(days=i)).strftime("%Y-%m-%d")
+            a = con.execute(
+                "SELECT COALESCE(SUM(value),0) FROM raw_vitals "
+                "WHERE metric_type='active_calories' AND substr(timestamp,1,10)=?",
+                (d,)).fetchone()[0] or 0
+            b = con.execute(
+                "SELECT COALESCE(SUM(kcal),0) FROM workout_log "
+                "WHERE substr(ts,1,10)=?", (d,)).fetchone()[0] or 0
+            if (float(a) + float(b)) >= HAMMER_KCAL:
+                return datetime.strptime(d, "%Y-%m-%d")
+        return None
+    finally:
+        con.close()
+
+
+def nudge_already_sent(kind: str, day: str) -> bool:
+    con = _db()
+    try:
+        return con.execute(
+            "SELECT 1 FROM nudge_log WHERE kind=? AND day=? LIMIT 1",
+            (kind, day)).fetchone() is not None
+    finally:
+        con.close()
+
+
+def mark_nudge(kind: str, day: str) -> None:
+    con = _db()
+    try:
+        con.execute("INSERT INTO nudge_log (kind, day) VALUES (?, ?)", (kind, day))
+        con.commit()
     finally:
         con.close()
 
