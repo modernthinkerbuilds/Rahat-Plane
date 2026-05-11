@@ -39,6 +39,8 @@ I started with **one agent**: a sports scientist who could read my training hist
 
 Today the foundation is real: **475 test cases passing across 8 suites**, the Scientist running in production through the new contract with full memory + reasoner, the Bajrangi recovery agent shipped as a stub to prove the substrate composes for non-Scientist agents, six standalone SVG architecture diagrams, ~12 modules in `core/`. The thesis I'm building toward: **the 11th agent should cost ~1 day to add, not 11 days.** That's where the leverage lives.
 
+After the three pivots, I ran a **parsimony refactor**: retired ~5,200 LOC of stale/run-once files from the pre-pivot eras, folded the memory layer into a package, and split the Sports Scientist's 2,930-LOC god-file into four cleanly-scoped modules (`protocols` / `state` / `handler` / thin `main`) — a **95% reduction** in the entry-point file. Promoted **"Frictionless Setup"** to a first-class architectural principle so anyone with a fresh clone reaches green tests with a single `bash bootstrap.sh`. All 142 hermetic tests stayed byte-identically green across every step of the refactor.
+
 ### The agents currently in the mesh
 
 | Agent | Role | What it owns |
@@ -79,6 +81,9 @@ A Bajrangi who reads HRV and recommends scaling is a domain expert. A Charter th
 
 **7. Sovereignty is becoming a product feature, not a compliance checkbox.**
 The more personal AI gets, the more it matters where the data lives. "Local-first" is going to read in 2028 the way "open source" read in 2015.
+
+**8. Cleanup is architectural work, and frictionless setup is a feature.**
+Three architectural pivots had landed within a 20-minute window and the codebase was carrying every predecessor — ~5,200 LOC of dead-but-tracked files, a 2,930-LOC god-file in the reference agent. Post-pivot cleanup isn't grunt work; it's the moment when *"next agent costs ~1 day"* actually becomes true. I promoted **"Frictionless Setup"** to a first-class architectural principle alongside *Local-first sovereignty* and *Deterministic core, LLM at edges*: anyone with a fresh clone reaches a green hermetic test suite in one command, with zero hardcoded paths in tracked files. Concretely enforced by templated launchd plists, `.env.example`, repo-relative path resolution, and `bootstrap.sh`. If the next agent costs 11 days because someone has to edit five files for their machine, the moat is fake.
 
 ---
 

@@ -172,7 +172,7 @@ def extract_state(user_msg, bot_reply, db_path=None) -> None:
     """
 ```
 
-The substrate is universal; adapters are thin (Scientist's is 280 LOC, Bajrangi's stub is 120 LOC). **Every future agent — Curriculum, Foodie, Voyager — onboards in ~1 day.**
+The substrate is universal; adapters are thin (Scientist's is ~365 LOC, Bajrangi's stub is ~110 LOC). **Every future agent — Curriculum, Foodie, Voyager — onboards in ~1 day.**
 
 ### Sleep-time consolidation
 
@@ -239,16 +239,16 @@ Each future agent is **~1 day to onboard**: define entity types, write the adapt
 
 | Component | Status | Notes |
 |---|---|---|
-| `core/` scaffolding | ✅ Shipped | 12 modules: `io.py`, `agent.py`, `decisions.py`, `charter.py`, `episodes.py`, `miya.py`, `eval.py`, `voice.py`, `memory.py`, `archival.py`, `cost.py`, `gemini_reasoner_io.py` |
-| The Scientist (production) | ✅ Live | ~2,600 LOC core, 25-tool reasoner, full memory adapter, Dakhini routing |
+| `core/` scaffolding | ✅ Shipped | 10 modules: `io.py`, `agent.py`, `decisions.py`, `charter.py`, `miya.py`, `eval.py`, `voice.py`, `cost.py`, `gemini_reasoner_io.py`, plus `memory/` package |
+| The Scientist (production) | ✅ Live | Four files: `protocols.py` (~325 LOC) + `state.py` (~1,000 LOC) + `handler.py` (~2,040 LOC) + `main.py` (~200 LOC). Originally a 2,930-LOC monolith — split 2026-05-11 (specs/PHASE_4D_R1_PLAN.md). 25-tool reasoner, full memory adapter, Dakhini routing |
 | The Miya (orchestrator) | ✅ Live | Hybrid router, single-voice-out, supervisor with capability registry, cross-agent broker |
 | Hyderabadi voice layer | ✅ Live | `core/voice.py` — idempotent, neutral-mode toggle for debug |
 | The Charter (policy plane) | ✅ Live | Quiet hours, HRV-red, external-veto policies; writes `governance_log` |
-| Memory substrate (4 tiers) | ✅ Live | `core/memory.py` (430 LOC) + `core/archival.py` (200 LOC) + Scientist adapter (280 LOC) |
-| Sleep-time consolidation | ✅ Live | `scripts/memory_consolidate.py` (250 LOC), nightly 03:00 cron |
-| Bajrangi (stub) | ✅ Shipped | Demonstrates substrate reuse for non-Scientist agents (~120 LOC adapter) |
+| Memory substrate (4 tiers) | ✅ Live | `core/memory/` package — `__init__.py` (~620 LOC, 5 primitives) + `archival.py` (~250 LOC, embeddings) + Scientist adapter (~365 LOC) |
+| Sleep-time consolidation | ✅ Live | `scripts/memory_consolidate.py` (~270 LOC), nightly 03:00 cron |
+| Bajrangi (stub) | ✅ Shipped | Demonstrates substrate reuse for non-Scientist agents (~110 LOC adapter) |
 | Decisions trace log | ✅ Live | Every routing call, tool invocation, verdict logged with `trace_id`, latency, tokens, cost |
-| Episodic memory (`episodes`) | ✅ Live | Plus `episode_notes`; 6-line Python API |
+| Frictionless setup | ✅ Live | `bootstrap.sh` + `.env.example` + templated `*.plist.template` files. Anyone can clone the repo and reach a green hermetic test suite in one command — zero hardcoded `/Users/<name>/...` paths in tracked files. Promoted to a first-class architectural principle in `specs/ARCHITECTURE.md §3` |
 | Model-first reasoner | ✅ Live | Gemini 2.5 Flash + 25 tools; legacy regex as fallback |
 | Cost ledger | ✅ Live | `core/cost.py` — single source of pricing truth; daily-digest scaffold |
 | Eval harness | ✅ Live | **475 cases passing** across 8 suites (legacy / wrapper / extended / reasoner / reasoner-robust / Gemini-parity / memory / PDF use-cases) |
@@ -259,8 +259,7 @@ Each future agent is **~1 day to onboard**: define entity types, write the adapt
 
 | Suite | Cases | What it covers |
 |---|---|---|
-| `eval_suite` (legacy regex) | 148 | All 25 handler intents through `sci.route()` |
-| `eval_via_agent` (wrapper) | 148 | Same cases through `ScientistAgent.route()` — proves the wrapper is a no-op |
+| `eval_suite` (legacy regex) | 148 | All 25 handler intents through `sci.route()`. Moved to `tests/scientist/` in the Phase 4 cleanup; runnable as `python -m tests.scientist.eval_suite` |
 | `eval_extended` (7-dimension) | 54 | Tick behavior, Charter integration, state persistence, time-of-day, edges, recalibration, conversation invariants |
 | `eval_reasoner` (B8) | 10 | Reasoner happy-path: tool calls, cost ledger, voice idempotence |
 | `eval_reasoner_robust` (B9) | 21 | Hallucination guardrails, fallback ladder, 8-hop ceiling |
