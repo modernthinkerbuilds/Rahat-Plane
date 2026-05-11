@@ -267,7 +267,7 @@ Each future agent is **~1 day to onboard**: define entity types, write the adapt
 | The Miya (orchestrator) | ✅ Live | Hybrid router, single-voice-out, supervisor with capability registry, cross-agent broker |
 | Hyderabadi voice layer | ✅ Live | `core/voice.py` — idempotent, neutral-mode toggle for debug |
 | The Charter (policy plane) | ✅ Live | Quiet hours, HRV-red, external-veto policies; writes `governance_log` |
-| Memory substrate (4 tiers) | ✅ Live | `core/memory.py` (430 LOC) + `core/archival.py` (200 LOC) + Scientist adapter (280 LOC) |
+| Memory substrate (4 tiers) | ✅ Live | `core/memory/` package (`__init__.py` ~620 LOC + `archival.py` ~250 LOC) + Scientist adapter (~330 LOC) |
 | Sleep-time consolidation | ✅ Live | `scripts/memory_consolidate.py` (250 LOC), nightly 03:00 cron |
 | Bajrangi (stub) | ✅ Shipped | Demonstrates substrate reuse for non-Scientist agents (~120 LOC adapter) |
 | Decisions trace log | ✅ Live | Every routing call, tool invocation, verdict logged with `trace_id`, latency, tokens, cost |
@@ -372,7 +372,7 @@ Living documentation in [`/specs/`](./specs/):
 |---|---|---|
 | **Orchestration** | [OpenClaw](https://openclaw.ai) + custom Miya | Heartbeat-driven, async, single Telegram inbox owner |
 | **State** | SQLite (+ JSON1) | One file, ACID, zero ops; vector layer added when needed |
-| **Memory** | `core/memory.py` (4 tiers) + `core/archival.py` (embeddings) | Letta-style substrate; agent-agnostic; sleep-time consolidation |
+| **Memory** | `core/memory/` package (4 tiers in `__init__.py` + `archival.py` for embeddings) | Letta-style substrate; agent-agnostic; sleep-time consolidation |
 | **Reasoner** | Gemini 2.5 Flash + tool calling | $0.001/turn, 2–6s latency, 25-tool catalog per agent |
 | **Embeddings** | Gemini `text-embedding-004` (768-d) | Archival semantic search |
 | **Compute** | Mac Mini M4 | Quiet, sovereign, always-on |

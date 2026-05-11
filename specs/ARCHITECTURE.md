@@ -39,7 +39,7 @@ The current shipped state ("Now") includes:
 - **Mesh-wide memory architecture (v2.0)** — Letta-style four-tier hierarchy (working / recall / archival / procedural) over a unified SQLite substrate, with per-agent adapters, sleep-time consolidation, and cross-agent reasoning. See §11.
 - **Model-first reasoner (v2.0)** — Gemini 2.5 Flash (default) / 2.5 Pro (high-stakes) with 25-tool catalog, structured-output state extraction, anti-hallucination contract, and a two-tier fallback ladder. See §12.
 - **A 475-case eval harness across 8 hermetic suites** plus 1 opt-in live suite — all 100% green: 148 legacy regex, 148 wrapper, 54 extended (B1–B7), 10 reasoner B8, 21 robust R1–R8, 39 Gemini-parity G1–G38, 22 memory M1–M6, 33 PDF use cases P1–P33.
-- **The Sports Scientist as the reference agent** — refactored to consume the new contract, with its 2,400 LOC monolith split into pure protocols (math, constants) and runtime concerns (handlers, ticks). All Gemini-PDF coaching patterns now structurally supported.
+- **The Sports Scientist as the reference agent** — refactored to consume the new contract. The 2,930 LOC monolith was split into four files: `protocols.py` (pure math + constants), `state.py` (DB-backed data + planning + recalibration), `handler.py` (intent dispatch + router + nudges + loop), and a ~140 LOC `main.py` thin entry point. All Gemini-PDF coaching patterns now structurally supported. See §5.7.
 - **Bajrangi stub** — minimal HRV/sleep agent demonstrating mesh-extensibility: same substrate, completely different domain entities (`recovery_protocol`, `sleep_concern`, `hrv_window`). See §13.
 
 The document below justifies every meaningful design choice against the alternatives we considered, and frames the system in language an ARB-style review would expect: trade-offs, failure modes, operational maturity, and a clear migration path to mobile and multi-tenant in 12+ months.
@@ -270,15 +270,17 @@ A `Reply` is `(text, confidence, work_orders=[])`.
 
 ### 5.7 The Sports Scientist (reference implementation)
 
-The first production agent. Refactored in Phase A to consume the new contract:
+The first production agent. Originally a 2,930-LOC monolith (`main.py`); now split into four files per the Phase 4d (R1) refactor (specs/ARCH_REVIEW_2026-05-08.md, specs/PHASE_4D_R1_PLAN.md):
 
-- **`protocols.py`** — pure-math constants and helpers (BMR, tier tables, HRV bands, weekday parsing, gym-plan blacklist filter). ~250 LOC, no DB, no network. Other agents (Coach, Curriculum) can import from here without dragging in the runtime.
-- **`main.py`** — handlers and route dispatch. 2,400 → 2,200 LOC after the protocols extraction. Imports from `protocols.py` via path bootstrap so it works whether loaded as a module (`importlib.spec_from_file_location`) or as a package.
-- **`agent.py`** — `ScientistAgent(Agent)` wrapper. ~150 LOC. Delegates `route()` to `main.route()`, `tick()` to the four legacy nudge functions. No behavior change visible to the user (proven by 142/142 eval cases unchanged).
+- **`protocols.py`** (~325 LOC) — pure-math constants and helpers (BMR, tier tables, HRV bands, weekday parsing, gym-plan blacklist filter). No DB, no network. Other agents (Coach, Curriculum) can import from here without dragging in the runtime.
+- **`state.py`** (~600 LOC) — DB I/O + data computation. Owns `_db()`, `state_get/set`, burn-window aggregations, `weekly_target`, per-week preferences, weight/HRV/workout logs, nudge throttle state, `replan_week`, `current_plan`, `today_plan`, `detect_missed_workouts`, `compute_week_recalibration`. DB path centralised through `core.io.DB_PATH` (no parallel resolution path).
+- **`handler.py`** (~1,800 LOC) — intent dispatch + router + nudges + loop. Owns all 35+ `handle_*` functions, `route`, `_legacy_route`, `llm_coach`, Hindi/Hyderabadi regex parsing, `maybe_*` ambient nudges, `_split_for_telegram`, `send`, `start`. Star-imports `state.py` so every data-layer helper is reachable; carries its own `client = genai.Client(...)` to avoid a circular import with `main.py`.
+- **`main.py`** (~140 LOC) — thin entry point. Path bootstrap, config (.env loading, API_KEY/TOKEN/CHAT_ID, HOME/PLAN_PATH), `from state import *`, `from handler import *`, and `if __name__ == "__main__": start()`. Loaded by `ScientistAgent`'s `importlib.spec_from_file_location("sci", main.py)`; the two star re-exports preserve the legacy `sci.<name>` import contract used by every eval file.
+- **`agent.py`** (~150 LOC) — `ScientistAgent(Agent)` wrapper. Delegates `route()` to `main.route()`, `tick()` to the four legacy nudge functions. No behavior change visible to the user (proven by 142/142 eval cases unchanged through the refactor).
 
 The Scientist owns: weight intent (84kg / 80kg targets), `weekly_plan`, `week_preferences`, `hrv_log`, `weighin_log`, `workout_log`, `nudge_log`. It *consumes* (read-only): `governance_log` (vetoes from Bajrangi or future agents), the deadlift intent (Fraser will own this when Fraser ships).
 
-**Why was the Scientist worth the refactor (vs. leaving it as the legacy monolith)?** Two reasons. First, it's the working reference for the next 19 agents — every shape Coach/Curriculum/Foodie use is established here. Second, the eval suite (142 cases) is proof the refactor is a true visible no-op; if a future agent breaks something, we know it's not because the Scientist drifted.
+**Why was the Scientist worth the refactor (vs. leaving it as the legacy monolith)?** Three reasons. First, it's the working reference for the next 19 agents — every shape Coach/Curriculum/Foodie use is established here. Second, the eval suite (148 cases) is proof the refactor is a true visible no-op; if a future agent breaks something, we know it's not because the Scientist drifted. Third, the four-file shape makes the Scientist's data layer (`state.py`) reusable by sibling agents — Bajrangi already shares `core/memory/`; future agents can share the planning math without dragging in dispatch logic.
 
 ---
 

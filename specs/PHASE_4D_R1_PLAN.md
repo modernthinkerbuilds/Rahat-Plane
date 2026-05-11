@@ -1,8 +1,18 @@
 # Phase 4d (R1) — `main.py` god-file split: execution plan
 
-**Status:** Plan only — to be executed in a future session.
+**Status:** ✅ **EXECUTED 2026-05-11.** Five commits on origin/main:
+- `11317c9` — Step 0a: centralize DB_PATH via core.io
+- `ca0e758` — Step 1a: extract DB helpers → `state.py`
+- `bb8231c` — Step 1b: extend `state.py` with prefs + logs
+- `ca4c7b1` — Step 2a: move planning + recalibration math → `state.py`
+- `54a63d5` — Step 2b: extract handlers + router + nudges + loop → `handler.py`
+
+**Result:** `main.py` shrunk from **2,930 LOC to ~140 LOC** (95% reduction). Four-file shape (protocols / state / handler / main thin) now active. 142 tests passed before and after every step — byte-identical eval-suite behavior (148 cases) preserved end-to-end.
+
+The plan-as-written below was a slight overestimate of step granularity (we needed an extra "Step 0a" to centralize DB_PATH before the state extraction could proceed safely, because 12 tests patched `sci.DB_PATH` as a module attribute). The five-step actual sequence is documented in the commits above.
+
 **Source:** R1 of `specs/ARCH_REVIEW_2026-05-08.md`.
-**Constraint:** Eval suite at `tests/scientist/eval_suite.py` (148 cases) must pass byte-identical pre and post. Voice/router/charter behavior cannot change.
+**Constraint:** Eval suite at `tests/scientist/eval_suite.py` (148 cases) must pass byte-identical pre and post. Voice/router/charter behavior cannot change. ← **Constraint held.**
 
 ---
 
