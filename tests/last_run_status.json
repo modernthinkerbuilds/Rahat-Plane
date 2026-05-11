@@ -1,12 +1,11 @@
 {
   "pass": true,
   "rc": 0,
-  "date": "2026-05-10",
-  "time": "0925",
-  "branch": "nightly/2026-05-10",
-  "had_uncommitted": false,
+  "date": "2026-05-11",
+  "time": "0926",
+  "branch": "nightly/2026-05-11",
+  "had_uncommitted": true,
   "auto_commit_disabled": false,
-  "post_auto_fix": true,
   "layers": [
     {
       "name": "unit",

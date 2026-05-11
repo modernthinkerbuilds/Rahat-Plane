@@ -1,13 +1,13 @@
 ==> unit: Pure-function unit tests (voice, cost, helpers, no I/O).
-    [PASS] 28 passed in 0.05s (0.14s)
+    [PASS] 28 passed in 0.05s (0.15s)
 ==> contract: Agent ABI + Charter ABI + decisions-ledger invariants.
-    [PASS] 40 passed in 0.16s (0.24s)
+    [PASS] 40 passed in 0.15s (0.25s)
 ==> eval: Scenario-fidelity evals against the Sports Scientist.
-    [PASS] 43 passed, 1 skipped in 0.13s (0.21s)
+    [PASS] 43 passed, 1 skipped in 0.13s (0.22s)
 ==> adversarial: Prompt injection / jailbreak / PII / hallucination probes.
-    [PASS] 14 passed in 0.16s (0.24s)
+    [PASS] 14 passed in 0.16s (0.25s)
 ==> regression: Replay regression — golden fixtures vs. live router.
-    [PASS] 17 passed in 0.09s (0.17s)
+    [PASS] 17 passed in 0.09s (0.18s)
 
 Markdown report → tests/last_run_report.md
 JSON report → tests/last_run.json

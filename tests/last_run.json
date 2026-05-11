@@ -2,7 +2,7 @@
   {
     "name": "unit",
     "passed": true,
-    "duration_s": 0.14139509201049805,
+    "duration_s": 0.1470332145690918,
     "summary": "28 passed in 0.05s",
     "n_passed": 28,
     "n_failed": 0,
@@ -12,27 +12,27 @@
   {
     "name": "contract",
     "passed": true,
-    "duration_s": 0.24286150932312012,
-    "summary": "40 passed in 0.16s",
+    "duration_s": 0.24806571006774902,
+    "summary": "40 passed in 0.15s",
     "n_passed": 40,
     "n_failed": 0,
     "n_skipped": 0,
-    "raw_output": "........................................                                 [100%]\n40 passed in 0.16s\n"
+    "raw_output": "........................................                                 [100%]\n40 passed in 0.15s\n"
   },
   {
     "name": "eval",
     "passed": true,
-    "duration_s": 0.21367383003234863,
+    "duration_s": 0.2208240032196045,
     "summary": "43 passed, 1 skipped in 0.13s",
     "n_passed": 43,
     "n_failed": 0,
     "n_skipped": 1,
-    "raw_output": "...........................................s                             [100%]\n=========================== short test summary info ============================\nSKIPPED [1] tests/evals/test_scientist_conversation.py:410: LLM-as-judge disabled (set GEMINI_API_KEY + RAHAT_RUN_JUDGE=1)\n43 passed, 1 skipped in 0.13s\n"
+    "raw_output": "...........................................s                             [100%]\n=========================== short test summary info ============================\nSKIPPED [1] ../../../confident-loving-faraday/mnt/rahat/tests/evals/test_scientist_conversation.py:410: LLM-as-judge disabled (set GEMINI_API_KEY + RAHAT_RUN_JUDGE=1)\n43 passed, 1 skipped in 0.13s\n"
   },
   {
     "name": "adversarial",
     "passed": true,
-    "duration_s": 0.24098682403564453,
+    "duration_s": 0.250154972076416,
     "summary": "14 passed in 0.16s",
     "n_passed": 14,
     "n_failed": 0,
@@ -42,7 +42,7 @@
   {
     "name": "regression",
     "passed": true,
-    "duration_s": 0.17139577865600586,
+    "duration_s": 0.18024682998657227,
     "summary": "17 passed in 0.09s",
     "n_passed": 17,
     "n_failed": 0,
