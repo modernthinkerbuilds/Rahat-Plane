@@ -103,8 +103,28 @@ HRV_ELITE  = 70
 
 # Movements that disqualify a day for the user's CrossFit slots.
 BLACKLIST: list[str] = ["partner", "handstand", "muscle up", "muscle-up",
-                        "overhead squat", "ohs"]
+                        "overhead squat", "ohs", "rope climb"]
 STRENGTH_BLACKLIST: list[str] = ["snatch"]
+
+# SugarWOD section titles to skip when scanning for blacklisted movements.
+# Optional / accessory work is something the user doesn't have time for,
+# so blacklisted movements appearing only in those sections shouldn't
+# disqualify the day. Substring match against the section title, case-
+# insensitive. Add variants here as the gym's title conventions evolve.
+SKIP_SECTION_TITLES: list[str] = ["optional", "accessor"]
+
+# Soft blockers — disqualify a day by default, BUT are tolerated if the
+# day's strength portion features a movement the user loves (see
+# LOVED_STRENGTH_MOVEMENTS). Rationale: rowing on its own is enough to
+# skip the day, but if today's strength is a heavy back squat, one
+# rowing block in the WOD isn't worth missing the lift over.
+SOFT_BLACKLIST: list[str] = ["rowing"]
+
+# Movements the user loves enough that they override a soft blocker on
+# the same day. Substring match against the strength block (so
+# "back squat", "clean & jerk", "hang clean", "front squat", "deadlift"
+# all qualify). Hard BLACKLIST / STRENGTH_BLACKLIST hits still block.
+LOVED_STRENGTH_MOVEMENTS: list[str] = ["back squat", "clean", "front squat", "deadlift"]
 
 # Tunables for the scheduler + nudges.
 Z2_RUN_KCAL_DEFAULT   = int(os.getenv("Z2_RUN_KCAL", "400"))
@@ -306,16 +326,69 @@ def parse_gym_plan(text: str | None = None,
         weekday = label.split()[0]
         chunks = re.split(r"^0 results\s*$", body, flags=re.MULTILINE)
         strength = chunks[0] if chunks else body
+
+        # Drop optional/accessory sections from the body BEFORE scanning
+        # for blockers — the user doesn't do those, so movements that
+        # only appear there shouldn't disqualify the day.
+        blockable_body = _strip_skip_sections(chunks)
+        body_lc = blockable_body.lower()
+        strength_lc = strength.lower()
+
+        # Loved-strength override: if today's strength features back squat,
+        # clean, front squat, or deadlift, we tolerate soft blockers (e.g.,
+        # rowing) so we don't skip a day worth showing up for.
+        has_loved_strength = any(loved in strength_lc
+                                 for loved in LOVED_STRENGTH_MOVEMENTS)
+
         blockers: list[str] = []
-        body_lc = body.lower()
+
+        # Hard blockers — always disqualify, regardless of strength.
         for term in BLACKLIST:
             if term in body_lc:
                 blockers.append(term)
         for term in STRENGTH_BLACKLIST:
-            if term in strength.lower():
+            if term in strength_lc:
                 blockers.append(f"{term} (strength)")
+
+        # Soft blockers — disqualify only when the strength isn't a loved
+        # movement. Tag with "(soft)" so the override is visible in logs
+        # / debug output.
+        for term in SOFT_BLACKLIST:
+            if term in body_lc:
+                if has_loved_strength:
+                    # Tolerated — loved-strength override active.
+                    continue
+                blockers.append(f"{term} (soft)")
+
         days.append(GymDay(label, weekday, body, strength, blockers))
     return days
+
+
+def _strip_skip_sections(chunks: list[str]) -> str:
+    """Return the body with 'Optional Accessories'-style sections removed.
+
+    `chunks` is the body already split by SugarWOD's '0 results' separator
+    (one chunk per workout block). Each chunk's title is the first non-
+    empty content line; if that title matches any pattern in
+    SKIP_SECTION_TITLES, the chunk is excluded from the scan body.
+
+    Used by parse_gym_plan so movements that only appear in optional /
+    accessory work don't trigger blacklist hits — the user doesn't have
+    time for those sections.
+    """
+    kept: list[str] = []
+    for chunk in chunks or []:
+        title = ""
+        for line in chunk.splitlines():
+            s = line.strip()
+            # Skip the lone '0' marker from SugarWOD's day-header preamble.
+            if s and s != "0":
+                title = s.lower()
+                break
+        if any(skip in title for skip in SKIP_SECTION_TITLES):
+            continue
+        kept.append(chunk)
+    return "\n".join(kept)
 
 
 def eligible_cf_days(days: list[GymDay] | None = None) -> list[GymDay]:
