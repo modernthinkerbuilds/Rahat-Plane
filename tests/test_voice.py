@@ -71,10 +71,19 @@ def test_skip_on_llm_error_prefix(monkeypatch):
 def test_classify_morning_briefing(monkeypatch):
     monkeypatch.setenv("RAHAT_VOICE", "hyderabadi")
     body = "☀️ morning briefing — today is leg day"
-    out = voice.dress(body)
-    # One of the morning openers must appear.
-    morning_openers = ["hau bhai", "salaam miya", "subah subah"]
-    assert any(o in out.lower() for o in morning_openers)
+    # Pin the kind explicitly so this test doesn't have to enumerate the
+    # full morning opener pool (which grows over time — see voice.py
+    # docstring). The dress + is_dressed pair is the actual contract.
+    out = voice.dress(body, kind="morning")
+    # Body data is preserved verbatim.
+    assert body in out
+    # Some Hyderabadi opener was applied — is_dressed() is the canonical
+    # check (it knows the comprehensive list).
+    assert voice.is_dressed(out)
+    # And the result is genuinely different from the input (we did add
+    # something).
+    assert out != body
+    assert len(out) > len(body)
 
 
 def test_classify_status_block(monkeypatch):

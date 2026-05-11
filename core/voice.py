@@ -20,20 +20,33 @@ The voice is configurable via env var `RAHAT_VOICE`:
 
 Add to .env on the Mac to pin the setting.
 
-Hyderabadi vocabulary used (deliberately a small, tasteful subset —
-adding more risks sounding like a parody):
+Hyderabadi vocabulary used (deliberately a tasteful subset — adding
+more risks sounding like a parody, so each new word earns its place):
 
-    hau           = yes / yeah
-    nakko         = no / don't
-    miya / bhai   = friendly term of address (m.)
-    bole to       = "I mean" / "as in"
-    light lo      = chill out / relax
-    samjhe        = got it / understand
-    chal          = let's go / move
-    abhi          = right now
-    aaj / kal     = today / tomorrow|yesterday
-    kya bole      = "what say" / yeah?
-    bohot         = lots / very
+    hau / hao bhai     = yes / yes brother
+    nakko              = no / don't (the signature Hyderabadi word)
+    zyada nakko        = don't overdo it
+    miya / miyan       = dude / bro (term of address, m.)
+    patte              = versatile dude/bro ("patte, idhar aa")
+    ustad              = master / boss / dude (respectful but casual)
+    chicha             = uncle / any older man, casual
+    kya yaroon         = "hey brother" / friendly greeting
+    bole to            = "I mean" / "as in"
+    light lo / light le = chill out / take it easy
+    aaraam se          = easy / take it easy
+    hallu              = slowly
+    samjhe             = got it / understand
+    chal               = let's go / move
+    phodne ka          = to nail it / break it / go all out
+    abhi / abhi ich    = right now / right now only ("ich" = only)
+    aaj / kal / parsoon = today / tomorrow|yesterday / day-±2
+    kaiku              = why
+    haula              = crazy / mad / foolish (affectionate)
+    bigad gaya         = got spoiled / messed up
+    baigan             = literally "brinjal" but means nothing/useless
+    makikirkiri        = creating a fuss / unnecessary commotion
+    potti / potta      = girl / boy
+    bohot              = lots / very
 """
 from __future__ import annotations
 
@@ -61,44 +74,77 @@ def _mode() -> VoiceMode:
 OPENERS: dict[str, list[str]] = {
     "morning":      ["☀️ *Hau bhai, subah ka brief* —",
                      "☀️ *Salaam miya, suniye* —",
-                     "☀️ *Subah subah, dekh* —"],
+                     "☀️ *Subah subah, dekh* —",
+                     "☀️ *Hau ustad, naya din* —",
+                     "☀️ *Aaj phodne ka, sun patte* —",
+                     "☀️ *Kya yaroon, subah ka kaam* —"],
     "recovery":     ["🌙 *Bhai, 9pm check* —",
                      "🌙 *Hau, raat ho gayi* —",
-                     "🌙 *Light lo, recovery time* —"],
+                     "🌙 *Light lo, recovery time* —",
+                     "🌙 *Aaraam se patte, raat hai* —",
+                     "🌙 *Hallu chal, body ko vaqt do* —",
+                     "🌙 *Hau ustad, light le ab* —"],
     "walk":         ["🚶 *Chal bhai, pace check* —",
                      "🚶 *Hau, walk nudge* —",
-                     "🚶 *Bhidu, thoda chal* —"],
+                     "🚶 *Bhidu, thoda chal* —",
+                     "🚶 *Patte, abhi ich nikal* —",
+                     "🚶 *Zyada nakko, just chal* —",
+                     "🚶 *Hau yaroon, 10 min ka kaam* —"],
     "weekly_reset": ["📅 *Hau bhai, hafta khatam* —",
                      "📅 *Hafte ka score, suniye* —",
-                     "📅 *Bhai, week recap* —"],
+                     "📅 *Bhai, week recap* —",
+                     "📅 *Hau patte, hafta khatam* —",
+                     "📅 *Kya yaroon, naya hafta* —",
+                     "📅 *Ustad, hafte ka hisaab* —"],
     "status":       ["*Hau bhai* —",
                      "*Suno miya* —",
-                     "*Bole to* —"],
+                     "*Bole to* —",
+                     "*Sun patte* —",
+                     "*Hau ustad* —",
+                     "*Kya yaroon, bole to* —"],
     "schedule":     ["*Plan dekh, bhai* —",
                      "*Hafte ka schedule* —",
-                     "*Hau, chal plan* —"],
+                     "*Hau, chal plan* —",
+                     "*Patte, plan dekh* —",
+                     "*Hau ustad, hafte ka schedule* —"],
     "weight":       ["*Wajan ka update* —",
                      "*Hau bhai, weight* —",
-                     "*Scale bole to* —"],
+                     "*Scale bole to* —",
+                     "*Hau patte, wajan* —",
+                     "*Scale kya bole, ustad* —"],
     "ack":          ["✅ *Hau ho gaya* —",
                      "✅ *Done bhai* —",
-                     "✅ *Samjha, set kar diya* —"],
+                     "✅ *Samjha, set kar diya* —",
+                     "✅ *Hau patte, ho gaya* —",
+                     "✅ *Set bhai, ustad* —"],
     "default":      ["*Hau bhai* —",
-                     "*Suno* —"],
+                     "*Suno* —",
+                     "*Kya yaroon* —",
+                     "*Hau ustad* —"],
 }
 
 CLOSERS: dict[str, list[str]] = {
     "morning":      ["_Light lo, ho jayega._",
-                     "_Chal, aaj ka kaam shuru._"],
+                     "_Chal, aaj ka kaam shuru._",
+                     "_Aaj ich phodne ka, patte._",
+                     "_Hau ustad, ek kaam shuru._"],
     "recovery":     ["_Aaj nakko skip karne ka._",
-                     "_Soja jaldi, kal ki taiyari._"],
+                     "_Soja jaldi, kal ki taiyari._",
+                     "_Aaraam se patte, kal phir._",
+                     "_Hallu, body ko time do._"],
     "walk":         ["_Bohot der nakko, abhi nikal._",
-                     "_10 min, bas. Light lo._"],
+                     "_10 min, bas. Light lo._",
+                     "_Zyada nakko ustad, just chal._",
+                     "_Patte, abhi ich, 10 min._"],
     "weekly_reset": ["_Naya hafta, naya plan. Chal._",
-                     "_Pichla khatam. Aage dekh._"],
+                     "_Pichla khatam. Aage dekh._",
+                     "_Hau patte, naya hafta._",
+                     "_Pichla baigan, aage dekh ustad._"],
     "ack":          [],
     "weight":       ["_Trajectory pe hai bhai._",
-                     "_Locked rate pe chal raha._"],
+                     "_Locked rate pe chal raha._",
+                     "_Hau patte, on track._",
+                     "_Aaraam se ustad, pace sahi hai._"],
     "schedule":     [],
     "status":       [],
     "default":      [],
@@ -207,8 +253,13 @@ def is_dressed(text: str) -> bool:
     to be added here too if they should count as "dressed".
     """
     return bool(re.search(
-        r"\b(hau bhai|suno miya|bhidu|light lo|chal bhai|hafta khatam|"
-        r"wajan|samjha|bole to|salaam miya|subah subah|raat ho gayi|"
-        r"plan dekh|hafte ka|done bhai|ho jayega|nakko|kal ki taiyari|"
-        r"naya hafta|trajectory pe|locked rate pe|scale bole)\b",
+        r"\b(hau bhai|suno miya|bhidu|light lo|light le|chal bhai|"
+        r"hafta khatam|wajan|samjha|bole to|salaam miya|subah subah|"
+        r"raat ho gayi|plan dekh|hafte ka|done bhai|ho jayega|nakko|"
+        r"kal ki taiyari|naya hafta|trajectory pe|locked rate pe|"
+        r"scale bole|hau ustad|hau patte|hau yaroon|kya yaroon|"
+        r"sun patte|aaraam se|hallu chal|phodne ka|zyada nakko|"
+        r"abhi ich|aaj ich|sun ustad|hafte ka hisaab|patte|"
+        r"ho gaya|set bhai|on track|pace sahi|pichla baigan|"
+        r"body ko vaqt|body ko time|just chal|10 min)\b",
         text, re.I))
