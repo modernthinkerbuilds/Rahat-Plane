@@ -38,29 +38,6 @@ Rahat is the runtime that fixes all three. **Cognitive offload, by design.**
 
 ---
 
-## 🚀 Quickstart
-
-Rahat is built around the **Frictionless Setup** principle: anyone with a fresh clone should be able to get a green test suite without editing any code or doc paths. Five steps, one command for most:
-
-```bash
-git clone https://github.com/modernthinkerbuilds/Rahat-Plane.git rahat
-cd rahat
-bash bootstrap.sh                                # creates venv, installs deps, renders plists, runs tests
-# fill in API keys in .env (created from .env.example)
-RAHAT_TEST_MODE=1 ./venv/bin/python -m tests.run_all   # re-run anytime
-```
-
-`bootstrap.sh` is idempotent — re-run it whenever requirements change. Every machine-specific path lives in templates (`*.plist.template`) and gets rendered with your local `RAHAT_HOME` on first run; the rendered plists are gitignored so they never travel with the repo. The hermetic test stack runs without a Gemini API key (it stubs `google.genai`).
-
-To wire the launchd services on macOS once tests are green:
-
-```bash
-cp core/com.rahat.miya.plist ~/Library/LaunchAgents/
-launchctl load ~/Library/LaunchAgents/com.rahat.miya.plist
-```
-
----
-
 ## 🏗️ Architecture: Four Layers
 
 The original three-plane model held until I hit a wall: agents need to *actively manage their own memory* the way a human coach remembers your goals, your commitments, and last week's conversation. Memory isn't passive infrastructure — it's an agent-facing responsibility. So Rahat now has four conceptual layers:
@@ -195,7 +172,7 @@ def extract_state(user_msg, bot_reply, db_path=None) -> None:
     """
 ```
 
-The substrate is universal; adapters are thin (Scientist's is 280 LOC, Bajrangi's stub is 120 LOC). **Every future agent — Curriculum, Foodie, Voyager — onboards in ~1 day.**
+The substrate is universal; adapters are thin (Scientist's is ~365 LOC, Bajrangi's stub is ~110 LOC). **Every future agent — Curriculum, Foodie, Voyager — onboards in ~1 day.**
 
 ### Sleep-time consolidation
 
@@ -262,16 +239,16 @@ Each future agent is **~1 day to onboard**: define entity types, write the adapt
 
 | Component | Status | Notes |
 |---|---|---|
-| `core/` scaffolding | ✅ Shipped | 12 modules: `io.py`, `agent.py`, `decisions.py`, `charter.py`, `episodes.py`, `miya.py`, `eval.py`, `voice.py`, `memory.py`, `archival.py`, `cost.py`, `gemini_reasoner_io.py` |
-| The Scientist (production) | ✅ Live | ~2,600 LOC core, 25-tool reasoner, full memory adapter, Dakhini routing |
+| `core/` scaffolding | ✅ Shipped | 10 modules: `io.py`, `agent.py`, `decisions.py`, `charter.py`, `miya.py`, `eval.py`, `voice.py`, `cost.py`, `gemini_reasoner_io.py`, plus `memory/` package |
+| The Scientist (production) | ✅ Live | Four files: `protocols.py` (~325 LOC) + `state.py` (~1,000 LOC) + `handler.py` (~2,040 LOC) + `main.py` (~200 LOC). Originally a 2,930-LOC monolith — split 2026-05-11 (specs/PHASE_4D_R1_PLAN.md). 25-tool reasoner, full memory adapter, Dakhini routing |
 | The Miya (orchestrator) | ✅ Live | Hybrid router, single-voice-out, supervisor with capability registry, cross-agent broker |
 | Hyderabadi voice layer | ✅ Live | `core/voice.py` — idempotent, neutral-mode toggle for debug |
 | The Charter (policy plane) | ✅ Live | Quiet hours, HRV-red, external-veto policies; writes `governance_log` |
-| Memory substrate (4 tiers) | ✅ Live | `core/memory/` package (`__init__.py` ~620 LOC + `archival.py` ~250 LOC) + Scientist adapter (~330 LOC) |
-| Sleep-time consolidation | ✅ Live | `scripts/memory_consolidate.py` (250 LOC), nightly 03:00 cron |
-| Bajrangi (stub) | ✅ Shipped | Demonstrates substrate reuse for non-Scientist agents (~120 LOC adapter) |
+| Memory substrate (4 tiers) | ✅ Live | `core/memory/` package — `__init__.py` (~620 LOC, 5 primitives) + `archival.py` (~250 LOC, embeddings) + Scientist adapter (~365 LOC) |
+| Sleep-time consolidation | ✅ Live | `scripts/memory_consolidate.py` (~270 LOC), nightly 03:00 cron |
+| Bajrangi (stub) | ✅ Shipped | Demonstrates substrate reuse for non-Scientist agents (~110 LOC adapter) |
 | Decisions trace log | ✅ Live | Every routing call, tool invocation, verdict logged with `trace_id`, latency, tokens, cost |
-| Episodic memory (`episodes`) | ✅ Live | Plus `episode_notes`; 6-line Python API |
+| Frictionless setup | ✅ Live | `bootstrap.sh` + `.env.example` + templated `*.plist.template` files. Anyone can clone the repo and reach a green hermetic test suite in one command — zero hardcoded `/Users/<name>/...` paths in tracked files. Promoted to a first-class architectural principle in `specs/ARCHITECTURE.md §3` |
 | Model-first reasoner | ✅ Live | Gemini 2.5 Flash + 25 tools; legacy regex as fallback |
 | Cost ledger | ✅ Live | `core/cost.py` — single source of pricing truth; daily-digest scaffold |
 | Eval harness | ✅ Live | **475 cases passing** across 8 suites (legacy / wrapper / extended / reasoner / reasoner-robust / Gemini-parity / memory / PDF use-cases) |
@@ -282,8 +259,7 @@ Each future agent is **~1 day to onboard**: define entity types, write the adapt
 
 | Suite | Cases | What it covers |
 |---|---|---|
-| `eval_suite` (legacy regex) | 148 | All 25 handler intents through `sci.route()` |
-| `eval_via_agent` (wrapper) | 148 | Same cases through `ScientistAgent.route()` — proves the wrapper is a no-op |
+| `eval_suite` (legacy regex) | 148 | All 25 handler intents through `sci.route()`. Moved to `tests/scientist/` in the Phase 4 cleanup; runnable as `python -m tests.scientist.eval_suite` |
 | `eval_extended` (7-dimension) | 54 | Tick behavior, Charter integration, state persistence, time-of-day, edges, recalibration, conversation invariants |
 | `eval_reasoner` (B8) | 10 | Reasoner happy-path: tool calls, cost ledger, voice idempotence |
 | `eval_reasoner_robust` (B9) | 21 | Hallucination guardrails, fallback ladder, 8-hop ceiling |
@@ -372,7 +348,7 @@ Living documentation in [`/specs/`](./specs/):
 |---|---|---|
 | **Orchestration** | [OpenClaw](https://openclaw.ai) + custom Miya | Heartbeat-driven, async, single Telegram inbox owner |
 | **State** | SQLite (+ JSON1) | One file, ACID, zero ops; vector layer added when needed |
-| **Memory** | `core/memory/` package (4 tiers in `__init__.py` + `archival.py` for embeddings) | Letta-style substrate; agent-agnostic; sleep-time consolidation |
+| **Memory** | `core/memory.py` (4 tiers) + `core/archival.py` (embeddings) | Letta-style substrate; agent-agnostic; sleep-time consolidation |
 | **Reasoner** | Gemini 2.5 Flash + tool calling | $0.001/turn, 2–6s latency, 25-tool catalog per agent |
 | **Embeddings** | Gemini `text-embedding-004` (768-d) | Archival semantic search |
 | **Compute** | Mac Mini M4 | Quiet, sovereign, always-on |
