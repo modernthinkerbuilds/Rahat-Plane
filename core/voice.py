@@ -252,14 +252,23 @@ def is_dressed(text: str) -> bool:
     grow without breaking is_dressed semantics; new phrases just need
     to be added here too if they should count as "dressed".
     """
+    # Normalize markdown italic markers (`_..._`) to spaces before the
+    # regex. Python regex treats `_` as a word character, so `\b` never
+    # fires between an underscore and a letter — meaning closer phrases
+    # like `_Locked rate pe..._` would silently fail to match. Replacing
+    # underscores with spaces keeps word-boundary semantics correct AND
+    # lets the same regex handle both opener phrases (asterisk-wrapped
+    # for markdown bold) and closer phrases (underscore-wrapped for
+    # markdown italic).
+    normalized = re.sub(r"_", " ", text)
     return bool(re.search(
         r"\b(hau bhai|suno miya|bhidu|light lo|light le|chal bhai|"
-        r"hafta khatam|wajan|samjha|bole to|salaam miya|subah subah|"
-        r"raat ho gayi|plan dekh|hafte ka|done bhai|ho jayega|nakko|"
-        r"kal ki taiyari|naya hafta|trajectory pe|locked rate pe|"
-        r"scale bole|hau ustad|hau patte|hau yaroon|kya yaroon|"
-        r"sun patte|aaraam se|hallu chal|phodne ka|zyada nakko|"
-        r"abhi ich|aaj ich|sun ustad|hafte ka hisaab|patte|"
-        r"ho gaya|set bhai|on track|pace sahi|pichla baigan|"
+        r"hafta khatam|wajan|samjha|bole to|kya bole|salaam miya|"
+        r"subah subah|raat ho gayi|plan dekh|hafte ka|done bhai|"
+        r"ho jayega|nakko|kal ki taiyari|naya hafta|trajectory pe|"
+        r"locked rate pe|scale bole|hau ustad|hau patte|hau yaroon|"
+        r"kya yaroon|sun patte|aaraam se|hallu chal|phodne ka|"
+        r"zyada nakko|abhi ich|aaj ich|sun ustad|hafte ka hisaab|"
+        r"patte|ho gaya|set bhai|on track|pace sahi|pichla baigan|"
         r"body ko vaqt|body ko time|just chal|10 min)\b",
-        text, re.I))
+        normalized, re.I))

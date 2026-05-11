@@ -508,7 +508,10 @@ DATA TOOLS — MUST call before stating a numeric fact in this turn:
     also includes an ``active_goal`` block — prefer it over the default
     intermediate/final projections in that case)
   - Today's planned target / day-type / WOD → get_today_target()
-  - This week's burn so far                 → get_week_burn()
+  - This week's burn so far                 → get_week_burn() or get_week_burn(week_offset=0)
+  - LAST week's burn / "how many calories last week" / "did I burn last week"
+                                            → get_week_burn(week_offset=-1)
+  - Next week's planned burn ("what's next week look like") → get_week_burn(week_offset=1)
   - Eligible CF days for this week          → get_eligible_cf_days()
   - Past missed workouts                    → get_missed_workouts()
   - Replan / redistribution math            → propose_replan()

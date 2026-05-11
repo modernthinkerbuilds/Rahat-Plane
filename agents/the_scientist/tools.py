@@ -57,16 +57,27 @@ def _sci():
 def get_week_burn(week_offset: int = 0) -> dict:
     """Tool: read this (or a relative) week's burn.
 
-    week_offset = 0 → current week, -1 → last week, +1 → next (always 0).
-    Returns total burn so far and a per-day list with day_type + target.
+    Args
+    ----
+    week_offset : int, default 0
+        0  → current week (Mon–Sun, week-so-far)
+        -1 → last week
+        -2 → week before last; etc.
+        +1 → next week (no actuals yet, just the plan)
+        Use -1 for any "last week" / "how many calories did I burn
+        last week" / "previous week" query.
+
+    Returns
+    -------
+    dict with:
+        week_start    : Monday of that week, ISO date string
+        weekly_target : the active weekly kcal target
+        burn_so_far   : total kcal in the past + today portion of that week
+        days          : per-day list with weekday, day_type, target, actual
     """
+    from datetime import timedelta
     sci = _sci()
-    now = datetime.now() + (week_offset * 7) * (datetime.now() - datetime.now())
-    # week_offset=0 stays now; -1 backs up 7 days. Doing it inline keeps the
-    # tool dependency-free.
-    if week_offset != 0:
-        from datetime import timedelta
-        now = datetime.now() + timedelta(days=7 * week_offset)
+    now = datetime.now() + timedelta(days=7 * week_offset)
     monday, _ = sci.week_bounds(now)
     plan = sci.current_plan(monday)
     today_idx = datetime.now().weekday() if week_offset == 0 else 6

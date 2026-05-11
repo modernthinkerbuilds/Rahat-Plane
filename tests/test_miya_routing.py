@@ -233,10 +233,12 @@ def test_voice_dressing_runs_on_outbound(monkeypatch, captured_tg, sandbox_db):
     text = captured_tg.last()
     # Numbers preserved verbatim
     assert "1,073" in text
-    # Voice wrapper present (any of the OPENERS phrases)
-    assert any(s in text.lower() for s in [
-        "hau bhai", "suno", "bole to", "hau bhai", "wajan", "scale bole",
-    ])
+    # Voice wrapper present — use voice.is_dressed() (the canonical
+    # comprehensive check) instead of a hard-coded opener list; the
+    # phrasebook grows over time and a hard-coded list goes stale on
+    # every expansion.
+    from core import voice
+    assert voice.is_dressed(text)
 
 
 # ─── 9. The tick → nudge → charter pipeline ───────────────────────
