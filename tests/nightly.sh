@@ -56,6 +56,25 @@ NIGHTLY_PYTHON="${NIGHTLY_PYTHON:-${REPO_ROOT}/venv/bin/python}"
 if [ ! -x "$NIGHTLY_PYTHON" ]; then
     NIGHTLY_PYTHON="$(command -v python3)"
 fi
+
+# Self-heal: if the chosen interpreter can't import pytest, install it.
+# Without this guard the suite reports "all 5 layers FAIL n_passed=0"
+# with raw_output "No module named pytest" — looks like a real
+# regression but is actually an environment bug (happened 2026-05-10
+# when the scheduler ran in a sandbox where pytest wasn't preinstalled).
+# We try --break-system-packages first (system pythons since PEP 668);
+# fall back to --user (older pythons). Both errors silenced — if both
+# fail, the suite run below will surface the real "No module named
+# pytest" failure, same as before.
+if ! "$NIGHTLY_PYTHON" -c "import pytest" >/dev/null 2>&1; then
+    echo "[nightly] pytest not importable from $NIGHTLY_PYTHON — self-healing"
+    "$NIGHTLY_PYTHON" -m pip install --break-system-packages pytest \
+        >/dev/null 2>&1 \
+        || "$NIGHTLY_PYTHON" -m pip install --user pytest \
+            >/dev/null 2>&1 \
+        || echo "[nightly] WARN: pytest install failed; suite will report missing-module"
+fi
+
 cd "$REPO_ROOT"
 
 if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
