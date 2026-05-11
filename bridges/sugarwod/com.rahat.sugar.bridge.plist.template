@@ -10,9 +10,13 @@
     <key>Label</key>
     <string>com.rahat.sugar.bridge</string>
 
+    <!-- Uses the repo venv's Python so FastAPI / uvicorn / pydantic
+         (installed via requirements.txt) are available. Falling back to
+         /usr/bin/python3 would fail because macOS's system Python is
+         3.9 and has none of those deps. -->
     <key>ProgramArguments</key>
     <array>
-        <string>/usr/bin/python3</string>
+        <string>{{RAHAT_HOME}}/venv/bin/python</string>
         <string>{{RAHAT_HOME}}/bridges/sugarwod/server.py</string>
     </array>
 
