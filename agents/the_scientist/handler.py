@@ -81,8 +81,23 @@ from agents.the_scientist.state import *  # noqa: F401, F403
 # protocols.py versions; main.py's protocols import aliases them so
 # the bare name binds to the wrapper, not the underlying function.
 
+# Load .env explicitly here so handler.py is self-sufficient. main.py
+# also calls load_dotenv() before importing this module, so this is a
+# belt-and-suspenders measure — load_dotenv is idempotent.
+load_dotenv()
+
 API_KEY = os.getenv("GEMINI_API_KEY")
 client = genai.Client(api_key=API_KEY) if API_KEY else None
+
+# Telegram credentials — duplicated from main.py for the same reason
+# client / API_KEY are: handler.py can't import from main.py without a
+# circular import (main star-imports handler). Both are read from the
+# same env vars, so duplication is behavior-neutral. start() and the
+# Telegram-wire helpers (send, _split_for_telegram, the long-poll loop)
+# all live in this module and need these names at module load time —
+# main.py's copies aren't visible here.
+TOKEN = os.getenv("SCIENTIST_BOT_TOKEN")
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 HOME = Path.home()
 PLAN_PATH = HOME / "developer/agency/rahat/staging/workspace/gym-programming/weekly_plan.txt"
