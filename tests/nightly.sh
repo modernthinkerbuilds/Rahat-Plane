@@ -186,21 +186,31 @@ else
         git checkout -b "$BRANCH" "$BASE" >/dev/null
     fi
 
-    # Pop the stash onto the nightly branch so tests run AGAINST the
-    # uncommitted work. If pop conflicts (rare — only if user has
-    # changes that overlap with main since their last pull), we abort
-    # the pop and continue without the changes; we'll restore them
-    # to the user's tree at the end.
+    # Apply the stash onto the nightly branch so tests run AGAINST the
+    # uncommitted work. If apply conflicts (user's changes overlap with
+    # main since their last pull), we hard-reset the working tree and
+    # fall through to "test clean main" mode. The stash entry itself is
+    # preserved — we used `apply`, not `pop`, so the user's work is
+    # always recoverable via `git stash pop stash@{N}` on their original
+    # branch.
+    STASH_CONFLICT=0
     if [[ "$HAD_UNCOMMITTED" -eq 1 ]]; then
         STASH_REF="$(find_stash_ref)"
         if [[ -n "$STASH_REF" ]]; then
             if ! git stash apply "$STASH_REF" >/dev/null 2>&1; then
-                echo "[nightly] WARN: stash apply conflicted — testing against clean main"
-                git checkout -- . >/dev/null 2>&1 || true
-                git clean -fd >/dev/null 2>&1 || true
+                echo "[nightly] WARN: stash apply conflicted — your work is" \
+                     "preserved as $STASH_REF. Testing against clean origin/main."
+                # `git checkout -- .` does NOT clear unmerged index entries.
+                # `git reset --hard HEAD` does. Without this, every subsequent
+                # `git commit` fails with "you have unmerged files."
+                git reset --hard HEAD >/dev/null 2>&1 || true
+                git clean -fd -e 'tests/last_run_*' >/dev/null 2>&1 || true
                 STASH_CONFLICT=1
-            else
-                STASH_CONFLICT=0
+                # Critical: treat this run as if there was NO uncommitted
+                # work. We're testing pristine origin/main now, so we
+                # must NOT enter the auto-commit branch below — there's
+                # nothing legitimate to commit on top of the report.
+                HAD_UNCOMMITTED=0
             fi
         fi
     fi
@@ -229,6 +239,15 @@ import json, pathlib
 report = pathlib.Path("$JSON_PATH")
 status = pathlib.Path("$STATUS_PATH")
 data = json.loads(report.read_text()) if report.exists() else []
+# "Collection-only failure" heuristic: pytest exited non-zero but the
+# layer reports 0 failed tests. Usually means an import/collection
+# error fired — most commonly because a partial `git stash apply` left
+# conflict markers in a test file. Surface so the agentic layer can
+# avoid auto-fixing a phantom test failure.
+suspect_collection_fail = any(
+    (not d.get("passed")) and d.get("n_failed", 0) == 0
+    for d in data
+)
 status.write_text(json.dumps({
     "pass": all(d.get("passed") for d in data) if data else False,
     "rc": $RUN_RC,
@@ -236,7 +255,10 @@ status.write_text(json.dumps({
     "time": "$TIME_TAG",
     "branch": "$BRANCH",
     "had_uncommitted": $HAD_UNCOMMITTED == 1,
+    "stash_conflict": $STASH_CONFLICT == 1,
+    "stash_label": ("$STASH_LABEL" if $STASH_CONFLICT == 1 else None),
     "auto_commit_disabled": $NO_AUTOCOMMIT == 1,
+    "suspect_collection_fail": suspect_collection_fail,
     "layers": [
         {"name": d["name"], "passed": d["passed"],
          "n_passed": d.get("n_passed", 0),
@@ -312,9 +334,22 @@ if [[ "$RUN_RC" -eq 0 && "$HAD_UNCOMMITTED" -eq 1 \
 elif [[ "$RUN_RC" -ne 0 && "$HAD_UNCOMMITTED" -eq 1 ]]; then
     echo "[nightly] tests failed — NOT committing uncommitted work"
     # Discard the apply that's currently dirtying the nightly branch
-    # so the report-commit below has a clean slate.
-    git checkout -- . >/dev/null 2>&1 || true
-    git clean -fd -e tests/last_run_* >/dev/null 2>&1 || true
+    # so the report-commit below has a clean slate. `reset --hard`
+    # (not `checkout --`) is required to clear any unmerged index
+    # entries left by a partial stash apply.
+    git reset --hard HEAD >/dev/null 2>&1 || true
+    git clean -fd -e 'tests/last_run_*' >/dev/null 2>&1 || true
+fi
+
+# Belt-and-suspenders: regardless of which branch above fired, scrub
+# any lingering unmerged index entries so the report commit below
+# can't fail with "you have unmerged files." This catches edge cases
+# the explicit branches miss (e.g. SIGINT during stash apply, or
+# the stash-conflict path that already set HAD_UNCOMMITTED=0 but left
+# unmerged paths behind earlier in the run).
+if git ls-files --unmerged 2>/dev/null | head -1 | grep -q .; then
+    echo "[nightly] WARN: unmerged paths detected pre-commit — hard reset"
+    git reset --hard HEAD >/dev/null 2>&1 || true
 fi
 
 # Always commit the report files (separate, very small commit).
