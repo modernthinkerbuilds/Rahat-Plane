@@ -1,11 +1,13 @@
 {
   "pass": true,
   "rc": 0,
-  "date": "2026-05-11",
-  "time": "0926",
-  "branch": "nightly/2026-05-11",
+  "date": "2026-05-12",
+  "time": "0944",
+  "branch": "nightly/2026-05-12",
   "had_uncommitted": true,
   "auto_commit_disabled": false,
+  "git_ceremony_skipped": true,
+  "git_ceremony_skip_reason": "Sandbox fuse mount blocks file unlinks; nightly.sh cannot stash/branch/commit. Tests ran via 'python -m tests.run_all' directly. Stale .git/index.lock from 09:22 attempt is still present and must be removed manually.",
   "layers": [
     {
       "name": "unit",
