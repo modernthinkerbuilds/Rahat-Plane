@@ -11,6 +11,20 @@ __pycache__/
 .pytest_cache/
 pytest-cache-files-*/
 
+# Private strategy / marketing / hire docs — NEVER commit these.
+# Keep these in ~/developer/agency/rahat-strategy/ (sibling folder, outside repo).
+CAMPAIGN_PLAN*.md
+KICKOFF*.md
+MARKETING*.md
+STRATEGY*.md
+HIRE*.md
+POSITIONING*.md
+BRAND_LINES.md
+private/
+.private/
+rahat-strategy/
+essays/
+
 # Rendered launchd plists — generated from *.plist.template by bootstrap.sh.
 # The templates are tracked; the rendered files contain machine-specific
 # absolute paths and must NEVER be committed.
