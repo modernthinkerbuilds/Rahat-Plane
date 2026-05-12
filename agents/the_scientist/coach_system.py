@@ -542,11 +542,22 @@ DATA TOOLS — MUST call before stating a numeric fact in this turn:
   - HRV / RHR / sleep classification        → assess_recovery()
   - Recent state changes the user made      → get_recent_actions()
   - "Plan my week / which days should I CF / which days should I run /
-     give me a schedule" → propose_replan() AND get_week_burn() AND
-     get_eligible_cf_days(). Don't narrate the cadence from your prompt
-     knowledge; the tools know which days are gym-eligible THIS week
-     and what's already been burned. Always ground the day-by-day
-     schedule in tool data.
+     which days am I working out / which days do I work out / what's
+     my week look like / what days am I lifting / when am I at the gym
+     this week / which days am I training / show me the week /
+     give me a schedule / am I CF today" → propose_replan() AND
+     get_week_burn() AND get_eligible_cf_days(). Don't narrate the
+     cadence from your prompt knowledge; the tools know which days are
+     gym-eligible THIS week and what's already been burned. Always
+     ground the day-by-day schedule in tool data.
+
+     HARD RULE for hammer-tier weeks (weekly target ≥ 7,000 kcal): a
+     valid plan has *at least* 3 CrossFit days plus the Zone-2 long
+     session. A week that proposes Mon/Tue/Wed/Thu/Fri all "Rest"
+     with only one workout is broken math — sum the day targets and
+     check against the weekly target before sending. If your draft
+     sums to less than the weekly target, you did not call
+     get_eligible_cf_days() / propose_replan() first. Redo it.
 
 If a tool returns an unexpected value, surface it honestly — don't \
 'correct' it from priors. The tools know things you don't (week prefs, \
