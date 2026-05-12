@@ -57,6 +57,7 @@ echo ""
 echo "── 4. rendering launchd plists from templates ──"
 for tmpl in core/com.rahat.miya.plist.template \
             bridges/sugarwod/com.rahat.sugar.bridge.plist.template \
+            skills/com.rahat.vitals.plist.template \
             scripts/jobs/com.rahat.regression.plist.template \
             scripts/jobs/com.rahat.greenstreak.plist.template \
             scripts/jobs/com.rahat.hygiene.plist.template \
@@ -97,8 +98,12 @@ echo "════════════════════════�
 echo "  Bootstrap complete."
 echo ""
 echo "  To install the launchd services on macOS:"
-echo "      cp core/com.rahat.miya.plist ~/Library/LaunchAgents/"
-echo "      launchctl load ~/Library/LaunchAgents/com.rahat.miya.plist"
+echo "      cp core/com.rahat.miya.plist             ~/Library/LaunchAgents/"
+echo "      cp bridges/sugarwod/com.rahat.sugar.bridge.plist  ~/Library/LaunchAgents/"
+echo "      cp skills/com.rahat.vitals.plist         ~/Library/LaunchAgents/"
+echo "      for s in miya sugar.bridge vitals; do"
+echo "          launchctl load ~/Library/LaunchAgents/com.rahat.\$s.plist"
+echo "      done"
 echo ""
 echo "  To install the four nightly jobs (tests, greenstreak, hygiene, evolve):"
 echo "      cp scripts/jobs/com.rahat.regression.plist  ~/Library/LaunchAgents/"

@@ -21,13 +21,17 @@
            -i  prevent idle system sleep
            -d  prevent display sleep   (drop -d for headless Mac Mini)
            -m  prevent disk sleep
-         Mirrors the legacy Scientist plist exactly so the cutover is
-         a like-for-like swap. -->
+
+         Uses the repo venv's Python (3.12+) not /usr/bin/python3 — the
+         system Python on macOS is 3.9 and does NOT have google-genai,
+         requests, python-dotenv, or any other runtime dep installed,
+         so the launchd job would NameError at module load. The venv
+         is the single source of truth for Python deps. -->
     <key>ProgramArguments</key>
     <array>
         <string>/usr/bin/caffeinate</string>
         <string>-imd</string>
-        <string>/usr/bin/python3</string>
+        <string>{{RAHAT_HOME}}/venv/bin/python</string>
         <string>-u</string>
         <string>{{RAHAT_HOME}}/core/miya_main.py</string>
     </array>
