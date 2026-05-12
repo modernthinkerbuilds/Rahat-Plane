@@ -323,7 +323,15 @@ def parse_gym_plan(text: str | None = None,
 
     days: list[GymDay] = []
     for label, body in parts:
-        weekday = label.split()[0]
+        # Normalize weekday to title case ('Mon', 'Tue', …) so consumers
+        # can do `WEEKDAY_INDEX.get(d.weekday[:3])` without worrying about
+        # the SugarWOD bookmarklet's header style. The bookmarklet writes
+        # 'MON 11' / 'TUE 12' / etc. (uppercase), but WEEKDAY_INDEX keys
+        # are title case — without this normalization, the lookup returns
+        # None at every call site, eligible_wds ends up empty, and replan
+        # silently falls back to the default cadence. The 2026-05-11
+        # "every day has blacklisted movements" false-positive bug.
+        weekday = label.split()[0].title()
         chunks = re.split(r"^0 results\s*$", body, flags=re.MULTILINE)
         strength = chunks[0] if chunks else body
 

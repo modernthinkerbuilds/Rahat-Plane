@@ -132,7 +132,7 @@ def eligible_cf_days(days=None):
     return _proto_eligible_cf_days(days)
 
 
-__all__ = ['API_KEY', 'HOME', 'MODEL_ID', 'PLAN_PATH', '_active_model', '_extract_wod_summary', '_internal_safety_downgrade', '_is_workout_on_day_query', '_legacy_route', '_n', '_parse_date', '_split_for_telegram', '_which_monday', 'client', 'daily_target', 'eligible_cf_days', 'handle_breathing', 'handle_clear_prefs', 'handle_current_weight', 'handle_daily_burn', 'handle_decision_run_or_wod', 'handle_filter', 'handle_hrv', 'handle_last_week', 'handle_manual_burn', 'handle_next_week_target', 'handle_next_workout', 'handle_pace', 'handle_pick_days', 'handle_post_recovery', 'handle_pre_fuel', 'handle_recalibrate', 'handle_replan', 'handle_scheduling_help', 'handle_set_tier', 'handle_show_plan', 'handle_split_target', 'handle_swap', 'handle_today_target', 'handle_tolerate', 'handle_unavailable', 'handle_weekly_remaining', 'handle_weighin_when', 'handle_weight', 'handle_weight_timeline', 'handle_workout_on', 'handle_workout_today', 'latest_hrv', 'llm_coach', 'maybe_morning_briefing', 'maybe_recovery_nudge', 'maybe_walk_nudge', 'maybe_weekly_reset', 'parse_gym_plan', 'route', 'send', 'start']
+__all__ = ['API_KEY', 'HOME', 'MODEL_ID', 'PLAN_PATH', 'SLASH_COMMANDS', '_active_model', '_extract_wod_summary', '_internal_safety_downgrade', '_is_workout_on_day_query', '_legacy_route', '_n', '_parse_date', '_split_for_telegram', '_try_slash_command', '_which_monday', 'client', 'daily_target', 'eligible_cf_days', 'handle_breathing', 'handle_clear_prefs', 'handle_current_weight', 'handle_daily_burn', 'handle_decision_run_or_wod', 'handle_filter', 'handle_hrv', 'handle_last_week', 'handle_manual_burn', 'handle_next_week_target', 'handle_next_workout', 'handle_pace', 'handle_pick_days', 'handle_post_recovery', 'handle_pre_fuel', 'handle_recalibrate', 'handle_replan', 'handle_scheduling_help', 'handle_set_tier', 'handle_show_plan', 'handle_split_target', 'handle_swap', 'handle_today_target', 'handle_tolerate', 'handle_unavailable', 'handle_weekly_remaining', 'handle_weighin_when', 'handle_weight', 'handle_weight_timeline', 'handle_workout_on', 'handle_workout_today', 'latest_hrv', 'llm_coach', 'maybe_morning_briefing', 'maybe_recovery_nudge', 'maybe_walk_nudge', 'maybe_weekly_reset', 'parse_gym_plan', 'route', 'send', 'start']
 
 
 def handle_recalibrate() -> str:
@@ -193,16 +193,38 @@ def handle_daily_burn(when: datetime) -> str:
 
 
 def handle_weekly_remaining() -> str:
+    """Week-scoped Actual vs Expected-so-far + remaining/day. Prorates
+    the weekly target to fraction-of-week-elapsed (Mon 0:00 → now),
+    so 'Expected so far' answers 'where should I be right now' not
+    'where will I be Sunday night'. Keeps the legacy 'Remaining' line
+    (eval contract: 'how much do I have left' must return Remaining)."""
     burned, _ = burn_this_week()
     target = weekly_target()
+    expected_now = _prorated_week_target(target)
+    delta_now = burned - expected_now
     remaining = max(target - burned, 0.0)
     now = datetime.now()
     days_left = 7 - now.weekday()  # incl today, week ends Sun
     per_day = remaining / days_left if days_left else 0
+
+    if expected_now <= 0:
+        pace_line = ""
+    elif delta_now >= 0:
+        pace_line = (f"Actual: *{fmt_kcal(burned)}* / "
+                     f"Expected so far: {fmt_kcal(expected_now)} ✅ "
+                     f"(+{fmt_kcal(delta_now)})\n")
+    else:
+        pct = (burned / expected_now * 100) if expected_now > 0 else 100.0
+        pace_line = (f"Actual: *{fmt_kcal(burned)}* / "
+                     f"Expected so far: {fmt_kcal(expected_now)} "
+                     f"({pct:.0f}%, {fmt_kcal(-delta_now)} behind)\n")
+
     return (
-        f"Week so far: *{fmt_kcal(burned)}* of {fmt_kcal(target)}.\n"
-        f"Remaining: *{fmt_kcal(remaining)}* over {days_left} day(s) "
-        f"≈ {fmt_kcal(per_day)}/day."
+        f"Week so far\n"
+        f"{pace_line}"
+        f"Week target: {fmt_kcal(target)}\n"
+        f"Remaining: {fmt_kcal(remaining)} over {days_left} day(s) "
+        f"≈ {fmt_kcal(per_day)}/day"
     )
 
 
@@ -558,10 +580,46 @@ def handle_show_plan(next_week: bool = False) -> str:
     """Render the locked weekly cadence: 3 CF + 1 Z2 + 3 active-rest.
     Set `next_week=True` to render the upcoming Mon–Sun (uses gym schedule
     eligible days for this week — see note below if you want a different
-    week's gym data)."""
+    week's gym data).
+
+    Staleness check: the stored plan can drift from the current gym
+    programming if replan ran during the 2026-05-11 uppercase-weekday
+    parser bug (or any future regression that gets fixed). Before
+    rendering, we compare the stored CF picks against a fresh
+    eligible_cf_days() read — if they disagree, we trigger a fresh
+    replan so the rendered plan matches what the reasoner would say.
+    Otherwise /plan and 'plan my week' contradict each other (the
+    actual symptom the user hit at 06:35 PM on 2026-05-11)."""
     monday, _ = week_bounds()
     if next_week:
         monday = monday + timedelta(days=7)
+
+    # Staleness detection — only for this-week views (next-week is
+    # always re-computed). Compare stored CF picks to fresh eligible
+    # gym days (first 3, matching state.replan_week's normal-path
+    # logic at state.py:676 — `cf_wds = list(eligible_wds[:3])`).
+    if not next_week:
+        _stored = current_plan(monday)
+        _stored_cf = sorted([r["weekday"] for r in _stored
+                             if r.get("day_type") == "cf"])
+        _fresh_eligible = sorted([
+            WEEKDAY_INDEX.get(d.weekday[:3])
+            for d in eligible_cf_days(parse_gym_plan())
+            if WEEKDAY_INDEX.get(d.weekday[:3]) is not None
+        ])
+        _would_pick = _fresh_eligible[:3]
+        if (_stored_cf and len(_fresh_eligible) >= 3
+                and _stored_cf != _would_pick):
+            # Stored plan disagrees with fresh gym picks → re-plan.
+            # MUST pass force=True: replan_week early-returns the
+            # existing rows when ANY plan exists for this week
+            # (state.py:631). Without force, my call would no-op
+            # and the stale picks would survive forever — exactly
+            # the 2026-05-11 evening symptom.
+            print(f"[handle_show_plan] stale plan detected — stored "
+                  f"CF={_stored_cf} vs fresh={_would_pick}; replanning")
+            replan_week(monday, force=True)
+
     plan = current_plan(monday)
     plan_sum = sum(d["target_kcal"] for d in plan)
     weekly_total = weekly_target()
@@ -580,17 +638,52 @@ def handle_show_plan(next_week: bool = False) -> str:
         "",
     ]
     if is_fallback:
-        # Either no gym plan synced, OR the synced plan had too many
-        # blacklisted movements this week to fill 3 CF days from gym
-        # programming alone. The plan picks 3 CF days regardless;
-        # surface a context-aware warning so the user knows whether
-        # to sync or scale.
+        # Self-heal: the stored flag might be stale (e.g. set during the
+        # 2026-05-11 uppercase-weekday parser bug, when eligible_wds came
+        # out empty for any gym plan). Before showing the warning, check
+        # whether a FRESH parse would still need fallback. If every CF
+        # pick in the stored plan lands on a currently-clean gym day,
+        # the warning is lying and we suppress it AND overwrite the flag
+        # so subsequent /plan calls don't re-trigger the false alarm.
+        _fresh_days = parse_gym_plan()
+        _tolerated = {
+            normalize_blacklist_term(t)
+            for t in get_prefs(monday)["tolerated_blacklist"]
+        }
+        _fresh_clean_wds: set[int] = set()
+        for d in _fresh_days:
+            wd_idx = WEEKDAY_INDEX.get(d.weekday[:3])
+            if wd_idx is None:
+                continue
+            if not any(
+                normalize_blacklist_term(b.split(" (")[0]) not in _tolerated
+                for b in d.blockers
+            ):
+                _fresh_clean_wds.add(wd_idx)
+        _cf_picks = [r["weekday"] for r in plan if r.get("day_type") == "cf"]
+        if _cf_picks and all(wd in _fresh_clean_wds for wd in _cf_picks):
+            # All picks are clean against the current parse — the
+            # is_fallback flag is stale. Clear it and skip the warning.
+            state_set(f"plan_fallback_{week_key}", "0")
+            is_fallback = False
+
+    if is_fallback:
+        # is_fallback=True means replan had to backfill at least one CF
+        # day from default cadence (eligible_wds < 3). There are three
+        # distinct sub-cases, each deserving a DIFFERENT message:
         #
-        # CRITICAL: count only CF days whose gym programming is
-        # blacklist-CLEAN (after applying tolerated_blacklist for
-        # this week). Days that have a gym_label but blacklisted
-        # movements don't count as "clean" — they require scaling
-        # so the user needs to know.
+        #   (a) No gym plan synced at all (parse_gym_plan returned []).
+        #       Action: sync the SugarWOD bookmarklet.
+        #
+        #   (b) Gym plan synced but EVERY day has blacklisted movements
+        #       (clean_wds empty AND gym_days non-empty). The 2026-05-11
+        #       false-positive bug was here — we showed "No gym plan
+        #       synced" even though the user had synced.
+        #       Action: tolerate a movement, or scale.
+        #
+        #   (c) Gym plan synced with 1–2 clean days (clean_wds non-empty
+        #       but < 3). Backfilled the rest from default cadence.
+        #       Action: tolerate a movement to widen picks.
         gym_days_for_warn = parse_gym_plan()
         prefs_for_warn = get_prefs(monday)
         tolerated_for_warn = {
@@ -613,17 +706,35 @@ def handle_show_plan(next_week: bool = False) -> str:
         clean_picks = sum(
             1 for r in plan
             if r.get("day_type") == "cf" and r["weekday"] in clean_wds)
-        if clean_picks == 0:
-            warning = ("_⚠️ No gym plan synced — using default "
-                       "Mon/Wed/Fri cadence._")
+
+        # Describe the actual fallback cadence (the CF picks in the plan)
+        # so the warning never lies about Mon/Wed/Fri when the plan
+        # actually shows Tue/Thu/Sun.
+        picked_cf_wds = [r["weekday"] for r in plan
+                         if r.get("day_type") == "cf"]
+        cadence_label = "/".join(WEEKDAY_NAME[wd][:3]
+                                 for wd in sorted(picked_cf_wds))
+
+        if not gym_days_for_warn:
+            # Case (a): truly no gym plan.
+            warning = (f"_⚠️ No gym plan synced — using "
+                       f"{cadence_label} cadence._")
             sub = ("_Sync via the SugarWOD bookmarklet for "
                    "blacklist-aware picks._")
+        elif clean_picks == 0:
+            # Case (b): gym synced but every day is blacklisted.
+            warning = (f"_⚠️ Gym plan synced but every day has "
+                       f"blacklisted movements — using "
+                       f"{cadence_label} cadence._")
+            sub = ("_Tolerate a movement to widen picks: `tolerate "
+                   "muscle-up` or `tolerate handstand`._")
         else:
+            # Case (c): some clean gym picks + backfill.
             warning = (
                 f"_⚠️ Only {clean_picks} day"
                 f"{'s' if clean_picks != 1 else ''} in this week's gym "
-                f"plan are blacklist-clean — backfilled the rest from "
-                f"default cadence._")
+                f"plan are blacklist-clean — backfilled the rest with "
+                f"{cadence_label} cadence._")
             sub = ("_Tolerate a movement to widen picks: `tolerate "
                    "muscle-up` or `tolerate handstand`._")
         lines.insert(1, warning)
@@ -889,31 +1000,95 @@ def handle_scheduling_help() -> str:
     )
 
 
+def _prorated_day_target(full_target: float, now: datetime | None = None) -> float:
+    """How much of today's full target the user *should* have hit by now.
+
+    Mirrors maybe_walk_nudge: linearly distributes the day's target
+    across the active window NUDGE_HOURLY_START → NUDGE_HOURLY_END
+    (default 10:00–20:00). Before the window opens → 0. After it
+    closes → full target. Avoids the >100% overshoot the legacy nudge
+    code had by clamping elapsed to [1, span].
+
+    Why a window not 0–24h: NEAT happens mostly during waking hours;
+    asking the user to be 25% to target at 6am is not useful.
+    """
+    if full_target <= 0:
+        return 0.0
+    now = now or datetime.now()
+    span = NUDGE_HOURLY_END - NUDGE_HOURLY_START + 1
+    if now.hour < NUDGE_HOURLY_START:
+        return 0.0
+    if now.hour > NUDGE_HOURLY_END:
+        return float(full_target)
+    elapsed = max(1, min(now.hour - NUDGE_HOURLY_START + 1, span))
+    return float(full_target) * (elapsed / span)
+
+
+def _prorated_week_target(full_target: float,
+                          now: datetime | None = None) -> float:
+    """How much of the weekly target the user *should* have hit by now.
+
+    Linear in week seconds (Mon 00:00 → Sun 23:59). At Mon 6pm a week
+    is ~10.7% complete, so 7,000 kcal target → expected ≈ 750 kcal so
+    far. Without this, /week showed 'Actual 263 / Expected 7,000 (4%)'
+    on a Monday afternoon — useless for 'am I on track right now'.
+    """
+    if full_target <= 0:
+        return 0.0
+    now = now or datetime.now()
+    monday = (now - timedelta(days=now.weekday())).replace(
+        hour=0, minute=0, second=0, microsecond=0)
+    elapsed_s = (now - monday).total_seconds()
+    week_s = 7 * 24 * 3600
+    fraction = min(1.0, max(0.0, elapsed_s / week_s))
+    return float(full_target) * fraction
+
+
 def handle_pace() -> str:
-    """Today's burn vs day-type ideal, plus week-to-date vs target."""
+    """Today's burn — Actual vs Expected-by-now. Day-scoped only;
+    the week view lives at /week so we don't duplicate the line.
+
+    'Expected' is prorated to the current hour using the same window
+    the pace nudges use (10am–8pm). At 9am you're 'expected' to be at
+    0% of target; at noon, ~27%; at 8pm, 100%. This matches what the
+    user sees in the auto pace-check nudges, so /pace and the nudges
+    speak the same language.
+    """
     plan_row = today_plan()
-    ideal = plan_row["target_kcal"]
+    full_ideal = plan_row["target_kcal"]
     actual = burn_for_date(datetime.now())
-    delta = actual - ideal
     kind = DAY_TYPE_LABEL[plan_row["day_type"]]
     gym = f" ({plan_row['gym_label']})" if plan_row["gym_label"] else ""
 
-    if ideal == 0:
-        day_status = f"Today: {kind}{gym} — no target. Burned {fmt_kcal(actual)}."
-    elif delta >= 0:
-        day_status = (f"Today: {kind}{gym} — *{fmt_kcal(actual)}* / "
-                      f"{fmt_kcal(ideal)} ✅ (+{fmt_kcal(delta)}).")
-    else:
-        pct = (actual / ideal * 100) if ideal else 0
-        day_status = (f"Today: {kind}{gym} — *{fmt_kcal(actual)}* / "
-                      f"{fmt_kcal(ideal)} ({pct:.0f}%, "
-                      f"{fmt_kcal(-delta)} short).")
+    header = f"Today — {kind}{gym}"
+    if full_ideal == 0:
+        return f"{header}\nActual: *{fmt_kcal(actual)}* (no target today)."
 
-    burned, _ = burn_this_week()
-    target = weekly_target()
-    pct_w = (burned / target * 100) if target else 0
-    week_status = f"Week: *{fmt_kcal(burned)}* / {fmt_kcal(target)} ({pct_w:.0f}%)."
-    return day_status + "\n" + week_status
+    expected_now = _prorated_day_target(full_ideal)
+    delta = actual - expected_now
+    pct_now = (actual / expected_now * 100) if expected_now > 0 else 100.0
+
+    if expected_now <= 0:
+        # Before the active window opens — Expected-so-far is zero by
+        # definition, so anything you've burned is bonus. Keep the
+        # "Expected" word in the response so eval substring contracts
+        # don't break, and show the full-day target for context.
+        return (f"{header}\n"
+                f"Actual: *{fmt_kcal(actual)}* / "
+                f"Expected so far: 0 (window starts "
+                f"{NUDGE_HOURLY_START}:00)\n"
+                f"Day target: {fmt_kcal(full_ideal)}")
+    if delta >= 0:
+        return (f"{header}\n"
+                f"Actual: *{fmt_kcal(actual)}* / "
+                f"Expected so far: {fmt_kcal(expected_now)} ✅ "
+                f"(+{fmt_kcal(delta)})\n"
+                f"Day target: {fmt_kcal(full_ideal)}")
+    return (f"{header}\n"
+            f"Actual: *{fmt_kcal(actual)}* / "
+            f"Expected so far: {fmt_kcal(expected_now)} "
+            f"({pct_now:.0f}%, {fmt_kcal(-delta)} short)\n"
+            f"Day target: {fmt_kcal(full_ideal)}")
 
 
 def handle_today_target() -> str:
@@ -1386,22 +1561,114 @@ def _parse_date(s: str) -> datetime | None:
     return None
 
 
+# ── Slash-command shortcuts ─────────────────────────────────────────
+# Slash commands are explicit user intent — perfect for the deterministic
+# path. They skip the model-first reasoner entirely, saving the Gemini
+# round-trip for queries that already have a typed handler. Register
+# these with @BotFather so Telegram autocompletes them.
+#
+# Adding a shortcut: append the (cmd, callable) tuple. Each callable
+# takes zero args and returns a string — match handle_pace / etc.
+# The dispatcher matches `/cmd` exactly (case-insensitive) OR `/cmd@botname`
+# (Telegram appends @botname when the same command is used in a group).
+SLASH_COMMANDS: dict[str, callable] = {
+    "/pace":  lambda: handle_pace(),
+    "/today": lambda: handle_daily_burn(datetime.now()),
+    "/week":  lambda: handle_weekly_remaining(),
+    "/plan":  lambda: handle_show_plan(),
+    "/next":  lambda: handle_next_workout(),
+    "/help":  lambda: (
+        "Shortcuts:\n"
+        "/pace  — today's actual vs expected-by-now\n"
+        "/today — today's active burn\n"
+        "/week  — what's left this week\n"
+        "/plan  — this week's schedule\n"
+        "/next  — next eligible workout\n\n"
+        "Or just type natural language — the coach handles the rest."
+    ),
+}
+
+
+def _try_slash_command(msg: str) -> str | None:
+    """If msg is a known slash command, dispatch deterministically.
+    Returns the handler's reply, or None to fall through to the reasoner.
+
+    Tolerates Telegram's group-mode suffix `/pace@RahatSportsScientist`
+    and trailing whitespace. Case-insensitive — Telegram autocomplete
+    sometimes capitalizes the first letter on mobile keyboards.
+    """
+    stripped = (msg or "").strip()
+    if not stripped.startswith("/"):
+        return None
+    # First whitespace-delimited token, lowercased, with any @botname suffix
+    # peeled off. We deliberately ignore arguments after the command for
+    # now (no /log 850); add an args parser if a future shortcut needs one.
+    first = stripped.split()[0].lower()
+    cmd = first.split("@", 1)[0]
+    handler = SLASH_COMMANDS.get(cmd)
+    if handler is None:
+        return None
+    try:
+        return handler()
+    except Exception as e:
+        # A handler crash on a shortcut shouldn't take down the whole
+        # message path — let it cascade to the reasoner with the
+        # original message so the user still gets *some* answer.
+        print(f"[scientist.route] slash handler {cmd} crashed: {e}")
+        return None
+
+
 def route(msg: str) -> str:
     """Top-level inbound dispatcher.
+
+    Order — cheapest → most general:
+        1. Slash command (deterministic, zero LLM cost)
+        2. Semantic intent classifier (one embedding call, no reasoning)
+        3. Model-first reasoner (default)
+        4. Legacy regex router (fallback on reasoner crash)
 
     Phase 4 (model-first): default path is the reasoner in
     `agents.the_scientist.reasoner.reason()`. Set
     `RAHAT_LEGACY_DISPATCH=1` in env to fall back to the regex+handler
-    dispatcher (preserved as `_legacy_route` below). The legacy path
-    will be deleted after the reasoner has logged a clean week per
-    specs/MODEL-FIRST-PIVOT.md §6 Phase 4.
+    dispatcher (preserved as `_legacy_route` below).
+
+    The semantic classifier (step 2) handles the long tail of
+    paraphrasings that the prompt's phrase anchors miss. It replaces
+    the whack-a-mole pattern of "user says new variant → edit prompt →
+    ship → break on next variant" with a single embedding-based match.
+    Anchors live in agents/the_scientist/intent_classifier.py.
 
     Reasoner failures (Anthropic + Gemini both down) automatically
     cascade into the legacy path, so this is also the live resilience
     boundary.
     """
+    # 1. Slash command — explicit user intent, no reason to consult the LLM.
+    slash = _try_slash_command(msg)
+    if slash is not None:
+        return slash
+
+    # 2. Semantic intent classifier — only the user message gets embedded
+    #    (~1ms + network, ~$1e-7 per call). Anchors are cached on disk.
+    try:
+        from agents.the_scientist import intent_classifier as ic
+        intent, sim = ic.classify(msg)
+        if intent is not None:
+            reply = ic.dispatch(intent)
+            if reply is not None:
+                # Log the classification for threshold tuning. Keep the
+                # similarity in the trace so we can analyze drift later.
+                print(f"[scientist.route] intent={intent} sim={sim:.3f}")
+                return reply
+    except Exception as e:
+        # Don't let a classifier bug take down the message path —
+        # the reasoner is more capable anyway. Just log and proceed.
+        print(f"[scientist.route] intent classifier crashed: {e}")
+
+    # 3. Legacy dispatch override.
     if os.getenv("RAHAT_LEGACY_DISPATCH", "").lower() in ("1", "true", "yes"):
         return _legacy_route(msg)
+
+    # 4. Model-first reasoner (default).
     try:
         from agents.the_scientist import reasoner
         return reasoner.reason(msg)

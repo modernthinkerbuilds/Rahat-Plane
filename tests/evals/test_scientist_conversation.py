@@ -265,11 +265,14 @@ class TestCoaching:
 class TestPaceStatus:
     def test_pace_check(self, sci_module):
         out = _route(sci_module, "pace check")
-        assert "Today:" in out
+        # /pace now uses the "Today — <type>" header + explicit
+        # Actual/Expected lines. The 'Actual' anchor is the load-bearing
+        # contract — without it, the user can't tell what they've burned.
+        assert "Today" in out and "Actual" in out and "Expected" in out
 
     def test_on_track(self, sci_module):
         out = _route(sci_module, "am I on track")
-        assert "Today:" in out
+        assert "Today" in out and "Actual" in out
 
     def test_weigh_in_window(self, sci_module):
         out = _route(sci_module, "when should I weigh in").lower()
