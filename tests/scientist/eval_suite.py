@@ -83,6 +83,15 @@ sci = importlib.util.module_from_spec(spec); sys.modules["sci"] = sci
 spec.loader.exec_module(sci)
 cio.DB_PATH = TEST_DB
 sci.PLAN_PATH = PLAN_FILE
+# Handler.py was extracted from main.py in the 2026-05 refactor and now
+# owns its own PLAN_PATH constant. Patch BOTH so any handler that reads
+# the module-local constant (handle_filter, handle_eligible_cf_days,
+# handle_show_plan) sees the test fixture, not the production path.
+try:
+    from agents.the_scientist import handler as _handler
+    _handler.PLAN_PATH = PLAN_FILE
+except Exception:
+    pass
 
 # Reset volatile state for predictable tests.
 con = sqlite3.connect(str(TEST_DB))
@@ -193,8 +202,12 @@ TESTS: list[tuple[str, str, str]] = [
     ("stretch",               "stretching routine",                   "Post-WOD"),
     ("decide",                "should I run or do crossfit",          "for fat loss"),
     ("weigh-in when",         "when should I weigh in",               "weigh"),
-    ("pace",                  "pace check",                           "Today:"),
-    ("on track",              "am I on track",                        "Today:"),
+    # 2026-05-12: handler.py refactor changed pace-check format from
+    # "Today: ..." to "Today — <DayType>\nActual: *X* / Expected so far: Y".
+    # The em-dash + breakdown is more informative; anchor on the new
+    # invariant ("Today —") + the always-present "Actual:" line.
+    ("pace",                  "pace check",                           "Today —"),
+    ("on track",              "am I on track",                        "Actual:"),
 
     # ─── I. Tier management ────────────────────────
     ("tier survival",         "tier survival",                        "Tier set"),
@@ -287,8 +300,8 @@ TESTS: list[tuple[str, str, str]] = [
     ("aaj workout",           "Aaj ka workout kya hai",                    "today"),
     ("aaj cf hai",            "aaj cf hai kya",                            "today"),
     ("aaj wod",               "aaj wod kya hai",                           "today"),
-    ("kya chal status",       "kya chal ra hai",                           "Today:"),
-    ("kaise hal",             "kaise hal hai",                             "Today:"),
+    ("kya chal status",       "kya chal ra hai",                           "Today —"),
+    ("kaise hal",             "kaise hal hai",                             "Today —"),
 
     # ─── V. LLM anti-hallucination contract ─────
     # Casual greetings should fall to LLM (acceptable), but the LLM should
@@ -296,7 +309,7 @@ TESTS: list[tuple[str, str, str]] = [
     # We can't easily test the LLM's output here (it's stubbed), but we
     # can verify the route correctly identifies these as LLM territory
     # rather than mis-classifying as a known intent.
-    ("casual hi",             "kya chal ra miya",                          "Today:"),
+    ("casual hi",             "kya chal ra miya",                          "Today —"),
     ("hello casual",          "hey miya",                                  "[LLM-FALLBACK]"),
 
     # ─── W. Recalibration handler — "how do I catch up?" ─────
