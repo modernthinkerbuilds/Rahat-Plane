@@ -2,9 +2,9 @@
 
 # 🪶 Rahat
 
-### A Sovereign Intent Runtime for Personal AI Agents
+### A Sovereign Habitat for Personal AI Agents
 
-*Local-first. Memory-aware. Model-first reasoner over a deterministic core.*
+*A local-first multi-agent runtime with a memory substrate and a model-first reasoner over a deterministic tool catalog.*
 
 [Vision](#-the-vision) · [Architecture](#-architecture-four-layers) · [Memory](#-memory-the-layer-that-makes-agents-trustworthy) · [Reasoner](#-the-model-first-reasoner) · [Agents](#-the-agent-mesh) · [What's Shipped](#-whats-actually-shipped) · [Roadmap](#-roadmap-now--next--later) · [Diagrams](#-architecture-diagrams)
 
@@ -18,7 +18,7 @@ Most personal AI today is a **chatbot you prompt**. You ask, it answers. You for
 
 **Rahat** (Urdu: *رہات* — relief, ease, the lifting of a burden) is what I think comes next:
 
-> An ambient mesh of specialized agents that observe your life, **share a single source of truth and a single memory substrate**, run a model-first reasoner over a deterministic tool catalog, and quietly coordinate to close the gap between where you are and where you want to be.
+> A **habitat** for personal agents — the complete environment where they live, remember, decide, and act. An ambient mesh of specialized agents that observe your life, **share a single source of truth and a single memory substrate**, run a model-first reasoner over a deterministic tool catalog, and quietly coordinate to close the gap between where you are and where you want to be.
 
 Built on a Mac Mini. Owned by you. Powered by a heartbeat, not a prompt.
 
@@ -34,7 +34,7 @@ Existing tools fail in three ways:
 2. **They're siloed.** My fitness app doesn't know I had a heavy lunch. My calendar doesn't know my HRV is low.
 3. **They forget.** I commit to something, and they don't remember the next time I open them.
 
-Rahat is the runtime that fixes all three. **Cognitive offload, by design.**
+Rahat is the habitat that fixes all three. **Cognitive offload, by design.**
 
 ---
 
