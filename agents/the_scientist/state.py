@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import sqlite3
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from core import io as cio
 
@@ -86,9 +87,28 @@ from agents.the_scientist.protocols import (
     normalize_blacklist_term,
     DAY_HEADER,
     GymDay,
-    parse_gym_plan,
+    parse_gym_plan as _proto_parse_gym_plan,
     eligible_cf_days,
 )
+
+# Plan-path wrapper — mirrors the same convention handler.py uses.
+# protocols.parse_gym_plan needs a plan_path; calling it with no args
+# returns []. The 2026-05-11 evening bug: replan_week called
+# parse_gym_plan() bare, always got [], always fell back to the
+# default Mon/Wed/Fri cadence, and the stored gym_label column was
+# perpetually NULL. We keep the zero-arg signature so existing call
+# sites (line 642, 918) work without edits.
+_STATE_PLAN_PATH = (
+    Path.home() / "developer/agency/rahat/staging/workspace/"
+    "gym-programming/weekly_plan.txt"
+)
+
+
+def parse_gym_plan(text=None):
+    """Inject the canonical PLAN_PATH so replan_week / detect_missed
+    actually read the gym schedule. Without this wrapper, the bare
+    protocols call returns [] when plan_path is None."""
+    return _proto_parse_gym_plan(text, plan_path=_STATE_PLAN_PATH)
 
 # ─── private aliases inherited from main.py Section 6 ───
 import json as _json  # local alias to avoid touching the import block
@@ -333,14 +353,25 @@ def weekly_target() -> float:
     is respected by every calc-side path.
     """
     # ─── (1) Active commitment in memory substrate ───
+    # Defensive: payload can be malformed (corrupted JSON, list-typed,
+    # missing fields). A single bad entity must not block the rest of
+    # the lookup; we just skip it and continue. Bool excluded because
+    # it's a subclass of int in Python — `True > 0` would otherwise pass.
     try:
         from core import memory as _mem
         for ent in _mem.list_entities("scientist", type="commitment"):
-            payload = ent.get("payload") or {}
-            if payload.get("kind") == "weekly_target":
-                v = payload.get("value")
-                if isinstance(v, (int, float)) and v > 0:
-                    return float(v)
+            if not isinstance(ent, dict):
+                continue
+            payload = ent.get("payload")
+            if not isinstance(payload, dict):
+                continue
+            if payload.get("kind") != "weekly_target":
+                continue
+            v = payload.get("value")
+            if isinstance(v, bool):
+                continue
+            if isinstance(v, (int, float)) and v > 0:
+                return float(v)
     except Exception:
         # Memory substrate unavailable (test env, fresh DB, etc.).
         # Fall through silently to tier-based default.

@@ -56,13 +56,45 @@ class Types:
 
 
 # ─────────────────────────── Assembler ───────────────────────────
-def assemble_context(*, db_path: str | None = None) -> str:
+# Hard cap on the assembled state block. The block is prepended to every
+# reasoner turn, so an oversized block silently eats the token budget and
+# can mask the user message. 4 KB is generous (≈1k tokens) but bounded.
+ASSEMBLER_MAX_CHARS = 4000
+
+
+def _safe_payload(entity: dict) -> dict:
+    """Defensive payload accessor. Entities can in theory have any shape
+    (legacy schema, corrupted JSON, list-typed payloads from a buggy
+    extractor). The assembler must NEVER crash — a single bad entity
+    must not take the whole agent offline. Returns an empty dict for
+    anything that isn't a dict."""
+    p = entity.get("payload") if isinstance(entity, dict) else None
+    return p if isinstance(p, dict) else {}
+
+
+def _truncate(s: str, n: int = 200) -> str:
+    """Bound a single field value so one runaway payload can't dominate
+    the assembled block. n chars is plenty for any field; the model
+    only needs the gist."""
+    if not isinstance(s, str):
+        s = str(s)
+    return s if len(s) <= n else s[:n - 1] + "…"
+
+
+def assemble_context(*, db_path: str | None = None,
+                     max_chars: int = ASSEMBLER_MAX_CHARS) -> str:
     """Build the [Active *] state block that prepends each reasoner
     turn. Pure-Python, deterministic, no LLM call.
 
     Order matters — the model reads top-down. Most actionable state
     first (today, goal, commitments) so the model has fresh context
     when it starts reasoning. Vitals/week-summary near the bottom.
+
+    Crash-resistant: every payload access goes through `_safe_payload`,
+    so a single corrupted entity row never takes the agent offline.
+
+    Length-bounded: the assembled block is capped at `max_chars`
+    (default 4000) so a runaway field can't eat the token budget.
     """
     blocks: list[str] = []
 
@@ -70,69 +102,92 @@ def assemble_context(*, db_path: str | None = None) -> str:
     today = datetime.now().strftime("%A, %B %-d, %Y (ISO %Y-%m-%d)")
     blocks.append(f"[Today: {today}]")
 
-    # Active goal
-    goals = mem.list_entities(AGENT, type=Types.GOAL, db_path=db_path)
+    # Active goal — defensive payload access
+    try:
+        goals = mem.list_entities(AGENT, type=Types.GOAL, db_path=db_path)
+    except Exception:
+        goals = []
     if goals:
-        g = goals[0]["payload"]
+        g = _safe_payload(goals[0])
         target = g.get("target_lbs") or g.get("target_kg")
         unit = "lbs" if "target_lbs" in g else "kg"
         intake = g.get("daily_intake_kcal", "?")
         active = g.get("weekly_active_kcal", "?")
         date = g.get("target_date_iso", "?")
         tier = g.get("recommended_tier") or g.get("tier") or "?"
-        committed_at = goals[0].get("created_at", "?")
-        blocks.append(
-            f"[Active goal: {target} {unit} by {date} — daily intake "
-            f"{intake} kcal, weekly active {active} kcal, tier {tier} "
-            f"(committed {committed_at[:10] if committed_at else '?'})]"
-        )
+        committed_at = goals[0].get("created_at", "?") if isinstance(goals[0], dict) else "?"
+        if target:                          # only emit block if usable
+            blocks.append(
+                f"[Active goal: {target} {unit} by {date} — daily intake "
+                f"{intake} kcal, weekly active {active} kcal, tier {tier} "
+                f"(committed {committed_at[:10] if committed_at else '?'})]"
+            )
 
     # Active commitments (time-bounded)
-    commits = mem.list_entities(AGENT, type=Types.COMMITMENT, db_path=db_path)
+    try:
+        commits = mem.list_entities(AGENT, type=Types.COMMITMENT, db_path=db_path)
+    except Exception:
+        commits = []
     if commits:
         lines = []
-        for c in commits:
-            p = c["payload"]
-            kind = p.get("kind", "commitment")
-            value = p.get("value", "?")
-            until = c.get("valid_until", "")
+        for c in commits[:10]:              # cap list growth
+            p = _safe_payload(c)
+            kind = _truncate(p.get("kind", "commitment"), 40)
+            value = _truncate(p.get("value", "?"), 80)
+            until = c.get("valid_until", "") if isinstance(c, dict) else ""
             until_short = until[:10] if until else "indefinite"
             lines.append(f"  - {kind}: {value} (until {until_short})")
-        blocks.append("[Active commitments:\n" + "\n".join(lines) + "]")
+        if lines:
+            blocks.append("[Active commitments:\n" + "\n".join(lines) + "]")
 
     # Active plan (this week's schedule, if user committed one)
-    plans = mem.list_entities(AGENT, type=Types.PLAN, db_path=db_path)
+    try:
+        plans = mem.list_entities(AGENT, type=Types.PLAN, db_path=db_path)
+    except Exception:
+        plans = []
     if plans:
-        p = plans[0]["payload"]
-        days = p.get("days") or {}
+        p = _safe_payload(plans[0])
+        days = p.get("days") if isinstance(p.get("days"), dict) else {}
         if days:
             day_lines = ", ".join(
-                f"{day}={cfg}" for day, cfg in days.items())
-            blocks.append(f"[This week's chosen plan: {day_lines}]")
+                f"{day}={cfg}" for day, cfg in list(days.items())[:7])
+            blocks.append(f"[This week's chosen plan: "
+                          f"{_truncate(day_lines, 200)}]")
 
     # Sticky preferences
-    prefs = mem.list_prefs(AGENT, min_confidence=0.3, db_path=db_path)
+    try:
+        prefs = mem.list_prefs(AGENT, min_confidence=0.3, db_path=db_path)
+    except Exception:
+        prefs = []
     if prefs:
-        # Keep just the top 5 most recently reinforced ones.
         keys = []
         for p in prefs[:5]:
-            keys.append(f"{p['key']}={p['value']}")
-        blocks.append("[Sticky prefs: " + "; ".join(keys) + "]")
+            if isinstance(p, dict):
+                keys.append(f"{p.get('key','?')}={_truncate(p.get('value','?'), 60)}")
+        if keys:
+            blocks.append("[Sticky prefs: " + "; ".join(keys) + "]")
 
-    # Most recent open thread (gives the model topic + summary
-    # without re-loading every prior message).
-    thread = mem.most_recent_thread(AGENT, db_path=db_path)
+    # Most recent open thread
+    try:
+        thread = mem.most_recent_thread(AGENT, db_path=db_path)
+    except Exception:
+        thread = None
     if thread and thread.get("summary"):
         blocks.append(
-            f"[Active thread '{thread['topic']}': {thread['summary']}]")
-    if thread and thread.get("open_questions"):
+            f"[Active thread '{_truncate(thread.get('topic','?'), 80)}': "
+            f"{_truncate(thread['summary'], 300)}]")
+    if thread:
         oqs = thread.get("open_questions") or []
-        if oqs:
+        if isinstance(oqs, list) and oqs:
             blocks.append(
                 "[Open questions in thread: " +
-                "; ".join(str(q) for q in oqs[:3]) + "]")
+                "; ".join(_truncate(str(q), 100) for q in oqs[:3]) + "]")
 
-    return "\n".join(blocks)
+    out = "\n".join(blocks)
+    # Final guard: trim to max_chars rather than blow the token budget.
+    if len(out) > max_chars:
+        out = out[:max_chars - 4] + "\n…]"
+    return out
 
 
 # ─────────────────────────── Extractor ───────────────────────────
@@ -305,27 +360,46 @@ def extract_state(user_msg: str, bot_reply: str,
         written["goal"] = True
 
     # New commitments — multiple actives OK
+    # Validate each commitment has the minimum schema before writing.
+    # Without this, a malformed LLM response can pollute the substrate
+    # and corrupt the assembler on the next turn (assembler reads
+    # `.get("kind")` and `.get("value")`).
     commits = parsed.get("new_commitments") or []
-    for c in commits:
-        valid_until = None
-        v = c.get("valid_until_iso")
-        if v:
-            try:
-                valid_until = datetime.fromisoformat(v)
-            except Exception:
-                pass
-        eid = mem.put_entity(AGENT, Types.COMMITMENT, c,
-                             valid_until=valid_until,
-                             rationale=c.get("rationale", ""),
-                             supersede_existing=False, db_path=db_path)
-        mem.add_event(AGENT, "commitment.made",
-                      payload={"entity_id": eid, "commitment": c},
-                      trace_id=trace_id, db_path=db_path)
-        written["commitments"] += 1
+    if isinstance(commits, list):
+        for c in commits:
+            if not isinstance(c, dict):
+                print(f"[extractor] skipping non-dict commitment: {c!r}")
+                continue
+            kind = c.get("kind")
+            if not kind or not isinstance(kind, str):
+                print(f"[extractor] skipping commitment missing kind: {c!r}")
+                continue
+            if c.get("value") is None:
+                print(f"[extractor] skipping commitment missing value: {c!r}")
+                continue
+            valid_until = None
+            v = c.get("valid_until_iso")
+            if v:
+                try:
+                    valid_until = datetime.fromisoformat(str(v)[:10])
+                    # Reject past valid_until (year hallucination class).
+                    if valid_until < datetime.now():
+                        print(f"[extractor] dropping past valid_until_iso={v}")
+                        valid_until = None
+                except Exception:
+                    pass
+            eid = mem.put_entity(AGENT, Types.COMMITMENT, c,
+                                 valid_until=valid_until,
+                                 rationale=c.get("rationale", ""),
+                                 supersede_existing=False, db_path=db_path)
+            mem.add_event(AGENT, "commitment.made",
+                          payload={"entity_id": eid, "commitment": c},
+                          trace_id=trace_id, db_path=db_path)
+            written["commitments"] += 1
 
     # New plan
     p = parsed.get("new_plan")
-    if p and p.get("days"):
+    if isinstance(p, dict) and isinstance(p.get("days"), dict) and p["days"]:
         eid = mem.put_entity(AGENT, Types.PLAN, p,
                              rationale=p.get("rationale", ""),
                              valid_until=_end_of_week(),
@@ -335,10 +409,16 @@ def extract_state(user_msg: str, bot_reply: str,
                       trace_id=trace_id, db_path=db_path)
         written["plan"] = True
 
-    # New preferences
-    for pref in (parsed.get("new_preferences") or []):
-        if pref.get("key"):
-            mem.upsert_pref(AGENT, pref["key"], pref.get("value"),
+    # New preferences — must be a list of {key, value} dicts.
+    prefs_in = parsed.get("new_preferences") or []
+    if isinstance(prefs_in, list):
+        for pref in prefs_in:
+            if not isinstance(pref, dict):
+                continue
+            key = pref.get("key")
+            if not key or not isinstance(key, str):
+                continue
+            mem.upsert_pref(AGENT, key, pref.get("value"),
                             db_path=db_path)
             written["preferences"] += 1
 
