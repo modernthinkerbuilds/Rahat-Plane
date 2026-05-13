@@ -14,19 +14,21 @@
 
 ## 🌅 The Vision
 
-Most personal AI today is a **chatbot you prompt**. You ask, it answers. You forget, it forgets. You context-switch, it loses the plot. You commit to something and 30 minutes later it lectures you about the opposite.
+**The substrate is the moat.** The model layer of personal AI is rapidly commoditizing — Gemini ↔ Claude ↔ open-weight ↔ on-device, swapped in hours. The non-commodity layer is the *habitat* underneath: shared memory, shared state, a policy chokepoint, a heartbeat. Whoever ships those primitives as first-class objects owns the next decade of personal AI platforms.
 
-**Rahat** (Urdu: *رہات* — relief, ease, the lifting of a burden) is what I think comes next:
+**Rahat** (Urdu: *رہات* — relief, ease, the lifting of a burden) is a bet on that thesis:
 
 > A **habitat** for personal agents — the complete environment where they live, remember, decide, and act. An ambient mesh of specialized agents that observe your life, **share a single source of truth and a single memory substrate**, run a model-first reasoner over a deterministic tool catalog, and quietly coordinate to close the gap between where you are and where you want to be.
 
-Built on a Mac Mini. Owned by you. Powered by a heartbeat, not a prompt.
+Most personal AI today is a **chatbot you prompt** — reactive, siloed, amnesiac. Rahat is the opposite: ambient, integrated, persistent. Built on a Mac Mini. Owned by you. Powered by a heartbeat, not a prompt.
 
 ---
 
 ## ⚡ Why this exists
 
-I'm a Google PM. I have a toddler, a newborn, a CrossFit habit, an 80kg target weight, a 155kg deadlift goal, a guitar I'm learning, and a fairly demanding job. The number of small decisions and trivial logging required to "stay on track" with any of it is genuinely exhausting.
+The forcing function for any agent platform is the **N+1 problem**: most agent systems ship three-to-five specialized agents and stall. The 6th, 11th, 20th agent each demands a custom integration, custom eval, custom memory schema. That integration tax is what separates demos from products. Rahat is that forcing function applied to one person's life: 21 agents by month 18, ~1 day per new agent — or the substrate bet is wrong and the build log will say so.
+
+I'm a Google PM with a toddler, a newborn, a CrossFit habit, an 80kg target weight, a 155kg deadlift goal, a guitar I'm learning, and a fairly demanding job. The number of small decisions and trivial logging required to "stay on track" with any of it is genuinely exhausting.
 
 Existing tools fail in three ways:
 
@@ -220,18 +222,45 @@ Kobe used to be a regex router with 25 hardcoded handlers and an LLM fallback fo
 
 ## 🤖 The Agent Mesh
 
+Every agent is named after a renowned figure whose actual life embodies the agent's domain — same logic as Fraser (Matt Fraser, CrossFit GOAT), extended across the 21-agent cast.
+
+### Live today
+
 | Agent | Status | Role | Memory entity types |
 |---|---|---|---|
 | **The Miya** | ✅ Live | Orchestrator + supervisor; single voice; capability registry; cross-agent broker | (orchestration only) |
-| **Kobe** | ✅ Live | Vitality — trajectory math, weekly planning, recalibration, the 155kg deadlift baseline | `goal`, `plan`, `commitment`, `tier_change` |
-| **Huberman** | 🚧 Stub shipped | Recovery — reads HRV/sleep/RHR; advises (Charter enforces) | `recovery_protocol`, `sleep_concern`, `hrv_window` |
+| **Kobe** | ✅ Live | Vitality — trajectory math, weekly planning, recalibration. *Named after Kobe Bryant: Mamba Mentality applied to the body-goal arc.* | `goal`, `plan`, `commitment`, `tier_change` |
+| **Huberman** | 🚧 Stub shipped | Recovery — HRV/sleep/RHR; advises (Charter enforces). *Named after Andrew Huberman: evidence-based recovery, the agent with veto power.* | `recovery_protocol`, `sleep_concern`, `hrv_window` |
 | **The Charter** | ✅ Live (infrastructure) | Policy plane — every write-tool passes through; quiet hours, HRV-red, external veto | (writes to `governance_log`) |
-| **Coach (Fraser)** | 🚧 Next | Performance — CrossFit programming, load auditing | `training_block`, `lift_history` |
-| **Curriculum** | 🚧 Next | Toddler + newborn developmental phases | `lesson`, `milestone`, `behavior_log` |
-| **The Foodie** | 🔜 Later | Vision-based meal audits, dietary compliance | `cuisine_focus`, `meal_log`, `dietary_phase` |
-| **The Voyager** | 🔜 Later | Travel research + deep-cut concierge | `trip`, `stop`, `recall_corpus` |
 
-Each future agent is **~1 day to onboard**: define entity types, write the adapter (~120–280 LOC), register tools, register with Miya. Same substrate, different lens.
+### Coming next (months 1–6)
+
+| Agent | Domain | Named after |
+|---|---|---|
+| **Fraser** | CrossFit programming, load auditing | Matt Fraser — 5× CrossFit GOAT |
+| **Montessori** | Toddler + newborn developmental phases | Maria Montessori |
+| **Buffett** | Calendar + scheduling | Warren Buffett — disciplined daily schedule |
+| **Ramu Kaka** | Pantry + grocery | Bollywood trusted-household-helper trope |
+| **Ramsay** | Cooking + dietary audit | Gordon Ramsay |
+| **La Marzocco** | Espresso ritual | Italian espresso machine maker |
+
+### Coming later (months 6–18, concierge-class)
+
+| Agent | Domain | Named after |
+|---|---|---|
+| **Disney** | Weekend kids composer | Walt Disney |
+| **Genie** | Weekend family composer | Aladdin's Genie |
+| **Polo** | Pre-trip planner | Marco Polo |
+| **Bourdain** | In-trip concierge | Anthony Bourdain |
+| **Santa** | Gift conductor | Santa Claus |
+| **Mocha** | Coffee shop curator | Yemeni port-of-coffee-origin |
+| **Antoinette** | Pastry / sweet-spot curator | Marie Antoinette |
+| **Luwak** | Coffee beans orderer | Asian palm civet (Kopi Luwak) |
+| **Sherlock** | Local treasure finder | Sherlock Holmes |
+| **Ustad** | Guitar audit + practice | Urdu for "master" |
+| *(held)* **Casanova** | Date night composer | Giacomo Casanova |
+
+Each future agent is **~1 day to onboard**: define entity types, write the adapter (~120–280 LOC), register tools, register with Miya. Same substrate, different lens. The whole roadmap is one hypothesis test: *can the substrate make agent N+1 as cheap as agent #1?*
 
 ---
 
@@ -360,15 +389,17 @@ Living documentation in [`/specs/`](./specs/):
 
 ---
 
-## 📓 The Build Journey
+## 📓 The Build Journey — three architectural commitments
 
-I shipped the first version of Rahat during parental leave with a newborn — naps and bedtime were the build windows. The architecture has gone through three pivots as the system grew:
+I shipped the first version of Rahat during parental leave with a newborn — naps and bedtime were the build windows. The architecture is the result of **three deliberate commitments**, each made because the alternative failed first. None of them are clever; all of them compound.
 
-1. **Three planes.** When agent #2 forced the question of how multiple specialists share state without colliding — a control / data / runtime split, plus the Charter as a policy chokepoint.
-2. **Memory substrate.** When the Kobe kept forgetting commitments after ten rounds of patches — a four-tier memory architecture with per-agent adapters and sleep-time consolidation.
-3. **Model-first reasoner.** When regex routing broke on multi-clause questions and Hyderabadi-English code-mixing — a Gemini 2.5 Flash loop over a deterministic 25-tool catalog, with legacy regex as the fallback.
+**Commitment 1 — Typed three-plane substrate over in-process calls.** Agent #2 couldn't see Agent #1's context. The easy fix was direct method calls; the structurally correct fix was a shared SQLite intent ledger, a Charter as policy plane, and Miya as a broker. Direct calls produce a working 2-agent product and an unworkable 10-agent one. *The right primitive isn't a function call — it's a row.*
 
-Each pivot made adding the next agent cheaper. Today, **the 11th agent costs ~1 day** (entity types + adapter + tool registration). That's the moat.
+**Commitment 2 — Memory as a typed substrate, accessed by agents as a tool.** Kobe kept forgetting commitments after ten rounds of reactive patches. Built a four-tier substrate (events / entities / preferences / archival) with per-agent adapters that *actively manage* what each agent knows. The "agent forgot what I told it yesterday" failure mode is now killed at the architecture level, not the prompt level. Cost per turn for substrate ops: ~$0.0001. Sleep-time consolidation runs nightly.
+
+**Commitment 3 — Model-first reasoner over a deterministic tool catalog.** Regex routing broke on multi-clause questions and Hyderabadi-English code-mixing. Replaced it with a Gemini 2.5 Flash loop over 25 deterministic tools: tools enforce the math, dates, rate limits, policy; the model orchestrates. Cost per turn: ~$0.001. Latency: 2–6s. Hallucination risk on numbers: zero, because numbers come from tools.
+
+Each commitment made adding the next agent cheaper. Today, **the 11th agent costs ~1 day** (entity types + adapter + tool registration). That's the moat. The roadmap exists to test exactly one hypothesis: *the marginal cost of agent N+1 is bounded by the substrate, not the integration tax.* If commitments 1–3 are right, agent #6 ships in ~1 day. If they're wrong, the build log will say so.
 
 Follow along via commits, the [PRD](./specs/PRD.md), the [ADR](./specs/ADR-001-rahat-control-plane.md), the [SOTA review](./specs/SOTA-AGENT-ARCHITECTURE-REVIEW.md), and [Discussions](../../discussions).
 
