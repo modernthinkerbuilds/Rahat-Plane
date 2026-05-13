@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg viewBox="0 0 1200 760" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="t6 d6">
   <title id="t6">Rahat mesh extensibility — per-agent adapters over a shared substrate, ~1 day to onboard each new agent</title>
-  <desc id="d6">Scientist (live) and Bajrangi (stub) prove the architecture composes. Curriculum, Foodie, Voyager, Concierge plug in via the same pattern.</desc>
+  <desc id="d6">Kobe (live) and Huberman (stub) prove the architecture composes. Curriculum, Foodie, Voyager, Concierge plug in via the same pattern.</desc>
 
   <style>
     .bg { fill: #ffffff; }
@@ -49,7 +49,7 @@
 
   <!-- Live agents -->
   <rect class="box-accent" x="60" y="180" width="240" height="200" rx="8"/>
-  <text class="ink lbl" x="180" y="202" text-anchor="middle" font-weight="600">Scientist</text>
+  <text class="ink lbl" x="180" y="202" text-anchor="middle" font-weight="600">Kobe</text>
   <text class="accent tiny" x="180" y="216" text-anchor="middle">LIVE · 25 tools</text>
   <line x1="76" y1="226" x2="284" y2="226" stroke="#e6e3da"/>
   <text class="ink small" x="76" y="246">entity types:</text>
@@ -63,7 +63,7 @@
   <text class="muted tiny" x="76" y="372">  commit_picks · swap_day</text>
 
   <rect class="box-accent" x="320" y="180" width="240" height="200" rx="8"/>
-  <text class="ink lbl" x="440" y="202" text-anchor="middle" font-weight="600">Bajrangi</text>
+  <text class="ink lbl" x="440" y="202" text-anchor="middle" font-weight="600">Huberman</text>
   <text class="accent tiny" x="440" y="216" text-anchor="middle">STUB · ~1 day to fill in</text>
   <line x1="336" y1="226" x2="544" y2="226" stroke="#e6e3da"/>
   <text class="ink small" x="336" y="246">entity types:</text>
@@ -74,7 +74,7 @@
   <text class="muted tiny" x="336" y="324">  prescribe_recovery · flag_concern</text>
   <text class="muted tiny" x="336" y="336">  declare_protocol</text>
   <text class="muted small" x="336" y="362">demonstrates: substrate composes</text>
-  <text class="muted tiny" x="336" y="374">  for non-Scientist agents</text>
+  <text class="muted tiny" x="336" y="374">  for non-Kobe agents</text>
 
   <!-- Future agents -->
   <rect class="box dashed" x="580" y="180" width="200" height="200" rx="8" stroke-dasharray="4 3"/>
@@ -180,8 +180,8 @@
   <text class="ink h2" x="620" y="624">Cross-agent reasoning (Miya broker)</text>
   <text class="muted small" x="620" y="640">unlocked by unified substrate — was impossible with per-agent schemas</text>
   <text class="muted small" x="620" y="660">  · "user mentioned Japan trip to Foodie" → Sci sees it for jet-lag</text>
-  <text class="muted small" x="620" y="676">  · "Bajrangi flagged HRV crash" → Sci tier defaults to re_entry</text>
-  <text class="muted small" x="620" y="692">  · "Curriculum noted toddler regression" → Bajrangi factors sleep</text>
+  <text class="muted small" x="620" y="676">  · "Huberman flagged HRV crash" → Sci tier defaults to re_entry</text>
+  <text class="muted small" x="620" y="692">  · "Curriculum noted toddler regression" → Huberman factors sleep</text>
   <text class="muted small" x="620" y="708">  · all reads logged via memory_events for audit</text>
 
   <text class="accent small" x="60" y="746">Year-1 target: ~20 agents. After this build: each new agent is 1 day to onboard. Compounding from agent #4.</text>

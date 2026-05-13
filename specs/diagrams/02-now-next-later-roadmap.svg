@@ -74,7 +74,7 @@
     <text class="green tiny" x="364" y="475" text-anchor="end">165 LOC</text>
 
     <rect class="box-shipped" x="40" y="510" width="340" height="46" rx="6"/>
-    <text class="ink lbl" x="56" y="529">✓ Scientist refactor + 330 evals</text>
+    <text class="ink lbl" x="56" y="529">✓ Kobe refactor + 330 evals</text>
     <text class="muted small" x="56" y="545">protocols.py extracted · 142+142+46 cases · CI-gate-able</text>
     <text class="green tiny" x="364" y="529" text-anchor="end">100% green</text>
 

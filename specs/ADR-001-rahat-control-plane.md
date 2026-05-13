@@ -9,7 +9,7 @@
 
 ## 1. Context
 
-Rahat today is one production agent (The Scientist), one bridge (SugarWOD), one ambient ingest (Apple Watch → `vitals_listener`), a SQLite ledger with the right shape, and an eval suite. The PRD describes a mesh; the runtime in code is a 2,400-LOC monolith doing routing, math, I/O, scheduling, and Telegram in one process.
+Rahat today is one production agent (Kobe), one bridge (SugarWOD), one ambient ingest (Apple Watch → `vitals_listener`), a SQLite ledger with the right shape, and an eval suite. The PRD describes a mesh; the runtime in code is a 2,400-LOC monolith doing routing, math, I/O, scheduling, and Telegram in one process.
 
 The owner's corrected timeline:
 
@@ -56,7 +56,7 @@ Control                       Data                          Runtime
 
 The same principle as today, just with explicit chokepoints so 20 agents share what they should share and nothing more.
 
-**Naming.** The policy engine is **The Charter** — the written rules, applied uniformly. Bajrangi remains an *agent* (the HRV / sleep recommender). Charter is a *plane*: it isn't a persona, it's the gate every work-order passes through before execution.
+**Naming.** The policy engine is **The Charter** — the written rules, applied uniformly. Huberman remains an *agent* (the HRV / sleep recommender). Charter is a *plane*: it isn't a persona, it's the gate every work-order passes through before execution.
 
 ---
 
@@ -71,11 +71,11 @@ Total Now budget: **~12–14 focused hours**, ideally 2–3 sittings. After that
 | 1 | **Tool helpers** | `core/io.py` | 30 min | Pull `send()`, Gemini client, `_db()` out of `main.py`. 20 agents share these; without extraction they'll be re-imported and re-initialized 20×. |
 | 2 | **Agent contract** | `core/agent.py` | 30 min | 30-line base class: `name`, `triggers`, `route(msg) → Reply\|None`, `tick(now)`. Every agent subclasses this. No manifest TOML — Python is enough at this scale. |
 | 3 | **Miya — orchestrator + hybrid router** | `core/miya.py` | 3 hr | Owns the Telegram poll loop. Routing: walk all agents' `triggers` (cheap regex first); if zero or multiple fire, Gemini Flash classifies (~$0.0001/msg). Synthesizes when >1 agent replies. Without Miya you ship 20 Telegram bots — exactly what Rahat rejects. |
-| 4 | **Charter — policy chokepoint** | `core/charter.py` | 2 hr | Registry of Python predicates: `@policy("kind=coach.push_intensity")`. Every work-order passes through `charter.review(wo)` → `approved \| modified \| vetoed` with reason. Writes to existing `governance_log` table — *something actually writes to it now*. Bajrangi-the-agent advises; Charter-the-plane enforces. |
+| 4 | **Charter — policy chokepoint** | `core/charter.py` | 2 hr | Registry of Python predicates: `@policy("kind=coach.push_intensity")`. Every work-order passes through `charter.review(wo)` → `approved \| modified \| vetoed` with reason. Writes to existing `governance_log` table — *something actually writes to it now*. Huberman-the-agent advises; Charter-the-plane enforces. |
 | 5 | **Decisions / trace log** | `core/decisions.py` | 1 hr | One table: `decisions(trace_id, ts, actor, op, latency_ms, tokens, cost_usd, outcome)`. With 20 agents this is the difference between "I can debug Tuesday 9pm" and "no idea." Enables `rahat tail` and `rahat replay <trace>`. |
-| 6 | **Eval framework** | `core/eval.py` | 2 hr | Generalize Scientist's pattern: each agent ships `evals/cases.yaml`, one runner, isolated DB copy, CI gates regressions. Mandatory before agent #5 — without it, new agents silently break old ones. |
-| 7 | **Episodic memory (lite)** | `core/episodes.py` | 1.5 hr | `episodes(id, kind, subject, started_at, ended_at, entities_json)` + `episode_notes`. 6-line Python API: `open()`, `close()`, `note()`. Skip the CLI for now. The Curriculum agent (toddler phases), Coach (training blocks), and Scientist (weight cycles) all consume it. Without it, each builds its own `phases` table — fragmentation by agent #5. |
-| 8 | **Scientist refactor to the new contract** | `agents/the_scientist/{handler,protocols}.py` | 2 hr | Mostly mechanical: split `main.py` into `protocols.py` (~600 LOC pure math) and `handler.py` (~1500 LOC route + handlers). Eval suite must pass unchanged — visible-no-op. Without this, every Now piece forks: the new architecture vs. the old monolith. |
+| 6 | **Eval framework** | `core/eval.py` | 2 hr | Generalize Kobe's pattern: each agent ships `evals/cases.yaml`, one runner, isolated DB copy, CI gates regressions. Mandatory before agent #5 — without it, new agents silently break old ones. |
+| 7 | **Episodic memory (lite)** | `core/episodes.py` | 1.5 hr | `episodes(id, kind, subject, started_at, ended_at, entities_json)` + `episode_notes`. 6-line Python API: `open()`, `close()`, `note()`. Skip the CLI for now. The Curriculum agent (toddler phases), Coach (training blocks), and Kobe (weight cycles) all consume it. Without it, each builds its own `phases` table — fragmentation by agent #5. |
+| 8 | **Kobe refactor to the new contract** | `agents/the_scientist/{handler,protocols}.py` | 2 hr | Mostly mechanical: split `main.py` into `protocols.py` (~600 LOC pure math) and `handler.py` (~1500 LOC route + handlers). Eval suite must pass unchanged — visible-no-op. Without this, every Now piece forks: the new architecture vs. the old monolith. |
 
 **Explicitly NOT in Now:** profile store, semantic/vss, mobile gateway, manifest TOML files, event-log refactor under the projections, skill rate-limits, multi-tenant `subject_id` columns (see §6.3 for the one possible exception).
 
@@ -165,7 +165,7 @@ This ADR proposes the Now-phase scaffolding *before* agent #2. Per owner instruc
 
 Open questions before Phase Now begins:
 
-1. **Scientist refactor** — confirm a one-sitting visible-no-op refactor is OK. (Recommended; without it every Now piece forks.)
+1. **Kobe refactor** — confirm a one-sitting visible-no-op refactor is OK. (Recommended; without it every Now piece forks.)
 2. **`subject_id` insurance** — yes/no on the 5-minutes-per-table multi-tenant insurance in §6.3?
 3. **Telegram cutover** — Miya owns the inbox the moment it ships. Confirm the user-visible bot handle stays the same (we just swap what's behind it).
 4. **Eval gate strictness** — fail the build on any regression, or warn-only for the first month?

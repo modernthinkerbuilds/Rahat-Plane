@@ -3,11 +3,11 @@
 **Document Class:** Architecture Review (ARB-grade)
 **Version:** 2.0 (May 2026 — model-first reasoner + SOTA memory architecture)
 **Author:** Venkat Sadras, with architecture review by Claude (L8 framing)
-**Status:** Now-phase shipped; model-first pivot live; mesh-wide memory architecture shipped; Next-phase agents (Bajrangi, Curriculum, Foodie) ~1 day each to onboard.
+**Status:** Now-phase shipped; model-first pivot live; mesh-wide memory architecture shipped; Next-phase agents (Huberman, Curriculum, Foodie) ~1 day each to onboard.
 
 > **v2.0 update note (2026-05-08).** Three structural changes since v1.0:
 >
->   1. **Model-first reasoner pivot.** The Scientist's regex-first dispatcher was inverted: every inbound message now goes to a Gemini 2.5 Flash reasoner with a tool catalog, with the regex dispatcher kept as a fallback behind `RAHAT_LEGACY_DISPATCH=1`. See §12 + `MODEL-FIRST-PIVOT.md`.
+>   1. **Model-first reasoner pivot.** Kobe's regex-first dispatcher was inverted: every inbound message now goes to a Gemini 2.5 Flash reasoner with a tool catalog, with the regex dispatcher kept as a fallback behind `RAHAT_LEGACY_DISPATCH=1`. See §12 + `MODEL-FIRST-PIVOT.md`.
 >   2. **Mesh-wide memory architecture (SOTA).** Five-primitive substrate (events, entities, threads, preferences, relationships) + archival memory + per-agent adapters + sleep-time consolidation + Miya as supervisor with cross-agent broker. See §11 + `MEMORY-AND-STATE-ARCHITECTURE.md` + `SOTA-AGENT-ARCHITECTURE-REVIEW.md`.
 >   3. **Eval coverage grew from 330 → 475 hermetic cases** across 8 suites, all 100% green. Plus an opt-in live suite (`eval_reasoner_live.py`) gated behind `RAHAT_EVAL_LIVE=1`.
 >
@@ -28,7 +28,7 @@ See `specs/diagrams/README.md` for embedding notes.
 
 ## 1. Executive Summary
 
-Rahat is a multi-agent runtime that runs locally on a single Mac Mini (M-series Apple Silicon), coordinates a fleet of specialized personal-AI agents through a shared SQLite "intent ledger," and presents a single user-facing voice ("Miya") over a Telegram channel. It is designed to expand from one production agent today (the Sports Scientist) to roughly twenty agents within six months — covering domains like CrossFit programming, weight management, infant/toddler curriculum, appointment scheduling, and concierge-class services (foodie, travel, coffee, play-date planning).
+Rahat is a multi-agent runtime that runs locally on a single Mac Mini (M-series Apple Silicon), coordinates a fleet of specialized personal-AI agents through a shared SQLite "intent ledger," and presents a single user-facing voice ("Miya") over a Telegram channel. It is designed to expand from one production agent today (the Kobe) to roughly twenty agents within six months — covering domains like CrossFit programming, weight management, infant/toddler curriculum, appointment scheduling, and concierge-class services (foodie, travel, coffee, play-date planning).
 
 The current shipped state ("Now") includes:
 
@@ -39,8 +39,8 @@ The current shipped state ("Now") includes:
 - **Mesh-wide memory architecture (v2.0)** — Letta-style four-tier hierarchy (working / recall / archival / procedural) over a unified SQLite substrate, with per-agent adapters, sleep-time consolidation, and cross-agent reasoning. See §11.
 - **Model-first reasoner (v2.0)** — Gemini 2.5 Flash (default) / 2.5 Pro (high-stakes) with 25-tool catalog, structured-output state extraction, anti-hallucination contract, and a two-tier fallback ladder. See §12.
 - **A 475-case eval harness across 8 hermetic suites** plus 1 opt-in live suite — all 100% green: 148 legacy regex, 148 wrapper, 54 extended (B1–B7), 10 reasoner B8, 21 robust R1–R8, 39 Gemini-parity G1–G38, 22 memory M1–M6, 33 PDF use cases P1–P33.
-- **The Sports Scientist as the reference agent** — refactored to consume the new contract. The 2,930 LOC monolith was split into four files: `protocols.py` (pure math + constants), `state.py` (DB-backed data + planning + recalibration), `handler.py` (intent dispatch + router + nudges + loop), and a ~140 LOC `main.py` thin entry point. All Gemini-PDF coaching patterns now structurally supported. See §5.7.
-- **Bajrangi stub** — minimal HRV/sleep agent demonstrating mesh-extensibility: same substrate, completely different domain entities (`recovery_protocol`, `sleep_concern`, `hrv_window`). See §13.
+- **Kobe as the reference agent** — refactored to consume the new contract. The 2,930 LOC monolith was split into four files: `protocols.py` (pure math + constants), `state.py` (DB-backed data + planning + recalibration), `handler.py` (intent dispatch + router + nudges + loop), and a ~140 LOC `main.py` thin entry point. All Gemini-PDF coaching patterns now structurally supported. See §5.7.
+- **Huberman stub** — minimal HRV/sleep agent demonstrating mesh-extensibility: same substrate, completely different domain entities (`recovery_protocol`, `sleep_concern`, `hrv_window`). See §13.
 
 The document below justifies every meaningful design choice against the alternatives we considered, and frames the system in language an ARB-style review would expect: trade-offs, failure modes, operational maturity, and a clear migration path to mobile and multi-tenant in 12+ months.
 
@@ -56,17 +56,17 @@ Concretely, this means:
 
 - **No prompt is required for routine work.** Morning brief at 8am, recovery nudge at 9pm, walk-pace check during the day, weekly recap on Sunday at 23:55.
 - **State, not turns.** The system carries context across days, weeks, episodes — not just within a chat window.
-- **Agents are roles, not models.** A "Sports Scientist" agent is a concrete domain expert with deterministic protocols, not an LLM with a system prompt.
+- **Agents are roles, not models.** A "Kobe" agent is a concrete domain expert with deterministic protocols, not an LLM with a system prompt.
 
 ### 2.2 User and use-cases
 
-The reference user is a Bay Area Product Manager (the document author) with: a CrossFit habit and a 80kg/176lb target weight, a deadlift PR target of 155kg, a toddler and a newborn, an espresso ritual, a guitar habit, and a demanding job. The user has been a heavy ChatGPT user for fitness coaching and has ~12 weeks of detailed coaching history that informs the Sports Scientist's protocols (locked 0.75 lb/wk loss rate, 2,600 kcal intake, 6,000 kcal weekly active burn, 3 PRVN CrossFit + 1 Zone-2 10K + 3 active-rest cadence).
+The reference user is a Bay Area Product Manager (the document author) with: a CrossFit habit and a 80kg/176lb target weight, a deadlift PR target of 155kg, a toddler and a newborn, an espresso ritual, a guitar habit, and a demanding job. The user has been a heavy ChatGPT user for fitness coaching and has ~12 weeks of detailed coaching history that informs the Kobe's protocols (locked 0.75 lb/wk loss rate, 2,600 kcal intake, 6,000 kcal weekly active burn, 3 PRVN CrossFit + 1 Zone-2 10K + 3 active-rest cadence).
 
 The Year-1 agent expansion targets:
 
 | Phase | Agents | Use-case examples |
 |---|---|---|
-| Months 1–3 | Sports Scientist (live), Coach (Fraser), Curriculum, Bajrangi | Workout programming, toddler developmental phases, HRV-driven recovery |
+| Months 1–3 | Kobe (live), Coach (Fraser), Curriculum, Huberman | Workout programming, toddler developmental phases, HRV-driven recovery |
 | Months 3–6 | Appointment scheduler, Foodie (vision-based meal audits), Voyager | Dietary compliance, scheduling, trip logistics |
 | Months 6–12 | Concierge-class agents (Japan trip, restaurant/coffee/pastry recommendations from a saved corpus), play-date planner, household manager | "Find that Tokyo coffee place I bookmarked"; "plan a play-date for Saturday based on my calendar and the kids' nap times" |
 
@@ -123,7 +123,7 @@ Borrowed in spirit from Borg / Vertex AI Agent Engine: separate **what to run** 
                           │                     │
                 ┌─────────▼─────────────────────▼─────────────┐
                 │              Agent Host                      │
-                │  ScientistAgent · Coach · Curriculum · …     │
+                │  KobeAgent · Coach · Curriculum · …     │
                 │     (Python class implements: Agent)         │
                 └────────────────────┬─────────────────────────┘
                                      │
@@ -190,7 +190,7 @@ What the system **does right now**.
 
 **Why a hybrid regex-then-LLM router?** Pure regex doesn't scale to 20 agents — every agent's keyword list overlaps with at least two others. Pure LLM costs ~$0.0001 per message and adds 1–2s latency to every reply. Hybrid solves both: regex shortcuts handle ~80% of high-confidence routes (today, weight, HRV, schedule) at zero cost; LLM only fires on the long tail. We measure this via `decisions` — the `strategy` field records which path fired.
 
-**Why "Miya," and why Hyderabadi?** The PRD calls out the persona explicitly. We isolated the voice to a layer (`core/voice.py`) so the underlying Scientist outputs stay parseable for evals — the persona isn't tangled with the data path. `RAHAT_VOICE=neutral` env var disables the voice entirely (useful for screenshots, debugging, or future users who want a different register). When Coach, Curriculum, etc. ship, they automatically inherit the same voice without writing any voice code themselves.
+**Why "Miya," and why Hyderabadi?** The PRD calls out the persona explicitly. We isolated the voice to a layer (`core/voice.py`) so the underlying Kobe outputs stay parseable for evals — the persona isn't tangled with the data path. `RAHAT_VOICE=neutral` env var disables the voice entirely (useful for screenshots, debugging, or future users who want a different register). When Coach, Curriculum, etc. ship, they automatically inherit the same voice without writing any voice code themselves.
 
 ### 5.2 The Charter — policy chokepoint
 
@@ -213,7 +213,7 @@ Verdicts (`approved | modified | vetoed`) write a row to the existing `governanc
 
 **Why predicates, not a DSL?** A DSL would need its own evaluator, parser, error handling, and tooling. Python predicates are: ergonomic to write, easy to test, easy to debug, and run inside the existing Python process. Cost: policies aren't user-editable (no admin UI). Acceptable: the user is the developer.
 
-**Why three starter policies (quiet hours, HRV-red blocks, external-veto check)?** They're the three that have actual business value at N=1 agent. Each represents a distinct mode: time-based (quiet hours), data-based (HRV-red), and cross-agent (external-veto, which honors a row written by *some other agent* like Bajrangi). We'll add policies as concrete needs surface — not preemptively.
+**Why three starter policies (quiet hours, HRV-red blocks, external-veto check)?** They're the three that have actual business value at N=1 agent. Each represents a distinct mode: time-based (quiet hours), data-based (HRV-red), and cross-agent (external-veto, which honors a row written by *some other agent* like Huberman). We'll add policies as concrete needs surface — not preemptively.
 
 ### 5.3 The voice layer
 
@@ -246,7 +246,7 @@ The `span()` context manager auto-captures latency and exceptions. Cost: ~1 row 
 
 **Solution:** `episodes(id, kind, subject, started_at, ended_at, status, entities_json)` + `episode_notes(episode_id, ts, actor, text, payload_json)`. Six-line Python API: `open()`, `close()`, `note()`, `get()`, `list_open()`, `find()`.
 
-**Why ship this in Now even though Concierge is a Year-1 item?** The Curriculum agent (toddler/newborn phases), the Coach (training blocks), and the Scientist (weight cycles) all consume episodic shape. Ship the table now; cost is ~1.5 hours of work + zero ongoing tax. Without it, the first three agents to need an episode will each invent their own.
+**Why ship this in Now even though Concierge is a Year-1 item?** The Curriculum agent (toddler/newborn phases), the Coach (training blocks), and the Kobe (weight cycles) all consume episodic shape. Ship the table now; cost is ~1.5 hours of work + zero ongoing tax. Without it, the first three agents to need an episode will each invent their own.
 
 ### 5.6 The agent contract
 
@@ -268,19 +268,19 @@ A `Reply` is `(text, confidence, work_orders=[])`.
 
 **Why no manifest TOML in Now?** At N=6, in-process Python registration is simpler and faster. We'll add manifests in Later when external/third-party agents arrive (the "anyone can plug in an agent" goal). Ship cost when needed: ~2–3 days for manifests + scope checks.
 
-### 5.7 The Sports Scientist (reference implementation)
+### 5.7 Kobe (reference implementation)
 
 The first production agent. Originally a 2,930-LOC monolith (`main.py`); now split into four files per the Phase 4d (R1) refactor (specs/ARCH_REVIEW_2026-05-08.md, specs/PHASE_4D_R1_PLAN.md):
 
 - **`protocols.py`** (~325 LOC) — pure-math constants and helpers (BMR, tier tables, HRV bands, weekday parsing, gym-plan blacklist filter). No DB, no network. Other agents (Coach, Curriculum) can import from here without dragging in the runtime.
 - **`state.py`** (~600 LOC) — DB I/O + data computation. Owns `_db()`, `state_get/set`, burn-window aggregations, `weekly_target`, per-week preferences, weight/HRV/workout logs, nudge throttle state, `replan_week`, `current_plan`, `today_plan`, `detect_missed_workouts`, `compute_week_recalibration`. DB path centralised through `core.io.DB_PATH` (no parallel resolution path).
 - **`handler.py`** (~1,800 LOC) — intent dispatch + router + nudges + loop. Owns all 35+ `handle_*` functions, `route`, `_legacy_route`, `llm_coach`, Hindi/Hyderabadi regex parsing, `maybe_*` ambient nudges, `_split_for_telegram`, `send`, `start`. Star-imports `state.py` so every data-layer helper is reachable; carries its own `client = genai.Client(...)` to avoid a circular import with `main.py`.
-- **`main.py`** (~140 LOC) — thin entry point. Path bootstrap, config (.env loading, API_KEY/TOKEN/CHAT_ID, HOME/PLAN_PATH), `from state import *`, `from handler import *`, and `if __name__ == "__main__": start()`. Loaded by `ScientistAgent`'s `importlib.spec_from_file_location("sci", main.py)`; the two star re-exports preserve the legacy `sci.<name>` import contract used by every eval file.
-- **`agent.py`** (~150 LOC) — `ScientistAgent(Agent)` wrapper. Delegates `route()` to `main.route()`, `tick()` to the four legacy nudge functions. No behavior change visible to the user (proven by 142/142 eval cases unchanged through the refactor).
+- **`main.py`** (~140 LOC) — thin entry point. Path bootstrap, config (.env loading, API_KEY/TOKEN/CHAT_ID, HOME/PLAN_PATH), `from state import *`, `from handler import *`, and `if __name__ == "__main__": start()`. Loaded by `KobeAgent`'s `importlib.spec_from_file_location("sci", main.py)`; the two star re-exports preserve the legacy `sci.<name>` import contract used by every eval file.
+- **`agent.py`** (~150 LOC) — `KobeAgent(Agent)` wrapper. Delegates `route()` to `main.route()`, `tick()` to the four legacy nudge functions. No behavior change visible to the user (proven by 142/142 eval cases unchanged through the refactor).
 
-The Scientist owns: weight intent (84kg / 80kg targets), `weekly_plan`, `week_preferences`, `hrv_log`, `weighin_log`, `workout_log`, `nudge_log`. It *consumes* (read-only): `governance_log` (vetoes from Bajrangi or future agents), the deadlift intent (Fraser will own this when Fraser ships).
+Kobe owns: weight intent (84kg / 80kg targets), `weekly_plan`, `week_preferences`, `hrv_log`, `weighin_log`, `workout_log`, `nudge_log`. It *consumes* (read-only): `governance_log` (vetoes from Huberman or future agents), the deadlift intent (Fraser will own this when Fraser ships).
 
-**Why was the Scientist worth the refactor (vs. leaving it as the legacy monolith)?** Three reasons. First, it's the working reference for the next 19 agents — every shape Coach/Curriculum/Foodie use is established here. Second, the eval suite (148 cases) is proof the refactor is a true visible no-op; if a future agent breaks something, we know it's not because the Scientist drifted. Third, the four-file shape makes the Scientist's data layer (`state.py`) reusable by sibling agents — Bajrangi already shares `core/memory/`; future agents can share the planning math without dragging in dispatch logic.
+**Why was the Kobe worth the refactor (vs. leaving it as the legacy monolith)?** Three reasons. First, it's the working reference for the next 19 agents — every shape Coach/Curriculum/Foodie use is established here. Second, the eval suite (148 cases) is proof the refactor is a true visible no-op; if a future agent breaks something, we know it's not because the Kobe drifted. Third, the four-file shape makes the Kobe's data layer (`state.py`) reusable by sibling agents — Huberman already shares `core/memory/`; future agents can share the planning math without dragging in dispatch logic.
 
 ---
 
@@ -300,7 +300,7 @@ The structure of this roadmap is itself a design choice: triggers, not calendar.
 | `core/miya.py` — orchestrator | ✅ Shipped | 280+ |
 | `core/voice.py` — Hyderabadi voice layer | ✅ Shipped | 165 |
 | `core/eval.py` — generalized harness | ✅ Shipped | 244 |
-| Sports Scientist refactor (visible no-op) | ✅ Shipped | (existing) |
+| Kobe refactor (visible no-op) | ✅ Shipped | (existing) |
 | `core/miya_main.py` + `com.rahat.miya.plist` (cutover artifacts) | ✅ Shipped | 30 + 50 |
 | Eval suites (142 + 142 + 46 = 330 cases) | ✅ Green | — |
 
@@ -333,7 +333,7 @@ For any future "should this be Now or Next?":
 2. **If you don't build it, will multiple agents reinvent it?** If yes → pull forward.
 3. **Is the surface contract clear and the cost <1 day?** If no → defer regardless.
 
-Applied: episodic memory cleared all three (Curriculum/Coach/Scientist all consume it; multi-agent dup-tax was real; cost was 1.5 hr). Semantic memory cleared only #3 (no Now-window agent needs it). Profile cleared *none* in the corrected timeline.
+Applied: episodic memory cleared all three (Curriculum/Coach/Kobe all consume it; multi-agent dup-tax was real; cost was 1.5 hr). Semantic memory cleared only #3 (no Now-window agent needs it). Profile cleared *none* in the corrected timeline.
 
 ---
 
@@ -355,7 +355,7 @@ Each entry below is in the format an ARB review expects: context, decision, alte
 | AutoGen | Multi-agent reasoning paradigm misaligned with deterministic-core design. |
 | CrewAI | Production-immature in 2025; Pydantic-heavy for a domain that's mostly SQL. |
 
-**Consequences.** We own the maintenance of the runtime. Tradeoff: ~1,400 LOC in `core/` (eval-pinned, well-tested) is less than the gym-prog parser inside the Scientist alone. Maintenance is bounded.
+**Consequences.** We own the maintenance of the runtime. Tradeoff: ~1,400 LOC in `core/` (eval-pinned, well-tested) is less than the gym-prog parser inside the Kobe alone. Maintenance is bounded.
 
 **Revisit trigger.** If a framework emerges that supports local-first SQLite-resident state and deterministic-core philosophy, evaluate then. Until then, no.
 
@@ -470,7 +470,7 @@ The eval philosophy is **production-bug-driven**: every reported user bug become
 
 **Failure mode covered:** the user's HRV is in the red band; Coach (when it ships) tries to push intensity. Charter's `hrv_red_blocks` policy vetoes. Coach gets the verdict back and falls through to a recovery suggestion instead.
 
-**Failure mode covered:** Bajrangi (when it ships) writes a `governance_log` row vetoing all "performance" nudges for 24 hours. Charter's `external_veto_check` policy honors this — the Scientist's morning brief silently skips. No code coordination between Bajrangi and the Scientist needed; they communicate via the ledger.
+**Failure mode covered:** Huberman (when it ships) writes a `governance_log` row vetoing all "performance" nudges for 24 hours. Charter's `external_veto_check` policy honors this — the Kobe's morning brief silently skips. No code coordination between Huberman and the Kobe needed; they communicate via the ledger.
 
 ### 8.3 Decision tracing
 
@@ -515,7 +515,7 @@ These are decisions that don't need to be made now but will need to be made.
 2. **Multi-tenant subject_id.** Cheap insurance: add `subject_id` columns to *new* projections in Now (5 min/table). Decision: do this for any new table going forward.
 3. **Marketplace and external agents.** "Anyone can plug in an agent" implies signed manifests, scope checks, sandboxed execution. Investment scales with ambition: friend-of-family sharing < public marketplace. Defer until the user wants to share an agent with a specific person.
 4. **Cost ceiling.** Gemini Flash at scale. At 50 messages/day and ~10% LLM-fallback rate, monthly cost is ~$0.15. At 200 messages/day and 20% fallback (more agents, more long-tail), ~$1.20. Daily cost dashboard (Next phase) catches the surprise.
-5. **The Bajrangi agent.** Mentioned in the PRD as the "safety veto" — the agent that owns recovery, HRV, family priority. Not yet built. The Charter has the *enforcement* but Bajrangi will be the *advisor* (the agent that says "tomorrow should be a rest day"). Build when Coach (Fraser) ships, since the two together form the recovery-vs-performance dialectic.
+5. **The Huberman agent.** Mentioned in the PRD as the "safety veto" — the agent that owns recovery, HRV, family priority. Not yet built. The Charter has the *enforcement* but Huberman will be the *advisor* (the agent that says "tomorrow should be a rest day"). Build when Coach (Fraser) ships, since the two together form the recovery-vs-performance dialectic.
 
 ---
 
@@ -566,11 +566,11 @@ archival.archival_search(agent, query, top_k=5)
 
 Each agent that wants memory writes a small adapter at `agents/<name>/memory.py` defining:
 
-- **Entity types** — what objects this agent persists (Scientist: `goal`, `plan`, `commitment`, `tier_change`. Bajrangi: `recovery_protocol`, `sleep_concern`, `hrv_window`).
+- **Entity types** — what objects this agent persists (Kobe: `goal`, `plan`, `commitment`, `tier_change`. Huberman: `recovery_protocol`, `sleep_concern`, `hrv_window`).
 - **`assemble_context()`** — pure-Python state-block builder. Queries the substrate, formats as text, returns the string prepended to every reasoner turn.
 - **`extract_state(user_msg, bot_reply)`** — runs after each turn. Calls Gemini Flash with structured-output JSON to parse new commitments, goals, plans, or preferences from the (input, output) pair, then writes to the substrate.
 
-The substrate doesn't impose a schema. Bajrangi has no concept of "active goal" — and that's fine. None of the adapters share a forced shape.
+The substrate doesn't impose a schema. Huberman has no concept of "active goal" — and that's fine. None of the adapters share a forced shape.
 
 ### 11.4 Sleep-time consolidation
 
@@ -595,11 +595,11 @@ miya.cross_agent_query(type='hrv_window')   # reads across all agents
 miya.cross_agent_recent_events(kinds=[...]) # event stream across agents
 ```
 
-Use cases this enables (impossible with the previous Scientist-only design):
+Use cases this enables (impossible with the previous Kobe-only design):
 
-- "User mentioned a Japan trip to Foodie 3 weeks ago" → Scientist surfaces it for jet-lag recovery
-- "Bajrangi flagged HRV crash" → Scientist's tier defaults to `re_entry`
-- "Curriculum noted toddler regression" → Bajrangi factors fragmented sleep impact
+- "User mentioned a Japan trip to Foodie 3 weeks ago" → Kobe surfaces it for jet-lag recovery
+- "Huberman flagged HRV crash" → Kobe's tier defaults to `re_entry`
+- "Curriculum noted toddler regression" → Huberman factors fragmented sleep impact
 - "User's preferences across all agents" → one query
 
 All cross-agent reads are logged via `memory_events` for audit.
@@ -621,7 +621,7 @@ A test-isolation guard (`RAHAT_TEST_MODE=1` in env, implemented in `core/io.py`)
 
 ### 12.1 The pivot
 
-Pre-v2.0, the Scientist was a regex-first dispatcher with the LLM bolted on as a fallback. ~25 deterministic handlers; the LLM was reserved for whatever the regexes missed. This produced a recurring failure mode: the dispatcher pattern-matched a single intent and discarded the rest of a multi-clause sentence ("Replan to get 1016 calories per day" → matched `Replan`, ignored the constraint).
+Pre-v2.0, the Kobe was a regex-first dispatcher with the LLM bolted on as a fallback. ~25 deterministic handlers; the LLM was reserved for whatever the regexes missed. This produced a recurring failure mode: the dispatcher pattern-matched a single intent and discarded the rest of a multi-clause sentence ("Replan to get 1016 calories per day" → matched `Replan`, ignored the constraint).
 
 v2.0 inverts this: every inbound user message goes to a **tool-using reasoner** with Gemini 2.5 Flash as the default model. The deterministic handlers become **tools** the model calls when it needs them. The model orchestrates; the tools provide facts.
 
@@ -719,11 +719,11 @@ Year-1 target is ~20 agents. Pre-v2.0, each agent was a fresh build of state-man
 ~1 day of focused work
 ```
 
-### 13.3 Bajrangi (stub today, full agent ~1 day)
+### 13.3 Huberman (stub today, full agent ~1 day)
 
-Demonstrates the pattern for non-Scientist domains:
+Demonstrates the pattern for non-Kobe domains:
 
-- Entity types: `recovery_protocol`, `sleep_concern`, `hrv_window` (zero overlap with Scientist's `goal`/`plan`/`commitment`)
+- Entity types: `recovery_protocol`, `sleep_concern`, `hrv_window` (zero overlap with Kobe's `goal`/`plan`/`commitment`)
 - Assembler outputs HRV-focused state (not goal-focused)
 - Tools (planned): `get_hrv_trend`, `get_sleep_quality`, `prescribe_recovery`, `flag_concern`, `declare_protocol`
 
@@ -731,9 +731,9 @@ Demonstrates the pattern for non-Scientist domains:
 
 | Agent | Months | Entity types | Cross-agent reads |
 |---|---|---|---|
-| Bajrangi (full) | 1–3 | recovery_protocol, sleep_concern, hrv_window | Scientist's goal, tier_change |
+| Huberman (full) | 1–3 | recovery_protocol, sleep_concern, hrv_window | Kobe's goal, tier_change |
 | Curriculum | 1–3 | lesson, milestone, behavior_log | Family-context shared |
-| Foodie | 3–6 | cuisine_focus, meal_log, dietary_phase | Scientist's intake target |
+| Foodie | 3–6 | cuisine_focus, meal_log, dietary_phase | Kobe's intake target |
 | Voyager | 3–6 | trip, stop, recall_corpus | Cross-domain |
 | Concierge | 6–12 | recommendation, saved_place, social_event | All-mesh |
 

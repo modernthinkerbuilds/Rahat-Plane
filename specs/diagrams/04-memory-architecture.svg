@@ -109,11 +109,11 @@
 
   <!-- ─── Layer 2 — adapters ─── -->
   <rect class="panel" x="40" y="356" width="1120" height="200" rx="8"/>
-  <text class="ink h2" x="60" y="380">Layer 2 — Per-agent adapters (Scientist + Bajrangi today; +N tomorrow)</text>
+  <text class="ink h2" x="60" y="380">Layer 2 — Per-agent adapters (Kobe + Huberman today; +N tomorrow)</text>
   <text class="muted small" x="60" y="396">each agent declares its entity types + assembler + extractor; substrate doesn't impose schema</text>
 
   <rect class="box-accent" x="60" y="416" width="320" height="120" rx="6"/>
-  <text class="ink lbl" x="220" y="434" text-anchor="middle" font-weight="600">Scientist adapter</text>
+  <text class="ink lbl" x="220" y="434" text-anchor="middle" font-weight="600">Kobe adapter</text>
   <text class="muted small" x="220" y="450" text-anchor="middle">agents/the_scientist/memory.py</text>
   <text class="ink small" x="76" y="470">Entity types:</text>
   <text class="muted small" x="76" y="484">  goal · plan · commitment · tier_change</text>
@@ -122,7 +122,7 @@
   <text class="muted small" x="76" y="528">  [Commitments: hammer week until 5/22]</text>
 
   <rect class="box" x="400" y="416" width="320" height="120" rx="6"/>
-  <text class="ink lbl" x="560" y="434" text-anchor="middle" font-weight="600">Bajrangi adapter (stub)</text>
+  <text class="ink lbl" x="560" y="434" text-anchor="middle" font-weight="600">Huberman adapter (stub)</text>
   <text class="muted small" x="560" y="450" text-anchor="middle">agents/bajrangi/memory.py</text>
   <text class="ink small" x="416" y="470">Entity types:</text>
   <text class="muted small" x="416" y="484">  recovery_protocol · sleep_concern · hrv_window</text>
@@ -179,7 +179,7 @@
 
   <rect class="box" x="880" y="636" width="260" height="48" rx="6"/>
   <text class="ink small" x="900" y="657">cross_agent_recent_events(kinds)</text>
-  <text class="muted tiny" x="900" y="671">e.g. "Bajrangi vital readings last 24h"</text>
+  <text class="muted tiny" x="900" y="671">e.g. "Huberman vital readings last 24h"</text>
   <rect class="box-accent" x="880" y="694" width="260" height="48" rx="6"/>
   <text class="ink small" x="900" y="715">use cases:</text>
   <text class="muted tiny" x="900" y="729">"User mentioned a Japan trip to Foodie last month"</text>

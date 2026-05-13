@@ -98,7 +98,7 @@
   <text class="ink h2" x="40" y="500">Agent mesh — manifests-free at small N (Year 1: ~20 agents)</text>
   <g>
     <rect class="box" x="40" y="514" width="155" height="58" rx="6"/>
-    <text class="ink lbl" x="56" y="534">The Scientist</text>
+    <text class="ink lbl" x="56" y="534">Kobe</text>
     <text class="muted small" x="56" y="550">vitality · math</text>
     <text class="accent small" x="56" y="564">live</text>
   </g>
@@ -110,7 +110,7 @@
   </g>
   <g>
     <rect class="box" x="370" y="514" width="155" height="58" rx="6"/>
-    <text class="ink lbl" x="386" y="534">Bajrangi</text>
+    <text class="ink lbl" x="386" y="534">Huberman</text>
     <text class="muted small" x="386" y="550">HRV · sleep advisor</text>
     <text class="accent small" x="386" y="564">P0 · with Coach</text>
   </g>

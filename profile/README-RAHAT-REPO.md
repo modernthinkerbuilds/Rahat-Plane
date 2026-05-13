@@ -74,7 +74,7 @@ The original three-plane model held until I hit a wall: agents need to *actively
         ┌────────┼────────────────────────────┐            │
         ▼        ▼                            ▼            │
    ┌─────────┐ ┌──────────┐             ┌──────────┐      │
-   │Scientist│ │ Bajrangi │     ...     │  +20     │ ─────┘
+   │  Kobe   │ │ Huberman │     ...     │  +20     │ ─────┘
    │ + reasoner│ + reasoner│             │  agents  │   write tools
    │ +25 tools │ + tools   │             │          │   pass through
    └────┬────┘ └─────┬────┘             └─────┬────┘   Charter
@@ -102,7 +102,7 @@ The original three-plane model held until I hit a wall: agents need to *actively
 
 **1. Sovereignty as infrastructure.** All state lives in `vault/rahat.db` on a local Mac Mini M4. Git-ignored. No cloud syncs of biometric data. Trust is silicon-deep.
 
-**2. Shared memory, not shared chat history.** RAG over conversation logs is brittle. Rahat's substrate has six first-class primitives every agent reads/writes (events, entities, threads, prefs, archival, relationships). When the Scientist commits a goal, the Foodie sees it on next turn. When Bajrangi flags low HRV, the Scientist's reasoner downgrades intensity automatically.
+**2. Shared memory, not shared chat history.** RAG over conversation logs is brittle. Rahat's substrate has six first-class primitives every agent reads/writes (events, entities, threads, prefs, archival, relationships). When the Kobe commits a goal, the Foodie sees it on next turn. When Huberman flags low HRV, the Kobe's reasoner downgrades intensity automatically.
 
 **3. The Charter as the single chokepoint.** Every write-tool — across every agent — calls `charter.check()` first. Quiet hours, HRV-red blocks, family-priority overrides: written once, applied uniformly. Writes to `governance_log` for audit.
 
@@ -110,7 +110,7 @@ The original three-plane model held until I hit a wall: agents need to *actively
 
 **5. Voice as a layer, not an agent property.** Miya wraps every outbound message through `core/voice.py` — a deterministic Hyderabadi Dakhini phrasebook. Idempotent. Numbers/structure preserved verbatim. Adding a new agent doesn't require teaching it Dakhini.
 
-**6. Model-first reasoner over a deterministic tool catalog.** Each agent runs a Gemini 2.5 Flash reasoning loop with a registered tool catalog (the Scientist has 25 tools). The model decides what to call; tools execute deterministically; results return; reply composed. Regex routing remains as a fallback when the API is unreachable.
+**6. Model-first reasoner over a deterministic tool catalog.** Each agent runs a Gemini 2.5 Flash reasoning loop with a registered tool catalog (the Kobe has 25 tools). The model decides what to call; tools execute deterministically; results return; reply composed. Regex routing remains as a fallback when the API is unreachable.
 
 ---
 
@@ -120,7 +120,7 @@ The original three-plane model held until I hit a wall: agents need to *actively
 
 ### Why memory had to be built
 
-The Scientist was supposed to remember commitments. Instead, every message was a fresh start. I'd say *"I'll do 7,000 kcal of burn this week"* (a real commitment), and an hour later the bot would suggest a plan that ignored it. I'd commit to *"hammer tier for 2 weeks,"* and the next day it would lecture me about recovery — even though I'd just said I wanted to push.
+Kobe was supposed to remember commitments. Instead, every message was a fresh start. I'd say *"I'll do 7,000 kcal of burn this week"* (a real commitment), and an hour later the bot would suggest a plan that ignored it. I'd commit to *"hammer tier for 2 weeks,"* and the next day it would lecture me about recovery — even though I'd just said I wanted to push.
 
 After ten rounds of patches (60-minute lookbacks, re-reading chat history, hardcoding "don't lecture after commit"), the root cause was undeniable: **the system had no memory architecture.** Chat history is too raw, too short-lived, and too unstructured to be reliable. The agent needed to actively manage its own state — like a human coach.
 
@@ -135,8 +135,8 @@ After ten rounds of patches (60-minute lookbacks, re-reading chat history, hardc
 ┌─────────────────────────────────────────────────────────┐
 │  Core memory (entities)                                 │
 │  memory_entities — first-class objects with lifecycle  │
-│  Scientist: goal, plan, commitment, tier_change        │
-│  Bajrangi: recovery_protocol, sleep_concern, hrv_window│
+│  Kobe: goal, plan, commitment, tier_change        │
+│  Huberman: recovery_protocol, sleep_concern, hrv_window│
 └─────────────────────────────────────────────────────────┘
 ┌─────────────────────────────────────────────────────────┐
 │  Semantic memory (preferences)                          │
@@ -152,7 +152,7 @@ After ten rounds of patches (60-minute lookbacks, re-reading chat history, hardc
 └─────────────────────────────────────────────────────────┘
 ```
 
-Plus `memory_threads` (conversation topics) and `memory_relationships` (entity-to-entity links — including cross-agent: a Scientist commitment can link to a Bajrangi recovery protocol).
+Plus `memory_threads` (conversation topics) and `memory_relationships` (entity-to-entity links — including cross-agent: a Kobe commitment can link to a Huberman recovery protocol).
 
 ### How agents use it (the adapter pattern)
 
@@ -172,7 +172,7 @@ def extract_state(user_msg, bot_reply, db_path=None) -> None:
     """
 ```
 
-The substrate is universal; adapters are thin (Scientist's is ~365 LOC, Bajrangi's stub is ~110 LOC). **Every future agent — Curriculum, Foodie, Voyager — onboards in ~1 day.**
+The substrate is universal; adapters are thin (Kobe's is ~365 LOC, Huberman's stub is ~110 LOC). **Every future agent — Curriculum, Foodie, Voyager — onboards in ~1 day.**
 
 ### Sleep-time consolidation
 
@@ -190,7 +190,7 @@ Without this, the substrate would bloat to junk. With it, the data plane stays s
 
 ## 🔁 The Model-First Reasoner
 
-The Scientist used to be a regex router with 25 hardcoded handlers and an LLM fallback for unmatched messages. It failed on five distinct classes of bug — multi-clause questions, ad-hoc constraints, week-so-far reasoning, multi-source composition, the Dakhini-English mix. The intuition *"regex for cheap determinism, LLM for free-form fallback"* aged poorly. Modern Gemini 2.5 Flash with structured tool calling doesn't hallucinate math when the math comes from tools.
+Kobe used to be a regex router with 25 hardcoded handlers and an LLM fallback for unmatched messages. It failed on five distinct classes of bug — multi-clause questions, ad-hoc constraints, week-so-far reasoning, multi-source composition, the Dakhini-English mix. The intuition *"regex for cheap determinism, LLM for free-form fallback"* aged poorly. Modern Gemini 2.5 Flash with structured tool calling doesn't hallucinate math when the math comes from tools.
 
 ### The new flow (per inbound message)
 
@@ -223,8 +223,8 @@ The Scientist used to be a regex router with 25 hardcoded handlers and an LLM fa
 | Agent | Status | Role | Memory entity types |
 |---|---|---|---|
 | **The Miya** | ✅ Live | Orchestrator + supervisor; single voice; capability registry; cross-agent broker | (orchestration only) |
-| **The Scientist** | ✅ Live | Vitality — trajectory math, weekly planning, recalibration, the 155kg deadlift baseline | `goal`, `plan`, `commitment`, `tier_change` |
-| **Bajrangi** | 🚧 Stub shipped | Recovery — reads HRV/sleep/RHR; advises (Charter enforces) | `recovery_protocol`, `sleep_concern`, `hrv_window` |
+| **Kobe** | ✅ Live | Vitality — trajectory math, weekly planning, recalibration, the 155kg deadlift baseline | `goal`, `plan`, `commitment`, `tier_change` |
+| **Huberman** | 🚧 Stub shipped | Recovery — reads HRV/sleep/RHR; advises (Charter enforces) | `recovery_protocol`, `sleep_concern`, `hrv_window` |
 | **The Charter** | ✅ Live (infrastructure) | Policy plane — every write-tool passes through; quiet hours, HRV-red, external veto | (writes to `governance_log`) |
 | **Coach (Fraser)** | 🚧 Next | Performance — CrossFit programming, load auditing | `training_block`, `lift_history` |
 | **Curriculum** | 🚧 Next | Toddler + newborn developmental phases | `lesson`, `milestone`, `behavior_log` |
@@ -240,13 +240,13 @@ Each future agent is **~1 day to onboard**: define entity types, write the adapt
 | Component | Status | Notes |
 |---|---|---|
 | `core/` scaffolding | ✅ Shipped | 10 modules: `io.py`, `agent.py`, `decisions.py`, `charter.py`, `miya.py`, `eval.py`, `voice.py`, `cost.py`, `gemini_reasoner_io.py`, plus `memory/` package |
-| The Scientist (production) | ✅ Live | Four files: `protocols.py` (~325 LOC) + `state.py` (~1,000 LOC) + `handler.py` (~2,040 LOC) + `main.py` (~200 LOC). Originally a 2,930-LOC monolith — split 2026-05-11 (specs/PHASE_4D_R1_PLAN.md). 25-tool reasoner, full memory adapter, Dakhini routing |
+| Kobe (production) | ✅ Live | Four files: `protocols.py` (~325 LOC) + `state.py` (~1,000 LOC) + `handler.py` (~2,040 LOC) + `main.py` (~200 LOC). Originally a 2,930-LOC monolith — split 2026-05-11 (specs/PHASE_4D_R1_PLAN.md). 25-tool reasoner, full memory adapter, Dakhini routing |
 | The Miya (orchestrator) | ✅ Live | Hybrid router, single-voice-out, supervisor with capability registry, cross-agent broker |
 | Hyderabadi voice layer | ✅ Live | `core/voice.py` — idempotent, neutral-mode toggle for debug |
 | The Charter (policy plane) | ✅ Live | Quiet hours, HRV-red, external-veto policies; writes `governance_log` |
-| Memory substrate (4 tiers) | ✅ Live | `core/memory/` package — `__init__.py` (~620 LOC, 5 primitives) + `archival.py` (~250 LOC, embeddings) + Scientist adapter (~365 LOC) |
+| Memory substrate (4 tiers) | ✅ Live | `core/memory/` package — `__init__.py` (~620 LOC, 5 primitives) + `archival.py` (~250 LOC, embeddings) + Kobe adapter (~365 LOC) |
 | Sleep-time consolidation | ✅ Live | `scripts/memory_consolidate.py` (~270 LOC), nightly 03:00 cron |
-| Bajrangi (stub) | ✅ Shipped | Demonstrates substrate reuse for non-Scientist agents (~110 LOC adapter) |
+| Huberman (stub) | ✅ Shipped | Demonstrates substrate reuse for non-Kobe agents (~110 LOC adapter) |
 | Decisions trace log | ✅ Live | Every routing call, tool invocation, verdict logged with `trace_id`, latency, tokens, cost |
 | Frictionless setup | ✅ Live | `bootstrap.sh` + `.env.example` + templated `*.plist.template` files. Anyone can clone the repo and reach a green hermetic test suite in one command — zero hardcoded `/Users/<name>/...` paths in tracked files. Promoted to a first-class architectural principle in `specs/ARCHITECTURE.md §3` |
 | Model-first reasoner | ✅ Live | Gemini 2.5 Flash + 25 tools; legacy regex as fallback |
@@ -282,12 +282,12 @@ The forcing function: by month 6 the mesh is 20 deep. Anything done 20 times mus
 - ✅ Charter as single chokepoint with `governance_log` audit
 - ✅ Decisions trace log (debug + replay)
 - ✅ Generalized eval harness (every agent ships `cases.yaml`)
-- ✅ Episodic memory (Scientist's weight cycles, Coach's training blocks, Curriculum's newborn phases)
+- ✅ Episodic memory (Kobe's weight cycles, Coach's training blocks, Curriculum's newborn phases)
 - ✅ **Memory substrate** (4 tiers: events / entities / preferences / archival) + **sleep-time consolidation**
 - ✅ **Model-first reasoner** (Gemini 2.5 Flash + 25-tool catalog) with legacy regex fallback
 - ✅ **Cost ledger** (per-turn telemetry, daily-digest scaffold)
-- 🚧 Cut launchd from Scientist-as-entrypoint to Miya-as-entrypoint
-- 🚧 Bajrangi full agent (stub already proves substrate reuse)
+- 🚧 Cut launchd from Kobe-as-entrypoint to Miya-as-entrypoint
+- 🚧 Huberman full agent (stub already proves substrate reuse)
 - 🚧 Curriculum agent (toddler + newborn — Months 1–3)
 
 ### Next (months 6–12) — when concierge agents arrive
@@ -365,7 +365,7 @@ Living documentation in [`/specs/`](./specs/):
 I shipped the first version of Rahat during parental leave with a newborn — naps and bedtime were the build windows. The architecture has gone through three pivots as the system grew:
 
 1. **Three planes.** When agent #2 forced the question of how multiple specialists share state without colliding — a control / data / runtime split, plus the Charter as a policy chokepoint.
-2. **Memory substrate.** When the Scientist kept forgetting commitments after ten rounds of patches — a four-tier memory architecture with per-agent adapters and sleep-time consolidation.
+2. **Memory substrate.** When the Kobe kept forgetting commitments after ten rounds of patches — a four-tier memory architecture with per-agent adapters and sleep-time consolidation.
 3. **Model-first reasoner.** When regex routing broke on multi-clause questions and Hyderabadi-English code-mixing — a Gemini 2.5 Flash loop over a deterministic 25-tool catalog, with legacy regex as the fallback.
 
 Each pivot made adding the next agent cheaper. Today, **the 11th agent costs ~1 day** (entity types + adapter + tool registration). That's the moat.
