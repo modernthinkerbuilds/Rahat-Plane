@@ -64,6 +64,10 @@ LAYERS: list[LayerSpec] = [
             "tests/test_miya_routing.py",
             "tests/test_charter_policies.py",
             "tests/test_decisions.py",
+            # Rebrand-alias contract (Scientist→Kobe, Bajrangi→Huberman,
+            # 2026-05-12). Pins the sys.modules aliasing + class identity
+            # + decisions-ledger actor preservation. See ADR-002.
+            "tests/test_rebrand_aliases.py",
         ],
     ),
     LayerSpec(

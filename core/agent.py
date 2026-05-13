@@ -54,6 +54,12 @@ class Agent:
     name: str = "unnamed"
     description: str = ""              # used by Miya's LLM classifier
     version: str = "0.1.0"
+    # Legacy / brand-equivalent names. Miya's classifier accepts any of
+    # these as a match for this agent — used during rebrands to keep
+    # back-compat without forcing every caller to learn the new name.
+    # Example: KobeAgent declares aliases=["the_scientist"] for one week
+    # after the 2026-05-12 rebrand.
+    aliases: list[str] = []
     # Regex strings — Miya compiles them once. Use word-boundary anchors
     # to avoid false fires on substrings.
     triggers: list[str] = []
@@ -108,4 +114,5 @@ class Agent:
             "version": self.version,
             "description": self.description,
             "triggers": list(self.triggers),
+            "aliases": list(self.aliases),
         }

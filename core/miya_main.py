@@ -18,15 +18,19 @@ if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
 from core import miya                                       # noqa: E402
-from agents.the_scientist.agent import ScientistAgent      # noqa: E402
+# Import via the new brand path — agents.kobe is an alias package that
+# transparently re-points at agents.the_scientist (see agents/kobe/
+# __init__.py). After the alias retires in one week, this line stays;
+# only the underlying file location changes.
+from agents.kobe.agent import KobeAgent                     # noqa: E402
 
-# When you ship Coach, Curriculum, Bajrangi, etc., import + register
+# When you ship Coach, Curriculum, Huberman, etc., import + register
 # them here. Order is irrelevant — Miya routes by trigger match, not
 # registration order.
 
-miya.register(ScientistAgent())
+miya.register(KobeAgent())
 # miya.register(CoachAgent())            # placeholder — Phase Next
-# miya.register(BajrangiAgent())         # placeholder — Phase Next
+# miya.register(HubermanAgent())         # placeholder — Phase Next (was Bajrangi)
 # miya.register(CurriculumAgent())       # placeholder — Phase Next
 
 

@@ -73,6 +73,10 @@ def list_capabilities() -> list[dict]:
             "version":     getattr(a, "version", "0.0.0"),
             "description": a.description,
             "triggers":    list(a.triggers),
+            # Brand-equivalent names — populated for one nightly cycle
+            # after the 2026-05-12 Scientist→Kobe / Bajrangi→Huberman
+            # rebrand, then dropped.
+            "aliases":     list(getattr(a, "aliases", [])),
         }
         for a in _AGENTS
     ]
@@ -166,11 +170,21 @@ def _classify_via_llm(msg: str, candidates: Sequence[Agent]) -> Agent | None:
         return None
     name = out.strip().split()[0].strip(".,:;'\"`").lower()
     for a in candidates:
-        if a.name.lower() == name:
+        # Match canonical name OR any legacy alias the agent declares.
+        # `aliases` is an optional class attribute (default []) introduced
+        # 2026-05-12 to support the Scientist→Kobe / Bajrangi→Huberman
+        # rebrand without breaking the LLM classifier on legacy names.
+        candidate_names = [a.name.lower()] + [
+            x.lower() for x in getattr(a, "aliases", [])
+        ]
+        if name in candidate_names:
             return a
-    # Tolerant match: agent name as substring
+    # Tolerant match: agent name (or alias) as substring of the LLM output.
     for a in candidates:
-        if a.name.lower() in out.lower():
+        candidate_names = [a.name.lower()] + [
+            x.lower() for x in getattr(a, "aliases", [])
+        ]
+        if any(cn in out.lower() for cn in candidate_names):
             return a
     return None
 

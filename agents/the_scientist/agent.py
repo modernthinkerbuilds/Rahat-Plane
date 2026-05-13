@@ -47,10 +47,29 @@ def _load_scientist_module():
     return mod
 
 
-class ScientistAgent(Agent):
-    """The vitality agent — wraps the legacy main.py route()/tick() surface."""
+class KobeAgent(Agent):
+    """The vitality agent (rebranded from ScientistAgent on 2026-05-12).
 
-    name = "the_scientist"
+    Wraps the legacy main.py route()/tick() surface. Same code, same
+    eval suite, same behavior — only the brand changed.
+
+    Back-compat:
+        • `name` is "kobe"; legacy "the_scientist" is recognized via
+          `aliases` (Miya consults both when classifying).
+        • The module-level `ScientistAgent` alias below lets any caller
+          using the old class name keep working for one nightly cycle.
+        • The decisions ledger STILL records `actor="scientist"` —
+          trace continuity is preserved across the rename. Future
+          actor-string migration is a separate, scoped change.
+
+    See specs/ADR-002-rebrand-risk.md for the namesake-objects
+    fallback (The Lab / Andrew / The Mamba — substrate unchanged).
+    """
+
+    name = "kobe"
+    # Legacy name still recognized by Miya's routing layer. Drop after
+    # one full week of green nightlies.
+    aliases: list[str] = ["the_scientist"]
     description = (
         "Vitality lead. Owns weight, HRV, weekly caloric targets, the 3 CF "
         "+ 1 Z2 + active-rest cadence, weight-loss timeline math, and the "
@@ -145,4 +164,10 @@ class ScientistAgent(Agent):
 
 # Module-level singleton. Miya imports this directly; agent host CLIs can
 # also instantiate fresh ones for offline/test runs.
-SCIENTIST = ScientistAgent()
+KOBE = KobeAgent()
+
+# Back-compat aliases — kept for one nightly cycle. Code that imports
+# ScientistAgent / SCIENTIST keeps working unchanged. Schedule for
+# removal: one week after 2026-05-12 (see ADR-002).
+ScientistAgent = KobeAgent
+SCIENTIST = KOBE
