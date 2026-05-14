@@ -225,6 +225,47 @@ ONE_RM_WARN_AFTER_DAYS  = 90
 ONE_RM_BLOCK_AFTER_DAYS = 180
 
 
+# ─────────────────────────── Substitution conditions ────────────────────
+# Stable string vocabulary keyed off (movement, condition) pairs in
+# SubstitutionRuleBody. Strings + tuple validation, NOT Enum — mirrors
+# the `dislikes.SCOPES` and `BLACKLIST` patterns elsewhere in the repo.
+#
+# Promotion trigger (per ADR-004 §"Substitution conditions"): if the
+# number of call sites with exhaustive `match condition:` blocks
+# exceeds five, promote to `Enum`. That's a real trigger, not a vibe:
+# at five exhaustive matches the cost of "is this string in the set"
+# guards starts outpacing the cost of an enum-import round.
+#
+# Add new conditions here in alphabetical order; touch the seed in
+# state.DEFAULT_SUBSTITUTION_SEED in the same PR.
+SUBSTITUTION_CONDITIONS: tuple[str, ...] = (
+    "equipment_missing",     # the gear isn't available (no rope, no rack, no box)
+    "format_incompatible",   # movement doesn't fit the requested WOD format
+    "mobility_limit",        # injury or mobility issue blocks this movement
+    "recovery_gate",         # HRV/sleep state blocks this intensity
+    "rx_unavailable",        # the prescribed load/scale isn't doable
+    "time_constrained",      # WOD time budget too tight for this movement at rx
+    "user_dislike",          # user declared a fraser_preference dislike
+)
+
+
+def _validate_condition(c: str) -> str:
+    """Return the condition unchanged if it's in the vocabulary; raise
+    otherwise. Called from `SubstitutionRuleBody.to_payload` so a typo
+    fails LOUDLY at write-time rather than becoming an unfindable orphan
+    in the substrate.
+
+    Promote to an `Enum` when the trigger in ADR-004 fires.
+    """
+    if c not in SUBSTITUTION_CONDITIONS:
+        raise ValueError(
+            f"unknown substitution condition {c!r}. "
+            f"Allowed: {SUBSTITUTION_CONDITIONS}. "
+            f"Add new conditions to protocols.SUBSTITUTION_CONDITIONS "
+            f"(see ADR-004 §'Substitution conditions').")
+    return c
+
+
 # ─────────────────────────── Normalizers ──────────────────────────────
 def normalize_lift_name(name: str) -> str:
     """Canonicalize a lift name to one of `LIFTS` (or the input lower-
@@ -634,15 +675,21 @@ class SubstitutionRuleBody:
     reason_template: str = ""                    # "no rope → {replacement}"
 
     def to_payload(self) -> dict:
+        """Write-time validation of `condition` against
+        `SUBSTITUTION_CONDITIONS` — a typo here fails LOUDLY now,
+        not silently in production. The same instinct as
+        `dislikes._normalize_movement` / `dislikes.SCOPES`."""
         return {
             "movement": normalize_movement(self.movement),
-            "condition": self.condition,
+            "condition": _validate_condition(self.condition),
             "replacements": [normalize_movement(r) for r in self.replacements],
             "reason_template": self.reason_template,
         }
 
     @classmethod
     def from_payload(cls, d: dict) -> "SubstitutionRuleBody":
+        # Read path is permissive — old rows from before a vocabulary
+        # change shouldn't crash the reader. Validation lives on writes.
         return cls(
             movement=normalize_movement(d.get("movement", "")),
             condition=d.get("condition", ""),
@@ -873,6 +920,8 @@ __all__ = [
     "POSTERIOR_CHAIN", "OVERHEAD_MOVEMENTS",
     # Staleness thresholds
     "ONE_RM_WARN_AFTER_DAYS", "ONE_RM_BLOCK_AFTER_DAYS",
+    # Substitution vocabulary
+    "SUBSTITUTION_CONDITIONS", "_validate_condition",
     # Normalizers
     "normalize_lift_name", "normalize_movement",
     "is_pressing", "is_pulling", "is_overhead", "loads_posterior_chain",

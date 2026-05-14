@@ -334,13 +334,13 @@ def test_persist_then_lookup_substitution_rule(fresh_db):
     from agents.fraser import state as fst
 
     eid, v = fst.persist_substitution_rule(
-        "wall_ball", "no_wall_ball",
+        "wall_ball", "equipment_missing",
         ["db_thruster", "burpee_box_jump"],
         reason_template="no wall ball → {replacement}")
     assert v.approved
     assert eid is not None and eid > 0
 
-    rule = fst.lookup_substitution_rule("wall_ball", "no_wall_ball")
+    rule = fst.lookup_substitution_rule("wall_ball", "equipment_missing")
     assert rule is not None
     assert rule.replacements == ["db_thruster", "burpee_box_jump"]
     assert "wall ball" in rule.reason_template
@@ -361,13 +361,13 @@ def test_seed_default_substitution_rules_loads_all_canonical(fresh_db):
     assert n == len(fst.DEFAULT_SUBSTITUTION_SEED)
 
     # Spot-check the canonical no-rope swap from spec §5 item 1.
-    rope_rule = fst.lookup_substitution_rule("jump_rope", "no_rope")
+    rope_rule = fst.lookup_substitution_rule("jump_rope", "equipment_missing")
     assert rope_rule is not None
     assert "penguin_jump" in rope_rule.replacements
 
     # And the Devil's Press dislike from §9 case fraser_014.
     devil_rule = fst.lookup_substitution_rule(
-        "devil_press", "user_dislikes_devil_press")
+        "devil_press", "user_dislike")
     assert devil_rule is not None
     assert "dual_db_front_squat" in devil_rule.replacements
 

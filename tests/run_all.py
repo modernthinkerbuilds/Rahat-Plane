@@ -89,6 +89,10 @@ LAYERS: list[LayerSpec] = [
             # lookup_movement_cues, parse_user_workout) per ADR-004
             # five-file pattern. Pure-transform unit tests; no DB.
             "tests/test_fraser_tools.py",
+            # Budget enforcement (2026-05-14, ADR-005). Pins the global
+            # daily cap, env-var override, actor-scoped observability,
+            # zero-disables-enforcement contract.
+            "tests/test_budget.py",
         ],
     ),
     LayerSpec(

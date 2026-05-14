@@ -160,6 +160,46 @@ filter). Doing so:
 
 Listed here so future-me doesn't re-discover the option.
 
+## Substitution conditions — string vocabulary, validated at write-time
+
+Fraser's `SubstitutionRuleBody` keys off `(movement, condition)` pairs.
+The `condition` value is a STRING drawn from
+`protocols.SUBSTITUTION_CONDITIONS` — not an `Enum`. The validator
+`protocols._validate_condition` is called inside `to_payload()`, so
+an unknown condition string fails LOUDLY at write-time rather than
+landing as an unfindable orphan in `memory_entities`.
+
+The current vocabulary (alphabetical):
+`equipment_missing`, `format_incompatible`, `mobility_limit`,
+`recovery_gate`, `rx_unavailable`, `time_constrained`, `user_dislike`.
+
+The (movement, condition) pair is unique: `equipment_missing` for
+`jump_rope` returns the rope swaps; `equipment_missing` for `wall_ball`
+returns the wall-ball swaps. The reader keys off both.
+
+**Why strings, not Enum.** Mirrors the existing `dislikes.SCOPES` and
+`BLACKLIST` patterns in the repo — flat-vocabulary cases where the
+write-site validation is enough and the import cost of an Enum buys
+nothing in return. Validation at the boundary is the discipline; the
+container is incidental.
+
+**Promotion trigger (real, not vibe).** Promote `condition` to an
+`Enum` when the count of call sites with **exhaustive `match condition:`
+blocks exceeds five**. At five exhaustive matches, the cost of "is this
+string in the set" guards starts outpacing the cost of an enum import
+round; below five, the string form is cheaper and more flexible for
+emerging conditions. If the count is at four-and-a-half (e.g., four
+exhaustive matches plus one partial), pause and read the call sites —
+sometimes a refactor collapses two matches into one and the promotion
+isn't needed.
+
+The promotion itself is mechanical: a one-PR migration that converts
+`SUBSTITUTION_CONDITIONS` from a `tuple[str, ...]` to a
+`StrEnum(str, Enum)`, leaves `_validate_condition` in place as a
+backstop, and updates every `match condition:` block. Storage shape
+is unchanged — Enums serialize to their string values, so the
+`memory_entities.payload` JSON looks identical before and after.
+
 ## Status of agents
 
 | Agent | Files | Shape |

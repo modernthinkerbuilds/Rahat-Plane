@@ -250,13 +250,44 @@ def test_chest_progression_body_roundtrip():
 
 def test_substitution_rule_body_roundtrip():
     body = SubstitutionRuleBody(
-        movement="Wall Ball", condition="no_wall_ball",
+        movement="Wall Ball", condition="equipment_missing",
         replacements=["DB Thruster", "Burpee Box Jump"],
         reason_template="no wall ball → {replacement}",
     )
     rt = SubstitutionRuleBody.from_payload(body.to_payload())
     assert rt.movement == "wall_ball"
+    assert rt.condition == "equipment_missing"
     assert rt.replacements == ["db_thruster", "burpee_box_jump"]
+
+
+def test_substitution_rule_rejects_unknown_condition():
+    """Write-time validation: an unknown condition string fails LOUDLY
+    rather than landing as an unfindable orphan in the substrate. This
+    is the same instinct as `dislikes._normalize_movement` failing on
+    empty input."""
+    import pytest as _pytest
+    body = SubstitutionRuleBody(
+        movement="thruster", condition="no_wall_ball",  # legacy/invalid
+        replacements=["air_squat"],
+    )
+    with _pytest.raises(ValueError, match="unknown substitution condition"):
+        body.to_payload()
+
+
+def test_substitution_conditions_vocab_is_alphabetical():
+    """The protocols comment commits to alphabetical order — that
+    keeps PR diffs minimal when new conditions land."""
+    from agents.fraser.protocols import SUBSTITUTION_CONDITIONS
+    assert list(SUBSTITUTION_CONDITIONS) == sorted(SUBSTITUTION_CONDITIONS)
+
+
+def test_substitution_conditions_includes_canonical_seven():
+    """Pin the vocabulary so a silent rename surfaces immediately."""
+    from agents.fraser.protocols import SUBSTITUTION_CONDITIONS
+    for c in ("equipment_missing", "mobility_limit", "user_dislike",
+              "rx_unavailable", "recovery_gate", "format_incompatible",
+              "time_constrained"):
+        assert c in SUBSTITUTION_CONDITIONS
 
 
 def test_warmup_body_roundtrip():

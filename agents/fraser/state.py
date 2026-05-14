@@ -65,6 +65,7 @@ from core.memory import api as _mem_api  # noqa: E402
 def _charter_gate(kind: str, payload: dict, *,
                   ctx: dict | None = None,
                   requester: str = AGENT,
+                  priority: int = 5,
                   trace_id: str | None = None,
                   db_path: str | None = None) -> _charter.Verdict:
     """Single point where every Fraser write meets the policy plane.
@@ -73,10 +74,16 @@ def _charter_gate(kind: str, payload: dict, *,
     review() call ALWAYS writes one row to governance_log — that's
     the audit trail spec §10 requires for race-condition forensics
     and for the 1RM-batch traceability requirement (§11).
+
+    `priority` defaults to 5 (normal). Callers that want to bypass
+    HRV-red rest enforcement or quiet-hours rules pass priority<=2
+    — that's the single-axis urgent lane across the Charter (see
+    `core/charter.py` quiet_hours + fraser_hrv_red_blocks_workout).
+    No parallel `_override_*` payload flag exists; do not add one.
     """
     wo = _charter.WorkOrder(
         kind=kind, payload=dict(payload),
-        requester=requester, trace_id=trace_id)
+        requester=requester, priority=priority, trace_id=trace_id)
     return _charter.review(wo, ctx=ctx or {}, db_path=db_path)
 
 
@@ -370,14 +377,23 @@ def get_travel_state(*, db_path: str | None = None) -> dict:
 # ───────────────────────── Writes (Charter-gated) ────────────────
 def commit_workout(card: WorkoutCard,
                   *, target_kcal: int = 0, target_minutes: int = 0,
-                  override_hrv_red: bool = False,
+                  priority: int = 5,
                   db_path: str | None = None) -> tuple[int | None, _charter.Verdict]:
     """Persist a designed Workout Card. Returns (entity_id, verdict).
     If vetoed, entity_id is None — the card was NOT written.
 
-    Quiet-hour / HRV-red gating lives in the Charter policy (P2 wiring).
-    Caller passes `override_hrv_red=True` when the user has explicitly
-    acknowledged the red-recovery state.
+    Charter gating (see `core/charter.py::fraser_hrv_red_blocks_workout`):
+        • Quiet-hour gate via `quiet_hours` for any notify.* kind —
+          irrelevant to `fraser.workout.commit` directly, but Miya's
+          delivery wrapping inherits it.
+        • HRV-red gate: vetoes when ctx['huberman_state']['recovery_color']
+          == 'red'.
+        • Bypass: pass `priority<=2` to override. Matches the
+          quiet-hours / Kobe-urgent convention — single axis across
+          the Charter, no parallel `_override_*` payload flag.
+
+    Context passed to the policy: Huberman state (substrate-symmetric
+    read via `get_huberman_state`).
     """
     body = WorkoutBody(
         date_iso=card.date_iso,
@@ -386,9 +402,10 @@ def commit_workout(card: WorkoutCard,
         target_minutes=target_minutes or card.target_minutes,
         card=card,
     )
-    payload = body.to_payload()
-    payload["_override_hrv_red"] = bool(override_hrv_red)
-    verdict = _charter_gate(CHARTER_COMMIT_WORKOUT, payload, db_path=db_path)
+    ctx = {"huberman_state": get_huberman_state(db_path=db_path)}
+    verdict = _charter_gate(
+        CHARTER_COMMIT_WORKOUT, body.to_payload(),
+        ctx=ctx, priority=priority, db_path=db_path)
     if not verdict.approved:
         return None, verdict
     eid = _mem_api.goal_create(
@@ -484,10 +501,17 @@ def update_1rm(lift: str, weight_kg: float,
               *, tested_on_iso: str | None = None,
               source: OneRMSource = OneRMSource.USER_PROVIDED,
               notes: str | None = None,
+              priority: int = 5,
               db_path: str | None = None) -> tuple[int | None, _charter.Verdict]:
     """Write a single 1RM. Increases require Huberman=green per spec
-    §2.2 — the Charter policy reads `huberman_state` from ctx and
-    decides. Decreases always go through."""
+    §2.2 — `core/charter.py::fraser_1rm_increase_needs_green` reads
+    `huberman_state` + `current_weight_kg` from ctx and decides.
+    Decreases always go through.
+
+    Pass `priority<=2` to bypass the green-required gate — matches
+    the single-axis urgent convention across the Charter. The
+    decision lands in governance_log either way for audit.
+    """
     lift_norm = normalize_lift_name(lift)
     body = OneRepMaxBody(
         lift=lift_norm, weight_kg=float(weight_kg),
@@ -503,7 +527,7 @@ def update_1rm(lift: str, weight_kg: float,
     }
     verdict = _charter_gate(
         CHARTER_UPDATE_1RM, body.to_payload(),
-        ctx=ctx, db_path=db_path)
+        ctx=ctx, priority=priority, db_path=db_path)
     if not verdict.approved:
         return None, verdict
     eid = _mem_api.goal_create(
@@ -669,36 +693,40 @@ def persist_substitution_rule(movement: str, condition: str,
 # first use or by test fixtures.
 DEFAULT_SUBSTITUTION_SEED: tuple[tuple[str, str, list[str], str], ...] = (
     # (movement, condition, replacements, reason_template)
-    ("jump_rope", "no_rope",
+    # Conditions use the stable vocabulary in protocols.SUBSTITUTION_CONDITIONS.
+    # The (movement, condition) pair is unique — `equipment_missing` for
+    # `jump_rope` returns the rope swaps; `equipment_missing` for
+    # `wall_ball` returns the wall-ball swaps. The reader keys off both.
+    ("jump_rope", "equipment_missing",
      ["penguin_jump", "lateral_hop", "run"],
      "no jump rope → {replacement}"),
-    ("double_under", "no_rope",
+    ("double_under", "equipment_missing",
      ["penguin_jump", "lateral_hop", "run"],
      "no jump rope → {replacement}"),
-    ("wall_ball", "no_wall_ball",
+    ("wall_ball", "equipment_missing",
      ["db_thruster", "burpee_box_jump"],
      "no wall ball → {replacement}"),
-    ("pull_up", "no_pull_up_bar",
+    ("pull_up", "equipment_missing",
      ["trx_row", "ring_row", "dumbbell_row"],
      "no pull-up bar → {replacement}"),
-    ("box_jump", "no_box",
+    ("box_jump", "equipment_missing",
      ["broad_jump", "tuck_jump"],
      "no box → {replacement}"),
-    ("rope_climb", "no_rope",
+    ("rope_climb", "equipment_missing",
      ["towel_pull_up", "trx_row"],
      "no climbing rope → {replacement}"),
-    ("devil_press", "user_dislikes_devil_press",
+    ("devil_press", "user_dislike",
      ["dual_db_front_squat", "db_thruster"],
      "user dislikes Devil's Press → {replacement}"),
-    ("back_squat", "back_loaded_injury",
+    ("back_squat", "mobility_limit",
      ["front_squat", "goblet_squat"],
-     "back-loaded injury → {replacement}"),
-    ("overhead_press", "overhead_blocked",
+     "back-loaded mobility limit → {replacement}"),
+    ("overhead_press", "mobility_limit",
      ["floor_press", "landmine_press"],
-     "overhead movement blocked → {replacement}"),
-    ("snatch", "overhead_blocked",
+     "overhead mobility limit → {replacement}"),
+    ("snatch", "mobility_limit",
      ["clean", "deadlift"],
-     "overhead movement blocked → {replacement}"),
+     "overhead mobility limit → {replacement}"),
 )
 
 
