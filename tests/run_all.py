@@ -68,6 +68,10 @@ LAYERS: list[LayerSpec] = [
             # 2026-05-12). Pins the sys.modules aliasing + class identity
             # + decisions-ledger actor preservation. See ADR-002.
             "tests/test_rebrand_aliases.py",
+            # Multi-agent storage convention (2026-05-13). Pins ADR-003:
+            # new agents use core/memory/* substrate, not Kobe's legacy
+            # tables. Source-greps the agents/ tree for violations.
+            "tests/test_storage_convention.py",
         ],
     ),
     LayerSpec(
