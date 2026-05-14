@@ -305,18 +305,49 @@ def _coeff_for(movement: str) -> tuple[float, float]:
 def _parse_reps_or_time(token: str) -> tuple[int, float]:
     """Coerce a `reps_or_time` token to (reps, seconds). The Workout
     Card schema is intentionally loose here ("15", "30s", "5 each leg",
-    "AMRAP-2min") so this resolver handles the common shapes; the rest
-    fall through with (0, 0) and the caller treats as time-bounded.
+    "AMRAP-2min", "400m", "1:00") so this resolver handles the common
+    shapes; the rest fall through with (0, 0) and the caller treats
+    as time-bounded with no signal.
+
+    Order matters — `min` / `minute` patterns must precede the bare
+    `m` (meters) pattern, or "400m Run" gets parsed as 400 minutes.
+    (Day-5 demo surfaced this bug: predicted burn was 5000+ kcal
+    for a 60-min workout because every meter became a minute.)
     """
     t = (token or "").strip().lower()
     if not t:
         return 0, 0.0
+    # 'Xsec' / 'Xsecs' / 'Xs' — seconds
+    m = re.match(r"^(\d+)\s*sec?s?$", t)
+    if m:
+        return 0, float(m.group(1))
     m = re.match(r"^(\d+)\s*s$", t)
     if m:
         return 0, float(m.group(1))
-    m = re.match(r"^(\d+)\s*(?:min|m|minute)s?$", t)
+    # 'X:YY' — minutes:seconds (e.g., '1:00' wall sit)
+    m = re.match(r"^(\d+):(\d{2})$", t)
+    if m:
+        return 0, int(m.group(1)) * 60.0 + int(m.group(2))
+    # 'Xmin' / 'Xminute' / 'Xminutes' — explicit minute units only.
+    m = re.match(r"^(\d+)\s*(?:min|minute)s?$", t)
     if m:
         return 0, float(m.group(1)) * 60.0
+    # 'Xm' (meters) — no time/rep value yet. Pace-based burn lands
+    # in a future tool; today we return (0, 0) so the burn estimator
+    # falls through to the per-minute default for the surrounding
+    # block rather than billing 400 minutes for "400m Run".
+    m = re.match(r"^(\d+)\s*m$", t)
+    if m:
+        return 0, 0.0
+    # 'Xft' (feet) — same treatment as meters
+    m = re.match(r"^(\d+)\s*ft$", t)
+    if m:
+        return 0, 0.0
+    # 'Xkm' — convert to meters; same no-burn-yet treatment
+    m = re.match(r"^(\d+)\s*km$", t)
+    if m:
+        return 0, 0.0
+    # Bare reps
     m = re.match(r"^(\d+)(?:\s*each|\s*reps?)?$", t)
     if m:
         return int(m.group(1)), 0.0

@@ -29,18 +29,29 @@ from agents.kobe.agent import KobeAgent                     # noqa: E402
 # registration order.
 
 miya.register(KobeAgent())
-# Fraser — CrossFit programming & performance agent. Day-3 wiring
-# landed 2026-05-14: Charter policies registered (HRV-red gate on
-# fraser.workout.commit, green-required on fraser.1rm.update for
-# increases), substitution-condition vocabulary stabilized
-# (ADR-004), token-budget ledger in place (ADR-005). The reasoner
-# itself is still stubbed (returns low-confidence Reply) — the
-# real Gemini 2.5 Flash wiring lands in a follow-up commit on
-# this branch. Description-based classification puts Fraser in
-# the routing pool; the stub's confidence=0.1 makes Miya's
-# tie-breaker prefer Kobe for ambiguous fitness queries.
-from agents.fraser.agent import FraserAgent                   # noqa: E402
-miya.register(FraserAgent())
+# Fraser — CrossFit programming & performance agent.
+#
+# Registration is intentionally OFF until BOTH gates clear:
+#   (a) All 10 eval cases in tests/evals/test_fraser_conversation.py
+#       pass without xfail marks (the strict-mode cadence — each
+#       commit drops one mark as the case stabilizes).
+#   (b) Owner has reviewed ≥3 real workout cards end-to-end via
+#       a controlled session before this line goes live in
+#       production.
+#
+# Prior versions of this comment (Day-3 wiring 2026-05-14) had this
+# line uncommented; that was reverted on Day-4 addendum after the
+# gate tightened. The class is importable; route() returns a low-
+# confidence stub Reply, so a stray import does NOT surface stub
+# output to the user — but the safest position is "not in registry"
+# until the gate clears.
+#
+# Charter policies, budget enforcement, fixture mode, and the
+# tool-catalog manifests are all wired and tested under the
+# scaffold — uncommenting this line is the LAST step, not the
+# first one. See DAY4_REPORT_addendum_2.md for the gate spec.
+# from agents.fraser.agent import FraserAgent
+# miya.register(FraserAgent())
 # miya.register(CoachAgent())            # placeholder — Phase Next
 # miya.register(HubermanAgent())         # placeholder — Phase Next (was Bajrangi)
 # miya.register(CurriculumAgent())       # placeholder — Phase Next
