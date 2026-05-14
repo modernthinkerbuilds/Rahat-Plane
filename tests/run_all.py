@@ -77,6 +77,18 @@ LAYERS: list[LayerSpec] = [
             # regex dispatch, replan filter integration, and ADR-003
             # substrate usage.
             "tests/test_dislikes.py",
+            # Fraser Day-1 scaffold (2026-05-14, feat/fraser-day1-scaffold).
+            # Pins the 11 entity-body protocols, Workout Card round-trip,
+            # input-mode classifier, and state.py substrate compliance
+            # (governance_log row per write, 1RM staleness, route
+            # versioning). See specs/FRASER_REQUIREMENTS.md.
+            "tests/test_fraser_protocols.py",
+            "tests/test_fraser_state.py",
+            # Fraser Day-2 (2026-05-14). Pins the 4 computational tools
+            # (compute_target_weight, compute_predicted_burn,
+            # lookup_movement_cues, parse_user_workout) per ADR-004
+            # five-file pattern. Pure-transform unit tests; no DB.
+            "tests/test_fraser_tools.py",
         ],
     ),
     LayerSpec(

@@ -29,6 +29,14 @@ from agents.kobe.agent import KobeAgent                     # noqa: E402
 # registration order.
 
 miya.register(KobeAgent())
+# Fraser — CrossFit programming & performance agent. The class is
+# importable today (Day-1 scaffold landed 2026-05-14, feature branch
+# feat/fraser-day1-scaffold) but registration is intentionally OFF
+# until the reasoner is wired on Day 3. Uncomment when handler.route()
+# stops returning the low-confidence stub Reply. See DAY1_REPORT.md
+# and specs/FRASER_OPEN_QUESTIONS.md item 8.
+# from agents.fraser.agent import FraserAgent
+# miya.register(FraserAgent())
 # miya.register(CoachAgent())            # placeholder — Phase Next
 # miya.register(HubermanAgent())         # placeholder — Phase Next (was Bajrangi)
 # miya.register(CurriculumAgent())       # placeholder — Phase Next
