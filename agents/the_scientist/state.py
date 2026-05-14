@@ -628,16 +628,42 @@ def replan_week(monday: datetime, *, force: bool = False) -> list[dict]:
         unavailable = set(prefs["unavailable_days"])
         tolerated = {normalize_blacklist_term(t) for t in prefs["tolerated_blacklist"]}
 
+        # User-stated dislikes (today/week/always scopes). Imported here
+        # to avoid an import-order cycle at module load time. The set is
+        # snapshotted once per replan — adding a dislike triggers a fresh
+        # replan_week(monday, force=True) from the handler.
+        try:
+            from agents.the_scientist import dislikes as _dl
+            disliked = _dl.in_effect_today()
+        except Exception as e:
+            # If the substrate is unavailable (test sandbox, fresh DB),
+            # treat as no dislikes — strictly additive behavior.
+            print(f"[replan_week] dislikes lookup failed: {e}")
+            disliked = set()
+
         gym_days = parse_gym_plan()
 
         def is_blocked(d: GymDay) -> bool:
-            """Day is blocked iff at least one of its blockers is NOT tolerated.
-            Strength-portion blockers are stored as 'snatch (strength)' — strip
-            the suffix before matching against tolerated terms."""
+            """Day is blocked iff at least one of its blockers is NOT
+            tolerated, OR the day's body mentions a user-disliked
+            movement. Strength-portion blockers are stored as
+            'snatch (strength)' — strip the suffix before matching
+            against tolerated terms.
+
+            Dislike check: substring match against the day's body
+            (lower-cased). This catches 'deadlift' in a WOD whether or
+            not it's in the BLACKLIST vocabulary."""
             for b in d.blockers:
                 core = b.split(" (")[0]
                 if normalize_blacklist_term(core) not in tolerated:
                     return True
+            if disliked:
+                body_lc = (d.body or "").lower()
+                strength_lc = (d.strength or "").lower()
+                haystack = body_lc + "\n" + strength_lc
+                for movement in disliked:
+                    if movement and movement in haystack:
+                        return True
             return False
 
         # Map gym schedule by weekday for label lookups.

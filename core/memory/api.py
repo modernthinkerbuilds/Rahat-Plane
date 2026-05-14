@@ -98,6 +98,7 @@ def goal_create(agent: str, *,
                 payload: dict,
                 rationale: str | None = None,
                 valid_until_iso: str | None = None,
+                supersede_existing: bool = True,
                 db_path: str | None = None) -> int:
     """Create a goal entity for this agent. Returns the new entity_id.
 
@@ -111,10 +112,30 @@ def goal_create(agent: str, *,
     here. Example for a weight goal:
         {"target_lbs": 198, "target_date_iso": "2026-05-23",
          "daily_intake_kcal": 1900}
+
+    `valid_until_iso` is an ISO date/datetime STRING (the substrate
+    underneath wants a datetime; we convert here so callers don't have
+    to import datetime just to set an expiry).
+
+    `supersede_existing` (default True): "current goal" / "current
+    target weight" patterns — only one active at a time, prior actives
+    get marked superseded. Set to False for lists (dislikes,
+    commitments, alerts) where many can coexist.
     """
+    from datetime import datetime as _dt
+    vu: _dt | None = None
+    if valid_until_iso:
+        # Substrate's put_entity calls .isoformat() on this — we need a
+        # datetime, not a string. Accept either input shape.
+        try:
+            vu = _dt.fromisoformat(
+                valid_until_iso.replace("T", " ").split(".")[0])
+        except (ValueError, AttributeError):
+            vu = None
     return _mem.put_entity(
         agent=agent, type=type, payload=payload,
-        rationale=rationale, valid_until=valid_until_iso,
+        rationale=rationale, valid_until=vu,
+        supersede_existing=supersede_existing,
         db_path=db_path)
 
 

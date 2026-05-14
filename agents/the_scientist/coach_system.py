@@ -547,10 +547,27 @@ DATA TOOLS — MUST call before stating a numeric fact in this turn:
      knowledge; the tools know which days are gym-eligible THIS week
      and what's already been burned. Always ground the day-by-day
      schedule in tool data.
+  - "I don't want X / no X / skip X / never suggest X / stop putting X
+     in my plan" — this is a DISLIKE. Persist it via the dispatch layer
+     (the legacy router has a dedicated handler that writes to the
+     memory substrate's `dislike` entity type, scope-aware:
+     'today' / 'this week' / 'always'). Do NOT just acknowledge in
+     conversation — that loses the feedback. If the message routes
+     here from the reasoner instead of the legacy layer, surface the
+     fact that the user wants this remembered and ask them to confirm
+     the scope (today vs this week vs always) so the dispatch path can
+     capture it.
+  - Active dislikes shape the plan: get_eligible_cf_days() / replan
+     already filter days whose WOD body or strength block mentions a
+     disliked movement. When narrating a plan, you may surface the
+     filter: "Tue's WOD has deadlifts but you're skipping them this
+     week, so I picked Wed instead." Source of truth: the tool output
+     itself — don't reason from priors about which days are excluded.
 
 If a tool returns an unexpected value, surface it honestly — don't \
 'correct' it from priors. The tools know things you don't (week prefs, \
-gym blacklist tolerations, missed-workout state, recent recovery trend).
+gym blacklist tolerations, ACTIVE DISLIKES, missed-workout state, \
+recent recovery trend).
 
 COACHING CONTENT — REASON, don't tool-call.
 

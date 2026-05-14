@@ -132,7 +132,7 @@ def eligible_cf_days(days=None):
     return _proto_eligible_cf_days(days)
 
 
-__all__ = ['API_KEY', 'HOME', 'MODEL_ID', 'PLAN_PATH', '_active_model', '_extract_wod_summary', '_internal_safety_downgrade', '_is_workout_on_day_query', '_legacy_route', '_n', '_parse_date', '_split_for_telegram', '_which_monday', 'client', 'daily_target', 'eligible_cf_days', 'handle_breathing', 'handle_clear_prefs', 'handle_current_weight', 'handle_daily_burn', 'handle_decision_run_or_wod', 'handle_filter', 'handle_hrv', 'handle_last_week', 'handle_manual_burn', 'handle_next_week_target', 'handle_next_workout', 'handle_pace', 'handle_pick_days', 'handle_post_recovery', 'handle_pre_fuel', 'handle_recalibrate', 'handle_replan', 'handle_scheduling_help', 'handle_set_tier', 'handle_show_plan', 'handle_split_target', 'handle_swap', 'handle_today_target', 'handle_tolerate', 'handle_unavailable', 'handle_weekly_remaining', 'handle_weighin_when', 'handle_weight', 'handle_weight_timeline', 'handle_workout_on', 'handle_workout_today', 'latest_hrv', 'llm_coach', 'maybe_morning_briefing', 'maybe_recovery_nudge', 'maybe_walk_nudge', 'maybe_weekly_reset', 'parse_gym_plan', 'route', 'send', 'start']
+__all__ = ['API_KEY', 'HOME', 'MODEL_ID', 'PLAN_PATH', '_active_model', '_extract_wod_summary', '_internal_safety_downgrade', '_is_workout_on_day_query', '_legacy_route', '_n', '_parse_date', '_split_for_telegram', '_which_monday', 'client', 'daily_target', 'eligible_cf_days', 'handle_breathing', 'handle_clear_prefs', 'handle_current_weight', 'handle_daily_burn', 'handle_decision_run_or_wod', 'handle_dislike_movement', 'handle_drop_dislike', 'handle_filter', 'handle_hrv', 'handle_last_week', 'handle_list_dislikes', 'handle_manual_burn', 'handle_next_week_target', 'handle_next_workout', 'handle_pace', 'handle_pick_days', 'handle_post_recovery', 'handle_pre_fuel', 'handle_recalibrate', 'handle_replan', 'handle_scheduling_help', 'handle_set_tier', 'handle_show_plan', 'handle_split_target', 'handle_swap', 'handle_today_target', 'handle_tolerate', 'handle_unavailable', 'handle_weekly_remaining', 'handle_weighin_when', 'handle_weight', 'handle_weight_timeline', 'handle_workout_on', 'handle_workout_today', 'latest_hrv', 'llm_coach', 'maybe_morning_briefing', 'maybe_recovery_nudge', 'maybe_walk_nudge', 'maybe_weekly_reset', 'parse_gym_plan', 'route', 'send', 'start']
 
 
 def handle_recalibrate() -> str:
@@ -823,6 +823,73 @@ def handle_clear_prefs(next_week: bool = False) -> str:
             "auto-picker.\n\n" + handle_show_plan(next_week=next_week))
 
 
+# ─── Dislike capture (user-stated negative movement prefs) ──────────
+# The complement to handle_tolerate. Where tolerate ADDS a blacklisted
+# movement back ("I'll scale handstand this week"), dislike REMOVES a
+# movement from suggestions ("don't put deadlifts in my week"). Stored
+# in core/memory substrate as type='dislike', scope-aware
+# (today/week/always). See agents/the_scientist/dislikes.py for the
+# storage model and ADR-003 for why the substrate (not week_preferences)
+# is the right home.
+def handle_dislike_movement(movement: str, scope: str = "week",
+                            rationale: str | None = None) -> str:
+    """Persist 'I don't want <movement> [today|this week|always]'.
+    Triggers a replan so the new dislike takes effect immediately."""
+    from agents.the_scientist import dislikes as _dl
+    try:
+        _dl.add(movement, scope, rationale=rationale)
+    except ValueError as e:
+        return f"❌ Couldn't record dislike: {e}"
+    monday, _ = _which_monday(False)
+    replan_week(monday, force=True)
+    scope_label = {
+        "today":  "today only",
+        "week":   "this week",
+        "always": "permanently",
+    }.get(scope, scope)
+    rat = f" ({rationale})" if rationale else ""
+    return (f"✅ Got it — skipping *{movement.lower()}* {scope_label}{rat}. "
+            f"Plan re-picked.\n\n" + handle_show_plan(next_week=False))
+
+
+def handle_drop_dislike(movement: str) -> str:
+    """Reverse a prior dislike — 'actually I can do deadlifts again'."""
+    from agents.the_scientist import dislikes as _dl
+    n = _dl.drop(movement)
+    if n == 0:
+        return (f"No active dislike for *{movement.lower()}* — nothing "
+                f"to drop. Use `dislikes` to see what's currently set.")
+    monday, _ = _which_monday(False)
+    replan_week(monday, force=True)
+    return (f"✅ Cleared *{n}* dislike entr{'y' if n == 1 else 'ies'} "
+            f"for *{movement.lower()}*. Plan re-picked.\n\n"
+            + handle_show_plan(next_week=False))
+
+
+def handle_list_dislikes() -> str:
+    """Show every currently-active dislike. Useful for `dislikes` /
+    `what am I skipping` / `/dislikes` queries."""
+    from agents.the_scientist import dislikes as _dl
+    rows = _dl.active_movements()
+    if not rows:
+        return ("No active dislikes. Say 'no deadlifts today' / 'skip "
+                "burpees this week' / 'never suggest rowing' to add one.")
+    by_scope: dict[str, list[str]] = {"today": [], "week": [], "always": []}
+    for r in rows:
+        scope = r["scope"]
+        line = r["movement"]
+        if r.get("rationale"):
+            line += f" ({r['rationale']})"
+        by_scope.setdefault(scope, []).append(line)
+    parts = ["*Active dislikes:*"]
+    for scope, label in (("today", "Today"),
+                         ("week", "This week"),
+                         ("always", "Permanent")):
+        if by_scope.get(scope):
+            parts.append(f"  • {label}: {', '.join(sorted(by_scope[scope]))}")
+    return "\n".join(parts)
+
+
 def handle_swap(text: str, next_week: bool = False) -> str:
     """Swap one workout day for another. Handles many phrasings:
       • 'I'd prefer Monday over Sunday'
@@ -1194,6 +1261,43 @@ TOLERATE_RE = re.compile(
     r"i'?m fine|will do)\b"
     r"[\s\S]*?\b(muscle[\s-]?ups?|muscleups?|partner|handstand(?:s)?|hspu|"
     r"overhead\s+squats?|ohs|snatch(?:es)?)\b", re.I)
+
+# ─── Dislike capture — "skip X today / no X this week / never X" ───
+# Three regexes by intent:
+#   DISLIKE_RE     — user states a new negative preference
+#   DROP_DISLIKE_RE — user takes one back ('actually I can do X')
+#   LIST_DISLIKES_RE — user asks what's currently being skipped
+#
+# Movement vocabulary intentionally OPEN — anything reasonable matches
+# (deadlift, burpee, rowing, anything custom). Validation happens at
+# the storage layer (dislikes._normalize_movement). Compare with
+# TOLERATE_RE which is restricted to the BLACKLIST vocabulary.
+#
+# Scope detection: 'today' / 'this week' (default) / 'ever|always|
+# permanently|forever'. Default to 'week' so a bare "no deadlifts"
+# doesn't accidentally become forever.
+_MOVEMENT_TOKEN = (
+    r"[a-z][a-z\s\-]{1,29}?"           # lowercase phrase 2–30 chars
+)
+DISLIKE_RE = re.compile(
+    r"\b(?:no|skip|don'?t (?:want|do|suggest|put)|"
+    r"i don'?t want|stop suggesting|avoid|drop|never (?:suggest|put|do))\b"
+    r"\s+(" + _MOVEMENT_TOKEN + r")"
+    r"(?:\s+(today|this\s+week|next\s+week|"
+    r"ever|always|permanently|forever))?", re.I)
+
+DROP_DISLIKE_RE = re.compile(
+    r"\b(?:i\s+can|actually\s+i\s+can|bring\s+back|allow|re[\s-]?enable|"
+    r"un[\s-]?skip|let\s+me\s+do)\s+(" + _MOVEMENT_TOKEN + r")"
+    # Trailing "again|back|now" is optional and so is the whitespace
+    # before it. Without `(?:\s+(?:again|back|now))?` the regex
+    # required trailing whitespace even when the message ended right
+    # after the movement ("bring back rowing").
+    r"(?:\s+(?:again|back|now))?\b", re.I)
+
+LIST_DISLIKES_RE = re.compile(
+    r"\b(?:dislikes?|what\s+am\s+i\s+skipping|"
+    r"what'?s\s+(?:on\s+the\s+)?skip\s+list|skip\s+list)\b", re.I)
 CLEAR_PREFS_RE = re.compile(
     r"\b(clear (?:prefs|preferences|overrides)|reset (?:prefs|preferences|week)|"
     r"use defaults|forget my (?:prefs|preferences|overrides))\b", re.I)
@@ -1554,6 +1658,29 @@ def _legacy_route(msg: str) -> str:
         return handle_clear_prefs(next_week=next_week_q)
     if TOLERATE_RE.search(m):
         return handle_tolerate(m, next_week=next_week_q)
+    # Dislike-list query must run before LIST_DISLIKES words leak into
+    # other handlers ('dislikes' is short and matchy).
+    if LIST_DISLIKES_RE.search(m):
+        return handle_list_dislikes()
+    # Drop dislike before add — "I can do deadlifts again" should NOT
+    # match the bare DISLIKE_RE.
+    if (md := DROP_DISLIKE_RE.search(m)):
+        return handle_drop_dislike(md.group(1))
+    if (mdis := DISLIKE_RE.search(m)):
+        movement = mdis.group(1).strip().lower()
+        # Filter out obviously meta-noisy matches — single short words
+        # ("no idea", "no thanks") and scheduler verbs that DISLIKE_RE
+        # might overfit on.
+        if movement in {"idea", "thanks", "thank", "way", "more", "less",
+                        "problem", "worries", "good"} or len(movement) < 3:
+            pass  # fall through to other handlers
+        else:
+            scope_token = (mdis.group(2) or "week").lower().strip()
+            scope = ("today" if scope_token == "today"
+                     else "always" if scope_token in
+                          {"ever", "always", "permanently", "forever"}
+                     else "week")
+            return handle_dislike_movement(movement, scope)
     # SWAP must run before UNAVAILABLE/PICK because "prefer Mon over Sun"
     # mentions both weekdays.
     if SWAP_RE.search(m) and len(parse_weekdays(m)) >= 2:

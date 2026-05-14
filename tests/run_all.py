@@ -72,6 +72,11 @@ LAYERS: list[LayerSpec] = [
             # new agents use core/memory/* substrate, not Kobe's legacy
             # tables. Source-greps the agents/ tree for violations.
             "tests/test_storage_convention.py",
+            # Dislike-capture (2026-05-13). Pins storage round-trip,
+            # scope semantics (today/week/always), idempotency,
+            # regex dispatch, replan filter integration, and ADR-003
+            # substrate usage.
+            "tests/test_dislikes.py",
         ],
     ),
     LayerSpec(
