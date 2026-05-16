@@ -61,15 +61,19 @@ These are eval anchors and reference patterns — not an exhaustive enumeration.
 
 ### 2.4 Input Modes — how the user gives Fraser work
 
+Fraser is an **adaptation engine, not a generation engine.** The user's gym (SugarWOD) is the source of truth for the day's workout. Fraser's job is to *personalize* that source workout to the user's current state — scale weights against 1RMs, substitute movements for injuries/preferences, apply postural cues, predict burn, and output a Workout Card. It does not invent workouts from scratch unless explicitly asked.
+
 Fraser supports three input modes. The architect must build all three; the reasoner picks based on the user's message shape (parsed by Miya before handoff).
 
 | Mode | What the user sends | What Fraser does |
 |---|---|---|
-| **Default** | "give me today's workout" / "what's on the plan" | Fraser composes from PRVN cycle + cross-agent state. Full agency. |
-| **User-supplied workout** | A benchmark ("Murph at 70%"), a magazine WOD pasted in, a comp-prep block, or a friend's workout | Parse to structured form → apply 1RM-based weight prescription → substitute for equipment/injury/preference → predict calorie burn → output as a Fraser workout card. **Never blindly echo the input — always pass it through the scaling and substitution pipeline.** |
-| **User-requested WOD type** | "give me an EMOM today" / "I want an AMRAP 18" / "Tabata legs" / "let's do a Smash Format" | Honor the format unless context forbids (e.g., user asks EMOM but HRV is red + sleep < 5h → propose Smash Format with explicit rationale). Compose movements that fit the format AND respect tier, injury, equipment, and recent volume. |
+| **Default — Adapt today's source workout** | "give me today's workout" / "what's on the plan" | Fraser reads the day's `fraser_source_workout` (from SugarWOD ingestion — see §11.5) → applies 1RM-based weight prescription → substitutes for equipment / injury / preference → applies Hunch/Neck Guard/HBP cues → predicts calorie burn → outputs Workout Card. If no source workout exists for today (rest day, no sync), Fraser surfaces "rest day per gym programming" with optional active-recovery flow — does NOT auto-compose a replacement WOD. |
+| **User-supplied workout** | A benchmark ("Murph at 70%"), a magazine WOD pasted in, a comp-prep block, or a friend's workout | Parse to structured form → apply 1RM-based weight prescription → substitute for equipment/injury/preference → predict calorie burn → output as a Fraser Workout Card. **Never blindly echo the input — always pass it through the scaling and substitution pipeline.** |
+| **User-requested WOD type** | "give me an EMOM today" / "I want an AMRAP 18" / "Tabata legs" / "let's do a Smash Format" | This is the only *generation* mode. Compose a workout in the requested format. Honor the format unless context forbids (e.g., user asks EMOM but HRV is red + sleep < 5h → propose Smash Format with explicit rationale). Compose movements that fit the format AND respect tier, injury, equipment, and recent volume. Use sparingly — Default mode is the canonical path. |
 
-For every mode: Fraser surfaces the *delta* between what was requested and what was programmed, with a one-line rationale per change. The user must always know why a substitution happened.
+For every mode: Fraser surfaces the *delta* between the source (or request) and what was programmed, with a one-line rationale per change. The user must always know why a substitution happened.
+
+**Why adaptation > generation:** Your gym's programming carries weeks of structured progression — PRVN cycles, peaking blocks, deload weeks — that no per-session reasoner can replicate from cold start. Fraser's value is in the *last-mile personalization*, not in the programming itself. The source-of-truth hierarchy is: SugarWOD (programming) → Kobe (trajectory tier) → Huberman (safety veto) → Fraser (personalization) → Miya (delivery).
 
 ### 2.5 Output Format — the Workout Card (canonical artifact)
 
@@ -118,10 +122,11 @@ The card is the data structure passed back from Fraser to Miya. Miya may re-rend
 Nine new entity types under the substrate's universal schema. All carry `subject_id = "user"` (Fraser is single-subject for now; multi-subject opens later if family fitness emerges).
 
 ```
-fraser_workout       — designed session (date, structure, weights, calorie_target, completion_status, card_json)
+fraser_source_workout — today's raw programming from SugarWOD/gym (date, source, raw_text, parsed_structure, ingestion_method)
+fraser_workout       — Fraser-adapted session (date, source_id, structure, weights, calorie_target, completion_status, card_json)
 fraser_movement      — movement instance inside a workout (name, load, reps, substitution_reason, executed_volume)
 fraser_injury        — active or healing injury (body_part, onset, severity, mute_movements[], eta, resolution_status)
-fraser_prvn_cycle    — current PRVN program position (week, day, phase)
+fraser_prvn_cycle    — current PRVN program position (week, day, phase) — secondary signal; SugarWOD is primary
 fraser_progression   — 10-week chest progression state (week, day, target_reps, plateau_status)
 fraser_warmup        — per-WOD warmup composition (movements, duration, postural_targets)
 fraser_cooldown      — per-WOD recovery flow (movements, duration, breathing_protocol)
@@ -131,7 +136,7 @@ fraser_preference    — declared movement or format dislike/like (target, polar
 fraser_route         — persisted run/route metadata (name, distance_km, terrain, gear_notes) — corrects "10k → 7.5–8k" type assertions
 ```
 
-`fraser_injury` and `fraser_1rm` are the most cross-cutting — multiple Fraser tools read them on every turn, and Huberman writes to both when HRV-red mandates downgrades or blocks PR attempts.
+`fraser_source_workout` is the **new primary input** post-spec-correction: Fraser is an adaptation engine, and every Default-mode card has a `source_id` linking back to the day's SugarWOD entry for traceability. `fraser_injury` and `fraser_1rm` are the most cross-cutting on the *output* side — multiple Fraser tools read them on every turn, and Huberman writes to both when HRV-red mandates downgrades or blocks PR attempts.
 
 ---
 
@@ -143,6 +148,8 @@ Following the Scientist's 25-tool catalog pattern. Target: 22 tools for Fraser a
 
 | Tool | Purpose |
 |---|---|
+| `get_todays_source_workout()` | **primary read for Default mode** — returns today's SugarWOD entry (parsed structure + raw text + ingestion timestamp) or `None` if today is a rest day per gym programming |
+| `get_source_workout(date)` | historical lookup — yesterday's, last week's. Drives "did we already do back squats this week?" reasoning |
 | `get_recent_workouts(days=7)` | avoid back-to-back back-squat days, balance posterior-chain volume |
 | `get_active_injuries()` | drives auto-muting of affected movement patterns |
 | `get_1rms()` | source of truth for weight math |
@@ -253,16 +260,16 @@ But the card itself — committed to `fraser_workout`, retrievable for traceabil
 ## 9. Eval Suite (40 cases, sample of the first 17)
 
 ```
-fraser_001  HRV=33 from Huberman                   → intensity scaled ≤70%, overhead pressing replaced
-fraser_002  Left glute catch registered            → no back squats programmed for 7 days
-fraser_003  Travel + no barbell (Bourdain)         → DB-only programming, hotel gym detected
-fraser_004  Kobe hammer tier active                → weekly volume +20% vs baseline
-fraser_005  Sleep < 5h registered                  → intensity 60–70%, no max-effort, volume −20–30%
-fraser_006  Calorie target 800 in 75min            → designed WOD predicted burn within 720–880
-fraser_007  Bench press W2D1 progression           → reps advance from W1 target by program rule
-fraser_008  No jump rope in equipment              → penguin jumps OR run substituted with rationale
-fraser_009  Right neck pain registered             → all overhead movements substituted
-fraser_010  Back squats logged yesterday           → next session pulls posterior chain or upper, not BS again
+fraser_001  Source WOD has overhead press + HRV=33     → swap overhead → floor press, scale weight ≤70% of 1RM
+fraser_002  Source WOD has back squats + glute catch   → swap BS → sumo DL, log substitution rationale
+fraser_003  Source WOD has barbell + travel state      → swap to DB equivalents, hotel-gym aware
+fraser_004  Source WOD on hammer-tier day              → volume target +20% vs source, calorie ceiling raised
+fraser_005  Source WOD heavy + sleep < 5h              → intensity capped 60–70%, no max-effort even if source prescribes
+fraser_006  Source WOD with 800 kcal target            → adapted WOD predicted burn within 720–880
+fraser_007  Rest day in SugarWOD                       → "rest day per gym programming" + active-recovery flow; no auto-WOD
+fraser_008  Source WOD has DUs + no jump rope today    → penguin jumps or short run substituted with rationale
+fraser_009  Source WOD has cleans + neck pain          → all overhead movements substituted, source delta logged
+fraser_010  Source WOD has BS but BS done yesterday    → flag conflict, propose alternate primary lift
 fraser_011  User pastes "Murph at 70%"             → scaled reps, weights at % of 1RM, predicted burn, Workout Card output
 fraser_012  User: "EMOM 18 today, working bench"   → composed inside HRV/tier; honored format
 fraser_013  User: "EMOM not realistic, I'm cooked" → falls back to Smash Format with rationale; logs format preference
@@ -341,6 +348,90 @@ User pastes: `"DL 155, Squat 130, Bench 95, Clean 90, Snatch 70"`
 
 ---
 
+## 11.5 SugarWOD Source-Workout Ingestion (the adaptation contract)
+
+Per §2.4: Fraser's Default mode reads today's source workout from SugarWOD and personalizes it. **The ingestion pipeline already exists** — Fraser just needs an adapter into the substrate.
+
+**Existing pipeline (built pre-ADR-003, Kobe-era):**
+
+```
+SugarWOD Calendar (Chrome)
+  ↓ Sunday-night manual bookmarklet click
+  ↓ JSON POST → http://localhost:8765/sugarwod/week
+bridges/sugarwod/server.py  (FastAPI, launchd-supervised, com.rahat.sugar.bridge)
+  ↓ writes TWO files atomically:
+    ├── staging/workspace/gym-programming/weekly_plan.txt              (Kobe-legacy flat text)
+    └── staging/workspace/gym-programming/archive/
+              sugarwod.<week_start>.<timestamp>.json                    (rich structured archive)
+```
+
+**Fraser reads from the JSON archive, NOT the flat text.** The .txt is Kobe-legacy compat. The .json carries the richer structure (per-day, per-workout title + description).
+
+**JSON archive shape (what Fraser consumes):**
+
+```json
+{
+  "url": "https://app.sugarwod.com/workouts/calendar?week=20260511&track=workout-of-the-day",
+  "week_start": "20260511",
+  "fetched_at": "2026-05-11T06:26:05.570Z",
+  "days": [{
+    "date_int": "20260511",
+    "header": "MON 11",
+    "workouts": [
+      {"title": "Snatch Complex",            "description": "Every 2:00 x 6 Sets:\n1 Hang Snatch + 1 Low Hang Snatch\n…"},
+      {"title": "Specific Prep…",             "description": "2 Sets at working pace:\n8 American Kettlebell Swings…"},
+      {"title": "\"Pikachu's Thunderbolt\"",  "description": "For Time:\nEvery 4:00 x 4 Sets:\n18 American Kettlebell Swings\n15/11 Calorie Echo Bike\n9 Power Snatches\n\nScore = …\nKettlebell: 53/35lb, 24/16kg\nBarbell: 135/95lb, 61/43kg"},
+      {"title": "[Pikachu's Thunderbolt: Levels]", "description": "Level 2:\n…\nLevel 1:\n…\nMasters 55+:\n…\nCompetitor:\n…\nHotel Gym / Travel:\n…"},
+      {"title": "PRVN Reset",                  "description": "For Quality: 4 Sets\n6/side Thread the Needle\n…"},
+      {"title": "Optional Accessories",         "description": "For Quality\n3-4 Sets:\n8-10 Dumbbell Cuban Rotations\n…"}
+    ]
+  }, …]
+}
+```
+
+**Data quality assessment:**
+- **Day level → structured.** `date_int`, `header`, `workouts[]` are trustable.
+- **Workout level → semi-structured.** `title` is clean ("Snatch Complex", "Pikachu's Thunderbolt"). `description` is raw multi-line freeform.
+- **Movement level → unstructured.** Movements, reps, sets, loads, scaling tiers live inside `description` prose. Regex-extractable (SugarWOD has consistent patterns: `Every X:XX x N Sets:`, `Kettlebell: 53/35lb`, `Level 2:\n…`); no NLP needed.
+
+**Fraser's `parse_source_workout(workout_description)` must extract:**
+- WOD format: `For Time` | `EMOM` | `AMRAP` | `For Quality` | `Strength` | `Every X:XX x N Sets`
+- Sets / reps / rounds via regex
+- Loads + scaling tiers (Rx / L2 / L1 / Masters / Competitor / Hotel Gym/Travel)
+- Movements (regex match against the known-movement library in `protocols.py`)
+- Section classification (Strength / Specific Prep / WOD-named / Levels / PRVN Reset / Optional Accessories)
+
+**Substrate adapter contract:**
+
+```
+ingest_source_week(json_path)
+  → reads JSON archive
+  → for each day: build FraserSourceWorkoutBody(date, header, workouts_raw, workouts_parsed, fetched_at, freshness)
+  → entity_create(agent='fraser', type='fraser_source_workout', date=day.date_int, body=…)
+  → idempotent on date (re-ingest replaces same-date entity)
+  → store BOTH raw + parsed (future-proofs against parser improvements; reparse from raw)
+```
+
+**Freshness gate (NEW, not in Kobe):**
+
+When `get_todays_source_workout()` is called:
+- If no entity exists for today → return `None` (rest day OR no scrape this week).
+- If entity exists but `fetched_at` is > 7 days ago → return `STALE` sentinel. Fraser surfaces to user: "Last SugarWOD sync was N days ago. Click the bookmarklet, then ask me again."
+- Never silently use stale data. Past incidents: DOM-class rename broke scrape with no alarm; case-normalization bug ("MON" vs "Mon") fell through to fallback silently.
+
+**Rest-day handling:**
+SugarWOD shows rest days two ways:
+- `workouts: []` (empty array)
+- `workouts: [{title: "Rest Day" | "Active Recovery", description: ""}]`
+Fraser must detect both shapes. On a rest day, Fraser does NOT auto-generate a replacement WOD. It surfaces "rest day per your gym programming" with an *optional* active-recovery flow (zone-2 walk, mobility, breathing) — clearly labeled as Fraser's suggestion, not gym programming.
+
+**Charter rules:**
+- Source-workout writes are always allowed (raw inputs, not user-affecting decisions).
+- Source workouts are immutable once ingested. Corrections come as new entities with `supersedes` link.
+- Body carries `raw_text`, `parsed_structure`, `header`, `date`, `fetched_at`, `gym_program_name`, `ingestion_method='sugarwod_bookmarklet'`.
+
+---
+
 ## 12. What the Architect Receives Alongside This Spec
 
 - This document (`specs/FRASER_REQUIREMENTS.md`)
@@ -373,7 +464,7 @@ The concrete scenarios Fraser must handle. Each is a regression anchor: the eval
 
 | # | Use Case | What happens |
 |---|---|---|
-| 1 | **Default daily workout** | User: "what's today's workout?" <br> Fraser reads PRVN position + Kobe tier + Huberman state + recent volume. <br> Composes a full Workout Card from PRVN cycle. <br> Persists `fraser_workout`; advances PRVN on completion. |
+| 1 | **Default daily workout (adapt SugarWOD)** | User: "what's today's workout?" <br> Fraser reads today's `fraser_source_workout` (from SugarWOD ingestion) + Kobe tier + Huberman state + active injuries + 1RMs. <br> **Adapts** the source: scales weights to 1RMs, substitutes for injuries/equipment/preferences, applies postural cues, predicts burn. <br> Persists `fraser_workout` with `source_id` link back to the SugarWOD entry. Surfaces deltas in NOTES. |
 | 2 | **HRV crash override (HRV ≤ 33)** | Huberman flags red. Even if PRVN prescribes heavy, Fraser overrides. <br> Scales today's working weight 10–15%, swaps overhead pressing for floor press. <br> Prepends longer warm-up, appends legs-up-the-wall. <br> NOTES section explains the override; Charter logs to governance_log. |
 | 3 | **Hammer tier activation** | Kobe writes `set_tier(hammer)`. <br> Fraser's weekly volume target jumps 20%. <br> Biases programming toward strength-bias WODs, raises calorie ceiling. <br> Workout Card reflects the new target; no extra confirm needed. |
 | 4 | **User-supplied benchmark** | User pastes: "Murph at 70%" (or any benchmark / magazine WOD / friend's workout). <br> Fraser parses to structured form, scales reps + weights to user's 1RMs. <br> Substitutes for available equipment + active injuries + preferences. <br> Predicts calorie burn. Outputs as Workout Card — never echoes raw. |

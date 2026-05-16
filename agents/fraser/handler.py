@@ -56,7 +56,8 @@ from agents.fraser.protocols import (  # noqa: E402, F401
     FraserSourceWorkoutBody, ParsedSection, ParsedMovement,
     STALE_SOURCE_WORKOUT, FRASER_SYSTEM_PROMPT_VERSION,
     normalize_movement, normalize_lift_name,
-    is_overhead, loads_posterior_chain,
+    is_overhead, loads_posterior_chain, is_pulling,
+    BW_SCALING_MODEL, KCAL_TARGET_BAND_LOW, KCAL_TARGET_BAND_HIGH,
 )
 from agents.fraser.state import *  # noqa: E402, F401, F403
 from agents.fraser.tools import (  # noqa: E402
@@ -279,6 +280,213 @@ def _stale_source_card(*, date_iso: str, ctx: ContextSnapshot) -> WorkoutCard:
     )
 
 
+# ─────────────────────── Day-6: BW-scaling helper ─────────────────────
+def _apply_bw_scaling(movement: Movement, *, tier: str) -> Movement:
+    """For movements in BW_SCALING_MODEL (KB swing, wall sit, push-up,
+    plank, BW farmers carry), stamp the tier-driven Rx + rationale.
+
+    The rationale lands on `Movement.substitution_reason` (re-using
+    that field as the per-movement annotation slot) so the card
+    render surfaces it inline without a schema change. If a
+    substitution_reason is already set (e.g., injury swap), keep it
+    and append the BW note.
+    """
+    name = normalize_movement(movement.name)
+    scaling = BW_SCALING_MODEL.get(name)
+    if scaling is None:
+        return movement
+    value = scaling.by_tier.get(tier)
+    if value is None:
+        # Tier not in the table — fall back to zone2 baseline.
+        value = scaling.by_tier.get("zone2")
+    if value is None:
+        return movement
+    rationale = scaling.rationale_template.format(
+        movement=movement.name, value=value, units=scaling.units,
+        tier=tier or "default")
+    # Stamp the load / time onto reps_or_time so the card render
+    # shows "wall_sit — 60s" or "kettlebell_swing — 15 @ 24 kg".
+    if name == "wall_sit" or name == "plank" or name == "dead_hang":
+        # Time-bounded: tier value IS the duration.
+        movement = Movement(
+            name=movement.name,
+            reps_or_time=f"{value}{scaling.units}",
+            load_kg=movement.load_kg,
+            percent_1rm=movement.percent_1rm,
+            substitution_reason=_compose_reason(
+                movement.substitution_reason, rationale),
+        )
+    elif name in ("kettlebell_swing", "farmers_carry"):
+        # Load-bearing: tier value IS the load (kg).
+        movement = Movement(
+            name=movement.name,
+            reps_or_time=movement.reps_or_time,
+            load_kg=float(value) if isinstance(value, (int, float)) else movement.load_kg,
+            percent_1rm=None,
+            substitution_reason=_compose_reason(
+                movement.substitution_reason, rationale),
+        )
+    elif name == "push_up":
+        # Rep-bounded: tier value is the rep count.
+        movement = Movement(
+            name=movement.name,
+            reps_or_time=str(value) if not movement.reps_or_time else movement.reps_or_time,
+            load_kg=movement.load_kg,
+            percent_1rm=movement.percent_1rm,
+            substitution_reason=_compose_reason(
+                movement.substitution_reason, rationale),
+        )
+    return movement
+
+
+def _compose_reason(existing: str | None, new: str) -> str:
+    """Stack reason lines so injury / equipment / BW-scaling notes
+    coexist on a single Movement."""
+    if not existing:
+        return new
+    return f"{existing}; {new}"
+
+
+# ─────────────────────── Day-6: Default mobility flow ─────────────────
+# When the source workout lacks a PRVN-Reset block OR the parser
+# extracts zero movements, fall back to a movement-pattern-keyed
+# mobility flow so the card always carries a cool-down. Per the
+# Day-6 directive: "squat day → hip flexor stretch; pull day →
+# t-spine work".
+_DEFAULT_MOBILITY_BY_PATTERN: dict[str, list[Movement]] = {
+    "squat": [
+        Movement(name="couch_stretch", reps_or_time="60s/side"),
+        Movement(name="hip_flexor_stretch", reps_or_time="60s/side"),
+        Movement(name="ankle_dorsiflexion", reps_or_time="45s/side"),
+    ],
+    "pull": [
+        Movement(name="thread_the_needle", reps_or_time="6/side"),
+        Movement(name="thoracic_extension_on_roller", reps_or_time="8"),
+        Movement(name="lat_stretch", reps_or_time="45s/side"),
+    ],
+    "press": [
+        Movement(name="puppy_pose", reps_or_time="60s"),
+        Movement(name="rack_lat_stretch", reps_or_time="45s/side"),
+        Movement(name="wall_slide", reps_or_time="8"),
+    ],
+    "run": [
+        Movement(name="elevated_calf_stretch", reps_or_time="60s/side"),
+        Movement(name="supine_hamstring_stretch", reps_or_time="45s/side"),
+        Movement(name="sciatic_nerve_floss", reps_or_time="6/side"),
+    ],
+    "default": [
+        Movement(name="thread_the_needle", reps_or_time="6/side"),
+        Movement(name="thoracic_extension_on_roller", reps_or_time="8"),
+        Movement(name="child_pose", reps_or_time="60s"),
+    ],
+}
+
+
+def _classify_movement_pattern(wod_sec: ParsedSection | None,
+                              strength_sec: ParsedSection | None) -> str:
+    """Pick the dominant movement pattern of the day. Used to key the
+    default mobility flow. Squat trumps pull trumps press trumps run
+    when multiple patterns appear — strength-dominant work biases
+    toward squat/pull, conditioning work biases toward run."""
+    candidates: list[str] = []
+    for sec in (strength_sec, wod_sec):
+        if sec is None:
+            continue
+        title_low = sec.title.lower()
+        if "squat" in title_low or "deadlift" in title_low:
+            candidates.append("squat")
+        if "pull" in title_low or "row" in title_low or "snatch" in title_low:
+            candidates.append("pull")
+        if "press" in title_low or "bench" in title_low or "push" in title_low:
+            candidates.append("press")
+        for mov in (sec.movements or []):
+            n = mov.name
+            if any(p in n for p in ("squat", "deadlift", "lunge")):
+                candidates.append("squat")
+            elif any(p in n for p in ("snatch", "clean", "pull_up", "row")):
+                candidates.append("pull")
+            elif any(p in n for p in ("press", "bench", "push_up")):
+                candidates.append("press")
+            elif "run" in n:
+                candidates.append("run")
+    for pattern in ("squat", "pull", "press", "run"):
+        if pattern in candidates:
+            return pattern
+    return "default"
+
+
+def _default_mobility_flow(wod_sec: ParsedSection | None,
+                          strength_sec: ParsedSection | None
+                          ) -> list[Movement]:
+    """Return the default mobility movement list for this day's pattern."""
+    pattern = _classify_movement_pattern(wod_sec, strength_sec)
+    return list(_DEFAULT_MOBILITY_BY_PATTERN.get(pattern,
+                _DEFAULT_MOBILITY_BY_PATTERN["default"]))
+
+
+# ─────────────────────── Day-6: Target-vs-predicted scaling ───────────
+def _scale_card_to_target(card: WorkoutCard, *,
+                         target_kcal: float | None) -> tuple[WorkoutCard, str]:
+    """If `target_kcal` is set and the card's predicted burn falls
+    outside the ±20% band, scale up or down. Returns (card, adjustment
+    label) where adjustment is "scaled-up" / "scaled-down" /
+    "within-band" / "no-target".
+
+    Scaling is deliberately gentle today — add/drop one round, ±15%
+    on loads, ±20% on cap. The LLM overlay can refine; the
+    deterministic path just lands a card inside the band.
+    """
+    if target_kcal is None or target_kcal <= 0:
+        return card, "no-target"
+    mid_predicted = (card.wod.predicted_burn_kcal_low
+                     + card.wod.predicted_burn_kcal_high) / 2.0
+    if mid_predicted <= 0:
+        return card, "no-prediction"
+    low_band = target_kcal * KCAL_TARGET_BAND_LOW
+    high_band = target_kcal * KCAL_TARGET_BAND_HIGH
+    if low_band <= mid_predicted <= high_band:
+        return card, "within-band"
+
+    if mid_predicted < low_band:
+        # Scale UP — bump rounds, lengthen cap, increase load on
+        # strength lifts. We add multiplier rounds via the structure
+        # text and bump the cap; the burn estimator runs again.
+        factor = min(low_band / mid_predicted, 2.0)
+        # Inflate rounds count if the structure carries one.
+        m = re.match(r"(\d+)\s+Rounds", card.wod.rounds_or_structure)
+        if m:
+            old_rounds = int(m.group(1))
+            new_rounds = max(old_rounds + 1, int(old_rounds * factor))
+            card.wod.rounds_or_structure = re.sub(
+                r"^\d+", str(new_rounds), card.wod.rounds_or_structure)
+            card.wod.cap_min = int(card.wod.cap_min * (new_rounds / old_rounds))
+            card.wod.predicted_burn_kcal_low = int(card.wod.predicted_burn_kcal_low * (new_rounds / old_rounds))
+            card.wod.predicted_burn_kcal_high = int(card.wod.predicted_burn_kcal_high * (new_rounds / old_rounds))
+        else:
+            # No rounds — bump cap proportionally.
+            card.wod.cap_min = int(card.wod.cap_min * factor)
+            card.wod.predicted_burn_kcal_low = int(card.wod.predicted_burn_kcal_low * factor)
+            card.wod.predicted_burn_kcal_high = int(card.wod.predicted_burn_kcal_high * factor)
+        return card, "scaled-up"
+
+    # mid_predicted > high_band — scale DOWN.
+    factor = max(high_band / mid_predicted, 0.5)
+    m = re.match(r"(\d+)\s+Rounds", card.wod.rounds_or_structure)
+    if m and int(m.group(1)) > 1:
+        old_rounds = int(m.group(1))
+        new_rounds = max(1, int(old_rounds * factor))
+        card.wod.rounds_or_structure = re.sub(
+            r"^\d+", str(new_rounds), card.wod.rounds_or_structure)
+        card.wod.cap_min = int(card.wod.cap_min * (new_rounds / old_rounds))
+        card.wod.predicted_burn_kcal_low = int(card.wod.predicted_burn_kcal_low * (new_rounds / old_rounds))
+        card.wod.predicted_burn_kcal_high = int(card.wod.predicted_burn_kcal_high * (new_rounds / old_rounds))
+    else:
+        card.wod.cap_min = max(5, int(card.wod.cap_min * factor))
+        card.wod.predicted_burn_kcal_low = int(card.wod.predicted_burn_kcal_low * factor)
+        card.wod.predicted_burn_kcal_high = int(card.wod.predicted_burn_kcal_high * factor)
+    return card, "scaled-down"
+
+
 def _adapt_movement(parsed: ParsedMovement,
                    *, injuries_mute: set[str],
                    disliked: set[str],
@@ -465,17 +673,33 @@ def _adapt_source_workout(source: FraserSourceWorkoutBody,
         ],
         postural_cues=["Hunch reset"],
     )
+    # Day-6: cool-down sourced from PRVN Reset if present AND parser
+    # extracted ≥1 movement. Otherwise fall back to the pattern-keyed
+    # default mobility flow so the card ALWAYS surfaces a cool-down.
     reset_sec = next(
         (s for s in parsed.sections if s.section_kind == "reset"), None)
+    if reset_sec and reset_sec.movements:
+        cool_movements = [Movement(name=m.name, reps_or_time=m.reps_or_time)
+                          for m in reset_sec.movements]
+    else:
+        cool_movements = _default_mobility_flow(wod_sec, strength_sec)
     cool = CoolDownBlock(
         duration_min=8,
-        movements=([Movement(name=m.name, reps_or_time=m.reps_or_time)
-                    for m in reset_sec.movements]
-                   if reset_sec else []),
+        movements=cool_movements,
         breathing_protocol="legs-up-the-wall 5 min",
     )
 
-    # Predict burn now that movements are wired.
+    # Day-6: BW-scaling pass on WOD movements. KB swings / wall sits /
+    # push-ups / planks / BW farmers carry get tier-appropriate Rx +
+    # a rationale note that surfaces in the card.
+    tier_str = ctx.kobe_tier or "zone2"
+    wod.movements = [_apply_bw_scaling(m, tier=tier_str) for m in wod.movements]
+
+    # Predict burn now that movements are wired. The WOD's
+    # rounds_or_structure carries an `N Rounds` multiplier that we
+    # apply to the per-round burn — Lava Plume's 6 rounds otherwise
+    # under-estimates because compute_predicted_burn sees one round
+    # of movements.
     card = WorkoutCard(
         date_iso=date_iso, time_of_day=ctx.time_of_day or "",
         target_kcal=600, target_minutes=60,
@@ -485,8 +709,12 @@ def _adapt_source_workout(source: FraserSourceWorkoutBody,
         input_mode=InputMode.DEFAULT,
     )
     burn = compute_predicted_burn(card)
-    card.wod.predicted_burn_kcal_low = burn.total_low
-    card.wod.predicted_burn_kcal_high = burn.total_high
+    rounds_multiplier = 1
+    m = re.match(r"(\d+)\s+Rounds", card.wod.rounds_or_structure or "")
+    if m:
+        rounds_multiplier = max(int(m.group(1)), 1)
+    card.wod.predicted_burn_kcal_low = burn.total_low * rounds_multiplier
+    card.wod.predicted_burn_kcal_high = burn.total_high * rounds_multiplier
 
     # Blacklist surfacing — if the WOD section was blacklisted, flag it.
     blacklist_note = ""
@@ -581,6 +809,40 @@ def design_workout(msg: str = "",
             injuries_mute=injuries_mute, disliked=disliked,
             equipment_missing_conditions=equipment_missing_conditions,
             date_iso=date_iso, db_path=db_path)
+
+        # Day-6: target-vs-predicted scaling. Read Kobe's target_kcal,
+        # adjust rounds/cap if the band is exceeded, surface the math
+        # in NOTES.
+        kobe_target = get_kobe_kcal_target(today=today_str, db_path=db_path)  # noqa: F405
+        card, adjustment = _scale_card_to_target(card, target_kcal=kobe_target)
+        predicted_mid = (card.wod.predicted_burn_kcal_low
+                         + card.wod.predicted_burn_kcal_high) // 2
+        if kobe_target:
+            target_line = (
+                f"\n\n**Kobe target**: {int(kobe_target)} kcal · "
+                f"**Predicted**: {card.wod.predicted_burn_kcal_low}–"
+                f"{card.wod.predicted_burn_kcal_high} kcal "
+                f"(mid {predicted_mid}) · "
+                f"**Adjustment**: {adjustment}"
+            )
+        else:
+            target_line = (
+                f"\n\n**Kobe target**: not set · "
+                f"**Predicted**: {card.wod.predicted_burn_kcal_low}–"
+                f"{card.wod.predicted_burn_kcal_high} kcal · "
+                f"**Adjustment**: no-target"
+            )
+        card.notes.why_this_design = (
+            (card.notes.why_this_design or "") + target_line)
+        # If the WOD has BW-scaled movements, append a brief note so
+        # the rationale is visible at the NOTES level too.
+        bw_scaling_notes = [
+            m.substitution_reason for m in card.wod.movements
+            if m.substitution_reason and "tier" in (m.substitution_reason or "").lower()
+        ]
+        if bw_scaling_notes:
+            card.notes.deltas_from_request.extend(
+                f"BW-scaling: {n}" for n in bw_scaling_notes)
 
         # LLM overlay — enrich NOTES voice. Best-effort: any failure
         # falls back to the structural NOTES already in place.

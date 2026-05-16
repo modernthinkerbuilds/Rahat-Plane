@@ -168,14 +168,16 @@ def _detect_rounds_or_structure(text: str, fmt: str) -> str:
 
 # Rep prefix at the start of a line we'll lift out. The wider regex
 # tolerates SugarWOD's slash variants ("15/11 Calorie Echo Bike"),
-# distance suffixes ("400m"), and minute-second time forms ("1:00").
+# distance suffixes ("400m"), minute-second time forms ("1:00"),
+# and PRVN Reset's per-side patterns ("6/side …", ":45/side …").
 _REP_PREFIX_RE = re.compile(
     r"""^[\-\*•]*\s*           # bullet / dash
-        (\d+(?::\d{2})?(?:[/-]\d+)?  # 12  or  15/11  or  21-15-9  or  1:00
+        (:?\d+(?::\d{2})?(?:[/-]\d+)?  # 12 | 15/11 | 21-15-9 | 1:00 | :45
+            (?:/side|\s*per\s*side)?    # optional /side qualifier
             \s*(?:cal(?:orie)?s?|m|min|ft|sec|s|reps?)?
-        )                            # optional unit
-        \s+                          # gap before movement
-        (.*)$                        # the movement itself
+        )                              # optional unit
+        \s+                            # gap before movement
+        (.*)$                          # the movement itself
     """, re.IGNORECASE | re.VERBOSE)
 
 # Meta-names that look like movements but aren't — block headers
@@ -258,10 +260,17 @@ def _extract_movements(description: str) -> list[ParsedMovement]:
         if m:
             reps = m.group(1).strip()
             name_raw = m.group(2).strip()
-            # Strip trailing parenthetical / markdown link.
-            name_raw = re.sub(r"\s*\(.*\)\s*$", "", name_raw)
+            # Order matters: markdown link `[Text](url)` BEFORE the
+            # trailing-parens strip, otherwise `\(.*\)$` eats the url
+            # half and leaves a stray `[Text]`. (Day-6 demo bug.)
             name_raw = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", name_raw)
+            # Strip leftover trailing parenthetical (e.g. "(3 sec hold)").
+            name_raw = re.sub(r"\s*\(.*\)\s*$", "", name_raw)
+            # Drop "@ working load" / "@ 70%" suffixes — those go into
+            # load_text, not the movement name.
             name_raw = re.sub(r"\s+@\s+.*$", "", name_raw)
+            # Strip stray brackets if any markdown form sneaks through.
+            name_raw = name_raw.strip().strip("[]")
             name = normalize_movement(name_raw)
             # Block meta-names that slipped through (Day-5 demo bug:
             # "6 Rounds:" producing name="rounds:").

@@ -60,6 +60,7 @@ AGENT = "fraser"
 # a new one without an ADR — the test_storage_convention guardrail
 # enumerates the substrate API surface, and downstream tools (the
 # eval suite, /memory debug endpoints) snapshot these strings.
+ENTITY_SOURCE_WORKOUT = "fraser_source_workout"
 ENTITY_WORKOUT       = "fraser_workout"
 ENTITY_MOVEMENT      = "fraser_movement"
 ENTITY_INJURY        = "fraser_injury"
@@ -73,6 +74,7 @@ ENTITY_PREFERENCE    = "fraser_preference"
 ENTITY_ROUTE         = "fraser_route"
 
 ALL_ENTITY_TYPES: tuple[str, ...] = (
+    ENTITY_SOURCE_WORKOUT,
     ENTITY_WORKOUT,
     ENTITY_MOVEMENT,
     ENTITY_INJURY,
@@ -223,6 +225,66 @@ OVERHEAD_MOVEMENTS = frozenset({
 # in FRASER_OPEN_QUESTIONS.md.
 ONE_RM_WARN_AFTER_DAYS  = 90
 ONE_RM_BLOCK_AFTER_DAYS = 180
+
+
+# ─────────────────────────── System-prompt version ────────────────────
+# Stamped onto every `fraser_workout` entity body via
+# `state.commit_workout`. The bisectability story: when quality
+# regresses, query workouts by version, find when the regression
+# started, blame the prompt change.
+#
+# Bump trigger: any STRUCTURAL change to the system prompt — the
+# preamble shape, the tool-catalog format, the input-mode classifier
+# instructions, the rule-injection ordering. Pure content edits to
+# `specs/FRASER_BEHAVIORAL_TRANSCRIPT.md` do NOT bump (the transcript
+# IS the prompt content; structural transforms wrap it).
+#
+# When you bump:
+#   • Increment the constant ("v1" → "v2").
+#   • Add a one-line entry to the version-history block below.
+#   • Write a regression eval case that exercises the structural
+#     change so future bumps don't silently break the case.
+#
+# Version history:
+#   v1 — initial structural shape (Day-3 wiring 2026-05-14):
+#        transcript + FRASER_CHARTER_RULE_SPECS + TOOL_CATALOG +
+#        InputMode classification block.
+#   v2 — adapter pivot (Day-5 directive 2026-05-14): Fraser is an
+#        ADAPTATION engine, not a generator. Default mode reads
+#        today's `fraser_source_workout` from the SugarWOD substrate
+#        and personalizes it. System prompt now leads with the
+#        adaptation contract; `get_todays_source_workout` is the
+#        primary read tool. See §2.4 of spec.
+#   v3 — kcal-target pivot (Day-6 directive 2026-05-14): Kobe owns
+#        the daily kcal target; Fraser reads it via
+#        `get_kobe_kcal_target` and scales the adapted card up/down
+#        to land within ±20% of the target. The Kobe→Fraser
+#        contract is now load-bearing on this dimension. System
+#        prompt explicitly lists the scaling rules.
+FRASER_SYSTEM_PROMPT_VERSION: str = "v3"
+
+
+# ─────────────────────────── Source-workout freshness ───────────────
+# `get_todays_source_workout` returns STALE_SOURCE_WORKOUT when the
+# ingestion's `fetched_at` is older than this threshold. Past
+# incidents (DOM-class rename, "MON"/"Mon" case bug) silently broke
+# the scrape for weeks — the freshness gate exists so Fraser surfaces
+# the gap explicitly rather than producing stale-data cards.
+SOURCE_WORKOUT_STALE_AFTER_DAYS: int = 7
+
+
+# Sentinel for stale-source signal. Distinct from `None` (which means
+# "no source workout for today — rest day or no scrape this week").
+# Test the return value with `is STALE_SOURCE_WORKOUT` for identity
+# comparison; callers MUST NOT serialize this sentinel.
+class _StaleSourceSentinel:
+    def __repr__(self) -> str:
+        return "<STALE_SOURCE_WORKOUT>"
+    def __bool__(self) -> bool:
+        return False
+
+
+STALE_SOURCE_WORKOUT = _StaleSourceSentinel()
 
 
 # ─────────────────────────── Substitution conditions ────────────────────
@@ -698,11 +760,161 @@ class SubstitutionRuleBody:
         )
 
 
+# ─────────────────────────── Parsed source-workout types ──────────────
+@dataclass
+class ParsedMovement:
+    """One movement inside a parsed source-workout section.
+
+    `raw_text` carries the original line so a parser-bug postmortem
+    can replay through better extraction later (see "store BOTH raw +
+    parsed" in §11.5)."""
+    name: str                            # normalized lower_snake
+    reps_or_time: str = ""               # "18", "15/11 cal", "400m", etc.
+    load_text: str = ""                  # "53/35lb, 24/16kg" — raw, unparsed
+    raw_text: str = ""                   # the original line
+
+
+@dataclass
+class ParsedSection:
+    """One section of a SugarWOD day: WOD body / Strength / Levels /
+    PRVN Reset / Optional Accessories / Specific Prep."""
+    title: str                           # original title verbatim
+    section_kind: str = "unknown"        # "strength" | "prep" | "wod" | "levels" | "reset" | "accessory" | "rest"
+    format: str = ""                     # "For Time" | "EMOM" | "AMRAP" | "Every X:XX x N Sets" | "For Quality" | ""
+    cap_min: int = 0                     # parsed cap; 0 = unbounded
+    rounds_or_structure: str = ""        # "21-15-9", "4 Sets", "AMRAP 15"
+    movements: list[ParsedMovement] = field(default_factory=list)
+    raw_description: str = ""            # original description for round-trip
+    is_blacklisted: bool = False         # Kobe BLACKLIST hit at parse time
+    blacklist_reason: str = ""           # which term matched
+    is_skip_section: bool = False        # Kobe SKIP_SECTION_TITLES hit
+
+
+@dataclass
+class ParsedWorkout:
+    """A whole day's parsed source-workout — one or more sections.
+
+    `is_rest_day` is True when the SugarWOD response was empty or
+    contained only a "Rest Day" / "Active Recovery" placeholder.
+    `primary_wod_index` points to the section that's the day's main
+    WOD (the one Fraser adapts); rest are warm-up / accessory."""
+    date_int: str                        # "20260514"
+    header: str = ""                     # "THU 14"
+    is_rest_day: bool = False
+    rest_day_label: str = ""             # "Rest Day" or "Active Recovery"
+    sections: list[ParsedSection] = field(default_factory=list)
+    primary_wod_index: int = -1          # -1 if no clear primary WOD
+    blacklisted_section_count: int = 0
+
+
+@dataclass
+class FraserSourceWorkoutBody:
+    """Entity body for `fraser_source_workout`. Stores BOTH raw archive
+    snippet AND parsed structure (§11.5 doctrine — future-proofs the
+    parser; reparse from raw when extraction improves)."""
+    date_int: str                        # "20260514"
+    header: str = ""                     # "THU 14"
+    fetched_at_iso: str = ""             # archive's fetched_at field
+    gym_program_name: str = "workout-of-the-day"
+    ingestion_method: str = "sugarwod_bookmarklet"
+    workouts_raw: list[dict] = field(default_factory=list)   # [{title, description}, …]
+    parsed: ParsedWorkout | None = None
+    supersedes_entity_id: int | None = None
+
+    def to_payload(self) -> dict:
+        out = {
+            "date_int": self.date_int,
+            "header": self.header,
+            "fetched_at_iso": self.fetched_at_iso,
+            "gym_program_name": self.gym_program_name,
+            "ingestion_method": self.ingestion_method,
+            "workouts_raw": list(self.workouts_raw),
+            "supersedes_entity_id": self.supersedes_entity_id,
+        }
+        if self.parsed is not None:
+            out["parsed"] = {
+                "date_int": self.parsed.date_int,
+                "header": self.parsed.header,
+                "is_rest_day": self.parsed.is_rest_day,
+                "rest_day_label": self.parsed.rest_day_label,
+                "primary_wod_index": self.parsed.primary_wod_index,
+                "blacklisted_section_count": self.parsed.blacklisted_section_count,
+                "sections": [
+                    {
+                        "title": s.title, "section_kind": s.section_kind,
+                        "format": s.format, "cap_min": s.cap_min,
+                        "rounds_or_structure": s.rounds_or_structure,
+                        "raw_description": s.raw_description,
+                        "is_blacklisted": s.is_blacklisted,
+                        "blacklist_reason": s.blacklist_reason,
+                        "is_skip_section": s.is_skip_section,
+                        "movements": [
+                            {"name": m.name, "reps_or_time": m.reps_or_time,
+                             "load_text": m.load_text, "raw_text": m.raw_text}
+                            for m in s.movements
+                        ],
+                    }
+                    for s in self.parsed.sections
+                ],
+            }
+        return out
+
+    @classmethod
+    def from_payload(cls, d: dict) -> "FraserSourceWorkoutBody":
+        parsed = None
+        pd = d.get("parsed")
+        if pd:
+            sections = []
+            for s in pd.get("sections", []):
+                movs = [
+                    ParsedMovement(
+                        name=m.get("name", ""),
+                        reps_or_time=m.get("reps_or_time", ""),
+                        load_text=m.get("load_text", ""),
+                        raw_text=m.get("raw_text", ""),
+                    )
+                    for m in s.get("movements", [])
+                ]
+                sections.append(ParsedSection(
+                    title=s.get("title", ""),
+                    section_kind=s.get("section_kind", "unknown"),
+                    format=s.get("format", ""),
+                    cap_min=int(s.get("cap_min", 0) or 0),
+                    rounds_or_structure=s.get("rounds_or_structure", ""),
+                    movements=movs,
+                    raw_description=s.get("raw_description", ""),
+                    is_blacklisted=bool(s.get("is_blacklisted", False)),
+                    blacklist_reason=s.get("blacklist_reason", ""),
+                    is_skip_section=bool(s.get("is_skip_section", False)),
+                ))
+            parsed = ParsedWorkout(
+                date_int=pd.get("date_int", ""),
+                header=pd.get("header", ""),
+                is_rest_day=bool(pd.get("is_rest_day", False)),
+                rest_day_label=pd.get("rest_day_label", ""),
+                sections=sections,
+                primary_wod_index=int(pd.get("primary_wod_index", -1)),
+                blacklisted_section_count=int(
+                    pd.get("blacklisted_section_count", 0) or 0),
+            )
+        return cls(
+            date_int=d.get("date_int", ""),
+            header=d.get("header", ""),
+            fetched_at_iso=d.get("fetched_at_iso", ""),
+            gym_program_name=d.get("gym_program_name", "workout-of-the-day"),
+            ingestion_method=d.get("ingestion_method", "sugarwod_bookmarklet"),
+            workouts_raw=list(d.get("workouts_raw", [])),
+            parsed=parsed,
+            supersedes_entity_id=d.get("supersedes_entity_id"),
+        )
+
+
 @dataclass
 class WorkoutBody:
     """fraser_workout payload — the full card plus light denormalized
     fields the substrate's status / valid_until filters key off."""
     date_iso: str
+    source_id: int | None = None         # link back to fraser_source_workout
     completion_status: CompletionStatus = CompletionStatus.PLANNED
     target_kcal: int = 0
     target_minutes: int = 0
@@ -711,10 +923,15 @@ class WorkoutBody:
     actual_kcal: int | None = None
     actual_rpe: int | None = None
     actual_volume_summary: str | None = None
+    # Stamped by `state.commit_workout` from `FRASER_SYSTEM_PROMPT_VERSION`.
+    # Defaults to None so old rows (pre-Day-4) don't fail to deserialize.
+    # See protocols.FRASER_SYSTEM_PROMPT_VERSION for the bump policy.
+    system_prompt_version: str | None = None
 
     def to_payload(self) -> dict:
         return {
             "date_iso": self.date_iso,
+            "source_id": self.source_id,
             "completion_status": self.completion_status.value,
             "target_kcal": self.target_kcal,
             "target_minutes": self.target_minutes,
@@ -722,12 +939,14 @@ class WorkoutBody:
             "actual_kcal": self.actual_kcal,
             "actual_rpe": self.actual_rpe,
             "actual_volume_summary": self.actual_volume_summary,
+            "system_prompt_version": self.system_prompt_version,
         }
 
     @classmethod
     def from_payload(cls, d: dict) -> "WorkoutBody":
         return cls(
             date_iso=d.get("date_iso", ""),
+            source_id=d.get("source_id"),
             completion_status=CompletionStatus(
                 d.get("completion_status", CompletionStatus.PLANNED.value)),
             target_kcal=d.get("target_kcal", 0),
@@ -736,6 +955,7 @@ class WorkoutBody:
             actual_kcal=d.get("actual_kcal"),
             actual_rpe=d.get("actual_rpe"),
             actual_volume_summary=d.get("actual_volume_summary"),
+            system_prompt_version=d.get("system_prompt_version"),
         )
 
 
@@ -840,6 +1060,405 @@ class CharterRuleSpec:
     notes: str | None = None
 
 
+# ─────────────────────────── Tool catalog ──────────────────────────────
+# Hand-rolled manifests for the reasoner's tool-call surface. Per the
+# Day-4 directive (2026-05-14), this is NOT auto-generated from
+# inspect.signature — the LLM needs stable parameter names independent
+# of Python kwarg renames, curated "WHEN to use" descriptions (not
+# Python docstrings, which are usually implementation notes), and
+# explicit JSON-shaped schemas (Python type hints don't always JSON-
+# serialize cleanly).
+#
+# Adding a new tool means TWO edits: the implementation in tools.py
+# AND an entry here. The coverage test
+# `tests/test_fraser_tool_catalog.py::test_every_public_tool_has_manifest_entry`
+# enforces this by failing if either side drifts.
+
+# ─────────────────────────── Movement kcal model ─────────────────────
+# Per Day-6 finding #1: distance-heavy WODs (run, row, farmers carry)
+# were under-predicting burn because reps/time alone don't model them.
+# This table assigns one or more burn dimensions per movement:
+#
+#     per_rep_kcal     — for rep-bounded movements (KB swing, burpee)
+#     per_meter_kcal   — for distance work (run, row, bike, carry)
+#     per_second_kcal  — for isometric / time-bounded work (wall sit,
+#                        plank, dead hang)
+#
+# `compute_predicted_burn` consults this table BEFORE falling back to
+# the kcal-per-minute coefficients in `tools.KCAL_PER_MIN_BY_MOVEMENT`.
+# Multiple dimensions can fire for a single movement (e.g., the
+# rare "reps + distance" framings); the burn estimator sums them.
+#
+# Numbers are coach-tunable defaults — empirical references in the
+# `notes` field. Reference body weight ≈ 75 kg; per-user calibration
+# lands in a `fraser_preference` key down the road.
+@dataclass(frozen=True)
+class MovementKcalProfile:
+    per_rep_kcal: float = 0.0
+    per_meter_kcal: float = 0.0
+    per_second_kcal: float = 0.0
+    notes: str = ""
+
+
+MOVEMENT_KCAL_MODEL: dict[str, MovementKcalProfile] = {
+    # Distance-based — the Day-6 #1 bug. 400m run @ 0.075 = 30 kcal.
+    "run":              MovementKcalProfile(per_meter_kcal=0.075,
+                                            notes="~75 kcal/km @ 75kg jog pace"),
+    "z2_run":           MovementKcalProfile(per_meter_kcal=0.060,
+                                            notes="zone-2 pace ~60 kcal/km"),
+    "row":              MovementKcalProfile(per_meter_kcal=0.10,
+                                            notes="~50 kcal per 500m"),
+    "echo_bike":        MovementKcalProfile(per_meter_kcal=0.04,
+                                            notes="~40 kcal/km"),
+    "assault_bike":     MovementKcalProfile(per_meter_kcal=0.04),
+    "ski_erg":          MovementKcalProfile(per_meter_kcal=0.10),
+    "farmers_carry":    MovementKcalProfile(per_meter_kcal=0.15,
+                                            notes="load-weighted; ~75kg dual DB"),
+    "shuttle_run":      MovementKcalProfile(per_meter_kcal=0.10,
+                                            notes="higher than steady run — pivots"),
+    # Time-based isometric.
+    "wall_sit":         MovementKcalProfile(per_second_kcal=0.083,
+                                            notes="~5 kcal/min"),
+    "plank":            MovementKcalProfile(per_second_kcal=0.050,
+                                            notes="~3 kcal/min"),
+    "dead_hang":        MovementKcalProfile(per_second_kcal=0.083),
+    "l_sit":            MovementKcalProfile(per_second_kcal=0.083),
+    # Rep-based — augment the per-minute model with per-rep granularity.
+    "burpee":           MovementKcalProfile(per_rep_kcal=1.0),
+    "burpee_box_jump":  MovementKcalProfile(per_rep_kcal=1.3),
+    "kettlebell_swing": MovementKcalProfile(per_rep_kcal=0.5),
+    "thruster":         MovementKcalProfile(per_rep_kcal=1.2),
+    "wall_ball":        MovementKcalProfile(per_rep_kcal=0.7),
+    "pull_up":          MovementKcalProfile(per_rep_kcal=0.5),
+    "chin_up":          MovementKcalProfile(per_rep_kcal=0.5),
+    "push_up":          MovementKcalProfile(per_rep_kcal=0.3),
+    "air_squat":        MovementKcalProfile(per_rep_kcal=0.3),
+    "box_jump":         MovementKcalProfile(per_rep_kcal=0.8),
+    "box_step_up":      MovementKcalProfile(per_rep_kcal=0.5),
+    "deadlift":         MovementKcalProfile(per_rep_kcal=1.0,
+                                            notes="moderate load assumed"),
+    "sumo_deadlift":    MovementKcalProfile(per_rep_kcal=1.0),
+    "back_squat":       MovementKcalProfile(per_rep_kcal=0.8),
+    "front_squat":      MovementKcalProfile(per_rep_kcal=0.9),
+    "bench":            MovementKcalProfile(per_rep_kcal=0.5),
+    "strict_press":     MovementKcalProfile(per_rep_kcal=0.5),
+    "push_press":       MovementKcalProfile(per_rep_kcal=0.8),
+    "clean":            MovementKcalProfile(per_rep_kcal=1.3),
+    "power_snatch":     MovementKcalProfile(per_rep_kcal=1.5),
+    "snatch":           MovementKcalProfile(per_rep_kcal=1.5),
+    "double_under":     MovementKcalProfile(per_rep_kcal=0.15),
+    "jump_rope":        MovementKcalProfile(per_rep_kcal=0.10),
+    "single_under":     MovementKcalProfile(per_rep_kcal=0.08),
+    "penguin_jump":     MovementKcalProfile(per_rep_kcal=0.20),
+    "lateral_hop":      MovementKcalProfile(per_rep_kcal=0.18),
+    "abmat_sit_up":     MovementKcalProfile(per_rep_kcal=0.25),
+    "toes_to_bar":      MovementKcalProfile(per_rep_kcal=0.7),
+    "handstand_push_up": MovementKcalProfile(per_rep_kcal=0.8),
+    "devil_press":      MovementKcalProfile(per_rep_kcal=1.4),
+    "ring_row":         MovementKcalProfile(per_rep_kcal=0.4),
+    "trx_row":          MovementKcalProfile(per_rep_kcal=0.4),
+}
+
+
+# ─────────────────────────── BW-scaling model ─────────────────────────
+# Per Day-6 finding #3: movements without a 1RM (KB swing, wall sit,
+# push-up, plank, BW farmers carry) need a tier-driven Rx, not a %
+# of 1RM. This table maps movement → tier → prescription. The handler
+# picks the user's tier's value and stamps the rationale on the
+# Movement so the card surfaces it.
+@dataclass(frozen=True)
+class BodyweightScaling:
+    by_tier: dict                            # tier name → value
+    units: str = ""                          # "kg" / "s" / "reps" / "kg per hand"
+    rationale_template: str = (
+        "{movement} @ {value}{units} — Rx for {tier} tier"
+    )
+
+
+BW_SCALING_MODEL: dict[str, BodyweightScaling] = {
+    "kettlebell_swing": BodyweightScaling(
+        by_tier={"hammer": 32, "zone2": 24, "deload": 16,
+                 "survival": 12},
+        units=" kg"),
+    "wall_sit": BodyweightScaling(
+        by_tier={"hammer": 90, "zone2": 60, "deload": 45,
+                 "survival": 30},
+        units="s"),
+    "plank": BodyweightScaling(
+        by_tier={"hammer": 90, "zone2": 60, "deload": 45,
+                 "survival": 30},
+        units="s"),
+    "push_up": BodyweightScaling(
+        by_tier={"hammer": 25, "zone2": 15, "deload": 10,
+                 "survival": 5},
+        units=" reps"),
+    "farmers_carry": BodyweightScaling(
+        by_tier={"hammer": 32, "zone2": 22.5, "deload": 15,
+                 "survival": 10},
+        units=" kg per hand"),
+    "dead_hang": BodyweightScaling(
+        by_tier={"hammer": 60, "zone2": 45, "deload": 30,
+                 "survival": 20},
+        units="s"),
+}
+
+
+# ─────────────────────────── Kobe-target scaling thresholds ───────────
+# Per Day-6 finding #4: Fraser hits Kobe's target_kcal within ±20%.
+# Scaling decisions outside the band are mechanical:
+#   predicted < target × KCAL_TARGET_BAND_LOW → scale UP
+#   predicted > target × KCAL_TARGET_BAND_HIGH → scale DOWN
+#   else → leave card unchanged
+KCAL_TARGET_BAND_LOW: float  = 0.80
+KCAL_TARGET_BAND_HIGH: float = 1.20
+
+
+@dataclass(frozen=True)
+class ToolManifest:
+    """Description of one tool that the reasoner can call.
+
+    Fields:
+        name:             Python function name in `agents/fraser/tools.py`
+                          (must match exactly — the coverage test keys
+                          off this).
+        description:      "WHEN to use this" — speak to the LLM, not to
+                          a Python reader. Lead with the situation, not
+                          the implementation. ~1–3 sentences.
+        args_schema:      JSON-shaped per-arg spec:
+                          {arg_name: {"type": ..., "description": ...,
+                                      "required": bool}}.
+                          Use JSON-schema-ish types: string / number /
+                          integer / object / array / boolean.
+        returns_schema:   JSON-shaped return spec:
+                          {"type": ..., "description": ...}.
+                          For complex returns, use {"type": "object",
+                          "properties": {...}}.
+    """
+    name: str
+    description: str
+    args_schema: dict
+    returns_schema: dict
+
+
+TOOL_CATALOG: tuple[ToolManifest, ...] = (
+    ToolManifest(
+        name="get_kobe_kcal_target",
+        description=(
+            "Use to read today's calorie target set by Kobe. "
+            "Returns a float (kcal) or None. Fraser's adapted card "
+            "must land within ±20% of this target — if it doesn't, "
+            "scale up (add round / increase load / lengthen cap) or "
+            "scale down (drop round / lighten load / shorten cap) "
+            "to fit. Surface the predicted-vs-target math in the "
+            "Workout Card NOTES."
+        ),
+        args_schema={},
+        returns_schema={
+            "type": "number",
+            "description": (
+                "Today's target kcal from Kobe, or null if no "
+                "target is set."
+            ),
+        },
+    ),
+    ToolManifest(
+        name="get_todays_source_workout",
+        description=(
+            "Use FIRST in Default mode. Returns today's gym-prescribed "
+            "workout from SugarWOD ingestion — the source you ADAPT. "
+            "Three return shapes: a parsed-workout dict (normal path), "
+            "None (rest day or no scrape this week), or the STALE "
+            "sentinel (last ingest > 7d old — surface 'click the "
+            "bookmarklet' to the user, do NOT use stale data)."
+        ),
+        args_schema={},
+        returns_schema={
+            "type": "object",
+            "description": (
+                "FraserSourceWorkoutBody payload OR None OR STALE "
+                "sentinel. Caller MUST handle all three explicitly."
+            ),
+        },
+    ),
+    ToolManifest(
+        name="get_source_workout",
+        description=(
+            "Historical lookup of a specific date's source workout. "
+            "Use for 'did we already do back squats this week?' "
+            "reasoning. No freshness gate — historical data is "
+            "historical. Pass `date_int` as YYYYMMDD."
+        ),
+        args_schema={
+            "date_int": {
+                "type": "string",
+                "description": "YYYYMMDD (e.g., '20260514').",
+                "required": True,
+            },
+        },
+        returns_schema={
+            "type": "object",
+            "description": "FraserSourceWorkoutBody payload OR None.",
+        },
+    ),
+    ToolManifest(
+        name="compute_target_weight",
+        description=(
+            "Use when you need the working weight in kg for a "
+            "percentage of a user's 1RM. The 1RM and percentage come "
+            "from your reasoning (e.g., '70% of deadlift after HRV "
+            "scaling'); this tool just does the math + snaps to the "
+            "2.5-kg plate grid (rounds DOWN so you never program "
+            "more weight than the math implies)."
+        ),
+        args_schema={
+            "lift": {
+                "type": "string",
+                "description": (
+                    "Canonical lift name. Aliases accepted "
+                    "(DL→deadlift, BS→back_squat, Bench Press→bench)."
+                ),
+                "required": True,
+            },
+            "percentage": {
+                "type": "number",
+                "description": "0–150. Above 100 allowed for overload work.",
+                "required": True,
+            },
+            "one_rm_kg": {
+                "type": "number",
+                "description": "The user's tested 1RM in kg.",
+                "required": True,
+            },
+            "plate_increment_kg": {
+                "type": "number",
+                "description": (
+                    "Plate granularity for the snap. Default 2.5; "
+                    "pass 5.0 for Olympic-lift contexts where the "
+                    "bar is loaded with full plates only."
+                ),
+                "required": False,
+            },
+        },
+        returns_schema={
+            "type": "number",
+            "description": (
+                "Target weight in kg, snapped DOWN to the plate grid. "
+                "Returns 0.0 if 1RM or percentage is non-positive."
+            ),
+        },
+    ),
+    ToolManifest(
+        name="compute_predicted_burn",
+        description=(
+            "Use when you need a LOW/HIGH calorie band for a designed "
+            "Workout Card, and when the user asks 'why does X burn "
+            "more than Y?' Returns per-movement breakdown so you can "
+            "quote the math. The estimate is conservative — tune the "
+            "midpoint against actual log data over time."
+        ),
+        args_schema={
+            "card": {
+                "type": "object",
+                "description": (
+                    "A WorkoutCard dict (serialized via "
+                    "WorkoutCard.to_dict()) OR an in-memory "
+                    "WorkoutCard instance. Both round-trip cleanly."
+                ),
+                "required": True,
+            },
+        },
+        returns_schema={
+            "type": "object",
+            "properties": {
+                "total_low": {
+                    "type": "integer",
+                    "description": "Lower-bound kcal sum.",
+                },
+                "total_high": {
+                    "type": "integer",
+                    "description": "Upper-bound kcal sum.",
+                },
+                "by_movement": {
+                    "type": "array",
+                    "description": (
+                        "Ordered list of "
+                        "{movement, minutes_estimated, kcal_low, "
+                        "kcal_high}. Quote these when the user "
+                        "questions the predicted burn."
+                    ),
+                },
+            },
+        },
+    ),
+    ToolManifest(
+        name="lookup_movement_cues",
+        description=(
+            "Use whenever you program a movement that touches a known "
+            "category (pressing → neck-guard + HBP; squat → ankle-"
+            "check + HBP; pull → hunch; Olympic → all three + HBP). "
+            "Surface the returned cues in the WORKOUT CARD's NOTES "
+            "section. Unknown movements get the HBP rule by default "
+            "— that's the cue that's never harmful to surface."
+        ),
+        args_schema={
+            "movement": {
+                "type": "string",
+                "description": (
+                    "Movement name. Both 'Bench Press' (lift form) "
+                    "and 'bench' (normalized form) accepted."
+                ),
+                "required": True,
+            },
+        },
+        returns_schema={
+            "type": "array",
+            "description": (
+                "List of cue strings. Always non-empty (at least HBP "
+                "fallback)."
+            ),
+        },
+    ),
+    ToolManifest(
+        name="parse_user_workout",
+        description=(
+            "Use when the user supplies a workout (Murph, Cindy, "
+            "Fran, a pasted rep scheme, or AMRAP/EMOM/Tabata "
+            "directive). Returns a structured WorkoutCard with the "
+            "movements, format, cap, and weight prescriptions. "
+            "Apply context (HRV, tier, injuries, equipment) "
+            "AFTER parsing — this tool just converts freeform input "
+            "to structure, it does not scale for the user's state."
+        ),
+        args_schema={
+            "raw_text": {
+                "type": "string",
+                "description": "The user's freeform workout description.",
+                "required": True,
+            },
+            "one_rms_kg": {
+                "type": "object",
+                "description": (
+                    "Dict of {lift_name → weight_kg}. Pass the "
+                    "result of get_1rms() so benchmark weights "
+                    "scale to the user's actual numbers. Optional; "
+                    "omit and the function falls back to benchmark "
+                    "defaults."
+                ),
+                "required": False,
+            },
+        },
+        returns_schema={
+            "type": "object",
+            "description": (
+                "WorkoutCard with input_mode=USER_SUPPLIED_WORKOUT. "
+                "Unparseable input returns a skeleton card with the "
+                "raw text in NOTES for LLM fallback."
+            ),
+        },
+    ),
+)
+
+
 FRASER_CHARTER_RULE_SPECS: tuple[CharterRuleSpec, ...] = (
     CharterRuleSpec(
         kind=CHARTER_COMMIT_WORKOUT,
@@ -898,11 +1517,20 @@ __all__ = [
     # Identity
     "AGENT",
     # Entity types
+    "ENTITY_SOURCE_WORKOUT",
     "ENTITY_WORKOUT", "ENTITY_MOVEMENT", "ENTITY_INJURY",
     "ENTITY_PRVN_CYCLE", "ENTITY_PROGRESSION",
     "ENTITY_WARMUP", "ENTITY_COOLDOWN", "ENTITY_SUBSTITUTION",
     "ENTITY_ONE_REP_MAX", "ENTITY_PREFERENCE", "ENTITY_ROUTE",
     "ALL_ENTITY_TYPES",
+    # Source-workout types
+    "ParsedMovement", "ParsedSection", "ParsedWorkout",
+    "FraserSourceWorkoutBody",
+    "SOURCE_WORKOUT_STALE_AFTER_DAYS", "STALE_SOURCE_WORKOUT",
+    # Day-6: kcal model + BW scaling + target-band thresholds
+    "MovementKcalProfile", "MOVEMENT_KCAL_MODEL",
+    "BodyweightScaling", "BW_SCALING_MODEL",
+    "KCAL_TARGET_BAND_LOW", "KCAL_TARGET_BAND_HIGH",
     # Charter kinds
     "CHARTER_COMMIT_WORKOUT", "CHARTER_LOG_SESSION",
     "CHARTER_REGISTER_INJURY", "CHARTER_RESOLVE_INJURY",
@@ -912,6 +1540,8 @@ __all__ = [
     "CHARTER_ADVANCE_PROGRESSION",
     "ALL_CHARTER_KINDS",
     "CharterRuleSpec", "FRASER_CHARTER_RULE_SPECS",
+    # Tool catalog
+    "ToolManifest", "TOOL_CATALOG",
     # Enums
     "InputMode", "RecoveryColor", "KobeTier", "WodFormat",
     "Polarity", "Severity", "OneRMSource", "CompletionStatus",
@@ -920,6 +1550,8 @@ __all__ = [
     "POSTERIOR_CHAIN", "OVERHEAD_MOVEMENTS",
     # Staleness thresholds
     "ONE_RM_WARN_AFTER_DAYS", "ONE_RM_BLOCK_AFTER_DAYS",
+    # System-prompt version (stamped on every workout body)
+    "FRASER_SYSTEM_PROMPT_VERSION",
     # Substitution vocabulary
     "SUBSTITUTION_CONDITIONS", "_validate_condition",
     # Normalizers

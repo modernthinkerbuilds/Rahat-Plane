@@ -52,20 +52,29 @@ These match the spec §11 example numbers. Swap with your real numbers from `/tm
 - chin_tuck — 10
 - **Postural cues**: Hunch reset
 
-### ▌WOD — for_time · Cap 20 min
-- **Structure**: 6 Rounds
+### ▌WOD — for_time · Cap 40 min
+- **Structure**: 12 Rounds
 - run — 400m
-- farmers_carry — 200m
-- wall_sit — 1:00
+- farmers_carry — 200m @ 22.5kg *[farmers_carry @ 22.5 kg per hand — Rx for zone2 tier]*
+- wall_sit — 60s *[wall_sit @ 60s — Rx for zone2 tier]*
 
-**Predicted burn**: 9–14 kcal
+**Predicted burn**: 720–984 kcal
 
 ### ▌COOL-DOWN (8 min)
+- 90/90_active_rotation — 6/side
+- supine_hamstring_stretch — :45/side
+- sciatic_nerve_floss — 6/side
 - **Breathing**: legs-up-the-wall 5 min
 
 ### ▌NOTES
-Your current HRV of 55 and green recovery status indicate high physiological readiness, permitting the full intensity of this "Lava Plume" session. We have maintained the original structure and Tier 2 metabolic demand to capitalize on your capacity for high-output training.
+Your HRV of 55 and green recovery status confirm you are primed for increased volume, so we have scaled the "Lava Plume" intensity upward to close the gap on your 1,100 kcal target. We have substituted the primary movements with specific Zone 2 weighted carries and wall sits to maintain steady output without overreaching your physiological capacity. Follow these prescriptive loads to maximize your caloric burn while staying within your target heart rate zone.
 
 — Adaptation rationale —
 Adapted from gym programming '"Lava Plume"'. HRV=55, recovery=green, tier=zone2, active injuries=0.
+
+**Kobe target**: 1100 kcal · **Predicted**: 720–984 kcal (mid 852) · **Adjustment**: scaled-up
+
+**Deltas from source**:
+- BW-scaling: farmers_carry @ 22.5 kg per hand — Rx for zone2 tier
+- BW-scaling: wall_sit @ 60s — Rx for zone2 tier
 

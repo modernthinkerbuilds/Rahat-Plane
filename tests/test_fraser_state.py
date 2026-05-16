@@ -280,7 +280,9 @@ def test_register_then_resolve_injury(fresh_db):
 # ─── 6. Workout commit + log_session round-trip ─────────────────────
 def test_commit_workout_then_log_session(fresh_db):
     from agents.fraser import state as fst
-    from agents.fraser.protocols import WorkoutCard, CompletionStatus
+    from agents.fraser.protocols import (
+        WorkoutCard, CompletionStatus, FRASER_SYSTEM_PROMPT_VERSION,
+    )
 
     card = WorkoutCard(
         date_iso="2026-05-14", time_of_day="evening",
@@ -304,6 +306,27 @@ def test_commit_workout_then_log_session(fresh_db):
     assert body is not None
     assert body.actual_kcal == 580
     assert body.completion_status == CompletionStatus.COMPLETED
+    # Day-4 bisectability: every committed workout carries the
+    # system-prompt version that produced it.
+    assert body.system_prompt_version == FRASER_SYSTEM_PROMPT_VERSION
+
+
+def test_commit_workout_stamps_system_prompt_version(fresh_db):
+    """The workout body's system_prompt_version field equals the
+    current `FRASER_SYSTEM_PROMPT_VERSION` constant. Direct assertion
+    so a silent rename / drop fails this test loudly."""
+    from agents.fraser import state as fst
+    from agents.fraser.protocols import (
+        WorkoutCard, FRASER_SYSTEM_PROMPT_VERSION,
+    )
+    card = WorkoutCard(date_iso="2026-05-14")
+    eid, _v = fst.commit_workout(card)
+    assert eid is not None
+    body = fst.get_workout(eid)
+    assert body is not None
+    assert body.system_prompt_version == FRASER_SYSTEM_PROMPT_VERSION
+    assert body.system_prompt_version is not None
+    assert body.system_prompt_version.startswith("v")
 
 
 # ─── 7. Preference filter wires to the dislike set ──────────────────

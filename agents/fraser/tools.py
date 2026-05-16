@@ -41,6 +41,7 @@ from agents.fraser.protocols import (  # noqa: E402
     Movement, StrengthLift, WorkoutCard, WODBlock, WarmUpBlock,
     StrengthBlock, CoolDownBlock, WorkoutNotes, ContextSnapshot,
     InputMode, WodFormat, normalize_lift_name, normalize_movement,
+    MOVEMENT_KCAL_MODEL,
 )
 
 
@@ -332,18 +333,17 @@ def _parse_reps_or_time(token: str) -> tuple[int, float]:
     m = re.match(r"^(\d+)\s*(?:min|minute)s?$", t)
     if m:
         return 0, float(m.group(1)) * 60.0
-    # 'Xm' (meters) — no time/rep value yet. Pace-based burn lands
-    # in a future tool; today we return (0, 0) so the burn estimator
-    # falls through to the per-minute default for the surrounding
-    # block rather than billing 400 minutes for "400m Run".
+    # 'Xm' (meters) / 'Xft' (feet) / 'Xkm' — distance work. We return
+    # (0, 0) here for backward compatibility; the new
+    # `_parse_dimensions` helper extracts distance for the
+    # MOVEMENT_KCAL_MODEL pass. The "1 mile" form is also handled
+    # there (mile → meters conversion).
     m = re.match(r"^(\d+)\s*m$", t)
     if m:
         return 0, 0.0
-    # 'Xft' (feet) — same treatment as meters
     m = re.match(r"^(\d+)\s*ft$", t)
     if m:
         return 0, 0.0
-    # 'Xkm' — convert to meters; same no-burn-yet treatment
     m = re.match(r"^(\d+)\s*km$", t)
     if m:
         return 0, 0.0
@@ -357,6 +357,40 @@ def _parse_reps_or_time(token: str) -> tuple[int, float]:
         a, b, c = (int(g) for g in rep_scheme.groups())
         return a + b + c, 0.0
     return 0, 0.0
+
+
+def _parse_dimensions(token: str) -> tuple[int, float, float]:
+    """Extract (reps, seconds, meters) from a `reps_or_time` token.
+
+    Distinct from `_parse_reps_or_time` (which returns reps+seconds)
+    because the Day-6 kcal model needs distance as a first-class
+    dimension. Returns 0 for any dimension that doesn't apply.
+
+    Handles:
+        - "12" / "21-15-9" / "12 reps"   → reps
+        - "30s" / "1:00" / "5 min"       → seconds
+        - "400m" / "1 mile" / "0.5 km"   → meters
+    """
+    t = (token or "").strip().lower()
+    if not t:
+        return 0, 0.0, 0.0
+    # Reps + seconds first (delegate to the existing parser).
+    reps, secs = _parse_reps_or_time(t)
+    # Meters: explicit suffixes — m, km, mile(s), ft.
+    meters = 0.0
+    m = re.match(r"^(\d+(?:\.\d+)?)\s*m$", t)
+    if m:
+        meters = float(m.group(1))
+    m = re.match(r"^(\d+(?:\.\d+)?)\s*km$", t)
+    if m:
+        meters = float(m.group(1)) * 1000.0
+    m = re.match(r"^(\d+(?:\.\d+)?)\s*mile?s?$", t)
+    if m:
+        meters = float(m.group(1)) * 1609.0
+    m = re.match(r"^(\d+(?:\.\d+)?)\s*ft$", t)
+    if m:
+        meters = float(m.group(1)) * 0.3048
+    return reps, secs, meters
 
 
 def compute_predicted_burn(card: WorkoutCard | dict) -> BurnEstimate:
@@ -386,10 +420,42 @@ def compute_predicted_burn(card: WorkoutCard | dict) -> BurnEstimate:
     def _add_block(mov_list: Iterable[Movement]) -> None:
         nonlocal total_low, total_high
         for m in mov_list:
-            reps, secs = _parse_reps_or_time(m.reps_or_time)
+            mov_name = normalize_movement(m.name)
+            reps, secs, meters = _parse_dimensions(m.reps_or_time)
+
+            # Day-6 kcal model — first preference. Sum per-dimension
+            # contributions whenever the movement has a profile.
+            profile = MOVEMENT_KCAL_MODEL.get(mov_name)
+            kcal_from_model = 0.0
+            if profile is not None:
+                if reps > 0 and profile.per_rep_kcal > 0:
+                    kcal_from_model += reps * profile.per_rep_kcal
+                if secs > 0 and profile.per_second_kcal > 0:
+                    kcal_from_model += secs * profile.per_second_kcal
+                if meters > 0 and profile.per_meter_kcal > 0:
+                    kcal_from_model += meters * profile.per_meter_kcal
+
+            if kcal_from_model > 0:
+                # ±15% band around the model's point estimate. The
+                # model is a point estimate; surface a band so the
+                # user sees the uncertainty without us having to
+                # carry separate low/high per movement.
+                lo_kcal = kcal_from_model * 0.85
+                hi_kcal = kcal_from_model * 1.15
+                # minutes_estimated kept for backward-compat with the
+                # breakdown shape — derive from secs if available.
+                minutes_eq = (secs / 60.0) if secs > 0 else 0.0
+                breakdowns.append(BurnBreakdown(
+                    movement=m.name, minutes_estimated=round(minutes_eq, 2),
+                    kcal_low=round(lo_kcal, 1), kcal_high=round(hi_kcal, 1)))
+                total_low += lo_kcal
+                total_high += hi_kcal
+                continue
+
+            # Fallback: per-minute coefficient path (Day-2 behavior).
             if secs <= 0 and reps > 0:
                 per_rep = SECS_PER_REP_BY_MOVEMENT.get(
-                    normalize_movement(m.name), DEFAULT_SECS_PER_REP)
+                    mov_name, DEFAULT_SECS_PER_REP)
                 secs = reps * per_rep
             minutes = secs / 60.0
             if minutes <= 0:

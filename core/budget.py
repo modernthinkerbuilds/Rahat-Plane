@@ -51,14 +51,39 @@ ENV_VAR_DAILY_USD: str = "RAHAT_TOKEN_BUDGET_DAILY_USD"
 OP_NAME: str = "budget.spend"
 
 
-def _daily_cap_usd() -> float:
-    """Resolve the global daily cap from the environment.
+def _daily_cap_usd(actor: str | None = None) -> float:
+    """Resolve the daily cap for `actor` (or global if None) from env.
 
-    Empty / unset / unparseable → DEFAULT_DAILY_USD. The intent is
-    that a deployment misconfiguration falls back to a safe number,
-    not zero (which would disable enforcement and surprise an oncall).
-    Explicit zero means 'disabled'.
+    Lookup order (Day-4 directive, per-actor override on top of Day-3
+    global enforcement):
+        1. `RAHAT_TOKEN_BUDGET_DAILY_USD_<ACTOR>` — per-actor override.
+           Uppercased actor name. Example:
+               RAHAT_TOKEN_BUDGET_DAILY_USD_FRASER=0.50
+           This is the prod-vs-dev knob the directive specifies:
+           dev keeps the global $5/day; prod sets Fraser-specific
+           $0.50/day without touching the global.
+        2. `RAHAT_TOKEN_BUDGET_DAILY_USD` — global fallback.
+        3. `DEFAULT_DAILY_USD` (5.0) — final fallback.
+
+    Empty / unset / unparseable at any tier → fall through to the
+    next. The intent is that a deployment misconfiguration ends up
+    at a safer-than-needed cap rather than at the silent disable
+    (`0`), which is reserved as the explicit rollback knob.
+
+    Caller note: `check_budget(actor='fraser')` returns the Fraser-
+    specific limit when the override is set; everyone else still sees
+    the global cap. This preserves the "global enforcement,
+    per-agent observability" doctrine — the per-actor override is
+    AN ADDITIONAL TIGHTENING, not a fragmentation of the policy.
     """
+    if actor:
+        actor_var = f"{ENV_VAR_DAILY_USD}_{actor.upper()}"
+        raw = os.environ.get(actor_var)
+        if raw is not None and raw.strip():
+            try:
+                return float(raw)
+            except ValueError:
+                pass  # fall through to global
     raw = os.environ.get(ENV_VAR_DAILY_USD)
     if raw is None or not raw.strip():
         return DEFAULT_DAILY_USD
@@ -132,7 +157,7 @@ def check_budget(*, actor: str | None = None,
     DB, no spends ever recorded), `spent_usd` is 0.0 — not an error.
     The caller can still gate on `exceeded`.
     """
-    limit = _daily_cap_usd()
+    limit = _daily_cap_usd(actor)
     con = cio.db(db_path) if db_path else cio.db()
     try:
         if actor:

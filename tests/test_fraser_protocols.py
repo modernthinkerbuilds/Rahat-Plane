@@ -45,13 +45,17 @@ def test_agent_namespace_is_fraser():
     assert AGENT == "fraser"
 
 
-def test_eleven_entity_types_enumerated():
-    """Spec §3 lists 11 entity types. ALL_ENTITY_TYPES is the
-    canonical tuple — any drift here breaks downstream tools that
-    enumerate per-type entities (eval suite, /memory debug)."""
-    assert len(ALL_ENTITY_TYPES) == 11
+def test_twelve_entity_types_enumerated():
+    """Spec §3 (v2 — Day-5 adapter pivot) lists 12 entity types.
+    `fraser_source_workout` joined the set when Fraser became an
+    adaptation engine. ALL_ENTITY_TYPES is the canonical tuple —
+    drift here breaks downstream tools that enumerate per-type
+    entities (eval suite, /memory debug)."""
+    assert len(ALL_ENTITY_TYPES) == 12
     # All start with the agent prefix — defensive against typo drift.
     assert all(t.startswith("fraser_") for t in ALL_ENTITY_TYPES)
+    # The new entity must be present.
+    assert "fraser_source_workout" in ALL_ENTITY_TYPES
 
 
 def test_eleven_charter_kinds_enumerated():
@@ -318,10 +322,35 @@ def test_workout_body_roundtrip_carries_card():
         date_iso="2026-05-14",
         completion_status=CompletionStatus.PLANNED,
         target_kcal=600, target_minutes=60, card=card,
+        system_prompt_version="v1",
     )
     rt = WorkoutBody.from_payload(body.to_payload())
     assert rt.completion_status == CompletionStatus.PLANNED
     assert rt.card.date_iso == "2026-05-14"
+    assert rt.system_prompt_version == "v1"
+
+
+def test_workout_body_system_prompt_version_optional():
+    """Old rows without a system_prompt_version field deserialize
+    cleanly with version=None — the field is forward-compatible."""
+    body = WorkoutBody.from_payload({
+        "date_iso": "2026-05-14",
+        "completion_status": "planned",
+        "target_kcal": 600,
+        "target_minutes": 60,
+        "card": {},
+        # Note: no `system_prompt_version` key.
+    })
+    assert body.system_prompt_version is None
+
+
+def test_fraser_system_prompt_version_constant_present():
+    """The constant must exist and be a non-empty version string.
+    Importers downstream (state.commit_workout) depend on this."""
+    from agents.fraser.protocols import FRASER_SYSTEM_PROMPT_VERSION
+    assert isinstance(FRASER_SYSTEM_PROMPT_VERSION, str)
+    assert FRASER_SYSTEM_PROMPT_VERSION
+    assert FRASER_SYSTEM_PROMPT_VERSION.startswith("v")
 
 
 def test_movement_instance_body_roundtrip():

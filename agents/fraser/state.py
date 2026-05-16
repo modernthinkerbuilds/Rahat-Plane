@@ -39,6 +39,7 @@ if _REPO_ROOT not in sys.path:
 # name used by the eval suite.
 from agents.fraser.protocols import (  # noqa: E402
     AGENT,
+    ENTITY_SOURCE_WORKOUT,
     ENTITY_WORKOUT, ENTITY_MOVEMENT, ENTITY_INJURY,
     ENTITY_PRVN_CYCLE, ENTITY_PROGRESSION,
     ENTITY_WARMUP, ENTITY_COOLDOWN, ENTITY_SUBSTITUTION,
@@ -53,7 +54,10 @@ from agents.fraser.protocols import (  # noqa: E402
     WorkoutBody, OneRepMaxBody, InjuryBody, PreferenceBody,
     RouteBody, PRVNPositionBody, ChestProgressionBody,
     SubstitutionRuleBody, MovementInstanceBody, WorkoutCard,
+    FraserSourceWorkoutBody,
     ONE_RM_WARN_AFTER_DAYS, ONE_RM_BLOCK_AFTER_DAYS,
+    SOURCE_WORKOUT_STALE_AFTER_DAYS, STALE_SOURCE_WORKOUT,
+    FRASER_SYSTEM_PROMPT_VERSION,
     normalize_lift_name, normalize_movement,
 )
 from core import charter as _charter  # noqa: E402
@@ -85,6 +89,80 @@ def _charter_gate(kind: str, payload: dict, *,
         kind=kind, payload=dict(payload),
         requester=requester, priority=priority, trace_id=trace_id)
     return _charter.review(wo, ctx=ctx or {}, db_path=db_path)
+
+
+# ───────────────────────── Source-workout reads (Day-5) ─────────────
+def get_todays_source_workout(*,
+                             today: str | None = None,
+                             db_path: str | None = None):
+    """Return today's `fraser_source_workout` body, or `None` if no
+    entity matches today, or `STALE_SOURCE_WORKOUT` if the most-recent
+    fetch is older than SOURCE_WORKOUT_STALE_AFTER_DAYS days.
+
+    Three-way return contract (callers MUST handle all three):
+        • `FraserSourceWorkoutBody` — normal path, adapt this workout.
+        • `None` — no source for today (rest day per gym programming
+                   OR SugarWOD hasn't been scraped this week).
+        • `STALE_SOURCE_WORKOUT` (sentinel) — last ingest is older
+                   than threshold. Surface "click the bookmarklet"
+                   message, do NOT use the stale data.
+
+    `today` defaults to `datetime.now().strftime('%Y%m%d')`. Override
+    for tests / time-travel.
+    """
+    today_str = today or datetime.now().strftime("%Y%m%d")
+    rows = _mem_raw.list_entities(
+        agent=AGENT, type=ENTITY_SOURCE_WORKOUT,
+        status="active", include_expired=True, limit=200,
+        db_path=db_path)
+    # Find the most-recent fetch across the whole table — if THAT is
+    # stale, fail the freshness gate regardless of which date is
+    # being asked for. (A stale ingest doesn't tell us anything new
+    # about today even if a row for today happens to exist.)
+    most_recent_fetch_iso: str | None = None
+    for r in rows:
+        p = r.get("payload") or {}
+        fa = p.get("fetched_at_iso")
+        if fa and (most_recent_fetch_iso is None or fa > most_recent_fetch_iso):
+            most_recent_fetch_iso = fa
+    if most_recent_fetch_iso:
+        try:
+            # Tolerate both "2026-05-11T06:26:05.570Z" and
+            # "2026-05-11T06:26:05" shapes.
+            ts = most_recent_fetch_iso.replace("Z", "+00:00")
+            dt = datetime.fromisoformat(ts)
+            if dt.tzinfo is None:
+                from datetime import timezone as _tz
+                dt = dt.replace(tzinfo=_tz.utc)
+            age_days = (datetime.now(dt.tzinfo) - dt).days
+            if age_days > SOURCE_WORKOUT_STALE_AFTER_DAYS:
+                return STALE_SOURCE_WORKOUT
+        except (ValueError, AttributeError):
+            # Unparseable timestamp → conservative: treat as stale.
+            # Past incidents bias us toward fail-loud over fail-quiet.
+            return STALE_SOURCE_WORKOUT
+
+    # Now find today's entity.
+    for r in rows:
+        p = r.get("payload") or {}
+        if p.get("date_int") == today_str:
+            return FraserSourceWorkoutBody.from_payload(p)
+    return None
+
+
+def get_source_workout(date_int: str,
+                       *, db_path: str | None = None) -> FraserSourceWorkoutBody | None:
+    """Historical lookup. No freshness gate — historical data is
+    historical. Returns None if no entity matches."""
+    rows = _mem_raw.list_entities(
+        agent=AGENT, type=ENTITY_SOURCE_WORKOUT,
+        status="active", include_expired=True, limit=200,
+        db_path=db_path)
+    for r in rows:
+        p = r.get("payload") or {}
+        if p.get("date_int") == str(date_int):
+            return FraserSourceWorkoutBody.from_payload(p)
+    return None
 
 
 # ───────────────────────── Workout reads ─────────────────────────
@@ -284,6 +362,74 @@ def get_cool_down_template(name: str,
 # agents, and Huberman's state surface is part of the same contract
 # negotiation. Both stubs read from a pref-backed override slot so
 # tests can paint state without monkeypatching.
+def get_kobe_kcal_target(*,
+                         today: str | None = None,
+                         db_path: str | None = None) -> float | None:
+    """Read Kobe's target_kcal for today.
+
+    Hybrid pattern per Day-6 directive (mirrors `get_kobe_tier`):
+        1. `cross_agent_list(type='kobe_target_kcal')` — substrate
+           entity if Kobe has written one for today.
+        2. `agents.the_scientist.state.today_plan()` — Kobe's
+           existing in-process accessor. Works today without Kobe
+           needing to wire an entity write.
+        3. Mock pref `mock_kobe_kcal_target` — test seam.
+        4. None if nothing fires — caller must handle (skip scaling).
+
+    `today` defaults to today's YYYYMMDD; passed through to the
+    substrate filter.
+
+    The fallback chain is deliberate: substrate is doctrinally
+    correct (ADR-004 — time/governance-dimension state), but
+    Kobe's `today_plan()` already produces this number, so we
+    don't block Day-6 on a Kobe-side entity write.
+    """
+    today_str = today or datetime.now().strftime("%Y%m%d")
+    # (1) Substrate.
+    rows = _mem_raw.cross_agent_list(
+        type="kobe_target_kcal", status="active", limit=10, db_path=db_path)
+    for r in rows:
+        p = r.get("payload") or {}
+        if p.get("date_int") == today_str:
+            try:
+                return float(p["target_kcal"])
+            except (KeyError, TypeError, ValueError):
+                continue
+    # (2) Kobe's in-process accessor. Lazy import — we don't pay the
+    # Kobe load cost on Fraser boot, only when this read fires.
+    try:
+        from agents.the_scientist.state import today_plan as _kobe_today_plan
+        plan = _kobe_today_plan()
+        tgt = plan.get("target_kcal")
+        if tgt is not None and float(tgt) > 0:
+            return float(tgt)
+    except Exception:
+        # Kobe call path may fail in test sandboxes / fresh DBs —
+        # fall through to mock. No silent-success fallback per spec.
+        pass
+    # (3) Mock pref for tests.
+    val = _mem_api.pref_get(AGENT, "mock_kobe_kcal_target",
+                            default=None, db_path=db_path)
+    if val is not None:
+        try:
+            return float(val)
+        except (TypeError, ValueError):
+            return None
+    # (4) Nothing — caller's responsibility to surface.
+    return None
+
+
+def set_mock_kobe_kcal_target(target_kcal: float | None,
+                              *, db_path: str | None = None) -> None:
+    """Test seam — paints the mocked Kobe target."""
+    if target_kcal is None:
+        _mem_api.pref_set(AGENT, "mock_kobe_kcal_target", "",
+                          db_path=db_path)
+    else:
+        _mem_api.pref_set(AGENT, "mock_kobe_kcal_target",
+                          float(target_kcal), db_path=db_path)
+
+
 def get_kobe_tier(*, db_path: str | None = None) -> str:
     """Read Kobe's current training tier.
 
@@ -401,6 +547,12 @@ def commit_workout(card: WorkoutCard,
         target_kcal=target_kcal or card.target_kcal,
         target_minutes=target_minutes or card.target_minutes,
         card=card,
+        # Bisectability story (Day-4 directive): every workout carries
+        # the system-prompt version that produced it. Future regression
+        # debugging: `SELECT payload FROM memory_entities WHERE
+        # type='fraser_workout' AND payload LIKE '%system_prompt_version%'`
+        # → group by version, find the inflection point.
+        system_prompt_version=FRASER_SYSTEM_PROMPT_VERSION,
     )
     ctx = {"huberman_state": get_huberman_state(db_path=db_path)}
     verdict = _charter_gate(
@@ -757,15 +909,31 @@ def advance_prvn_cycle(*,
                       next_phase: str | None = None,
                       db_path: str | None = None) -> tuple[int | None, _charter.Verdict]:
     """Move to next PRVN position. Requires last session = completed —
-    the Charter policy reads recent workouts and decides."""
+    the Charter policy reads recent workouts and decides.
+
+    Bug history (2026-05-14): the first-call branch (no prior PRVN
+    position) used to ignore `next_week`/`next_day`/`next_phase` and
+    always default to (1, 1, "build"). That broke any test that wanted
+    to seed a position other than W1D1 on a fresh DB. The fix: respect
+    the kwargs in BOTH branches. We also switched from `kwarg or X`
+    to `kwarg if kwarg is not None else X` so a deliberate next_week=0
+    or next_day=0 passes through (rare but valid for protocol-test
+    fixtures).
+    """
     current = get_prvn_position(db_path=db_path)
     if current is None:
-        body = PRVNPositionBody(week=1, day=1, phase="build")
+        body = PRVNPositionBody(
+            week=next_week if next_week is not None else 1,
+            day=next_day if next_day is not None else 1,
+            phase=next_phase if next_phase is not None else "build",
+        )
     else:
         body = PRVNPositionBody(
-            week=next_week or (current.week + (1 if next_day == 1 else 0)),
-            day=next_day or ((current.day % 7) + 1),
-            phase=next_phase or current.phase,
+            week=(next_week if next_week is not None
+                  else (current.week + (1 if next_day == 1 else 0))),
+            day=(next_day if next_day is not None
+                 else ((current.day % 7) + 1)),
+            phase=next_phase if next_phase is not None else current.phase,
             last_completed_iso=datetime.now().strftime("%Y-%m-%d"),
         )
     verdict = _charter_gate(
@@ -838,6 +1006,10 @@ def set_equipment_available(equipment: list[str], *,
 
 __all__ = [
     "AGENT",
+    # Reads — source workouts (Day-5)
+    "get_todays_source_workout", "get_source_workout",
+    # Cross-agent reads (Day-6: Kobe-target hybrid)
+    "get_kobe_kcal_target", "set_mock_kobe_kcal_target",
     # Reads — workouts / movements
     "get_recent_workouts", "get_workout",
     # Reads — injuries

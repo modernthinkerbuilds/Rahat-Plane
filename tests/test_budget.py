@@ -164,6 +164,76 @@ def test_check_budget_below_limit_not_exceeded(fresh_db, clean_budget_env):
     assert abs(snap["remaining_usd"] - 3.50) < 1e-9
 
 
+# ─── 4b. Per-actor budget override (Day-4 directive) ────────────────
+class TestPerActorOverride:
+    """`RAHAT_TOKEN_BUDGET_DAILY_USD_<ACTOR>` overrides the global cap
+    when `actor` is supplied to `check_budget`. Prod-only tightening
+    knob: dev keeps global $5; prod sets `*_FRASER=0.50` without
+    touching the global."""
+
+    def test_actor_override_lowers_limit(
+            self, fresh_db, clean_budget_env, monkeypatch):
+        from core import budget
+        monkeypatch.setenv("RAHAT_TOKEN_BUDGET_DAILY_USD_FRASER", "0.50")
+        snap = budget.check_budget(actor="fraser")
+        assert snap["limit_usd"] == 0.50
+
+    def test_actor_override_does_not_affect_other_actors(
+            self, fresh_db, clean_budget_env, monkeypatch):
+        """The per-actor knob is per-actor. Setting it for Fraser must
+        NOT change Kobe's limit."""
+        from core import budget
+        monkeypatch.setenv("RAHAT_TOKEN_BUDGET_DAILY_USD_FRASER", "0.50")
+        snap_fraser = budget.check_budget(actor="fraser")
+        snap_kobe = budget.check_budget(actor="kobe")
+        assert snap_fraser["limit_usd"] == 0.50
+        assert snap_kobe["limit_usd"] == budget.DEFAULT_DAILY_USD
+
+    def test_actor_override_overrides_global(
+            self, fresh_db, clean_budget_env, monkeypatch):
+        """Global $10 + Fraser $0.50 → Fraser sees 0.50, no-actor sees 10."""
+        from core import budget
+        monkeypatch.setenv("RAHAT_TOKEN_BUDGET_DAILY_USD", "10.0")
+        monkeypatch.setenv("RAHAT_TOKEN_BUDGET_DAILY_USD_FRASER", "0.50")
+        snap_fraser = budget.check_budget(actor="fraser")
+        snap_global = budget.check_budget()  # no actor scope
+        assert snap_fraser["limit_usd"] == 0.50
+        assert snap_global["limit_usd"] == 10.0
+
+    def test_actor_unparseable_falls_to_global(
+            self, fresh_db, clean_budget_env, monkeypatch):
+        """A typo in the per-actor env var falls through to the global,
+        not to the default. The global is the next-most-specific knob."""
+        from core import budget
+        monkeypatch.setenv("RAHAT_TOKEN_BUDGET_DAILY_USD", "2.0")
+        monkeypatch.setenv("RAHAT_TOKEN_BUDGET_DAILY_USD_FRASER", "not-a-number")
+        snap = budget.check_budget(actor="fraser")
+        assert snap["limit_usd"] == 2.0
+
+    def test_actor_override_triggers_exceeded(
+            self, fresh_db, clean_budget_env, monkeypatch):
+        """The end-to-end story: set Fraser's cap low, spend a tiny
+        amount, `exceeded` flips. The prod cap actually bites."""
+        from core import budget
+        monkeypatch.setenv("RAHAT_TOKEN_BUDGET_DAILY_USD_FRASER", "0.50")
+        budget.record_spend("fraser", tokens=100, cost_usd=0.60)
+        snap = budget.check_budget(actor="fraser")
+        assert snap["exceeded"] is True
+        assert snap["remaining_usd"] == 0.0
+
+    def test_actor_override_case_insensitive_match(
+            self, fresh_db, clean_budget_env, monkeypatch):
+        """Actor names are passed lower-case by callers (e.g., 'fraser'),
+        but env vars conventionally uppercase. `_daily_cap_usd` uppercases
+        the actor before constructing the env var name."""
+        from core import budget
+        # Set the env var in conventional uppercase.
+        monkeypatch.setenv("RAHAT_TOKEN_BUDGET_DAILY_USD_FRASER", "0.25")
+        # Call with lowercase actor (the standard convention).
+        snap = budget.check_budget(actor="fraser")
+        assert snap["limit_usd"] == 0.25
+
+
 # ─── 5. Shape contract ──────────────────────────────────────────────
 def test_check_budget_returns_documented_shape(fresh_db, clean_budget_env):
     """ADR-005 documents the return shape. Future call sites depend on

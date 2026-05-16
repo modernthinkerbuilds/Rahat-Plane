@@ -84,6 +84,12 @@ LAYERS: list[LayerSpec] = [
             # versioning). See specs/FRASER_REQUIREMENTS.md.
             "tests/test_fraser_protocols.py",
             "tests/test_fraser_state.py",
+            # Fraser Day-6 (2026-05-14). Pins the four owner findings:
+            # MOVEMENT_KCAL_MODEL has distance/time/rep dimensions,
+            # cool-down renders (parser + fallback), BW-scaling
+            # rationale surfaces, Kobe-target hybrid read +
+            # ±20% scaling.
+            "tests/test_fraser_day6.py",
             # Fraser Day-5 (2026-05-14). Pins the SugarWOD adapter:
             # parser covers §11.5 sample sections, ingest is idempotent
             # on date_int, freshness gate fires at >7 days, both rest-
