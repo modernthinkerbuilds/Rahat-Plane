@@ -77,6 +77,19 @@ LAYERS: list[LayerSpec] = [
             # regex dispatch, replan filter integration, and ADR-003
             # substrate usage.
             "tests/test_dislikes.py",
+            # Handler regression registry (canonical "things that
+            # broke once, must never break again" file). Sections:
+            #   1. handler module-globals (launchd boot)
+            #   2. coach_system week_offset docs
+            #   3. _legacy_route routes "last week"
+            #   4. Slash dispatcher (2026-05-16 — /pace /today /week
+            #      /plan /next /help + /fix slash form)
+            #   5. Prorated /pace + /week math
+            #   6. /fix handler DB rewrite + refusal guards
+            #   7. Model-name source guards (handler + core/io)
+            #   8. Security: llm_coach error sanitization (api-key
+            #      leak gate — see 2026-05-16 brief)
+            "tests/test_handler_regressions.py",
         ],
     ),
     LayerSpec(
