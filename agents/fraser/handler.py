@@ -280,6 +280,130 @@ def _stale_source_card(*, date_iso: str, ctx: ContextSnapshot) -> WorkoutCard:
     )
 
 
+# ─────────────────────── Day-7: Recovery + sleep-debt scaling ───────
+# Per spec §2.3 item 1 + §5 item 8: HRV-red caps intensity at ≤70%
+# of 1RM and swaps overhead pressing for non-overhead alternatives.
+# Sleep < 5h caps intensity 60-70% and blocks max-effort programming.
+# Both fire during the adaptation pipeline, after movement substitution
+# but before BW-scaling so the cap is the final say on working
+# percentages.
+INTENSITY_CAP_HRV_RED: float = 70.0
+INTENSITY_CAP_SLEEP_DEBT: float = 70.0
+SLEEP_DEBT_HOURS_THRESHOLD: float = 5.0
+
+
+def _apply_recovery_scaling(card: WorkoutCard,
+                           *, recovery_color: str | None) -> WorkoutCard:
+    """HRV-red → cap working percentages at INTENSITY_CAP_HRV_RED AND
+    strip overhead movements from WOD + strength. Stamps rationale on
+    the card NOTES.
+
+    Per spec §2.3 item 1: 'HRV ≤ 33 → scale weight 10-15%, swap
+    overhead pressing for floor press.' We do both deterministically.
+    """
+    if recovery_color != "red":
+        return card
+    # 1. Cap strength lifts at the threshold.
+    for lift in card.strength.lifts:
+        if lift.percent_1rm and lift.percent_1rm > INTENSITY_CAP_HRV_RED:
+            lift.percent_1rm = INTENSITY_CAP_HRV_RED
+            # Recompute working weight against the new cap.
+            # The strength block was built with one_rm_kg passed in;
+            # cheapest path is just to scale working_weight_kg.
+            scale = INTENSITY_CAP_HRV_RED / 100.0
+            if lift.working_weight_kg > 0:
+                # Round down to 2.5kg plate grid.
+                target = lift.working_weight_kg / (lift.percent_1rm / 100.0) * scale
+                lift.working_weight_kg = (target // 2.5) * 2.5
+    # 2. Drop overhead movements from the WOD.
+    kept: list[Movement] = []
+    dropped: list[str] = []
+    for m in card.wod.movements:
+        if is_overhead(m.name):
+            dropped.append(m.name)
+            continue
+        kept.append(m)
+    card.wod.movements = kept
+    # 3. Drop overhead from strength too.
+    card.strength.lifts = [
+        l for l in card.strength.lifts if not is_overhead(l.name)]
+    if dropped:
+        card.wod.substitutions_applied.append(
+            f"HRV-red: dropped overhead ({', '.join(dropped)})")
+    return card
+
+
+def _apply_sleep_debt_scaling(card: WorkoutCard,
+                             *, sleep_hours: float | None) -> WorkoutCard:
+    """Sleep < SLEEP_DEBT_HOURS_THRESHOLD → cap working percentages
+    at INTENSITY_CAP_SLEEP_DEBT and block max-effort programming
+    (any lift with percent_1rm > 85 gets dropped to the cap)."""
+    if sleep_hours is None or sleep_hours >= SLEEP_DEBT_HOURS_THRESHOLD:
+        return card
+    for lift in card.strength.lifts:
+        # Block max-effort: anything ≥ 85% drops to the cap.
+        if lift.percent_1rm and lift.percent_1rm > 60:
+            # Sleep-debt cap floor is 60 — anywhere in 60-70 is fine.
+            if lift.percent_1rm > INTENSITY_CAP_SLEEP_DEBT:
+                lift.percent_1rm = INTENSITY_CAP_SLEEP_DEBT
+            elif lift.percent_1rm < 60:
+                lift.percent_1rm = 60.0
+            if lift.working_weight_kg > 0:
+                # Conservative: trim the load to match the new pct.
+                scale = lift.percent_1rm / 100.0
+                # Estimate the underlying 1RM and re-derive.
+                if lift.working_weight_kg > 0 and lift.percent_1rm > 0:
+                    one_rm_implied = lift.working_weight_kg / (lift.percent_1rm / 100.0)
+                    lift.working_weight_kg = (one_rm_implied * scale // 2.5) * 2.5
+    return card
+
+
+# ─────────────────────── Day-7: Recent-volume awareness ──────────────
+def _respect_recent_volume(card: WorkoutCard,
+                          *, db_path: str | None = None) -> WorkoutCard:
+    """Per spec §5 item 11: don't program the same primary lift two
+    days in a row. Read the last 2 days of workouts; if the primary
+    strength lift OR a dominant WOD movement matches today's, swap
+    to a complementary pattern.
+
+    Today's rule is narrow: if `back_squat` was logged yesterday and
+    today's strength is back_squat, swap to deadlift. The richer
+    posterior-chain volume tracking lands when the eval set demands it.
+    """
+    recent = get_recent_workouts(days=2, db_path=db_path)  # noqa: F405
+    yesterday_lifts: set[str] = set()
+    for r in recent:
+        p = r.get("payload") or {}
+        card_dict = p.get("card") or {}
+        # Pull strength lifts out of the embedded card.
+        for lift in (card_dict.get("strength") or {}).get("lifts", []) or []:
+            yesterday_lifts.add(normalize_movement(lift.get("name", "")))
+    if not yesterday_lifts:
+        return card
+    # Today's primary lift.
+    today_lifts = [l.name for l in card.strength.lifts]
+    if not today_lifts:
+        return card
+    primary = today_lifts[0]
+    if primary in yesterday_lifts:
+        # Swap rule (deterministic): squat patterns → deadlift,
+        # deadlift → row, press → pull.
+        swap_table = {
+            "back_squat": "deadlift",
+            "front_squat": "deadlift",
+            "deadlift": "barbell_row",
+            "bench": "pull_up",
+            "strict_press": "pull_up",
+        }
+        alt = swap_table.get(primary)
+        if alt:
+            card.strength.lifts[0].name = alt
+            card.wod.substitutions_applied.append(
+                f"recent-volume: yesterday was {primary}, "
+                f"swapped today's strength to {alt}")
+    return card
+
+
 # ─────────────────────── Day-6: BW-scaling helper ─────────────────────
 def _apply_bw_scaling(movement: Movement, *, tier: str) -> Movement:
     """For movements in BW_SCALING_MODEL (KB swing, wall sit, push-up,
@@ -695,6 +819,26 @@ def _adapt_source_workout(source: FraserSourceWorkoutBody,
     tier_str = ctx.kobe_tier or "zone2"
     wod.movements = [_apply_bw_scaling(m, tier=tier_str) for m in wod.movements]
 
+    # Day-7: recovery scaling (HRV-red caps + overhead drop) and
+    # sleep-debt scaling (intensity cap + max-effort block) run BEFORE
+    # the burn projection so the predicted numbers reflect the
+    # capped working percentages. Recent-volume awareness runs AFTER
+    # strength is wired so the swap target is the resolved lift name.
+    tmp_card = WorkoutCard(
+        date_iso=date_iso, time_of_day=ctx.time_of_day or "",
+        target_kcal=600, target_minutes=60,
+        context=ctx, warm_up=warm_up, strength=strength,
+        wod=wod, cool_down=CoolDownBlock(),
+        notes=WorkoutNotes(), input_mode=InputMode.DEFAULT,
+    )
+    tmp_card = _apply_recovery_scaling(
+        tmp_card, recovery_color=ctx.recovery_color)
+    tmp_card = _apply_sleep_debt_scaling(
+        tmp_card, sleep_hours=ctx.sleep_hours)
+    tmp_card = _respect_recent_volume(tmp_card, db_path=db_path)
+    strength = tmp_card.strength
+    wod = tmp_card.wod
+
     # Predict burn now that movements are wired. The WOD's
     # rounds_or_structure carries an `N Rounds` multiplier that we
     # apply to the per-round burn — Lava Plume's 6 rounds otherwise
@@ -803,6 +947,17 @@ def design_workout(msg: str = "",
             equipment_missing_conditions["pull_up"] = "no pull-up bar"
         if "box" not in equipment:
             equipment_missing_conditions["box_jump"] = "no box"
+        # Barbell movements — travel mode strips the bar; movements
+        # that require it have to sub. The DEFAULT_SUBSTITUTION_SEED
+        # doesn't cover all of these yet; missing rules result in
+        # the movement being DROPPED, which still satisfies the
+        # travel-mode contract ("no barbell movements in card").
+        if "barbell" not in equipment:
+            for bb in ("back_squat", "front_squat", "deadlift",
+                       "sumo_deadlift", "bench", "strict_press",
+                       "push_press", "clean", "snatch", "thruster",
+                       "power_snatch", "power_clean"):
+                equipment_missing_conditions[bb] = "no barbell (travel)"
 
         card = _adapt_source_workout(
             source, ctx=ctx_snap, one_rms=one_rms,

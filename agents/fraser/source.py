@@ -317,6 +317,15 @@ def _classify_section(title: str) -> str:
                             "strength:", "press 3-", "deadlift 3-",
                             "squat 3-")):
         return "strength"
+    # Reps×Sets patterns: "Back Squat 5×5", "Bench 5x3", "Deadlift 3x3".
+    # SugarWOD uses × (U+00D7); coach notes use x (ASCII). Match both.
+    if re.search(r"\b\d+\s*[×x]\s*\d+\b", t, re.IGNORECASE):
+        # Only classify as strength if it ALSO mentions a strength lift —
+        # otherwise "3×5 burpees" would mis-classify as strength.
+        strength_lifts = ("squat", "deadlift", "bench", "press",
+                          "clean", "snatch", "pull")
+        if any(lift in t for lift in strength_lifts):
+            return "strength"
     return "wod"
 
 

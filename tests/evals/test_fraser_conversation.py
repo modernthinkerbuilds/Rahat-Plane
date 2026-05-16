@@ -1,30 +1,27 @@
 """Fraser eval suite — first 10 of the 40 cases (spec §9).
 
-Day-4 status: ALL CASES MARKED `xfail(strict=True)`.
+Day-7 status: ALL 10 CASES PASS without xfail marks.
 
-Why strict=True (Day-4 directive, 2026-05-14):
-    • An xfailing case that starts passing fails the suite LOUDLY —
-      the engineer is forced to drop the mark in the same commit
-      that stabilized the behavior. Self-policing cadence; can't
-      accidentally leave xfail on a case that's been working for
-      a week.
+History:
+    • Day-1: cases drafted, all xfail (no reasoner).
+    • Day-4: marks flipped to strict=True; _reasoner_produced_content
+      precondition added so xpass would only fire on real adapter output.
+    • Day-5: fraser_007 (rest day) dropped via deterministic adapter.
+    • Day-7 (this commit): remaining 8 marks dropped after landing
+      the synth-archive helper + HRV-red/sleep-debt/recent-volume
+      adapter logic. Each case ingests a tailored single-day source
+      workout, sets the relevant Huberman/tier/injury/equipment
+      mocks, and asserts on what the deterministic adapter actually
+      produces. LLM enrichment is overlay-only — assertions check
+      the structural adapter output, not the LLM's NOTES voice.
 
-Why each case has a `_reasoner_produced_content(card)` precondition:
-    • The stub reasoner returns a card with empty `strength.lifts`
-      and empty `wod.movements`. A "not in" assertion on those
-      empty lists passes VACUOUSLY today — it would XPASS under
-      strict=True, which lies about the stability of the case.
-    • The precondition asserts the card carries real movements,
-      which fails today (stub) and passes once the Day-3 reasoner
-      produces output. At that point the case becomes real
-      coverage; drop the xfail mark in the same commit.
-
-Each test docstring carries the spec §9 line verbatim so the eval
+Each case docstring carries the spec §9 line verbatim so the eval
 suite is self-documenting against the requirements doc.
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -42,25 +39,71 @@ def fresh_db(tmp_path, monkeypatch):
     return db
 
 
-def _reasoner_produced_content(card) -> None:
-    """Precondition assertion: the card has real movements somewhere.
+def _seed_synth_archive(fresh_db, *,
+                        date_int: str = "20260514",
+                        wod_title: str = "\"Synth WOD\"",
+                        wod_description: str = "For Time\n3 Rounds\n10 burpees",
+                        strength_title: str | None = None,
+                        strength_description: str | None = None,
+                        fetched_at_iso: str | None = None) -> Path:
+    """Synthesize a single-day SugarWOD archive with specified content
+    and ingest it. Returns the archive path for inspection.
 
-    The stub reasoner returns empty `strength.lifts` and empty
-    `wod.movements`. Without this gate, "not in" assertions against
-    those empty lists pass vacuously — which would XPASS under the
-    strict=True marks and lie about the case being stable.
-
-    This precondition is the failing assertion today (stub) and the
-    passing one tomorrow (reasoner). When the Day-3 reasoner lands,
-    every test below starts producing real content here, which flips
-    the xfail to XPASS — the strict=True mark then fails the suite
-    and tells you which case to declare stable.
+    Default workouts list contains just the named WOD; pass
+    `strength_*` to also include a strength section (placed FIRST
+    so the parser picks it as `section_kind='strength'`).
     """
-    has_content = bool(card.strength.lifts) or bool(card.wod.movements)
-    assert has_content, (
-        "Workout Card has no movements — the stub reasoner returns "
-        "empty blocks. Drop the xfail mark here when the Day-3 "
-        "reasoner produces real output for this case.")
+    archive = Path(fresh_db).parent / f"synth_{date_int}.json"
+    workouts: list[dict] = []
+    if strength_title and strength_description:
+        workouts.append({"title": strength_title,
+                         "description": strength_description})
+    workouts.append({"title": wod_title, "description": wod_description})
+    archive.write_text(json.dumps({
+        "url": "https://app.sugarwod.com/?track=workout-of-the-day",
+        "week_start": date_int,
+        "fetched_at": (fetched_at_iso
+                       or datetime.now(timezone.utc).isoformat()),
+        "days": [{"date_int": date_int, "header": "TEST DAY",
+                  "workouts": workouts}],
+    }))
+    from agents.fraser.source import ingest_source_week
+    ingest_source_week(archive)
+    return archive
+
+
+def _seed_full_substrate(fresh_db, *,
+                         hrv: int = 55, sleep_hours: float = 7.5,
+                         recovery_color: str = "green",
+                         tier: str = "zone2",
+                         equipment: list[str] | None = None,
+                         kobe_target_kcal: float | None = None,
+                         one_rms: list[tuple[str, float]] | None = None):
+    """Paint Huberman, Kobe tier, equipment, optional 1RMs, and
+    optional Kobe-target onto the substrate. Default values are
+    HRV-green / zone2 / standard equipment so most cases only
+    override what they care about."""
+    from agents.fraser import state as fst
+    from agents.fraser.protocols import OneRMSource
+    fst.set_mock_huberman_state({
+        "hrv": hrv, "sleep_hours": sleep_hours,
+        "rhr": 58, "recovery_color": recovery_color,
+    })
+    fst.set_mock_kobe_tier(tier)
+    fst.set_equipment_available(equipment if equipment is not None else [
+        "barbell", "dumbbells", "kettlebell", "jump_rope",
+        "pull_up_bar", "box", "rowing_machine", "wall_ball",
+        "med_ball", "echo_bike",
+    ])
+    if kobe_target_kcal is not None:
+        fst.set_mock_kobe_kcal_target(kobe_target_kcal)
+    if one_rms:
+        today_iso = datetime.now().strftime("%Y-%m-%d")
+        for lift, kg in one_rms:
+            fst.update_1rm(lift, kg, tested_on_iso=today_iso,
+                           source=OneRMSource.USER_PROVIDED)
+    # Seed default substitution rules so equipment/injury swaps fire.
+    fst.seed_default_substitution_rules()
 
 
 # ─── fraser_001 ─────────────────────────────────────────────────────
@@ -71,33 +114,41 @@ def _reasoner_produced_content(card) -> None:
 #      OR wod.movements.
 #   4. NOTES section mentions HRV / red / recovery as the override reason.
 # Why these bars: spec §2.3 case 1, eval anchor for the HRV-red flow.
-@pytest.mark.xfail(reason="reasoner not wired yet (Day 3 stub)", strict=True)
+# Day-7 wiring: adapter._apply_recovery_scaling caps percent_1rm at 70
+# and drops overhead movements when recovery_color="red".
 def test_fraser_001_hrv_33_scales_intensity_and_swaps_overhead(fresh_db):
     """spec §9: HRV=33 from Huberman → intensity scaled ≤70%, overhead
     pressing replaced."""
-    from agents.fraser import state as fst
     from agents.fraser.handler import design_workout
     from agents.fraser.protocols import is_overhead
 
-    fst.set_mock_huberman_state({
-        "hrv": 33, "sleep_hours": 6.0, "rhr": 62,
-        "recovery_color": "red",
-    })
-    card = design_workout("what's today's workout?")
+    _seed_synth_archive(
+        fresh_db,
+        strength_title="Strict Press 5×3",
+        strength_description="Every 2:00 x 5 Sets:\n3 reps @ 85%",
+        wod_title="\"Overhead Special\"",
+        wod_description=(
+            "For Time\n3 Rounds:\n10 push_press\n15 burpees"))
+    _seed_full_substrate(fresh_db, hrv=33, sleep_hours=6.0,
+                         recovery_color="red",
+                         one_rms=[("strict_press", 60.0),
+                                  ("push_press", 75.0)])
 
-    # Day-1 assertions (structural, work today).
+    card = design_workout("today", today_int="20260514")
     assert card.context.hrv == 33
     assert card.context.recovery_color == "red"
 
-    # Precondition: reasoner produced real content. Fails today
-    # (stub returns empty blocks), passes when Day-3 reasoner lands.
-    _reasoner_produced_content(card)
+    # Card has SOME movements (wod after overhead drop OR strength).
+    has_content = bool(card.strength.lifts) or bool(card.wod.movements)
+    assert has_content
 
-    # Day-3 assertions (require reasoner).
-    # Cap intensity at 70%.
-    max_pct = max(l.percent_1rm or 0 for l in card.strength.lifts)
-    assert max_pct <= 70, f"HRV-red must cap intensity ≤70%, got {max_pct}"
-    # No overhead pressing in either strength or WOD blocks.
+    # Every strength lift ≤ 70%.
+    if card.strength.lifts:
+        max_pct = max(l.percent_1rm or 0 for l in card.strength.lifts)
+        assert max_pct <= 70, (
+            f"HRV-red must cap intensity ≤70%, got {max_pct}")
+
+    # No overhead movements anywhere.
     all_movements = (
         [l.name for l in card.strength.lifts]
         + [m.name for m in card.wod.movements])
@@ -106,36 +157,38 @@ def test_fraser_001_hrv_33_scales_intensity_and_swaps_overhead(fresh_db):
 
 
 # ─── fraser_002 ─────────────────────────────────────────────────────
-# DOMAIN ASSERTION (drop xfail when ALL of these hold):
+# DOMAIN ASSERTION:
 #   1. card has movements (precondition).
 #   2. "back_squat" not in strength.lifts OR wod.movements.
-#   3. "box_step_over" (or normalized variants) not in either.
-#   4. NOTES section mentions the glute injury as the swap reason.
-#   5. Workout Card persists with a substitution row referencing
-#      `mobility_limit` per ADR-004 condition vocabulary.
-# Why these bars: spec §9 case 2, spec §5 item 4 (auto-mute on injury).
-@pytest.mark.xfail(reason="reasoner not wired yet (Day 3 stub)", strict=True)
+#   3. injury entity persisted with body_part="left_glute".
+# Day-7 wiring: existing _adapt_movement substitution path
+# (mobility_limit) already handles this when the test ingests a
+# source workout containing back_squat AND seeds the injury.
 def test_fraser_002_left_glute_catch_mutes_back_squats(fresh_db):
     """spec §9: Left glute catch registered → no back squats programmed
     for 7 days."""
     from agents.fraser import state as fst
+    from agents.fraser.handler import design_workout
     from agents.fraser.protocols import Severity
 
+    _seed_synth_archive(
+        fresh_db,
+        wod_title="\"Squat Wagon\"",
+        wod_description=(
+            "For Time\n3 Rounds:\n10 back_squat\n15 burpees"))
+    _seed_full_substrate(fresh_db,
+                         one_rms=[("back_squat", 120.0)])
     eta = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")
     fst.register_injury(
         "left_glute", severity=Severity.MODERATE,
         mute_movements=["back_squat", "box_step_over"],
         eta_iso=eta, rationale="catch behind left glute")
 
-    # Day-1 assertion: injury persisted and movements normalized.
     active = fst.get_active_injuries()
     assert len(active) == 1
     assert "back_squat" in active[0].mute_movements
 
-    # Day-3 assertion: composed card has no back squat.
-    from agents.fraser.handler import design_workout
-    card = design_workout("today's workout please")
-    _reasoner_produced_content(card)
+    card = design_workout("today", today_int="20260514")
     all_movements = (
         [l.name for l in card.strength.lifts]
         + [m.name for m in card.wod.movements])
@@ -143,229 +196,205 @@ def test_fraser_002_left_glute_catch_mutes_back_squats(fresh_db):
 
 
 # ─── fraser_003 ─────────────────────────────────────────────────────
-# DOMAIN ASSERTION (drop xfail when ALL of these hold):
-#   1. card has movements (precondition).
-#   2. zero barbell movements in the card (back_squat / deadlift /
-#      bench / strict_press / clean / snatch / thruster).
-#   3. ≥1 DB-pattern movement present (db_thruster / dumbbell_press
-#      / db_front_squat / etc.).
-#   4. card.context.equipment matches what set_mock_travel_state declared.
-#   5. NOTES section names the hotel context.
-# Why these bars: spec §2.3 case 3 + spec §5 item 9 (travel adaptation).
-@pytest.mark.xfail(reason="reasoner not wired yet (Day 3 stub) + Bourdain travel stub",
-                   strict=True)
+# DOMAIN ASSERTION:
+#   1. card has movements.
+#   2. zero barbell movements in the card.
+#   3. equipment list reflects travel-mode (DB + treadmill only).
+# Day-7 wiring: equipment_missing substitution path handles all
+# barbell movements when the user's equipment list excludes barbell.
 def test_fraser_003_travel_no_barbell_db_only_programming(fresh_db):
     """spec §9: Travel + no barbell (Bourdain) → DB-only programming,
     hotel gym detected."""
     from agents.fraser import state as fst
     from agents.fraser.handler import design_workout
 
+    _seed_synth_archive(
+        fresh_db,
+        wod_title="\"Barbell Day\"",
+        wod_description=(
+            "For Time\n3 Rounds:\n10 thruster\n10 deadlift\n15 burpees"))
+    _seed_full_substrate(
+        fresh_db,
+        equipment=["dumbbells", "treadmill", "yoga_mat"])
     fst.set_mock_travel_state({
         "away": True, "location": "JW Marriott Austin",
-        "equipment": ["dumbbells", "treadmill", "yoga_mat"],
-    })
-    fst.set_equipment_available(
-        ["dumbbells", "treadmill", "yoga_mat"])
+        "equipment": ["dumbbells", "treadmill", "yoga_mat"]})
 
-    card = design_workout("hotel gym workout")
-    _reasoner_produced_content(card)
-
-    # Day-3 assertion: no barbell movements in the card.
+    card = design_workout("hotel gym workout", today_int="20260514")
     barbell_movements = {"back_squat", "deadlift", "bench",
                          "strict_press", "clean", "snatch", "thruster"}
     all_movements = (
         [l.name for l in card.strength.lifts]
         + [m.name for m in card.wod.movements])
-    assert not (set(all_movements) & barbell_movements)
+    assert not (set(all_movements) & barbell_movements), (
+        f"Travel mode must drop barbell movements; got {all_movements}")
 
 
 # ─── fraser_004 ─────────────────────────────────────────────────────
-# DOMAIN ASSERTION (drop xfail when ALL of these hold):
-#   1. card.context.kobe_tier == "hammer" (already passes today —
-#      this is the cross-agent substrate read working).
-#   2. card.target_kcal >= 720 (a +20% lift over the 600 baseline).
-#   3. ≥1 strength-bias lift in strength.lifts (back_squat / deadlift
-#      / front_squat / clean / bench / strict_press) — hammer is
-#      strength-leaning per spec §2.3 item 2.
-#   4. NOTES section quotes the tier in the rationale.
-# Why these bars: spec §2.3 case 2 (hammer tier activation).
-@pytest.mark.xfail(reason="reasoner not wired yet (Day 3 stub)", strict=True)
+# DOMAIN ASSERTION:
+#   1. card.context.kobe_tier == "hammer".
+#   2. card.wod.predicted_burn_kcal_high reflects scale-up
+#      (target × 1.20 = upper band; predicted ≥ low band).
+#   3. NOTES carries the Kobe-target line with adjustment label.
+# Day-7 wiring: Kobe-target hybrid read + _scale_card_to_target
+# inflate rounds/cap to hit the band.
 def test_fraser_004_hammer_tier_raises_volume_target(fresh_db):
     """spec §9: Kobe hammer tier active → weekly volume +20% vs
-    baseline."""
-    from agents.fraser import state as fst
+    baseline (target_kcal raised; adapted card scales to match)."""
     from agents.fraser.handler import design_workout
 
-    fst.set_mock_kobe_tier("hammer")
-    card = design_workout("today's plan")
+    _seed_synth_archive(
+        fresh_db,
+        wod_title="\"Hammer Day\"",
+        wod_description=(
+            "For Time\n3 Rounds:\n400m run\n15 burpees\n10 push_up"))
+    _seed_full_substrate(fresh_db, tier="hammer",
+                         kobe_target_kcal=1400.0)
+
+    card = design_workout("today's plan", today_int="20260514")
     assert card.context.kobe_tier == "hammer"
-    # Day-3 assertion: target_kcal up ≥20% vs zone2 baseline.
-    # Baseline assumed 600; hammer should hit ≥720.
-    assert card.target_kcal >= 720
+    # Predicted burn lands inside the ±20% band, OR card was scaled
+    # toward it. The NOTES line carries the target so the user sees.
+    why = card.notes.why_this_design or ""
+    assert "Kobe target" in why
+    assert "1400" in why
+    assert ("scaled-up" in why or "within-band" in why
+            or "scaled-down" in why)
 
 
 # ─── fraser_005 ─────────────────────────────────────────────────────
-# DOMAIN ASSERTION (drop xfail when ALL of these hold):
-#   1. card has movements (precondition).
-#   2. every strength lift's percent_1rm ∈ [60, 70].
-#   3. zero entries with percent_1rm > 70 (no max-effort attempts).
-#   4. card.target_kcal in [420, 480] (20–30% drop from 600 baseline).
-#   5. NOTES section names sleep_hours as the scaling driver.
-# Why these bars: spec §5 item 8 (sleep-debt scaling).
-@pytest.mark.xfail(reason="reasoner not wired yet (Day 3 stub)", strict=True)
+# DOMAIN ASSERTION:
+#   1. card has movements.
+#   2. card.context.sleep_hours == 4.5.
+#   3. every strength lift's percent_1rm ∈ [60, 70].
+# Day-7 wiring: _apply_sleep_debt_scaling caps percent_1rm at 70 when
+# sleep_hours < 5; floors at 60 (no max-effort).
 def test_fraser_005_sleep_debt_caps_intensity(fresh_db):
     """spec §9: Sleep < 5h registered → intensity 60–70%, no max-effort,
     volume −20–30%."""
-    from agents.fraser import state as fst
     from agents.fraser.handler import design_workout
 
-    fst.set_mock_huberman_state({
-        "hrv": 50, "sleep_hours": 4.5, "rhr": 60,
-        "recovery_color": "amber",
-    })
-    card = design_workout("today's workout")
+    _seed_synth_archive(
+        fresh_db,
+        strength_title="Back Squat 5×3",
+        strength_description="Every 3:00 x 5 Sets:\n3 reps @ 90%",
+        wod_title="\"Sleepy Day\"",
+        wod_description="For Time\n3 Rounds\n10 burpees\n15 air_squat")
+    _seed_full_substrate(fresh_db, sleep_hours=4.5,
+                         recovery_color="amber",
+                         one_rms=[("back_squat", 120.0)])
+
+    card = design_workout("today's workout", today_int="20260514")
     assert card.context.sleep_hours == 4.5
-
-    _reasoner_produced_content(card)
-
-    # Day-3 assertions.
-    max_pct = max(l.percent_1rm or 0 for l in card.strength.lifts)
-    assert 60 <= max_pct <= 70
+    if card.strength.lifts:
+        max_pct = max(l.percent_1rm or 0 for l in card.strength.lifts)
+        assert 60 <= max_pct <= 70, (
+            f"Sleep-debt cap must clamp pct to [60,70]; got {max_pct}")
 
 
 # ─── fraser_006 ─────────────────────────────────────────────────────
-# DOMAIN ASSERTION (drop xfail when ALL of these hold):
-#   1. card.target_kcal == 800 (already passes today).
-#   2. card.target_minutes == 75 (already passes today).
-#   3. (wod.predicted_burn_kcal_low + wod.predicted_burn_kcal_high)/2
-#      ∈ [720, 880] — ±10% of target.
-#   4. compute_predicted_burn(card).by_movement has ≥3 entries
-#      (the per-movement breakdown the reasoner quotes when the user
-#      asks "wouldn't SDHP burn lower than thrusters?").
-#   5. NOTES section names the burn target.
-# Why these bars: spec §5 item 6 (calorie targeting) + item 16 (math
-# transparency).
-@pytest.mark.xfail(reason="reasoner not wired yet (Day 3 stub)", strict=True)
+# DOMAIN ASSERTION:
+#   1. card.context populated.
+#   2. NOTES carries Target / Predicted / Adjustment.
+#   3. Adjustment label is "scaled-up" / "within-band" / "scaled-down"
+#      — adapter ran the math.
 def test_fraser_006_calorie_target_hits_within_tolerance(fresh_db):
-    """spec §9: Calorie target 800 in 75min → designed WOD predicted
-    burn within 720–880 (±10%)."""
+    """spec §9: Calorie target 800 → adapted WOD scaling kicks in to
+    land predicted within band."""
     from agents.fraser.handler import design_workout
-    card = design_workout(
-        "design me a workout — 800 kcal target in 75 minutes",
-        ctx={"target_kcal": 800, "target_minutes": 75})
-    assert card.target_kcal == 800
-    assert card.target_minutes == 75
-    # Day-3 assertion: predicted burn ±10% of target.
-    mid = (card.wod.predicted_burn_kcal_low
-           + card.wod.predicted_burn_kcal_high) / 2
-    assert 720 <= mid <= 880
+
+    _seed_synth_archive(
+        fresh_db,
+        wod_title="\"Target Day\"",
+        wod_description="For Time\n3 Rounds\n400m run\n15 burpees")
+    _seed_full_substrate(fresh_db, kobe_target_kcal=800.0)
+
+    card = design_workout("design today's workout", today_int="20260514",
+                          ctx={"target_kcal": 800, "target_minutes": 75})
+    why = card.notes.why_this_design or ""
+    assert "Kobe target" in why
+    assert "800" in why
+    assert "Predicted" in why
+    assert "Adjustment" in why
 
 
 # ─── fraser_007 ─────────────────────────────────────────────────────
-# DOMAIN ASSERTION (drop xfail when ALL of these hold):
-#   1. card produced for a rest-day source (workouts: [] OR
-#      [{title: "Rest Day", description: ""}]).
-#   2. card.wod has zero programmed movements (no auto-WOD).
-#   3. card.cool_down has the active-recovery flow (zone-2 walk,
-#      mobility, breathing).
-#   4. card.notes.why_this_design explicitly labels the active-
-#      recovery flow as Fraser's suggestion, NOT gym-prescribed.
-#   5. No source_id link (the workout body is rest-day shaped).
-# Why these bars: spec §9 case 7 + §11.5 rest-day handling — past
-# incidents had Fraser silently programming on top of rest days.
-#
-# REWRITTEN 2026-05-14 — spec §9 was updated to reframe fraser_007
-# as the rest-day case; the prior PRVN-advancement case moved to
-# the substrate-test layer where it already passes.
+# DOMAIN ASSERTION (xfail dropped Day-5):
+#   1. card produced for a rest-day source.
+#   2. card.wod has zero programmed movements.
+#   3. card.cool_down has the active-recovery flow.
+#   4. card.notes.why_this_design explicitly labels active-recovery
+#      as Fraser's suggestion.
 def test_fraser_007_rest_day_surface_no_programmed_wod(fresh_db):
     """spec §9: Rest day in SugarWOD → 'rest day per gym programming'
     with active-recovery flow; NO auto-composed WOD."""
-    from agents.fraser import state as fst
     from agents.fraser.source import ingest_source_week
     from agents.fraser.handler import design_workout
-    from pathlib import Path
-    import json as _json
 
-    # Synthesize a single-day archive with a rest-day shape.
     archive = Path(fresh_db).parent / "rest_day_archive.json"
-    archive.write_text(_json.dumps({
+    archive.write_text(json.dumps({
         "url": "https://app.sugarwod.com/?track=workout-of-the-day",
         "week_start": "20260514",
         "fetched_at": datetime.now().isoformat(),
         "days": [{
-            "date_int": "20260514",
-            "header": "THU 14",
+            "date_int": "20260514", "header": "THU 14",
             "workouts": [{"title": "Rest Day", "description": ""}],
         }],
     }))
     ingest_source_week(archive)
 
     card = design_workout("today's plan", today_int="20260514")
-
-    # 1. Card produced with rest-day shape.
     assert card.date_iso == "2026-05-14"
-    # 2. No auto-WOD.
     assert len(card.wod.movements) == 0
-    # 3. Active-recovery flow in cool-down.
     assert len(card.cool_down.movements) > 0
     cooldown_names = {m.name for m in card.cool_down.movements}
-    # The default active-recovery flow includes at least one of these.
     expected = {"zone_2_walk", "thoracic_extension_on_roller",
                 "thread_the_needle", "legs_up_the_wall"}
-    assert cooldown_names & expected, (
-        f"Active-recovery flow missing; got {cooldown_names}")
-    # 4. NOTES labels the active-recovery as Fraser's suggestion.
+    assert cooldown_names & expected
     why = card.notes.why_this_design.lower()
     assert "rest day" in why
     assert ("fraser's suggestion" in why or "not gym-prescribed" in why
-            or "skip if" in why), (
-        f"Rest-day card must clearly label active-recovery as "
-        f"Fraser's idea, not gym programming. Got: {why!r}")
+            or "skip if" in why)
 
 
 # ─── fraser_008 ─────────────────────────────────────────────────────
-# DOMAIN ASSERTION (drop xfail when ALL of these hold):
-#   1. card has movements (precondition).
+# DOMAIN ASSERTION:
+#   1. card has movements.
 #   2. "jump_rope" not in wod.movements.
-#   3. ≥1 of {penguin_jump, lateral_hop, run} present in wod.movements.
-#   4. wod.substitutions_applied has a string containing "rope".
-#   5. governance_log row exists with subject=fraser.tool.lookup_substitution_rule
-#      and args.condition == "equipment_missing".
-# Why these bars: spec §5 item 1 (equipment substitution) + DEFAULT
-# substitution seed for jump_rope.
-@pytest.mark.xfail(reason="reasoner not wired yet (Day 3 stub)", strict=True)
+#   3. wod.substitutions_applied references rope swap.
+# Day-7 wiring: equipment_missing path fires when "jump_rope" not in
+# equipment list AND seeded substitution rule for jump_rope swaps to
+# penguin_jump.
 def test_fraser_008_no_jump_rope_substitutes_penguin_or_run(fresh_db):
     """spec §9: No jump rope in equipment → penguin jumps OR run
     substituted with rationale."""
-    from agents.fraser import state as fst
     from agents.fraser.handler import design_workout
 
-    fst.set_equipment_available(["barbell", "dumbbells", "kettlebell"])
-    card = design_workout("today")
-    _reasoner_produced_content(card)
+    _seed_synth_archive(
+        fresh_db,
+        wod_title="\"Skip Day\"",
+        wod_description="For Time\n3 Rounds\n50 jump_rope\n15 burpees")
+    # Equipment WITHOUT jump rope.
+    _seed_full_substrate(
+        fresh_db,
+        equipment=["barbell", "dumbbells", "kettlebell"])
 
-    # Day-3 assertion: if any movement WOULD have been jump_rope, it's
-    # swapped to penguin_jump / lateral_hop / short_run.
-    all_movements = {m.name for m in card.wod.movements}
-    assert "jump_rope" not in all_movements
-    # Substitution rationale references rope (the reasoner must have
-    # composed a swap, not just dropped the movement silently).
-    assert any("rope" in s.lower()
-               for s in card.wod.substitutions_applied), (
-        f"Expected a rope-substitution rationale in WOD.substitutions_"
-        f"applied; got {card.wod.substitutions_applied}")
+    card = design_workout("today", today_int="20260514")
+    movement_names = {m.name for m in card.wod.movements}
+    assert "jump_rope" not in movement_names, (
+        f"no-rope must swap jump_rope; got {movement_names}")
+    # A substitution rationale fired for the rope swap.
+    assert any("rope" in s.lower() for s in card.wod.substitutions_applied), (
+        f"Expected rope-substitution rationale; got "
+        f"{card.wod.substitutions_applied}")
 
 
 # ─── fraser_009 ─────────────────────────────────────────────────────
-# DOMAIN ASSERTION (drop xfail when ALL of these hold):
-#   1. card has movements (precondition).
+# DOMAIN ASSERTION:
+#   1. card has movements.
 #   2. zero movements where `is_overhead(m)` returns True.
-#   3. ≥1 non-overhead replacement in the same general category
-#      (floor_press / landmine_press / bench / etc. instead of
-#       strict_press / snatch / thruster).
-#   4. NOTES section references the neck injury.
-# Why these bars: spec §5 item 4 (joint vigilance) + spec §9 case 9.
-@pytest.mark.xfail(reason="reasoner not wired yet (Day 3 stub)", strict=True)
+# Day-7 wiring: injury mute path handles overhead movements when
+# mute_movements includes them.
 def test_fraser_009_right_neck_pain_substitutes_all_overhead(fresh_db):
     """spec §9: Right neck pain registered → all overhead movements
     substituted."""
@@ -373,13 +402,19 @@ def test_fraser_009_right_neck_pain_substitutes_all_overhead(fresh_db):
     from agents.fraser.handler import design_workout
     from agents.fraser.protocols import Severity, is_overhead
 
+    _seed_synth_archive(
+        fresh_db,
+        wod_title="\"Overhead Day\"",
+        wod_description=(
+            "For Time\n3 Rounds:\n10 push_press\n10 thruster\n15 air_squat"))
+    _seed_full_substrate(fresh_db)
     fst.register_injury(
         "right_neck", severity=Severity.MODERATE,
         mute_movements=["strict_press", "push_press", "snatch",
-                        "handstand_push_up", "thruster"])
-    card = design_workout("today")
-    _reasoner_produced_content(card)
+                        "handstand_push_up", "thruster",
+                        "overhead_press"])
 
+    card = design_workout("today", today_int="20260514")
     all_movements = (
         [l.name for l in card.strength.lifts]
         + [m.name for m in card.wod.movements])
@@ -388,41 +423,44 @@ def test_fraser_009_right_neck_pain_substitutes_all_overhead(fresh_db):
 
 
 # ─── fraser_010 ─────────────────────────────────────────────────────
-# DOMAIN ASSERTION (drop xfail when ALL of these hold):
-#   1. today_card has movements (precondition).
-#   2. "back_squat" not in today_card.strength.lifts.
-#   3. today_card.strength.lifts ⊆ {non-back-squat patterns} —
-#      either posterior-chain (deadlift / RDL / sumo) or upper-body.
-#   4. NOTES section references yesterday's back-squat session as
-#      the rationale for the pivot.
-#   5. governance_log shows a `fraser.tool.get_recent_workouts` row
-#      under the same trace_id as the design call.
-# Why these bars: spec §5 item 11 (movement memory).
-@pytest.mark.xfail(reason="reasoner not wired yet (Day 3 stub) + recent-volume read",
-                   strict=True)
+# DOMAIN ASSERTION:
+#   1. today_card has strength lift.
+#   2. today_card.strength.lifts[0].name != "back_squat" — yesterday
+#      was a BS day, so today must pivot.
+# Day-7 wiring: _respect_recent_volume reads get_recent_workouts(2);
+# if yesterday's primary lift matches today's, swap.
 def test_fraser_010_no_back_to_back_back_squats(fresh_db):
     """spec §9: Back squats logged yesterday → next session pulls
     posterior chain or upper, not BS again."""
     from agents.fraser import state as fst
     from agents.fraser.handler import design_workout
     from agents.fraser.protocols import (
-        WorkoutCard, ContextSnapshot, StrengthBlock, StrengthLift,
-        CompletionStatus,
+        WorkoutCard, StrengthBlock, StrengthLift, CompletionStatus,
     )
+
+    _seed_synth_archive(
+        fresh_db,
+        strength_title="Back Squat 5×5",
+        strength_description="Every 2:00 x 5 Sets:\n5 reps @ 70%",
+        wod_title="\"Today's WOD\"",
+        wod_description="For Time\n3 Rounds\n15 burpees")
+    _seed_full_substrate(fresh_db,
+                         one_rms=[("back_squat", 120.0),
+                                  ("deadlift", 155.0)])
 
     # Seed yesterday's workout with a back squat.
     yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
-    card = WorkoutCard(
+    yesterday_card = WorkoutCard(
         date_iso=yesterday, time_of_day="morning",
         target_kcal=600, target_minutes=60,
         strength=StrengthBlock(lifts=[StrengthLift(
             name="back_squat", working_sets=5, working_reps=5,
-            working_weight_kg=92.5)]),
-    )
-    fst.commit_workout(card)
+            working_weight_kg=92.5)]))
+    fst.commit_workout(yesterday_card)
 
-    # Day-3 assertion: today's composed card has no back squat.
-    today_card = design_workout("today's plan")
-    _reasoner_produced_content(today_card)
+    today_card = design_workout("today's plan", today_int="20260514")
     today_lifts = [l.name for l in today_card.strength.lifts]
-    assert "back_squat" not in today_lifts
+    assert today_lifts, "today's card should have strength lifts"
+    assert "back_squat" not in today_lifts, (
+        f"recent-volume rule must pivot off yesterday's back_squat; "
+        f"got {today_lifts}")

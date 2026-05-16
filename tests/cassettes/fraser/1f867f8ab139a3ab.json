@@ -1,0 +1,8 @@
+{
+  "text": "Since your HRV is optimal, treat this session as a high-intensity threshold stimulus by keeping your run pace aggressive and minimizing transitions between movements. Focus on maintaining a perfect vertical torso and bracing your core during the wall sits to prevent premature fatigue in the lower back from the farmers carry. Push the aerobic ceiling today while maintaining strict mechanical tension in the static holds.",
+  "model": "models/gemini-flash-lite-latest",
+  "tokens_in": 65,
+  "tokens_out": 71,
+  "cost_usd": 0.000197,
+  "error": null
+}

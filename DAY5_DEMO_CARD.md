@@ -67,7 +67,7 @@ These match the spec §11 example numbers. Swap with your real numbers from `/tm
 - **Breathing**: legs-up-the-wall 5 min
 
 ### ▌NOTES
-Your HRV of 55 and green recovery status confirm you are primed for increased volume, so we have scaled the "Lava Plume" intensity upward to close the gap on your 1,100 kcal target. We have substituted the primary movements with specific Zone 2 weighted carries and wall sits to maintain steady output without overreaching your physiological capacity. Follow these prescriptive loads to maximize your caloric burn while staying within your target heart rate zone.
+Your green recovery and solid HRV score indicate you are fully primed to handle an increased workload today. I have scaled the "Lava Plume" session up to push your output toward your 1100 kcal target, utilizing zone 2-appropriate farmers carries and wall sits to drive volume without exceeding your capacity. Execute these adjustments to maximize the intended metabolic stimulus.
 
 — Adaptation rationale —
 Adapted from gym programming '"Lava Plume"'. HRV=55, recovery=green, tier=zone2, active injuries=0.

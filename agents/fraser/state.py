@@ -385,6 +385,19 @@ def get_kobe_kcal_target(*,
     don't block Day-6 on a Kobe-side entity write.
     """
     today_str = today or datetime.now().strftime("%Y%m%d")
+    # (0) Explicit mock pref. Test seam — takes precedence so tests
+    # have full control regardless of whatever Kobe's accessor would
+    # return for the day's weekday in the sandbox. Production never
+    # sets this pref, so this branch is invisible outside tests.
+    raw_mock = _mem_api.pref_get(AGENT, "mock_kobe_kcal_target",
+                                 default=None, db_path=db_path)
+    # pref_get returns "" for empty / cleared values — distinguish
+    # "explicitly unset" from "never set" by checking truthy-numeric.
+    if raw_mock not in (None, "", 0):
+        try:
+            return float(raw_mock)
+        except (TypeError, ValueError):
+            pass
     # (1) Substrate.
     rows = _mem_raw.cross_agent_list(
         type="kobe_target_kcal", status="active", limit=10, db_path=db_path)
@@ -404,18 +417,8 @@ def get_kobe_kcal_target(*,
         if tgt is not None and float(tgt) > 0:
             return float(tgt)
     except Exception:
-        # Kobe call path may fail in test sandboxes / fresh DBs —
-        # fall through to mock. No silent-success fallback per spec.
         pass
-    # (3) Mock pref for tests.
-    val = _mem_api.pref_get(AGENT, "mock_kobe_kcal_target",
-                            default=None, db_path=db_path)
-    if val is not None:
-        try:
-            return float(val)
-        except (TypeError, ValueError):
-            return None
-    # (4) Nothing — caller's responsibility to surface.
+    # (3) Nothing — caller's responsibility to surface.
     return None
 
 
