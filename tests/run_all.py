@@ -77,6 +77,20 @@ LAYERS: list[LayerSpec] = [
             # regex dispatch, replan filter integration, and ADR-003
             # substrate usage.
             "tests/test_dislikes.py",
+            # Handler regression registry from feat/kobe-slash-dispatcher
+            # (merged 2026-05-16): canonical "things that broke once,
+            # must never break again" file. Sections:
+            #   1. handler module-globals (launchd boot)
+            #   2. coach_system week_offset docs
+            #   3. _legacy_route routes "last week"
+            #   4. Slash dispatcher (2026-05-16 — /pace /today /week
+            #      /plan /next /help + /fix slash form)
+            #   5. Prorated /pace + /week math
+            #   6. /fix handler DB rewrite + refusal guards
+            #   7. Model-name source guards (handler + core/io)
+            #   8. Security: llm_coach error sanitization (api-key
+            #      leak gate — see 2026-05-16 brief)
+            "tests/test_handler_regressions.py",
             # Fraser Day-1 scaffold (2026-05-14, feat/fraser-day1-scaffold).
             # Pins the 11 entity-body protocols, Workout Card round-trip,
             # input-mode classifier, and state.py substrate compliance
@@ -119,7 +133,14 @@ LAYERS: list[LayerSpec] = [
     LayerSpec(
         name="eval",
         description="Scenario-fidelity evals against the Sports Scientist.",
-        paths=["tests/evals/test_scientist_conversation.py"],
+        paths=[
+            "tests/evals/test_scientist_conversation.py",
+            # Day-7 (2026-05-14): all 10 Fraser eval cases pass without
+            # xfail. Cassette infrastructure available for LLM
+            # enrichment; structural assertions covered by the
+            # deterministic adapter.
+            "tests/evals/test_fraser_conversation.py",
+        ],
     ),
     LayerSpec(
         name="adversarial",

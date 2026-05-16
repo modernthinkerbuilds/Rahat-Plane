@@ -152,7 +152,7 @@ def telegram_delete_webhook(*, token: str | None = None) -> None:
 # google.genai entirely, so we only resolve the client on first use.
 _GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 _LLM_CLIENT = None
-_LLM_MODEL_ID = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+_LLM_MODEL_ID = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
 
 def llm_client():
