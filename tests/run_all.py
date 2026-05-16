@@ -84,6 +84,11 @@ LAYERS: list[LayerSpec] = [
             # versioning). See specs/FRASER_REQUIREMENTS.md.
             "tests/test_fraser_protocols.py",
             "tests/test_fraser_state.py",
+            # Fraser Day-5 (2026-05-14). Pins the SugarWOD adapter:
+            # parser covers §11.5 sample sections, ingest is idempotent
+            # on date_int, freshness gate fires at >7 days, both rest-
+            # day shapes detected, Kobe blacklist applied at parse.
+            "tests/test_fraser_source.py",
             # Fraser Day-2 (2026-05-14). Pins the 4 computational tools
             # (compute_target_weight, compute_predicted_burn,
             # lookup_movement_cues, parse_user_workout) per ADR-004
@@ -93,6 +98,16 @@ LAYERS: list[LayerSpec] = [
             # daily cap, env-var override, actor-scoped observability,
             # zero-disables-enforcement contract.
             "tests/test_budget.py",
+            # LLM wrapper (2026-05-14, Day-4 directive). Pins the single
+            # chokepoint at the wire call: BudgetExceeded raises BEFORE
+            # the genai call, success path records spend, failed calls
+            # do NOT inflate the ledger. Hard floor at the cost point.
+            "tests/test_llm.py",
+            # Tool catalog coverage (2026-05-14, Day-4 directive).
+            # Self-policing two-edit guardrail: every public callable in
+            # agents/fraser/tools.py must have a ToolManifest entry in
+            # protocols.TOOL_CATALOG, and vice versa.
+            "tests/test_fraser_tool_catalog.py",
         ],
     ),
     LayerSpec(
@@ -228,6 +243,16 @@ def main() -> int:
     parser.add_argument("--report",
                         default=str(REPORT_PATH),
                         help="Markdown report path (default: tests/last_run_report.md)")
+    parser.add_argument("--record", action="store_true",
+                        help=(
+                            "VCR-style LLM fixture recording: bypass cassettes, "
+                            "hit the real wire, save responses to "
+                            "$LLM_FIXTURE_DIR. Sets RAHAT_FIXTURE_RECORD=1 in "
+                            "the subprocess env. Requires LLM_FIXTURE_DIR to "
+                            "be set and a configured GEMINI_API_KEY (otherwise "
+                            "the conftest stub returns '[LLM-FALLBACK]' and "
+                            "you'll record a useless cassette). Costs real "
+                            "money — review the budget cap before running."))
     args = parser.parse_args()
 
     env = os.environ.copy()
@@ -236,6 +261,19 @@ def main() -> int:
     env.setdefault("RAHAT_LEGACY_DISPATCH", "1")
     if args.no_llm_judge:
         env.pop("RAHAT_RUN_JUDGE", None)
+    if args.record:
+        env["RAHAT_FIXTURE_RECORD"] = "1"
+        # Loud banner so a sleepy operator doesn't silently burn budget.
+        print("=" * 60)
+        print("⚠️  RECORD MODE ACTIVE — every LLM call hits the wire")
+        print("    RAHAT_FIXTURE_RECORD=1 set in subprocess env")
+        print(f"    LLM_FIXTURE_DIR={env.get('LLM_FIXTURE_DIR', '(unset!)')}")
+        if not env.get("LLM_FIXTURE_DIR"):
+            print("    ⚠️  LLM_FIXTURE_DIR is unset — fixtures will NOT be saved")
+        if not env.get("GEMINI_API_KEY"):
+            print("    ⚠️  GEMINI_API_KEY is unset — wire returns stub, "
+                  "cassettes will be useless")
+        print("=" * 60)
 
     layers_to_run = (
         [l for l in LAYERS if l.name == args.layer] if args.layer else LAYERS
