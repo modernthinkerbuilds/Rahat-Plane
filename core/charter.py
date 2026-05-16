@@ -224,3 +224,68 @@ def external_veto_check(wo: WorkOrder, ctx: dict) -> Verdict:
     if since:
         return Verdict.veto(f"external veto active: {since}")
     return Verdict.approve()
+
+
+# ─────────────────────────── Fraser policies (Day-3 wiring) ───────────────────────────
+# These gate Fraser's eleven write kinds (see
+# `agents/fraser/protocols.py::ALL_CHARTER_KINDS`). The convention here
+# matches the rest of the Charter: priority<=2 is the single "urgent"
+# axis that bypasses governance rules. No parallel escalation surface
+# (no `_override_*` payload flags). See ADR-004 §"Cross-agent reads"
+# for the broader doctrine of single-axis instrumentation.
+
+@policy("fraser.workout.commit", name="fraser_hrv_red_blocks_workout")
+def fraser_hrv_red_blocks_workout(wo: WorkOrder, ctx: dict) -> Verdict:
+    """HRV-red recovery state vetoes a workout commit.
+
+    Urgent priority (<=2) bypasses — matches the quiet_hours
+    convention so the urgent lane is a single axis across the
+    Charter. Spec §2.2: 'HRV-red writes require explicit user
+    override' — the override IS the priority<=2 lane, not a
+    parallel payload flag.
+
+    The recovery color comes from ctx['huberman_state']
+    (substrate-symmetric per ADR-004); state.commit_workout
+    populates that dict before calling review().
+    """
+    if wo.priority <= 2:
+        return Verdict.approve("urgent — bypassed HRV-red rest enforcement")
+    huberman = ctx.get("huberman_state") or {}
+    color = huberman.get("recovery_color", "green")
+    if color == "red":
+        return Verdict.veto(
+            f"HRV recovery_color=red — rest first "
+            f"(pass priority<=2 to override)")
+    return Verdict.approve()
+
+
+@policy("fraser.1rm.update", name="fraser_1rm_increase_needs_green")
+def fraser_1rm_increase_needs_green(wo: WorkOrder, ctx: dict) -> Verdict:
+    """Increases to a 1RM require Huberman=green; decreases always go
+    through. Spec §2.2 / §11 Charter rules.
+
+    The policy reads `current_weight_kg` from ctx (populated by
+    state.update_1rm via get_1rms() before calling review()); the new
+    weight comes from wo.payload['weight_kg'].
+
+    Edge cases:
+        • No prior 1RM (current=0) → treat as an *increase* and
+          require green. This is the right call: a first-time 1RM
+          entry should be made when the user is well-recovered, so
+          the % math downstream isn't anchored on a stressed PR.
+        • Equal weight (rare — re-test confirming the same number)
+          → approve as a non-increase. The substrate already
+          carries the prior row.
+    """
+    if wo.priority <= 2:
+        return Verdict.approve("urgent — bypassed 1RM green-required")
+    new_weight = float(wo.payload.get("weight_kg") or 0)
+    current = float(ctx.get("current_weight_kg") or 0)
+    if new_weight <= current:
+        return Verdict.approve()
+    color = (ctx.get("huberman_state") or {}).get("recovery_color", "green")
+    if color != "green":
+        return Verdict.veto(
+            f"1RM increase ({current:.1f}→{new_weight:.1f} kg) "
+            f"requires Huberman=green; got {color}")
+    return Verdict.approve()

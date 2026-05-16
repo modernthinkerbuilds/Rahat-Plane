@@ -104,17 +104,41 @@ PLAN_PATH = HOME / "developer/agency/rahat/staging/workspace/gym-programming/wee
 
 
 def _active_model() -> str:
-    """Return the freshest Flash model available, or a default."""
+    """Pick the freshest Flash model, preferring 2.5 over older series.
+
+    Why tier preference rather than lexicographic sort
+    --------------------------------------------------
+    The previous implementation did `sorted(flash)[-1]`, which is
+    lexicographically last across ALL flash variants. Google routinely
+    surfaces legacy `gemini-1.5-*` alongside current `gemini-2.5-*` in
+    `client.models.list()`, and a `gemini-1.5-flash-002-XL` (hypothetical
+    but plausible) sorts after `gemini-2.5-flash`. Whenever that
+    happened, every reasoner call 404'd because Google deprecated the
+    1.5-flash tier and the bot silently slid onto a dead model.
+
+    Explicit tier preference (2.5 → 2.0 → 1.5) is the durable fix:
+    within a tier we still take the lexicographic max so -001 / -002
+    revisions auto-upgrade, but we never cross a tier boundary.
+
+    The fallback string is `gemini-2.5-flash` (no version suffix) —
+    Google's documented "latest stable" alias for the 2.5 series. The
+    previous fallback of `gemini-1.5-flash` was the *literal cause* of
+    test-stub-environment 404s — see the API-key-rotation incident this
+    PR is also patching (llm_coach error sanitization).
+    """
     if not client:
-        return "gemini-1.5-flash"
+        return "gemini-2.5-flash"
+    preferred_tiers = ("gemini-2.5", "gemini-2.0", "gemini-1.5")
     try:
-        flash = [m.name for m in client.models.list()
-                 if "flash" in m.name.lower()]
-        if flash:
-            return sorted(flash)[-1]
+        all_flash = [m.name for m in client.models.list()
+                     if "flash" in m.name.lower()]
+        for tier in preferred_tiers:
+            tier_matches = sorted([m for m in all_flash if tier in m])
+            if tier_matches:
+                return tier_matches[-1]
     except Exception:
         pass
-    return "gemini-1.5-flash"
+    return "gemini-2.5-flash"
 
 
 MODEL_ID = _active_model()
@@ -132,7 +156,7 @@ def eligible_cf_days(days=None):
     return _proto_eligible_cf_days(days)
 
 
-__all__ = ['API_KEY', 'HOME', 'MODEL_ID', 'PLAN_PATH', '_active_model', '_extract_wod_summary', '_internal_safety_downgrade', '_is_workout_on_day_query', '_legacy_route', '_n', '_parse_date', '_split_for_telegram', '_which_monday', 'client', 'daily_target', 'eligible_cf_days', 'handle_breathing', 'handle_clear_prefs', 'handle_current_weight', 'handle_daily_burn', 'handle_decision_run_or_wod', 'handle_dislike_movement', 'handle_drop_dislike', 'handle_filter', 'handle_hrv', 'handle_last_week', 'handle_list_dislikes', 'handle_manual_burn', 'handle_next_week_target', 'handle_next_workout', 'handle_pace', 'handle_pick_days', 'handle_post_recovery', 'handle_pre_fuel', 'handle_recalibrate', 'handle_replan', 'handle_scheduling_help', 'handle_set_tier', 'handle_show_plan', 'handle_split_target', 'handle_swap', 'handle_today_target', 'handle_tolerate', 'handle_unavailable', 'handle_weekly_remaining', 'handle_weighin_when', 'handle_weight', 'handle_weight_timeline', 'handle_workout_on', 'handle_workout_today', 'latest_hrv', 'llm_coach', 'maybe_morning_briefing', 'maybe_recovery_nudge', 'maybe_walk_nudge', 'maybe_weekly_reset', 'parse_gym_plan', 'route', 'send', 'start']
+__all__ = ['API_KEY', 'FIX_BURN_RE', 'HOME', 'MODEL_ID', 'PLAN_PATH', 'SLASH_COMMANDS', '_active_model', '_extract_wod_summary', '_internal_safety_downgrade', '_is_workout_on_day_query', '_legacy_route', '_n', '_parse_date', '_prorated_day_target', '_prorated_week_target', '_slash_help', '_split_for_telegram', '_try_slash_command', '_which_monday', 'client', 'daily_target', 'eligible_cf_days', 'handle_breathing', 'handle_clear_prefs', 'handle_current_weight', 'handle_daily_burn', 'handle_decision_run_or_wod', 'handle_dislike_movement', 'handle_drop_dislike', 'handle_filter', 'handle_fix_burn', 'handle_hrv', 'handle_last_week', 'handle_list_dislikes', 'handle_manual_burn', 'handle_next_week_target', 'handle_next_workout', 'handle_pace', 'handle_pick_days', 'handle_post_recovery', 'handle_pre_fuel', 'handle_recalibrate', 'handle_replan', 'handle_scheduling_help', 'handle_set_tier', 'handle_show_plan', 'handle_split_target', 'handle_swap', 'handle_today_target', 'handle_tolerate', 'handle_unavailable', 'handle_weekly_remaining', 'handle_weighin_when', 'handle_weight', 'handle_weight_timeline', 'handle_workout_on', 'handle_workout_today', 'latest_hrv', 'llm_coach', 'maybe_morning_briefing', 'maybe_recovery_nudge', 'maybe_walk_nudge', 'maybe_weekly_reset', 'parse_gym_plan', 'route', 'send', 'start']
 
 
 def handle_recalibrate() -> str:
@@ -193,14 +217,48 @@ def handle_daily_burn(when: datetime) -> str:
 
 
 def handle_weekly_remaining() -> str:
-    burned, _ = burn_this_week()
-    target = weekly_target()
-    remaining = max(target - burned, 0.0)
+    """Prorated week view — actual burn vs the slice of week-target we
+    SHOULD have burned by now.
+
+    The pre-prorate version compared current burn to the *full* weekly
+    target, which made every Monday morning look like a disaster (~0%
+    of 6000) and every Saturday night look like a success (~85% of
+    6000) — neither was actionable. Prorating against elapsed seconds
+    since Monday 00:00 turns the same numbers into a useful pacing
+    signal that's stable across the week.
+
+    The literal substring "Remaining" must stay in the output —
+    test_remaining_burn_lookup in the eval suite asserts that as the
+    canary that this handler (not the LLM) answered the question.
+    """
     now = datetime.now()
+    burned, _ = burn_this_week()
+    full_target = weekly_target()
+    expected = _prorated_week_target(full_target, now=now)
+    remaining = max(full_target - burned, 0.0)
     days_left = 7 - now.weekday()  # incl today, week ends Sun
-    per_day = remaining / days_left if days_left else 0
+    per_day = remaining / days_left if days_left else 0.0
+
+    if expected > 0:
+        pct = (burned / expected * 100)
+        delta = burned - expected
+        if delta >= 0:
+            pace_line = (f"Actual: *{fmt_kcal(burned)}* / Expected so far: "
+                         f"{fmt_kcal(expected)} ({pct:.0f}%, "
+                         f"{fmt_kcal(delta)} ahead)")
+        else:
+            pace_line = (f"Actual: *{fmt_kcal(burned)}* / Expected so far: "
+                         f"{fmt_kcal(expected)} ({pct:.0f}%, "
+                         f"{fmt_kcal(-delta)} behind)")
+    else:
+        # Monday 00:00:00 edge — expected==0 means no pacing math yet.
+        pace_line = (f"Actual: *{fmt_kcal(burned)}* / Expected so far: "
+                     f"{fmt_kcal(0.0)} (week just started)")
+
     return (
-        f"Week so far: *{fmt_kcal(burned)}* of {fmt_kcal(target)}.\n"
+        "Week so far\n"
+        f"{pace_line}\n"
+        f"Week target: {fmt_kcal(full_target)}\n"
         f"Remaining: *{fmt_kcal(remaining)}* over {days_left} day(s) "
         f"≈ {fmt_kcal(per_day)}/day."
     )
@@ -385,6 +443,85 @@ def handle_manual_burn(kcal: float, kind: str = "manual") -> str:
     log_workout(kind, kcal)
     today = burn_for_date(datetime.now())
     return f"✅ Logged *{fmt_kcal(kcal)}* ({kind}). Today total: {fmt_kcal(today)}."
+
+
+def handle_fix_burn(day_token: str, kcal: float) -> str:
+    """Overwrite the recorded active-burn for ONE calendar day this week.
+
+    Use case: Apple Watch missed a workout, or the user double-counted
+    a manual log, and the recorded burn for some day is wrong. This
+    handler REWRITES the day rather than appending — it DELETEs every
+    raw_vitals active-calories row and every workout_log row for that
+    date, then INSERTs one corrected raw_vitals row at 23:59:59 so
+    `burn_for_date(target) == kcal` exactly after the fix.
+
+    Refuses:
+      • Future dates (this-week-only; can't fix what hasn't happened)
+      • kcal outside [0, 10000] (typo guard — nobody burned 50,000 kcal
+        in a day; a value that large is a finger-slip, not data)
+
+    Returns a confirmation line that names both the previous and new
+    totals so the user can spot a misparse before the fix sticks.
+    """
+    # Parse the day token. Accept "Mon", "Monday", "MON", "tues", any
+    # case. _WEEKDAY_LOOKUP is the canonical lowercase map from
+    # protocols ({"mon": 0, "monday": 0, "tue": 1, "tues": 1, ...}).
+    if not day_token:
+        return "❌ Need a day token, e.g. `fix mon 581`."
+    token = day_token.strip().lower()
+    idx = _WEEKDAY_LOOKUP.get(token)
+    if idx is None:
+        return (f"❌ Couldn't parse day `{day_token}`. "
+                "Try `fix mon 581` or `fix monday 581`.")
+
+    # Out-of-range kcal: typo guard. 10,000 is well above the highest
+    # daily burn ever seen (post-PRVN Murph day was ~3,200).
+    if kcal < 0 or kcal > 10000:
+        return (f"❌ {fmt_kcal(kcal)} is outside the sane range "
+                f"[0, 10,000 kcal]. Looks like a typo — double-check "
+                "the number and re-send.")
+
+    # Target date = this week's Monday + idx. Reject future days.
+    now = datetime.now()
+    week_start = (now - timedelta(days=now.weekday())).replace(
+        hour=0, minute=0, second=0, microsecond=0)
+    target = week_start + timedelta(days=idx)
+    if target.date() > now.date():
+        return (f"❌ {target.strftime('%a %b %-d')} is in the future. "
+                "Can only fix days that have already happened.")
+
+    # Capture the old total before we wipe — for the confirmation line.
+    prev = burn_for_date(target)
+
+    # DELETE + INSERT inside one txn so we can't end up half-applied.
+    # Inline SQL on _db() rather than adding a helper to state.py —
+    # this is a one-off destructive operation, doesn't belong in the
+    # general state API surface.
+    day_str = target.strftime("%Y-%m-%d")
+    ts = f"{day_str} 23:59:59"
+    con = _db()
+    try:
+        con.execute(
+            "DELETE FROM raw_vitals "
+            "WHERE metric_type='active_calories' "
+            "AND substr(timestamp,1,10)=?",
+            (day_str,))
+        con.execute(
+            "DELETE FROM workout_log "
+            "WHERE substr(ts,1,10)=?",
+            (day_str,))
+        con.execute(
+            "INSERT INTO raw_vitals (metric_type, value, timestamp) "
+            "VALUES ('active_calories', ?, ?)",
+            (float(kcal), ts))
+        con.commit()
+    finally:
+        con.close()
+
+    new_total = burn_for_date(target)
+    label = target.strftime("%a (%b %-d)")
+    return (f"✅ {label}: "
+            f"{fmt_kcal(prev)} → {fmt_kcal(new_total)}")
 
 
 # _eta_at_locked_rate, _locked_intake imported from protocols.py.
@@ -956,31 +1093,108 @@ def handle_scheduling_help() -> str:
     )
 
 
+def _prorated_day_target(full_target: float,
+                         now: datetime | None = None) -> float:
+    """Linear prorate of a day's full target across the active waking
+    window NUDGE_HOURLY_START..NUDGE_HOURLY_END (inclusive of both
+    endpoints — span = END - START + 1 hours).
+
+    • Before the window opens → 0.0 (don't shame anyone for not
+      having burned anything by 9am)
+    • Inside the window → full_target * (elapsed_hours / span)
+    • After the window closes → full_target (clamped, no overshoot)
+
+    `elapsed` is clamped to [1, span] so the at-window-open boundary
+    returns full_target/span (not 0) and the at-window-close boundary
+    returns exactly full_target (not 11/11 = 100% which is correct,
+    but also not 12/11 = 109% which would be wrong).
+
+    Why a fixed window rather than wall-clock 24h: the user's
+    behavioral envelope is the waking window. Diluting their pacing
+    expectation across sleeping hours produces an artificially low bar
+    that's useless for nudging.
+    """
+    n = now or datetime.now()
+    if n.hour < NUDGE_HOURLY_START:
+        return 0.0
+    if n.hour > NUDGE_HOURLY_END:
+        return float(full_target)
+    span = NUDGE_HOURLY_END - NUDGE_HOURLY_START + 1
+    elapsed_raw = n.hour - NUDGE_HOURLY_START + 1
+    elapsed = max(1, min(elapsed_raw, span))
+    return float(full_target) * (elapsed / span)
+
+
+def _prorated_week_target(full_target: float,
+                          now: datetime | None = None) -> float:
+    """Linear prorate of a weekly target across elapsed seconds from
+    this week's Monday 00:00:00 to next Monday 00:00:00.
+
+    Clamped to [0, full_target] — Monday before midnight returns 0,
+    Sunday 23:59:59 returns ~full_target, never overshoots.
+
+    Seconds-granular (not days-granular) so the pacing line updates
+    smoothly through the day rather than jumping at midnight.
+    """
+    n = now or datetime.now()
+    # Monday 00:00:00 of THIS week. weekday() returns 0 for Monday.
+    week_start = (n - timedelta(days=n.weekday())).replace(
+        hour=0, minute=0, second=0, microsecond=0)
+    elapsed_sec = (n - week_start).total_seconds()
+    week_sec = 7 * 24 * 3600
+    frac = max(0.0, min(elapsed_sec / week_sec, 1.0))
+    return float(full_target) * frac
+
+
 def handle_pace() -> str:
-    """Today's burn vs day-type ideal, plus week-to-date vs target."""
+    """Today's burn vs prorated day-type target.
+
+    Pre-prorate version compared current burn to the *full* day target
+    regardless of time-of-day. That meant 9am 0/600 looked the same as
+    9pm 0/600 — both reported as failing, neither actionable. With
+    prorating the user sees "you're 80% of where you should be by 2pm"
+    instead of "you're 30% of where you'd be at end-of-day", which is
+    the actual coaching signal.
+
+    The /week line was dropped here — `/week` covers it explicitly
+    and stacking the two views in one response inflated the message
+    length past the Telegram-ergonomic threshold.
+    """
+    now = datetime.now()
     plan_row = today_plan()
-    ideal = plan_row["target_kcal"]
-    actual = burn_for_date(datetime.now())
-    delta = actual - ideal
+    full_target = plan_row["target_kcal"]
+    actual = burn_for_date(now)
     kind = DAY_TYPE_LABEL[plan_row["day_type"]]
-    gym = f" ({plan_row['gym_label']})" if plan_row["gym_label"] else ""
+    gym = f"({plan_row['gym_label']})" if plan_row["gym_label"] else ""
+    header = f"Today — {kind}{gym}".rstrip()
 
-    if ideal == 0:
-        day_status = f"Today: {kind}{gym} — no target. Burned {fmt_kcal(actual)}."
-    elif delta >= 0:
-        day_status = (f"Today: {kind}{gym} — *{fmt_kcal(actual)}* / "
-                      f"{fmt_kcal(ideal)} ✅ (+{fmt_kcal(delta)}).")
+    if full_target == 0:
+        # Rest day with no target — just report the actual burn.
+        return (f"{header}\n"
+                f"Actual: *{fmt_kcal(actual)}* / no target today.")
+
+    if now.hour < NUDGE_HOURLY_START:
+        # Pre-window: prorate is 0, but we still want to show the day
+        # target so the user knows what they're aiming at.
+        return (f"{header}\n"
+                f"Actual: *{fmt_kcal(actual)}* (window starts "
+                f"{NUDGE_HOURLY_START:02d}:00)\n"
+                f"Day target: {fmt_kcal(full_target)}")
+
+    expected = _prorated_day_target(full_target, now=now)
+    pct = (actual / expected * 100) if expected > 0 else 0
+    delta = actual - expected
+    if delta >= 0:
+        pace_line = (f"Actual: *{fmt_kcal(actual)}* / Expected so far: "
+                     f"{fmt_kcal(expected)} ({pct:.0f}%, "
+                     f"{fmt_kcal(delta)} ahead)")
     else:
-        pct = (actual / ideal * 100) if ideal else 0
-        day_status = (f"Today: {kind}{gym} — *{fmt_kcal(actual)}* / "
-                      f"{fmt_kcal(ideal)} ({pct:.0f}%, "
-                      f"{fmt_kcal(-delta)} short).")
-
-    burned, _ = burn_this_week()
-    target = weekly_target()
-    pct_w = (burned / target * 100) if target else 0
-    week_status = f"Week: *{fmt_kcal(burned)}* / {fmt_kcal(target)} ({pct_w:.0f}%)."
-    return day_status + "\n" + week_status
+        pace_line = (f"Actual: *{fmt_kcal(actual)}* / Expected so far: "
+                     f"{fmt_kcal(expected)} ({pct:.0f}%, "
+                     f"{fmt_kcal(-delta)} short)")
+    return (f"{header}\n"
+            f"{pace_line}\n"
+            f"Day target: {fmt_kcal(full_target)}")
 
 
 def handle_today_target() -> str:
@@ -1437,6 +1651,24 @@ DECIDE_RE   = re.compile(r"\b(run(?:ning)?\s+(?:or|vs|versus)\s+(?:crossfit|wod|
 TIER_RE     = re.compile(r"\btier\s+(survival|re.?entry|baseline|performance|hammer)\b", re.I)
 LOG_BURN_RE = re.compile(r"\b(burn(?:ed|t)?|did)\s+(\d{2,4})\s*(?:cal|kcal|calories|active)?\b", re.I)
 LOG_KIND_RE = re.compile(r"\b(crossfit|cf|wod|run|10k|z2|walk|bike|row)\s+(\d{2,4})\b", re.I)
+# FIX_BURN_RE — destructive rewrite of one day's burn. Matches:
+#   "fix mon 581"
+#   "set tuesday 1200"
+#   "correct sunday 2150 kcal"
+#   "overwrite friday 800 calories"
+# Group 1 is the action verb (unused — anchors the intent), group 2
+# is the weekday token, group 3 is the kcal value. The kcal range is
+# {1,5} digits so a typo'd "fix mon 50000" still matches and falls
+# through to handle_fix_burn's range guard rather than being silently
+# ignored by the regex (which would mis-route to the LLM and produce
+# a fabricated answer).
+FIX_BURN_RE = re.compile(
+    r"\b(fix|set|correct|overwrite)\s+"
+    r"(mon(?:day)?|tue(?:s|sday)?|wed(?:s|nesday)?|thu(?:r|rs|rsday)?|"
+    r"fri(?:day)?|sat(?:urday)?|sun(?:day)?)\s+"
+    r"(\d{1,5})\s*"
+    r"(?:cal|kcal|calories|active)?\b",
+    re.I)
 TIMELINE_RE = re.compile(
     r"\b(to|target|reach|hit|want|aim|drop|cut|get|lose)\s+(?:to\s+)?"
     r"(\d{2,3})\s*(lbs?|kg|pounds?)?\b.*"
@@ -1490,8 +1722,116 @@ def _parse_date(s: str) -> datetime | None:
     return None
 
 
+def _slash_help() -> str:
+    """Static help text — listed here (not built dynamically from
+    SLASH_COMMANDS) so the ordering matches what's pedagogically
+    sensible rather than dict-insertion order."""
+    return (
+        "*Slash shortcuts* (deterministic, no LLM in the loop):\n"
+        "• `/pace` — today's burn vs prorated day target\n"
+        "• `/today` — bare burn-so-far for today\n"
+        "• `/week` — week-to-date vs prorated week target + remaining\n"
+        "• `/plan` — this week's planned grid\n"
+        "• `/next` — next scheduled workout\n"
+        "• `/fix <day> <kcal>` — overwrite recorded burn for one day "
+        "(e.g. `/fix mon 581`)\n"
+        "• `/help` — this card"
+    )
+
+
+# Slash command table — keys are lowercase, no leading slash. Each
+# value is a zero-arg callable producing the response string. /fix is
+# handled separately (in _try_slash_command) because it takes args.
+#
+# The values are bound at module-import time to the names visible in
+# THIS module's globals; tests that monkeypatch e.g. `handle_pace` must
+# patch on the module (`monkeypatch.setattr(handler, "handle_pace", ...)`)
+# AND then rebuild SLASH_COMMANDS (or test the dispatch through route()
+# which re-binds each call). For the monkeypatch-friendly path, each
+# lambda re-resolves the name at call time by going through globals()
+# — that way tests can patch `handler.handle_pace` and the slash
+# dispatcher will see the patched version without rebuilding the dict.
+SLASH_COMMANDS: dict[str, callable] = {
+    "/pace":  lambda: globals()["handle_pace"](),
+    "/today": lambda: globals()["handle_daily_burn"](datetime.now()),
+    "/week":  lambda: globals()["handle_weekly_remaining"](),
+    "/plan":  lambda: globals()["handle_show_plan"](),
+    "/next":  lambda: globals()["handle_next_workout"](),
+    "/help":  _slash_help,
+}
+
+# /fix <day> <kcal> — args-bearing slash command, peeled off before
+# the zero-arg dispatch table lookup. Tolerates "/fix mon 581",
+# "/FIX  monday  1200", "/fix tue 2150 kcal", "/fix wed 800 calories".
+_SLASH_FIX_RE = re.compile(
+    r"^/fix\s+"
+    r"(mon(?:day)?|tue(?:s|sday)?|wed(?:s|nesday)?|thu(?:r|rs|rsday)?|"
+    r"fri(?:day)?|sat(?:urday)?|sun(?:day)?)\s+"
+    r"(\d{1,5})\s*"
+    r"(?:cal|kcal|calories|active)?\s*$",
+    re.I)
+
+# Strip optional @botname suffix that Telegram appends when the bot is
+# in a group chat — "/pace@kobe_bot" should dispatch like "/pace".
+_SLASH_BOT_SUFFIX_RE = re.compile(r"@[\w_]+\s*$")
+
+
+def _try_slash_command(msg: str) -> str | None:
+    """If `msg` is a recognized slash shortcut, run its handler and
+    return the response. Otherwise return None so route() can fall
+    through to the reasoner / legacy path.
+
+    Normalization:
+      • lowercase + strip
+      • peel any trailing @botname suffix (group-chat addressing)
+      • for the zero-arg table, exact-match the FIRST token only —
+        trailing junk ("/pace something extra") still dispatches /pace
+        (the trailing text is ignored). This matches Telegram's
+        convention where users sometimes type "/pace please" or
+        "/pace?" and expect the command to fire.
+      • /fix is the exception — it requires the full regex to match
+        end-to-end, since the args are load-bearing.
+
+    Unknown shortcuts ("/pase" typo, "/foobar") return None so the
+    reasoner has a chance to interpret them.
+    """
+    if not msg:
+        return None
+    norm = msg.strip().lower()
+    norm = _SLASH_BOT_SUFFIX_RE.sub("", norm).strip()
+    if not norm.startswith("/"):
+        return None
+
+    # /fix is args-bearing — check the full-line regex first.
+    if norm.startswith("/fix"):
+        m = _SLASH_FIX_RE.match(norm)
+        if m:
+            return handle_fix_burn(m.group(1), float(m.group(2)))
+        # Malformed /fix — give the user a hint instead of falling
+        # through to the reasoner (which would hallucinate). This is
+        # consistent with the "explicit slash → deterministic answer"
+        # contract: once the user typed /fix they're in command mode.
+        return ("❌ `/fix` needs a day and a kcal value. "
+                "Try `/fix mon 581` or `/fix monday 1200`.")
+
+    # Zero-arg dispatch: first whitespace-separated token must match a
+    # known key. Everything after is ignored.
+    head = norm.split(None, 1)[0]
+    handler_fn = SLASH_COMMANDS.get(head)
+    if handler_fn is None:
+        return None
+    return handler_fn()
+
+
 def route(msg: str) -> str:
     """Top-level inbound dispatcher.
+
+    Order:
+      1. Slash commands (`/pace`, `/today`, ...) → deterministic
+         handler, no LLM. Cheap, ~zero latency, always wins.
+      2. RAHAT_LEGACY_DISPATCH=1 env → regex `_legacy_route`.
+      3. Default (Phase 4, model-first) → `reasoner.reason(msg)`.
+      4. Reasoner crash → fall back to `_legacy_route`.
 
     Phase 4 (model-first): default path is the reasoner in
     `agents.the_scientist.reasoner.reason()`. Set
@@ -1504,6 +1844,14 @@ def route(msg: str) -> str:
     cascade into the legacy path, so this is also the live resilience
     boundary.
     """
+    # Phase 4d-2 (R1) Step 1 — Kobe slash dispatcher. Runs BEFORE both
+    # the legacy regex router and the model-first reasoner so a typed
+    # "/pace" never spends a Gemini token. Unknown slashes return None
+    # and fall through to whichever path comes next.
+    slash = _try_slash_command(msg)
+    if slash is not None:
+        return slash
+
     if os.getenv("RAHAT_LEGACY_DISPATCH", "").lower() in ("1", "true", "yes"):
         return _legacy_route(msg)
     try:
@@ -1542,6 +1890,14 @@ def _legacy_route(msg: str) -> str:
         return handle_manual_burn(float(mk.group(2)), kind=mk.group(1).lower())
     if (mb := LOG_BURN_RE.search(m)) and TODAY_RE.search(m):
         return handle_manual_burn(float(mb.group(2)), kind="today")
+    # Destructive day-rewrite — "fix mon 581", "set tuesday 1200",
+    # "correct sunday 2150 kcal". Routes to handle_fix_burn which
+    # DELETEs+INSERTs against raw_vitals + workout_log. Must come
+    # AFTER LOG_BURN_RE so "burned 800 today" (additive log) wins
+    # over an accidental fix-like match. The /fix slash command
+    # routes to the same handler via _SLASH_FIX_RE.
+    if (mf := FIX_BURN_RE.search(m)):
+        return handle_fix_burn(mf.group(2), float(mf.group(3)))
 
     # --- specific lookups (must beat generic TODAY/REMAIN matches) ---
     # "When is my next CrossFit session" — walks forward through the
@@ -1799,7 +2155,17 @@ def llm_coach(msg: str) -> str:
         res = client.models.generate_content(model=MODEL_ID, contents=prompt)
         return res.text
     except Exception as e:
-        return f"❌ LLM error: {e}"
+        # SECURITY: never echo raw exception strings to user-facing
+        # channels. The Gemini SDK's HTTPError carries the full request
+        # URL — including the `?key=<GEMINI_API_KEY>` query param — in
+        # its `str(e)`. The previous `return f"❌ LLM error: {e}"` line
+        # leaked the API key into Telegram twice in one week and forced
+        # two key rotations. The exception detail still goes to stderr
+        # so it shows up in vault/miya.log for operator debugging, but
+        # the user sees a sanitized message with no URL, no query
+        # params, and no exception type.
+        print(f"[llm_coach] failed: {type(e).__name__}: {e}", file=sys.stderr)
+        return "❌ LLM call failed — check vault/miya.log for details."
 
 
 # ─────────────────────────── Nudges ───────────────────────────

@@ -29,6 +29,34 @@ from agents.kobe.agent import KobeAgent                     # noqa: E402
 # registration order.
 
 miya.register(KobeAgent())
+# Fraser — CrossFit programming & performance agent.
+#
+# Enabled 2026-05-14 (Day-7) per owner directive:
+#   "Cards look good. Proceed to xfail cleanup. Cassettes can be
+#    recorded later — don't block on them for the FraserAgent flip.
+#    Goal: green eval suite, flip FraserAgent on, merge."
+#
+# Gate cleared:
+#   ✓ All 10 eval cases in tests/evals/test_fraser_conversation.py
+#     pass without xfail marks (Day-7).
+#   ✓ Real Workout Card produced from real SugarWOD archive (Day-6
+#     DAY5_DEMO_CARD.md — Lava Plume adapted: burn 720-984 kcal,
+#     cool-down rendered, BW-scaling rationale, Kobe-target line).
+#   ✓ Deterministic adapter handles: rest day, stale source,
+#     injury mute, equipment swap, user dislike, BW scaling,
+#     HRV-red intensity cap + overhead drop, sleep-debt cap,
+#     recent-volume awareness, Kobe-target ±20% scaling.
+#
+# Cassettes deferred per directive — LLM enrichment is overlay-only
+# (NOTES voice), so the structural adapter contract holds without
+# real Gemini calls. When GEMINI_API_KEY lands in the runtime env,
+# enrichment fires automatically via tests/cassettes/fraser/.
+#
+# route() now returns Reply(confidence=0.5) since the adapter
+# produces real cards (not a stub). Miya's tie-breaker logic
+# applies normally.
+from agents.fraser.agent import FraserAgent                   # noqa: E402
+miya.register(FraserAgent())
 # miya.register(CoachAgent())            # placeholder — Phase Next
 # miya.register(HubermanAgent())         # placeholder — Phase Next (was Bajrangi)
 # miya.register(CurriculumAgent())       # placeholder — Phase Next

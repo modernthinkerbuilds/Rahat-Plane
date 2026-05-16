@@ -151,6 +151,116 @@ class TestPolicyCrash:
         ]
 
 
+# ─────────────────────────── Fraser policies (Day-3) ───────────────────────────
+class TestFraserHrvRedBlocksWorkout:
+    """`fraser.workout.commit` is gated by `huberman_state.recovery_color`.
+    Red vetoes; green/amber approve. priority<=2 is the single-axis
+    urgent bypass — same convention as quiet_hours. No parallel
+    `_override_*` payload flag should exist."""
+
+    def _wo(self, *, priority=5):
+        return WorkOrder(
+            kind="fraser.workout.commit",
+            payload={"date_iso": "2026-05-14"},
+            requester="fraser", priority=priority)
+
+    def test_red_vetoes_normal_priority(self, sandbox_db):
+        v = charter.review(self._wo(),
+                           ctx={"huberman_state": {"recovery_color": "red"}})
+        assert not v.approved
+        assert "red" in (v.reason or "").lower()
+
+    def test_priority_2_bypasses_red(self, sandbox_db):
+        """Single-axis urgent convention — matches quiet_hours."""
+        v = charter.review(self._wo(priority=2),
+                           ctx={"huberman_state": {"recovery_color": "red"}})
+        assert v.approved
+        assert "urgent" in (v.reason or "").lower()
+
+    def test_priority_3_does_not_bypass_red(self, sandbox_db):
+        v = charter.review(self._wo(priority=3),
+                           ctx={"huberman_state": {"recovery_color": "red"}})
+        assert not v.approved
+
+    def test_green_approves(self, sandbox_db):
+        v = charter.review(self._wo(),
+                           ctx={"huberman_state": {"recovery_color": "green"}})
+        assert v.approved
+
+    def test_amber_approves(self, sandbox_db):
+        """Amber is yellow-flag, not block. Spec §2.1 — only red blocks."""
+        v = charter.review(self._wo(),
+                           ctx={"huberman_state": {"recovery_color": "amber"}})
+        assert v.approved
+
+    def test_no_huberman_state_defaults_to_approve(self, sandbox_db):
+        """Defensive default: missing state ≠ red. The reasoner caller
+        is responsible for populating ctx; absence shouldn't fail-closed
+        because that masks the bug instead of surfacing it."""
+        v = charter.review(self._wo(), ctx={})
+        assert v.approved
+
+
+class TestFraser1RMIncreaseNeedsGreen:
+    """`fraser.1rm.update` requires Huberman=green for INCREASES.
+    Decreases always approve. Urgent priority bypasses."""
+
+    def _wo(self, *, weight_kg=100.0, priority=5):
+        return WorkOrder(
+            kind="fraser.1rm.update",
+            payload={"lift": "deadlift", "weight_kg": weight_kg},
+            requester="fraser", priority=priority)
+
+    def test_increase_with_red_vetoes(self, sandbox_db):
+        v = charter.review(
+            self._wo(weight_kg=160),
+            ctx={"current_weight_kg": 155.0,
+                 "huberman_state": {"recovery_color": "red"}})
+        assert not v.approved
+        assert "increase" in (v.reason or "").lower()
+
+    def test_increase_with_amber_vetoes(self, sandbox_db):
+        """Amber blocks 1RM increases too — anything below green."""
+        v = charter.review(
+            self._wo(weight_kg=160),
+            ctx={"current_weight_kg": 155.0,
+                 "huberman_state": {"recovery_color": "amber"}})
+        assert not v.approved
+
+    def test_increase_with_green_approves(self, sandbox_db):
+        v = charter.review(
+            self._wo(weight_kg=160),
+            ctx={"current_weight_kg": 155.0,
+                 "huberman_state": {"recovery_color": "green"}})
+        assert v.approved
+
+    def test_decrease_always_approves(self, sandbox_db):
+        """Spec §11: decreases always go through, regardless of color."""
+        v = charter.review(
+            self._wo(weight_kg=150),
+            ctx={"current_weight_kg": 155.0,
+                 "huberman_state": {"recovery_color": "red"}})
+        assert v.approved
+
+    def test_first_time_1rm_treated_as_increase(self, sandbox_db):
+        """No prior 1RM (current=0) is an increase from 0 → N. Requires
+        green so the % math isn't anchored on a stressed PR."""
+        v = charter.review(
+            self._wo(weight_kg=100),
+            ctx={"current_weight_kg": 0.0,
+                 "huberman_state": {"recovery_color": "red"}})
+        assert not v.approved
+
+    def test_priority_2_bypasses_increase_gate(self, sandbox_db):
+        """Single-axis urgent — matches the workout-commit pattern."""
+        v = charter.review(
+            self._wo(weight_kg=160, priority=2),
+            ctx={"current_weight_kg": 155.0,
+                 "huberman_state": {"recovery_color": "red"}})
+        assert v.approved
+        assert "urgent" in (v.reason or "").lower()
+
+
 # ─────────────────────────── governance_log persistence ───────────────────────────
 class TestGovernanceLog:
     """Every review writes one row. This is the audit anchor — without

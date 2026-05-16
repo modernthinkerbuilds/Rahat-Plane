@@ -265,11 +265,17 @@ class TestCoaching:
 class TestPaceStatus:
     def test_pace_check(self, sci_module):
         out = _route(sci_module, "pace check")
-        assert "Today:" in out
+        # 2026-05-16: /pace output shape changed from "Today: <kind>"
+        # to "Today — <kind>" (em-dash header) when prorated pacing
+        # landed. The literal "Today" + day-target line are the
+        # contract anchors that survived the format change.
+        assert "Today" in out
+        assert "target" in out.lower() or "no target" in out.lower()
 
     def test_on_track(self, sci_module):
         out = _route(sci_module, "am I on track")
-        assert "Today:" in out
+        assert "Today" in out
+        assert "target" in out.lower() or "no target" in out.lower()
 
     def test_weigh_in_window(self, sci_module):
         out = _route(sci_module, "when should I weigh in").lower()
