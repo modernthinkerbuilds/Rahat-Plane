@@ -1823,34 +1823,141 @@ def _try_slash_command(msg: str) -> str | None:
     return handler_fn()
 
 
+# ─────────────────────── Day-8: Delegation routing ───────────────────
+# Per ADR-006/-007: when the user asks about Fraser's or Huberman's
+# territory, Kobe must NOT synthesize a reply from training-data priors
+# (the 2026-05-16 production bug — "what is the WOD" → Kobe invents a
+# workout). Instead Kobe detects the out-of-domain shape and calls
+# delegate_to(), forwarding the response with attribution.
+#
+# Today's `_should_delegate` is a DETERMINISTIC keyword detector — the
+# LLM reasoner (Day-9+) will replace this with a model-driven decision.
+# Keeping it deterministic today means the tests pin a stable contract;
+# the Day-9 LLM upgrade preserves the contract shape (it just makes the
+# inference fuzzier and broader-coverage).
+#
+# Mirrors `agents/fraser/handler.py::_should_delegate` exactly in shape,
+# inverted in content: Kobe's "delegate to Fraser" patterns are the
+# workout-prescription ones; Fraser's are the weight/HRV ones.
+
+# Fraser's territory: workout design, CrossFit programming, scaled
+# loads, WOD selection, gym programming, movement substitutions,
+# warm-up/cool-down ATTACHED to today's WOD.
+_FRASER_DELEGATION_PATTERNS = [
+    # The 2026-05-16 bug query itself + obvious paraphrases.
+    re.compile(r"\bwhat(?:'s|\s+is)\s+(?:my\s+|the\s+|today'?s\s+)?wod\b", re.I),
+    re.compile(r"\b(?:give|show)\s+me\s+(?:the\s+|today'?s\s+|my\s+)?workout\b", re.I),
+    re.compile(r"\btoday'?s\s+(?:crossfit|workout|wod|session|prescription)\b", re.I),
+    # "design / scale / substitute / programming" intents.
+    re.compile(r"\b(scale|substitute|sub)\s+.*\bwod\b", re.I),
+    # Allow hyphenated movement names ("pull-ups for ring rows").
+    re.compile(r"\b(can|how)\s+(?:i\s+)?(?:substitute|sub|swap)\s+[\w-]+(?:\s+\w+)?\s+for\s+[\w-]+", re.I),
+    re.compile(r"\bworkout\s+(?:design|programming|prescription|card)\b", re.I),
+    re.compile(r"\b(crossfit|cf)\s+programming\b", re.I),
+    re.compile(r"\b(?:scaled?|adjust(?:ed)?)\s+(?:load|loads|weight|weights)\b", re.I),
+    re.compile(r"\b(?:percentage|%)\s+of\s+(?:my\s+)?1rm\b", re.I),
+    re.compile(r"\bi\s+want\s+to\s+do\s+prvn\b", re.I),
+    re.compile(r"\bmake[-\s]?up\s+(?:session|workout|wod)\b", re.I),
+    # "what am I doing at the gym today" — gym-prescription intent.
+    re.compile(r"\bwhat.*(?:doing|do)\s+at\s+the\s+gym\b", re.I),
+    re.compile(r"\bprescribe\s+(?:my\s+|a\s+)?workout\b", re.I),
+]
+
+# Huberman's territory: sleep quality, RHR trends, recovery color
+# semantics (when asked AS a vitals interpretation question, not when
+# Kobe is using the values internally for tier selection).
+_HUBERMAN_DELEGATION_PATTERNS = [
+    re.compile(r"\b(?:how|how\s+much)\s+(?:did\s+i\s+sleep|was\s+my\s+sleep)\b", re.I),
+    re.compile(r"\bsleep\s+(?:quality|score|last\s+night|hours|trend)\b", re.I),
+    re.compile(r"\brhr\b.*\b(?:trend|today|last|interpret|mean)\b", re.I),
+    re.compile(r"\bresting\s+heart\s+rate\b", re.I),
+    re.compile(r"\bhow\s+recovered\s+am\s+i\b", re.I),
+    # "am I in red/yellow/green" — recovery COLOR signal, distinct
+    # from tier-name selection (which stays with Kobe).
+    re.compile(r"\bam\s+i\s+(?:in\s+)?(?:red|yellow|green)\s+(?:zone|signal|today)?\b", re.I),
+    re.compile(r"\brecovery\s+(?:color|signal|status)\b", re.I),
+]
+
+
+def _should_delegate(msg: str) -> str | None:
+    """Return the target agent name if `msg` is in Fraser/Huberman
+    territory, None if Kobe should handle it.
+
+    Order: Fraser patterns first (the 2026-05-16 bug's territory),
+    then Huberman. First match wins. Pure-Kobe questions
+    ("what's my weight", "log hrv 42", "tier hammer", "pace check")
+    never match these patterns and route to Kobe's existing
+    handlers / reasoner.
+    """
+    if not msg:
+        return None
+    for pat in _FRASER_DELEGATION_PATTERNS:
+        if pat.search(msg):
+            return "fraser"
+    for pat in _HUBERMAN_DELEGATION_PATTERNS:
+        if pat.search(msg):
+            return "huberman"
+    return None
+
+
+def _delegate_and_forward(target: str, msg: str) -> str:
+    """Call core.delegation.delegate_to(target, msg) and shape the
+    response into Kobe's outbound text. Forwarding with attribution
+    per ADR-007: "Fraser says: ..." for structured replies. On
+    delegation failure (loop / depth / agent_not_registered /
+    disabled), surface the fallback_reply transparently.
+    """
+    from core import delegation as _delegation
+    result = _delegation.delegate_to(target, msg)
+    if result.get("agent") and result.get("reply"):
+        return f"{result['agent']} says: {result['reply']}"
+    return result.get(
+        "fallback_reply",
+        f"Couldn't hand that off to {target}. Try /pace, /plan, "
+        "or rephrase.")
+
+
 def route(msg: str) -> str:
     """Top-level inbound dispatcher.
 
-    Order:
+    Order (Day-8, post-ADR-006/-007):
       1. Slash commands (`/pace`, `/today`, ...) → deterministic
          handler, no LLM. Cheap, ~zero latency, always wins.
-      2. RAHAT_LEGACY_DISPATCH=1 env → regex `_legacy_route`.
-      3. Default (Phase 4, model-first) → `reasoner.reason(msg)`.
-      4. Reasoner crash → fall back to `_legacy_route`.
+      2. Cross-agent delegation — if the message is in Fraser's or
+         Huberman's territory, hand off via core.delegation. This is
+         the discipline that stops the 2026-05-16 bug from recurring:
+         Kobe NEVER answers WOD/scaled-load/sleep questions from
+         training-data priors.
+      3. RAHAT_LEGACY_DISPATCH=1 env → regex `_legacy_route`.
+      4. Default (Phase 4, model-first) → `reasoner.reason(msg)`.
+      5. Reasoner crash → fall back to `_legacy_route`.
 
-    Phase 4 (model-first): default path is the reasoner in
-    `agents.the_scientist.reasoner.reason()`. Set
-    `RAHAT_LEGACY_DISPATCH=1` in env to fall back to the regex+handler
-    dispatcher (preserved as `_legacy_route` below). The legacy path
-    will be deleted after the reasoner has logged a clean week per
-    specs/MODEL-FIRST-PIVOT.md §6 Phase 4.
+    The slash check runs BEFORE delegation on purpose: /pace and /week
+    are unambiguous Kobe intent and should never round-trip through
+    another agent, even if the message contained the word "WOD".
+
+    Phase 4 (model-first): the reasoner path is the long-run answer.
+    Day-9+ replaces `_should_delegate`'s deterministic detector with
+    a model-driven decision invoked by the reasoner itself; today's
+    code keeps the delegation step deterministic for testability and
+    will retire when Day-9 lands.
 
     Reasoner failures (Anthropic + Gemini both down) automatically
     cascade into the legacy path, so this is also the live resilience
     boundary.
     """
-    # Phase 4d-2 (R1) Step 1 — Kobe slash dispatcher. Runs BEFORE both
-    # the legacy regex router and the model-first reasoner so a typed
-    # "/pace" never spends a Gemini token. Unknown slashes return None
-    # and fall through to whichever path comes next.
+    # 1. Slash dispatcher (Day-1 R1 step 1).
     slash = _try_slash_command(msg)
     if slash is not None:
         return slash
+
+    # 2. Cross-agent delegation (Day-8, ADR-006/-007). Runs BEFORE the
+    # legacy regex router AND the model-first reasoner so any "what's
+    # the WOD" shape lands at Fraser without spending a Kobe token on
+    # a guaranteed-wrong answer.
+    target = _should_delegate(msg)
+    if target is not None:
+        return _delegate_and_forward(target, msg)
 
     if os.getenv("RAHAT_LEGACY_DISPATCH", "").lower() in ("1", "true", "yes"):
         return _legacy_route(msg)

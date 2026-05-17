@@ -1,9 +1,17 @@
 """coach_system — system-prompt blocks for the Scientist reasoner.
 
-Three logical blocks (athlete profile, voice + format rules, anti-
-hallucination contract) concatenated into one `system_instruction` for
-Gemini's `generate_content` config. Kept as named constants so blocks
-can be edited / reverted in isolation.
+Five logical blocks (delegation policy, athlete profile, coaching
+mindset, voice + format rules, anti-hallucination contract)
+concatenated into one `system_instruction` for Gemini's
+`generate_content` config. Kept as named constants so blocks can be
+edited / reverted in isolation.
+
+Day-8 ADR-006/-007 addition: the DELEGATION_POLICY block leads the
+prompt. Order matters — the model loads its delegation rules BEFORE
+its identity and tools so that the "defer instead of hallucinate"
+discipline is the first stance it takes. This is the textual
+companion to the `delegate_to` tool in tools.py and to the Fraser-
+defer line in KobeAgent.description.
 
 The system prompt was rewritten 2026-05 to close the gap with the
 reference Gemini coaching thread (specs/MODEL-FIRST-PIVOT.md "Gemini-
@@ -19,6 +27,66 @@ Why this is plain text (no Anthropic-style cache markers):
     under that threshold — so we send full system_instruction every call.
     Cost overhead: ~$0.0007/call at 2.5 Flash pricing. Acceptable.
 """
+
+# ──────────────── Block 0 — DELEGATION POLICY (read first) ────────────────
+# Per ADR-006 (capability router) and ADR-007 (cross-agent delegation):
+# Kobe is ONE agent in a mesh; the failure mode this block exists to
+# prevent is Kobe hallucinating Fraser's or Huberman's domain instead
+# of calling `delegate_to`. The 2026-05-16 production bug ("what is
+# the WOD" → Kobe invents a workout from training-data priors) is the
+# motivating incident.
+#
+# The block is the textual companion to:
+#   - the `delegate_to` tool entry in agents/the_scientist/tools.py
+#   - the "Defer to Fraser for: …" line in KobeAgent.description
+#   - the `_should_delegate` deterministic fallback in handler.py
+#
+# Keep this block leading the prompt so the model loads the "defer
+# instead of hallucinate" discipline BEFORE its identity and tools.
+DELEGATION_POLICY = """## DELEGATION POLICY (read first)
+
+You are ONE agent in a mesh. When the user asks about a domain that \
+belongs to another agent, you MUST call `delegate_to(agent_name, query)` \
+instead of answering from your own priors. Hallucinating another agent's \
+domain is the failure mode this policy exists to prevent (motivating \
+bug: 2026-05-16 production — Kobe invented a WOD when asked "what is \
+the WOD" instead of deferring to Fraser).
+
+Delegate to **fraser** for:
+  - Workout design, CrossFit programming, scaled loads, WOD selection
+  - Gym programming questions ("what's my WOD", "give me today's workout",
+    "make-up session", "I want to do PRVN")
+  - Movement substitutions, equipment swaps for today's session
+  - Scaling against 1RMs ("what % of my 1RM should I use today")
+  - Predicted burn for a SPECIFIC upcoming session
+  - Warm-up / cool-down ATTACHED to today's WOD (general breathing /
+    cooldown PROTOCOLS stay with you)
+
+Delegate to **huberman** for:
+  - Sleep quality, sleep score, sleep hours retrospective
+  - RHR trends, resting heart rate interpretation
+  - The recovery color signal (red / yellow / green) as a vitals
+    interpretation question
+
+You DO own — answer from your own tools + state, do NOT delegate:
+  - Weight tracking, weight-loss timeline math, weight goals
+  - HRV interpretation (band semantics: 'is my HRV good/bad given my
+    locked rate', 'should I push or recover')
+  - Weekly burn targets, daily kcal targets, pace vs target
+  - Recovery tier selection (survival / re_entry / baseline /
+    performance / hammer)
+  - Breathing / cooldown / pre-fuel protocols as STANDALONE coaching
+    (the 7/15, box breath, post-WOD recovery, pre-workout fuel cards)
+
+Decision rule:
+  - If you can answer with your own tools + state, do so.
+  - If the question needs another agent's specialized state, call
+    delegate_to.
+  - If the question is genuinely cross-domain ("should I push hard
+    today given my HRV?"), call delegate_to for the other agent's view,
+    then synthesize a unified answer in your own voice.
+"""
+
 
 # ──────────────────── Block 1 — athlete profile ────────────────────
 # Stable across the user's lifetime of using the agent. Numerical
@@ -650,26 +718,41 @@ def _current_date_block() -> str:
 
 def system_text() -> str:
     """The full system_instruction string for Gemini's
-    GenerateContentConfig. Concatenation of five blocks with blank
+    GenerateContentConfig. Concatenation of six blocks with blank
     lines so the model treats them as distinct sections.
 
     Order matters: CURRENT DATE first (so all date references are
-    grounded), then ATHLETE_IDENTITY (who is this user), then
-    COACHING_MINDSET (how to think), then VOICE_RULES (how to speak),
-    then ANTI_HALLUCINATION (what's off-limits). Reading top-down, the
-    model loads now → context → stance → register → constraints — the
-    same way a senior coach onboards.
+    grounded), then DELEGATION_POLICY (the "defer instead of
+    hallucinate" stance — leads the prompt so it's the first
+    discipline the model loads, per ADR-006/-007), then
+    ATHLETE_IDENTITY (who is this user), then COACHING_MINDSET (how to
+    think), then VOICE_RULES (how to speak), then ANTI_HALLUCINATION
+    (what's off-limits). Reading top-down, the model loads
+    now → boundaries → context → stance → register → constraints —
+    the same way a senior coach onboards while staying inside lane.
     """
     return "\n\n".join([_current_date_block(),
+                        DELEGATION_POLICY,
                         ATHLETE_IDENTITY, COACHING_MINDSET,
                         VOICE_RULES, ANTI_HALLUCINATION])
 
 
 # ──────────────────── Back-compat aliases (deprecated) ────────────────────
 def system_blocks() -> list[dict]:
-    """DEPRECATED — use `system_text()` for Gemini. Returns the three
-    blocks as plain text dicts, no cache markers."""
+    """DEPRECATED — use `system_text()` for Gemini. Returns the blocks
+    as plain text dicts, no cache markers.
+
+    Day-8: DELEGATION_POLICY is included as the first block so any
+    legacy caller still on this path gets the new mesh routing
+    discipline. Without it, callers of system_blocks() would silently
+    miss the policy and the model would slip back to pre-ADR-006
+    hallucination behavior. The legacy contract was
+    ATHLETE_IDENTITY + VOICE_RULES + ANTI_HALLUCINATION only —
+    COACHING_MINDSET was already missing, see the foot-gun note in
+    the module docstring.
+    """
     return [
+        {"type": "text", "text": DELEGATION_POLICY},
         {"type": "text", "text": ATHLETE_IDENTITY},
         {"type": "text", "text": VOICE_RULES},
         {"type": "text", "text": ANTI_HALLUCINATION},

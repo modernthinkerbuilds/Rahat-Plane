@@ -1,49 +1,13 @@
-# Rahat test report — ❌ FAIL
+# Rahat test report — ✅ PASS
 
 | Layer | Status | Passed | Failed | Skipped | Time |
 |---|---|---:|---:|---:|---:|
-| `unit` | ❌ | 0 | 0 | 0 | 0.02s |
-| `contract` | ❌ | 0 | 0 | 0 | 0.02s |
-| `eval` | ❌ | 0 | 0 | 0 | 0.02s |
-| `adversarial` | ❌ | 0 | 0 | 0 | 0.02s |
-| `regression` | ❌ | 0 | 0 | 0 | 0.02s |
-| **total** | ❌ | **0** | **0** | **0** | **0.08s** |
-
-## Failures
-### `unit` — return-code=1
-
-```
-
-/Library/Developer/CommandLineTools/usr/bin/python3: No module named pytest
-```
-
-### `contract` — return-code=1
-
-```
-
-/Library/Developer/CommandLineTools/usr/bin/python3: No module named pytest
-```
-
-### `eval` — return-code=1
-
-```
-
-/Library/Developer/CommandLineTools/usr/bin/python3: No module named pytest
-```
-
-### `adversarial` — return-code=1
-
-```
-
-/Library/Developer/CommandLineTools/usr/bin/python3: No module named pytest
-```
-
-### `regression` — return-code=1
-
-```
-
-/Library/Developer/CommandLineTools/usr/bin/python3: No module named pytest
-```
+| `unit` | ✅ | 28 | 0 | 0 | 0.29s |
+| `contract` | ✅ | 482 | 0 | 2 | 6.79s |
+| `eval` | ✅ | 53 | 0 | 1 | 11.93s |
+| `adversarial` | ✅ | 14 | 0 | 0 | 3.55s |
+| `regression` | ✅ | 17 | 0 | 0 | 0.98s |
+| **total** | ✅ | **594** | **0** | **3** | **23.54s** |
 
 ## Layers
 - **unit** — Pure-function unit tests (voice, cost, helpers, no I/O).
