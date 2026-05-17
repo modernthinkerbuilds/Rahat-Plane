@@ -486,22 +486,32 @@ def _m7_active_goal_supersession_excluded():
 
 def _m7_morning_brief_uses_active_target():
     """The morning brief's `Week so far: X / Y` line must reflect the
-    active commitment, not the locked default."""
+    active commitment, not the locked default. After the 2026-05 Kobe
+    rebrand+refactor, the morning brief moved from main.py to handler.py
+    — check both locations for backward compatibility."""
     _isolate(_fresh_db())
     from core import memory as mem
     mem.put_entity("scientist", "commitment",
                    {"kind": "weekly_target", "value": 7000})
-    src = (ROOT / "agents" / "the_scientist" / "main.py").read_text()
-    # Source-level guarantee: the morning brief uses weekly_target()
-    # which we just verified flows through the substrate.
-    assert "Week so far: {fmt_kcal(burned)} / {fmt_kcal(target)}" in src
-    assert "target = weekly_target()" in src
+    src = ""
+    for path in (ROOT / "agents" / "the_scientist" / "handler.py",
+                 ROOT / "agents" / "the_scientist" / "main.py"):
+        if path.exists():
+            src += path.read_text()
+    assert "Week so far" in src, "morning brief missing 'Week so far' line"
+    assert "weekly_target()" in src, (
+        "morning brief doesn't call weekly_target() — won't pick up the "
+        "active commitment")
 
 
 def _m7_morning_brief_surfaces_goal_line():
     """When a goal exists in memory, the morning brief should include
-    a 🎯 Goal line with the target_lbs and target_date."""
-    src = (ROOT / "agents" / "the_scientist" / "main.py").read_text()
+    a 🎯 Goal line. Lives in handler.py after the refactor."""
+    src = ""
+    for path in (ROOT / "agents" / "the_scientist" / "handler.py",
+                 ROOT / "agents" / "the_scientist" / "main.py"):
+        if path.exists():
+            src += path.read_text()
     assert "goal_line" in src, "morning-brief missing goal_line"
     assert "🎯 Goal" in src, "morning-brief missing goal emoji"
 

@@ -95,6 +95,17 @@ def _load_sci(test_db: Path, plan: Path):
     spec.loader.exec_module(sci)
     cio.DB_PATH = test_db
     sci.PLAN_PATH = plan
+    # 2026-05 refactor: handler.py owns its own PLAN_PATH constant
+    # after extraction from main.py. Patch BOTH so any handler reading
+    # the module-local constant (handle_filter, handle_eligible_cf_days,
+    # handle_show_plan, parse_gym_plan, maybe_morning_briefing) sees
+    # the test fixture.
+    try:
+        from agents.the_scientist import handler as _h
+        _h.PLAN_PATH = plan
+        _h.DB_PATH = test_db
+    except Exception:
+        pass
     # Reset volatile state. raw_vitals included so manual `wt:` writes
     # via handle_weight() are authoritative for tests — otherwise the
     # Apple-Watch-derived value seeded into the live DB shadows them
@@ -128,17 +139,29 @@ class _FrozenDatetime(datetime):
 
 @contextlib.contextmanager
 def frozen_time(sci, when: datetime):
-    """Freeze `sci.datetime.now()` at `when` for the duration of the
-    block. The Scientist imports `from datetime import datetime` so we
-    must patch the binding inside the module — not the standard library.
+    """Freeze datetime.now() across every module that owns its own
+    `from datetime import datetime` binding. After the 2026-05 Kobe
+    refactor, the morning brief + nudges live in handler.py, burn
+    helpers live in state.py, and the assembler lives in memory.py
+    — patch all four so the freeze actually takes effect.
     """
-    original = sci.datetime
     _FrozenDatetime._frozen = when
-    sci.datetime = _FrozenDatetime
+    targets: list[tuple] = [(sci, sci.datetime)]
+    for modname in ("agents.the_scientist.handler",
+                    "agents.the_scientist.state",
+                    "agents.the_scientist.memory",
+                    "agents.the_scientist.protocols"):
+        if modname in sys.modules:
+            m = sys.modules[modname]
+            if hasattr(m, "datetime"):
+                targets.append((m, m.datetime))
+    for m, _ in targets:
+        m.datetime = _FrozenDatetime
     try:
         yield
     finally:
-        sci.datetime = original
+        for m, original in targets:
+            m.datetime = original
         _FrozenDatetime._frozen = None
 
 
@@ -564,7 +587,15 @@ def _b3_week_prefs_survive_restart():
             "sci", ROOT / "agents" / "the_scientist" / "main.py")
         m = importlib.util.module_from_spec(spec); sys.modules["sci"] = m
         spec.loader.exec_module(m)
+        # cio.DB_PATH is the actual source of truth read by state._db()
+        # after the 2026-05 refactor — patch it alongside m.DB_PATH.
+        cio.DB_PATH = db
         m.DB_PATH = db; m.PLAN_PATH = plan
+        try:
+            from agents.the_scientist import handler as _h
+            _h.PLAN_PATH = plan; _h.DB_PATH = db
+        except Exception:
+            pass
         if reset_state:
             con = sqlite3.connect(str(db))
             for t in ("user_state","nudge_log","weekly_plan",
@@ -597,7 +628,15 @@ def _b3_intents_seeded_idempotently():
             "sci", ROOT / "agents" / "the_scientist" / "main.py")
         m = importlib.util.module_from_spec(spec); sys.modules["sci"] = m
         spec.loader.exec_module(m)
+        # cio.DB_PATH is the actual source of truth read by state._db()
+        # after the 2026-05 refactor — patch it alongside m.DB_PATH.
+        cio.DB_PATH = db
         m.DB_PATH = db; m.PLAN_PATH = plan
+        try:
+            from agents.the_scientist import handler as _h
+            _h.PLAN_PATH = plan; _h.DB_PATH = db
+        except Exception:
+            pass
         m._db().close()
         return m
 
@@ -1013,18 +1052,34 @@ def _b7_missed_workout_detector_basic():
     # Mon CF burned only 450 → missed; Tue rest 200 → not applicable;
     # Wed today CF burned 100 → in progress, not missed.
     today_idx = 2  # Wed
-    # Need to monkey-patch burn_for_date for deterministic test
-    real_burn = sci.burn_for_date
+    # Need to monkey-patch burn_for_date across all modules that bind
+    # it. After the 2026-05 refactor, burn_for_date lives in state.py
+    # but main.py and handler.py both re-export it.
+    from agents.the_scientist import state as _state
+    try:
+        from agents.the_scientist import handler as _h
+    except Exception:
+        _h = None
     burns_by_date = {
         monday: 450.0,                          # Mon
         monday + sci.timedelta(days=1): 200.0,  # Tue
         monday + sci.timedelta(days=2): 100.0,  # Wed (today)
     }
-    sci.burn_for_date = lambda d: burns_by_date.get(d, 0.0)
+    _stub = lambda d: burns_by_date.get(d, 0.0)
+    real_sci = sci.burn_for_date
+    real_st = _state.burn_for_date
+    real_h = getattr(_h, "burn_for_date", None) if _h else None
+    sci.burn_for_date = _stub
+    _state.burn_for_date = _stub
+    if _h and real_h is not None:
+        _h.burn_for_date = _stub
     try:
         missed = sci.detect_missed_workouts(plan_rows, today_idx, monday)
     finally:
-        sci.burn_for_date = real_burn
+        sci.burn_for_date = real_sci
+        _state.burn_for_date = real_st
+        if _h and real_h is not None:
+            _h.burn_for_date = real_h
     assert len(missed) == 1, f"expected 1 missed (Mon), got: {missed}"
     assert missed[0]["weekday"] == 0
     assert missed[0]["day_type"] == "cf"
@@ -1041,12 +1096,26 @@ def _b7_missed_workout_threshold_boundary():
         {"weekday": 1, "day_type": "cf", "gym_label": None, "target_kcal": 850},
     ]
     monday, _ = sci.week_bounds()
-    real_burn = sci.burn_for_date
-    sci.burn_for_date = lambda d: 700.0 if d == monday else 699.0
+    from agents.the_scientist import state as _state
+    try:
+        from agents.the_scientist import handler as _h
+    except Exception:
+        _h = None
+    _stub = lambda d: 700.0 if d == monday else 699.0
+    real_sci = sci.burn_for_date
+    real_st = _state.burn_for_date
+    real_h = getattr(_h, "burn_for_date", None) if _h else None
+    sci.burn_for_date = _stub
+    _state.burn_for_date = _stub
+    if _h and real_h is not None:
+        _h.burn_for_date = _stub
     try:
         missed = sci.detect_missed_workouts(plan_rows, today_idx=3, monday=monday)
     finally:
-        sci.burn_for_date = real_burn
+        sci.burn_for_date = real_sci
+        _state.burn_for_date = real_st
+        if _h and real_h is not None:
+            _h.burn_for_date = real_h
     # Mon (700) should NOT be missed; Tue (699) SHOULD be missed
     missed_wds = {m["weekday"] for m in missed}
     assert 0 not in missed_wds, f"Mon at 700 should not be missed: {missed}"
