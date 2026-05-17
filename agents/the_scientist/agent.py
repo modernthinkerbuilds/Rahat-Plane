@@ -70,19 +70,51 @@ class KobeAgent(Agent):
     # Legacy name still recognized by Miya's routing layer. Drop after
     # one full week of green nightlies.
     aliases: list[str] = ["the_scientist"]
+    # Day-8 rewrite per ADR-006 §"Required updates to agent descriptions".
+    # The classifier in core/miya.classify_intent() reads this string
+    # alongside Fraser's and Huberman's; the load-bearing line is the
+    # final "Defer to Fraser for: …" sentence — without it the
+    # classifier keeps picking Kobe for anything fitness-shaped because
+    # Kobe's domain overlaps Fraser's. This is the exact failure mode
+    # of the 2026-05-16 production bug ("what is the WOD" → Kobe
+    # hallucinates instead of deferring).
+    #
+    # The verbatim string "Defer to Fraser for: workout design,
+    # CrossFit programming, scaled loads, WOD selection." is pinned by
+    # tests/test_kobe_description_contract.py — drift the wording in
+    # a future refactor and the contract test fires.
     description = (
-        "Vitality lead. Owns weight, HRV, weekly caloric targets, the 3 CF "
-        "+ 1 Z2 + active-rest cadence, weight-loss timeline math, and the "
-        "Hyderabadi-direct coaching voice. Use for any question about "
-        "calories, HRV, weight, weighing in, workout plan, schedule, "
-        "training tier, breathing protocols, pre/post-workout fuel, or "
-        "weekday-specific workout lookups."
+        "Vitality coach. Owns weight tracking, HRV interpretation, "
+        "weekly caloric burn targets, weight-loss timeline math, "
+        "recovery tier selection, breathing / cooldown / pre-fuel "
+        "protocols, and the Hyderabadi-direct coaching voice. "
+        "Use for: 'what's my weight', 'log my weight 195', "
+        "'what's my HRV say', 'how am I tracking this week', "
+        "'when will I hit 80 kg', 'set tier hammer', "
+        "'7/15 breathing', 'pre-workout fuel', 'pace check', "
+        "'what's my weekly burn target' — any weight-tracking, "
+        "HRV-interpretation, burn-target, timeline-math, recovery-"
+        "tier, or breathing/cooldown/pre-fuel question. "
+        "Defer to Fraser for: workout design, CrossFit programming, "
+        "scaled loads, WOD selection."
     )
-    version = "0.3.0"
+    version = "0.8.0-day8-mesh-routing"
 
-    # Mirrors the legacy regex router's high-confidence triggers — Miya
-    # walks these first so a bare "today" or "weight 195" doesn't have
-    # to round-trip through the LLM classifier.
+    # Day-8: trigger list PRUNED per ADR-006. The capability classifier
+    # in core/miya.classify_intent() now reads the description above
+    # and handles fuzzy semantic routing — broad workout-keyword
+    # patterns ("workout" / "crossfit" / "cf" / "wod" / "zone 2" /
+    # "z2" / "plan" / "schedule") were REMOVED because they captured
+    # every fitness-shaped query and starved Fraser of its own domain
+    # in the fallback path.
+    #
+    # What's left is the deterministic backstop: numeric weight logging,
+    # explicit HRV numbers, today/yesterday/last-week/remain lookups,
+    # tier color, breathing/cooldown/pre-fuel, manual burn logging,
+    # pace/status. These are unambiguous Kobe territory even when the
+    # classifier is unavailable (no API key, network error, test
+    # sandbox). See ADR-006 §"Retirement" — these go away entirely
+    # after one full week of green nightlies on classifier-routing.
     triggers = [
         # Daily / weekly burn lookups
         r"\b(today|yesterday|now)\b",
@@ -94,19 +126,30 @@ class KobeAgent(Agent):
         r"\b(?:current\s+weight|how\s+much\s+do\s+i\s+weigh|weight\s+now)\b",
         r"\bhow\s+long\s+to\s+\d+\s*(?:kg|lbs?)\b",
         r"\bto\s+\d+\s*(?:kg|lbs?)\s+by\b",
-        # HRV
-        r"\bhrv\b",
-        # Plan / schedule
-        r"\b(plan|schedule|which\s+days|when\s+(?:do|am|will)\s+i)\b",
-        r"\b(crossfit|cf|wod|zone\s*2|z2|workout)\b",
-        # Tier
-        r"\btier\b",
+        # HRV (numeric — "hrv 42" is unambiguous; bare "hrv" alone
+        # could be a Huberman interpretation question and is left to
+        # the classifier).
+        r"\bhrv\s+\d",
+        # Tier color — "tier hammer" / "tier red" etc. The bare word
+        # "tier" used to match anything-tier; tightened to require a
+        # color/level token so "tier list" / "tier guide" don't fire.
+        r"\btier\s+(survival|re.?entry|baseline|performance|hammer|red|yellow|green)\b",
         # Coaching protocols
         r"\b(7\s*/?\s*15|box\s+breath|breathing|cooldown|stretch|pre[-\s]?workout|pre[-\s]?fuel)\b",
         # Manual logging
         r"\b(burned|wod|run|walk)\s+\d+\b",
         # Pace / status
         r"\b(pace|on\s+track|status)\b",
+        # ───── REMOVED in Day-8 (ADR-006) ─────────────────────────
+        # The following patterns are DELETED on purpose. Classifier
+        # owns these now via the description's "Defer to Fraser for"
+        # line. Keep this comment as the rationale anchor — future
+        # refactors that re-add these patterns reintroduce the
+        # 2026-05-16 bug.
+        #
+        # r"\b(plan|schedule|which\s+days|when\s+(?:do|am|will)\s+i)\b"
+        # r"\b(crossfit|cf|wod|zone\s*2|z2|workout)\b"
+        # ──────────────────────────────────────────────────────────
     ]
 
     def __init__(self) -> None:

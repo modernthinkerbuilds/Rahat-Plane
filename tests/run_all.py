@@ -91,6 +91,20 @@ LAYERS: list[LayerSpec] = [
             #   8. Security: llm_coach error sanitization (api-key
             #      leak gate — see 2026-05-16 brief)
             "tests/test_handler_regressions.py",
+            # Day-8 (2026-05-17) Kobe mesh routing — ADR-006/-007/-008.
+            # Companion to feat/miya-mesh-routing's classifier work.
+            #   - test_kobe_description_contract.py byte-pins the load-
+            #     bearing "Defer to Fraser for: …" sentence so refactors
+            #     that drift the wording fire loudly.
+            #   - test_kobe_mesh_routing.py pins the behavioral mesh
+            #     contract: trigger pruning, delegate_to in catalog,
+            #     system prompt DELEGATION POLICY, _should_delegate
+            #     detector, route() delegation wiring, end-to-end with
+            #     stubbed classifier. The named regression gate is
+            #     test_what_is_the_wod_delegates_to_fraser — if it
+            #     turns red, Kobe is back to hallucinating WODs.
+            "tests/test_kobe_description_contract.py",
+            "tests/test_kobe_mesh_routing.py",
             # Fraser Day-1 scaffold (2026-05-14, feat/fraser-day1-scaffold).
             # Pins the 11 entity-body protocols, Workout Card round-trip,
             # input-mode classifier, and state.py substrate compliance

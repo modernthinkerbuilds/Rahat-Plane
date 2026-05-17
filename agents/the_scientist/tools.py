@@ -1555,6 +1555,38 @@ def get_recent_actions(n: int = 5) -> dict:
     return {"items": actions, "count": len(actions)}
 
 
+def delegate_to(agent_name: str, query: str,
+                context: dict | None = None) -> dict:
+    """Tool: hand the question off to another agent in the mesh.
+
+    Per ADR-006 + ADR-007 (Day-8): when the user asks about a domain
+    Kobe doesn't own (workout prescription, scaled loads, WOD
+    selection, gym programming → Fraser; sleep quality, RHR trends,
+    recovery color signal → Huberman), Kobe's reasoner MUST call this
+    tool instead of synthesizing a reply from training-data priors.
+
+    Hallucinating Fraser's domain (inventing today's WOD, fabricating
+    scaled loads from imagined 1RMs) is the failure mode this tool
+    exists to prevent — the 2026-05-16 production bug ("what is the
+    WOD" → Kobe hallucinates).
+
+    Returns the dict shape from core.delegation.delegate_to:
+        On success: {"agent": "<name>", "reply": "<text>",
+                     "confidence": <float>, "delegation_depth": <int>,
+                     "trace_id": "<id>"}
+        On failure: {"agent": None, "error": "<code>",
+                     "fallback_reply": "<best-effort string>",
+                     "trace_id": "<id>"}
+    The reasoner forwards `reply` to the user with attribution
+    ("Fraser says: ...") or wraps it in Kobe's voice; on failure it
+    surfaces `fallback_reply` and keeps the conversation alive.
+    """
+    # Lazy import — core.delegation imports core.miya which transitively
+    # imports tools.py in some test paths; deferring breaks the cycle.
+    from core import delegation as _delegation
+    return _delegation.delegate_to(agent_name, query, context=context)
+
+
 # ─────────────────────────── JSON schemas ───────────────────────────
 # Anthropic's tools API takes a list of dicts shaped like:
 #   {"name": ..., "description": ..., "input_schema": {...}}
@@ -2007,6 +2039,59 @@ SCHEMAS: list[dict] = [
             "required": [],
         },
     },
+    {
+        "name": "delegate_to",
+        "description": (
+            "Use when the user asks about a domain Kobe doesn't own. "
+            "Fraser owns: workout design, CrossFit programming, scaled "
+            "loads, WOD selection, gym programming, movement "
+            "substitutions, predicted burn for a SPECIFIC session, "
+            "warm-up / cool-down for today's WOD. Huberman owns: sleep "
+            "quality, RHR trends, the recovery color signal "
+            "(red / yellow / green) as a vitals interpretation. For ANY "
+            "of those, call this tool with the target agent name + the "
+            "user's original message; do NOT synthesize a reply from "
+            "your own priors. Hallucinating Fraser's domain (inventing "
+            "today's WOD, fabricating scaled loads from imagined 1RMs) "
+            "is the failure mode this tool exists to prevent — the "
+            "2026-05-16 production bug. Kobe still answers in its own "
+            "voice for weight tracking, weight-loss timeline math, HRV "
+            "band semantics, weekly burn targets, tier selection, and "
+            "breathing / cooldown / pre-fuel protocols."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "agent_name": {
+                    "type": "string",
+                    "description": (
+                        "Target agent name: 'fraser' for workout-"
+                        "prescription questions, 'huberman' for "
+                        "sleep / RHR / recovery-color questions."
+                    ),
+                },
+                "query": {
+                    "type": "string",
+                    "description": (
+                        "The user's original message OR a refined "
+                        "sub-question. Pass through the full message "
+                        "when in doubt — the target agent can "
+                        "re-narrow."
+                    ),
+                },
+                "context": {
+                    "type": "object",
+                    "description": (
+                        "Optional structured handoff context. Pass "
+                        "any Kobe-side state the target agent might "
+                        "want (current tier, week's burn so far, "
+                        "weight trend slope, etc.)."
+                    ),
+                },
+            },
+            "required": ["agent_name", "query"],
+        },
+    },
 ]
 
 
@@ -2041,6 +2126,10 @@ _DISPATCH: dict[str, Callable[..., Any]] = {
     "log_hrv":                             log_hrv,
     "swap_day":                            swap_day,
     "set_recovery_tier":                   set_recovery_tier,
+    # Day-8 (ADR-006 / ADR-007): cross-agent delegation. The reasoner
+    # calls this when the user asks about Fraser's or Huberman's
+    # territory instead of hallucinating an answer in-domain.
+    "delegate_to":                         delegate_to,
 }
 
 
