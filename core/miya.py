@@ -589,6 +589,16 @@ def route(
         return None
     tid = trace_id or decisions.new_trace()
 
+    # Tier 1 (slash commands) — bypass the classifier entirely.
+    # Slash commands are deterministic shortcuts owned by specific
+    # agents (Kobe owns /pace /today /next /week /plan /fix). They
+    # must reach their agent's handler without going through the
+    # capability classifier, which would otherwise route them based
+    # on semantic similarity to agent descriptions and miss the
+    # slash-handler entirely. See ADR-006 §"Routing tiers".
+    if msg.strip().startswith("/"):
+        return _route_via_triggers(msg, tid, db_path)
+
     # 0. If there's a pending clarification for this chat AND the user
     #    just replied A/B/C, resolve it and dispatch to the chosen
     #    agent with the ORIGINAL message.

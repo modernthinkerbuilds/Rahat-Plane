@@ -14,6 +14,8 @@ What this pins:
   5. Fallback to triggers when classifier returns nothing.
   6. RAHAT_ROUTER_MODE=triggers bypasses classifier entirely.
   7. Env-var thresholds override the defaults.
+  8. Tier-1 slash bypass: msg.startswith("/") routes via triggers,
+     never hits the classifier (regression-pinned 2026-05-17).
 
 Each test is offline. The slash-dispatcher and reasoner paths are
 out of scope here; see test_handler_regressions for slash, test_llm
@@ -348,3 +350,57 @@ def test_route_emits_decisions_span_with_actor_miya(stub_classifier,
     miya.route("any message")
     miya_spans = [c for c in captured if c["actor"] == "miya"]
     assert miya_spans, "miya.route should emit at least one span with actor='miya'"
+
+
+# ─── 6. Tier-1 slash bypass (regression-pinned 2026-05-17) ───────
+# When this fires red, the classifier is intercepting slash commands
+# again — and /pace, /today, /next will route to Fraser's default-mode
+# stub instead of Kobe's slash dispatcher. See miya.log entry pattern
+# `[Fraser] mode=default · hrv=...` for the failure signature.
+def test_slash_command_bypasses_classifier(monkeypatch):
+    """msg.startswith('/') must skip classify_intent and go straight
+    to the trigger-based router. Otherwise /next, /today, /pace get
+    dispatched by semantic similarity (wrong agent, wrong handler)."""
+    miya.register(_Kobe())
+    miya.register(_Fraser())
+
+    classify_called: list[str] = []
+    real_classify = miya.classify_intent
+
+    def _spy(msg, **kw):
+        classify_called.append(msg)
+        return real_classify(msg, **kw)
+
+    monkeypatch.setattr(miya, "classify_intent", _spy)
+
+    # Slash commands MUST NOT hit the classifier.
+    for cmd in ("/pace", "/today", "/next", "/week", "/plan"):
+        classify_called.clear()
+        miya.route(cmd)
+        assert cmd not in classify_called, (
+            f"Slash command {cmd!r} was passed to classify_intent — "
+            f"the Tier-1 bypass at route() is broken. This is the "
+            f"2026-05-17 regression where /next routed to Fraser's "
+            f"default-mode stub instead of Kobe's slash dispatcher."
+        )
+
+
+def test_slash_command_with_leading_whitespace_still_bypasses(monkeypatch):
+    """Defensive: '/pace' with a leading space still counts as slash."""
+    miya.register(_Kobe())
+    classify_called: list[str] = []
+    monkeypatch.setattr(miya, "classify_intent",
+                        lambda m, **kw: classify_called.append(m) or {})
+    miya.route("  /pace")
+    assert "  /pace" not in classify_called
+
+
+def test_non_slash_messages_still_use_classifier(stub_classifier):
+    """Sanity: the bypass is precise. Normal messages still classify."""
+    miya.register(_Kobe())
+    miya.register(_Fraser())
+    stub_classifier.set({"fraser": 0.9})
+
+    reply = miya.route("what is the WOD")
+    assert reply is not None
+    assert "fraser says" in reply.text  # classifier picked Fraser
