@@ -181,6 +181,31 @@ def _build_system_prompt() -> str:
         f"equipment, and preferences. The gym's SugarWOD calendar is "
         f"the source of truth for what to do; your value is the "
         f"last-mile personalization.\n\n"
+        f"## DELEGATION POLICY (read first)\n"
+        f"You are ONE agent in a mesh. When the user asks about a "
+        f"domain that belongs to another agent, you MUST call "
+        f"`delegate_to(agent_name, query)` instead of answering from "
+        f"your own priors. Hallucinating another agent's domain is "
+        f"the failure mode this policy exists to prevent (motivating "
+        f"bug: 2026-05-16 production).\n\n"
+        f"Delegate to **kobe** for:\n"
+        f"  • Weight tracking, weight-loss timeline math, weight goals\n"
+        f"  • Weekly burn targets, daily kcal targets you don't already\n"
+        f"    have from `get_kobe_kcal_target`\n"
+        f"  • HRV band interpretation, what an HRV number means\n"
+        f"  • Recovery tier selection (hammer / zone2 / deload / survival)\n"
+        f"  • Pre/post-workout fuel + breathing protocols\n\n"
+        f"Delegate to **huberman** for:\n"
+        f"  • Sleep quality, sleep score, sleep hours retrospective\n"
+        f"  • RHR trends, resting heart rate interpretation\n"
+        f"  • 'How recovered am I' as a vitals question (NOT as a\n"
+        f"    workout-design input — for that, you already have\n"
+        f"    `get_huberman_state`)\n\n"
+        f"You DO own: workout prescription, scaling against 1RMs, "
+        f"movement substitution, equipment swaps, BW-scaling, "
+        f"calorie-target ±20% scaling on TODAY's session, postural "
+        f"cues, the Workout Card output. Don't delegate these — "
+        f"answer from your own tools + state.\n\n"
         f"## Adaptation pipeline\n"
         f"1. Call `get_todays_source_workout()` FIRST. Handle three "
         f"return shapes:\n"
@@ -1126,14 +1151,105 @@ def _build_enrichment_prompt(card: WorkoutCard,
         "JSON, no markdown headings.")
 
 
+# ─────────────────────── Day-8: Delegation routing ───────────────────
+# Per ADR-006/-007: when the user asks about Kobe's or Huberman's
+# territory, Fraser must NOT synthesize a reply from training-data
+# priors (the 2026-05-16 production bug). Instead, the reasoner
+# detects the out-of-domain shape and calls delegate_to(), forwarding
+# the response with attribution.
+#
+# Today's `_should_delegate` is a deterministic keyword detector — the
+# LLM reasoner (Day-9+) will replace this with a model-driven decision.
+# Keeping it deterministic today means the tests pin a stable
+# contract; the LLM upgrade preserves the contract shape.
+
+# Kobe's territory: weight tracking, weight-loss timeline math, HRV
+# interpretation (the band semantics), weekly burn target, recovery
+# tier selection.
+_KOBE_DELEGATION_PATTERNS = [
+    re.compile(r"\b(weight|weigh-?in|lbs?|kg)\b\s+(target|goal|loss|to)?", re.I),
+    re.compile(r"\bhow\s+much\s+(weight|do\s+i\s+weigh)", re.I),
+    re.compile(r"\b(weekly|week's|week)\s+(burn|target|kcal|calorie)", re.I),
+    re.compile(r"\bweight[- ]loss\s+(timeline|by|target|goal|math)", re.I),
+    re.compile(r"\bhrv\b.*\b(band|interpret|mean|trend)", re.I),
+    re.compile(r"\b(recovery|training)\s+tier\b", re.I),
+    re.compile(r"\b(am i in|am i on)\s+(hammer|zone[\s-]?2|deload|survival)", re.I),
+    re.compile(r"\b(set|change)\s+tier\b", re.I),
+    re.compile(r"\bgoal\s+by\s+", re.I),  # "weight target by May 23"
+]
+
+# Huberman's territory: sleep quality, RHR trends, recovery color
+# semantics (when asked AS a vitals question, not when Fraser is
+# reading the state).
+_HUBERMAN_DELEGATION_PATTERNS = [
+    re.compile(r"\b(how|how\s+much)\s+(did\s+i\s+sleep|was\s+my\s+sleep)", re.I),
+    re.compile(r"\bsleep\s+(quality|score|last\s+night|hours|trend)", re.I),
+    re.compile(r"\brhr\b.*\b(trend|today|last)", re.I),
+    re.compile(r"\bresting\s+heart\s+rate\b", re.I),
+    re.compile(r"\bhow\s+recovered\s+am\s+i\b", re.I),
+]
+
+
+def _should_delegate(msg: str) -> str | None:
+    """Return the target agent name if `msg` is in Kobe/Huberman
+    territory, None if Fraser should handle it.
+
+    Order: Kobe patterns first (broader territory), then Huberman.
+    First match wins. Workout-shaped questions ("what's my WOD",
+    "give me today's workout") never match these patterns and route
+    to Fraser's adaptation pipeline.
+    """
+    if not msg:
+        return None
+    for pat in _KOBE_DELEGATION_PATTERNS:
+        if pat.search(msg):
+            return "kobe"
+    for pat in _HUBERMAN_DELEGATION_PATTERNS:
+        if pat.search(msg):
+            return "huberman"
+    return None
+
+
 def route(msg: str) -> Any:
-    """Miya entry-point."""
+    """Miya entry-point.
+
+    Day-8 routing (per ADR-006/-007):
+        1. Detect cross-agent delegation via `_should_delegate(msg)`.
+           If positive → call core.delegation.delegate_to and surface
+           the response with attribution.
+        2. Otherwise → run the adaptation pipeline (`design_workout`)
+           and return Reply(confidence=1.0) with a structural summary.
+
+    Confidence semantics (Day-8 bump from 0.5 → 1.0 / 0.3):
+        • 1.0 — Fraser handled it (real card produced).
+        • 0.3 — Fraser declined / delegated; Miya should consider
+                redirecting (or has already done so via the
+                delegation tool).
+    """
     from core.agent import Reply
+
+    # 1. Delegation path.
+    target = _should_delegate(msg)
+    if target is not None:
+        from core import delegation as _delegation
+        result = _delegation.delegate_to(target, msg)
+        if result.get("agent") and result.get("reply"):
+            # Forward with attribution per ADR-007.
+            text = f"{result['agent']} says: {result['reply']}"
+            # Use the delegated agent's confidence; Fraser's role was
+            # the handoff, not the answer.
+            return Reply(text=text,
+                         confidence=float(result.get("confidence", 0.5)))
+        # Delegation failed (loop / depth / agent_not_registered /
+        # disabled). Surface the fallback_reply with low confidence
+        # so Miya can decide whether to retry or clarify (ADR-008).
+        fallback = result.get("fallback_reply",
+                              "I can't handle that, and the delegation "
+                              "target couldn't either.")
+        return Reply(text=fallback, confidence=0.3)
+
+    # 2. Workout-design path — Fraser's primary territory.
     card = design_workout(msg)
-    # Day-5: confidence climbs to 0.5 because the adaptation pipeline
-    # produces real cards (not a stub). The final gate before flipping
-    # FraserAgent on in miya_main.py is owner-reviewed cards from
-    # real Gemini, not the confidence number.
     text = (
         f"[Fraser] mode={card.input_mode.value} · "
         f"hrv={card.context.hrv} · tier={card.context.kobe_tier} · "
@@ -1141,7 +1257,7 @@ def route(msg: str) -> Any:
         f"wod={card.wod.format.value} cap={card.wod.cap_min}min · "
         f"movements={len(card.wod.movements)}"
     )
-    return Reply(text=text, confidence=0.5)
+    return Reply(text=text, confidence=1.0)
 
 
 def start() -> None:
@@ -1154,4 +1270,6 @@ __all__ = [
     "design_workout", "route", "start",
     "TOOL_CALL_HOP_CAP",
     "_build_system_prompt",
+    # Day-8 delegation
+    "_should_delegate",
 ]

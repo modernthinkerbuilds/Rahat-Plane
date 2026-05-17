@@ -128,6 +128,27 @@ LAYERS: list[LayerSpec] = [
             # agents/fraser/tools.py must have a ToolManifest entry in
             # protocols.TOOL_CATALOG, and vice versa.
             "tests/test_fraser_tool_catalog.py",
+            # ADR-006 capability-based router (2026-05-16). Pins the
+            # LLM classifier, confidence policy, env overrides, and
+            # trigger-mode rollback. Replaces regex-trigger routing
+            # as the primary path.
+            "tests/test_capability_router.py",
+            # ADR-007 cross-agent delegation (2026-05-16). Pins the
+            # delegate_to tool: success path, alias resolution, loop
+            # detection, depth cap, env disable, agent-error fallback,
+            # decisions-ledger observability.
+            "tests/test_delegation.py",
+            # ADR-008 clarification policy (2026-05-16). Pins the
+            # low-confidence multi-turn flow: ask_clarification builds
+            # A/B reply, persists with 60s TTL, resolves on next turn.
+            "tests/test_clarification.py",
+            # Fraser Day-8 delegation contract (2026-05-16). Pins
+            # ADR-006 description-correctness, ADR-007 delegate_to
+            # wiring in Fraser, route() confidence policy, system-
+            # prompt DELEGATION POLICY block, and the negative-space
+            # contract that Fraser does NOT synthesize Kobe/Huberman
+            # domain answers. Motivating bug: 2026-05-16 production.
+            "tests/test_fraser_delegation.py",
         ],
     ),
     LayerSpec(

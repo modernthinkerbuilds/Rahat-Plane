@@ -261,7 +261,17 @@ ONE_RM_BLOCK_AFTER_DAYS = 180
 #        to land within ±20% of the target. The Kobe→Fraser
 #        contract is now load-bearing on this dimension. System
 #        prompt explicitly lists the scaling rules.
-FRASER_SYSTEM_PROMPT_VERSION: str = "v3"
+#   v4 — mesh-routing pivot (Day-8 directive 2026-05-16): per ADR-006/
+#        -007, FraserAgent.description carries the "DOES NOT own"
+#        clause and `delegate_to` is in TOOL_CATALOG. System prompt
+#        now leads with the DELEGATION POLICY block: when the user
+#        asks about weight / weekly burn / HRV bands / tier
+#        (Kobe's territory) or sleep / RHR (Huberman's), the
+#        reasoner MUST call delegate_to instead of synthesizing
+#        from training-data priors. Motivating bug: 2026-05-16
+#        production showed Fraser hallucinating Kobe's domain
+#        instead of deferring.
+FRASER_SYSTEM_PROMPT_VERSION: str = "v4"
 
 
 # ─────────────────────────── Source-workout freshness ───────────────
@@ -1241,6 +1251,59 @@ class ToolManifest:
 
 
 TOOL_CATALOG: tuple[ToolManifest, ...] = (
+    ToolManifest(
+        name="delegate_to",
+        description=(
+            "Use when the user asks about a domain Fraser doesn't own. "
+            "Kobe owns: weight tracking, weight-loss timeline math, "
+            "HRV interpretation, weekly burn targets, recovery tier "
+            "selection. Huberman owns: sleep quality, RHR trends, "
+            "the recovery color signal. For ANY of those, call this "
+            "tool with the target agent name + the user's original "
+            "message; do NOT synthesize a reply from your own priors. "
+            "Hallucinating Kobe's domain (weight math, HRV bands) is "
+            "the failure mode this tool exists to prevent — the "
+            "2026-05-16 production bug Fraser was wired to fix."
+        ),
+        args_schema={
+            "agent_name": {
+                "type": "string",
+                "description": (
+                    "Target agent name: 'kobe' for weight/HRV/tier/"
+                    "burn-target questions, 'huberman' for sleep/RHR "
+                    "questions."
+                ),
+                "required": True,
+            },
+            "query": {
+                "type": "string",
+                "description": (
+                    "The user's original message OR a refined "
+                    "sub-question. Pass through the full message "
+                    "when in doubt — the target agent can re-narrow."
+                ),
+                "required": True,
+            },
+            "context": {
+                "type": "object",
+                "description": (
+                    "Optional structured handoff context. Pass any "
+                    "Fraser-side state the target agent might want "
+                    "(active injuries, current 1RMs, etc.)."
+                ),
+                "required": False,
+            },
+        },
+        returns_schema={
+            "type": "object",
+            "description": (
+                "{agent, reply, confidence, delegation_depth, "
+                "trace_id} on success; {agent: null, error, "
+                "fallback_reply} on failure. Forward `reply` to the "
+                "user with attribution: 'Kobe says: ...'"
+            ),
+        },
+    ),
     ToolManifest(
         name="get_kobe_kcal_target",
         description=(

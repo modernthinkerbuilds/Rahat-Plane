@@ -31,22 +31,23 @@ import pytest
 
 def _public_tool_callables() -> dict[str, callable]:
     """Return {name: callable} for every function the reasoner can call,
-    across `tools.py` AND `state.py` AND `source.py`. Tools.py is the
-    bulk (pure transforms); state.py exposes the DB-backed reads the
-    reasoner needs (e.g., `get_todays_source_workout` from Day-5);
-    source.py exposes the SugarWOD adapter entry points the reasoner
-    may invoke for re-ingest scenarios.
+    across `tools.py`, `state.py`, `source.py`, AND `core.delegation`
+    (Day-8: cross-agent delegation tool ships in core because it's
+    used by every agent, not just Fraser).
 
     The semantics of the coverage test are: "every public callable a
     reasoner could plausibly invoke must have a manifest, and vice
-    versa." That's wider than `tools.py` alone.
+    versa." Source modules expand as the reasoner's tool surface
+    grows.
     """
     from agents.fraser import tools, state, source
+    from core import delegation as _delegation
     out: dict[str, callable] = {}
     for mod, mod_name in (
             (tools, "agents.fraser.tools"),
             (state, "agents.fraser.state"),
             (source, "agents.fraser.source"),
+            (_delegation, "core.delegation"),
     ):
         for name, obj in inspect.getmembers(mod, inspect.isfunction):
             if obj.__module__ != mod_name or name.startswith("_"):

@@ -69,22 +69,34 @@ class FraserAgent(Agent):
 
     name = "fraser"
     aliases: list[str] = []
+    # Day-8 rewrite per ADR-006 §"Required updates". The classifier
+    # reads this string alongside Kobe's description; "DOES NOT own"
+    # is the territory-disambiguating line that stops Kobe winning
+    # workout questions. Phrasings in the "Use for:" list are the
+    # ones the classifier will actually see — they're paraphrases
+    # of how the owner asks.
     description = (
-        "CrossFit programming & performance lead. Owns workout design, "
-        "weight prescription against 1RMs, equipment substitution, "
-        "injury-driven movement mutes, the PRVN cycle, the 10-week "
-        "chest progression, route metadata, and the Workout Card "
-        "output artifact. Use for any question about today's workout, "
-        "WOD design, EMOM / AMRAP / Tabata composition, working "
-        "weights, calorie targets, movement substitutions, "
-        "warm-ups / cool-downs, injury registration, or 1RM uploads."
+        "CrossFit + Zone-2 workout designer. Given today's SugarWOD "
+        "programming and your 1RMs / HRV / dislikes / equipment / "
+        "injuries, produces a fully adapted Workout Card with warm-up, "
+        "scaled WOD movements with calculated loads, predicted burn "
+        "against Kobe's target, cool-down, and PRVN reset. "
+        "Use for: 'what's my WOD', 'give me today's workout', "
+        "'I want to do PRVN now', 'make-up session for Friday', "
+        "'can I substitute X for Y', 'show me Friday's workout', "
+        "'scale this WOD for me', 'do today's CrossFit with "
+        "adjustments for my knee', 'give me a 75-minute session "
+        "that burns 800 kcal' — any workout-prescription, scaling, "
+        "substitution, or adaptation question. "
+        "DOES NOT own: weight tracking, weekly burn targets, HRV "
+        "interpretation, weight-loss timeline math, recovery tier "
+        "selection. For those, delegate to kobe or huberman."
     )
-    # Day-1: NO triggers. The route() method returns a low-confidence
-    # stub Reply so Miya's classifier will only land here for the
-    # narrowest fitness questions. Day-3 wiring populates triggers
-    # alongside the real reasoner.
+    # Day-8: triggers stay empty per ADR-006 (capability classifier
+    # uses descriptions; triggers are fallback only). The legacy
+    # regex-trigger world is being retired across the mesh.
     triggers: list[str] = []
-    version = "0.1.0-day1-scaffold"
+    version = "0.8.0-day8-mesh-routing"
 
     def __init__(self) -> None:
         super().__init__()

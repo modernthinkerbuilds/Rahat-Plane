@@ -581,13 +581,27 @@ def tolerate_movement(movement: str) -> dict:
 
 
 def log_weight(lbs: float) -> dict:
-    """Tool: record a new weight reading. Triggers timeline recalibration."""
+    """Tool: record a new weight reading. Triggers timeline recalibration.
+
+    Range-validated 70 ≤ lbs ≤ 600. Outside this band almost certainly
+    means a unit mixup (kg typed as lbs) or a typo — reject explicitly
+    so the timeline isn't poisoned (re-applied 2026-05-16 after refactor
+    overwrote it; eval lock: tests/scenarios S2.log_weight range guard).
+    """
+    try:
+        v = float(lbs)
+    except (TypeError, ValueError):
+        return {"ok": False, "reason": f"lbs must be a number, got {lbs!r}"}
+    if not (70 <= v <= 600):
+        return {"ok": False,
+                "reason": (f"lbs out of plausible range (70–600): {v}. "
+                           f"Did you type kg by mistake?")}
     sci = _sci()
-    ok, reason = _charter_check("log_weight", {"lbs": lbs})
+    ok, reason = _charter_check("log_weight", {"lbs": v})
     if not ok:
         return {"ok": False, "reason": reason}
-    sci.sync_weight(lbs)
-    return {"ok": True, "logged_lbs": lbs, "timeline": get_weight_timeline(),
+    sci.sync_weight(v)
+    return {"ok": True, "logged_lbs": v, "timeline": get_weight_timeline(),
             "charter_reason": reason}
 
 
@@ -602,15 +616,28 @@ def swap_day(from_day: str, to_day: str) -> dict:
     return {"ok": True, "result_text": text, "charter_reason": reason}
 
 
+_VALID_TIERS = {"baseline", "performance", "hammer", "re_entry", "survival"}
+
+
 def set_recovery_tier(tier: str) -> dict:
-    """Tool: change the user's recovery tier (baseline / performance /
-    hammer / re_entry / survival). Affects all targets going forward."""
+    """Tool: change the user's recovery tier. Validates tier name BEFORE
+    the charter call so a typo doesn't silently get accepted (the legacy
+    handler returns a polite 'Unknown tier' string but used to surface
+    ok=True regardless — re-applied 2026-05-16; eval lock: tests/scenarios
+    S2.unknown tier rejected).
+    """
+    if not isinstance(tier, str) or tier.lower() not in _VALID_TIERS:
+        return {"ok": False,
+                "reason": (f"unknown tier {tier!r}; "
+                           f"valid: {sorted(_VALID_TIERS)}")}
+    tier = tier.lower()
     sci = _sci()
     ok, reason = _charter_check("set_recovery_tier", {"tier": tier})
     if not ok:
         return {"ok": False, "reason": reason}
     text = sci.handle_set_tier(tier)
-    return {"ok": True, "result_text": text, "charter_reason": reason}
+    return {"ok": True, "tier": tier, "result_text": text,
+            "charter_reason": reason}
 
 
 def commit_goal(target_lbs: float,
