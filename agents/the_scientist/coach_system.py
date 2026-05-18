@@ -28,6 +28,36 @@ Why this is plain text (no Anthropic-style cache markers):
     Cost overhead: ~$0.0007/call at 2.5 Flash pricing. Acceptable.
 """
 
+# ──────────────── Block 0a — FACTUAL QUERIES (read first) ─────────────────
+# Per Day-9 (2026-05-17 production incident): the reasoner was
+# answering user-state factual questions from training-data priors,
+# the same hallucination pattern as the 2026-05-16 WOD bug. This
+# directive is the prompt-side counterpart to the get_* tool wrappers
+# in agents/the_scientist/tools.py — both must land together.
+FACTUAL_QUERIES = """## FACTUAL QUERIES (read first)
+
+For factual questions about the user's plan, dislikes, weight \
+history, HRV, tier, or specific-day workout, ALWAYS call the \
+corresponding tool (get_plan, get_workout_on, get_dislikes, get_tier, \
+get_weight_history, get_pace). NEVER synthesize these values from \
+training-data priors. The 2026-05-16 and 2026-05-17 production \
+incidents both involved Kobe hallucinating these values; this \
+directive exists to prevent recurrence.
+
+Mapping (memorize):
+  - "what's my plan", "show my schedule", "which days do I work out" → get_plan
+  - "what's my workout on Tuesday", "what am I doing Friday" → get_workout_on(day)
+  - "what am I skipping", "what's blacklisted", "show my dislikes" → get_dislikes
+  - "what tier am I on", "show my recovery state" → get_tier
+  - "weight history", "weight trend", "when will I hit X" → get_weight_history
+  - "pace check", "am I on track", "status today" → get_pace
+
+If a question covers MULTIPLE facts, call ALL the relevant tools, \
+then synthesize. One tool call per fact is fine — round-trips are \
+cheaper than wrong answers.
+"""
+
+
 # ──────────────── Block 0 — DELEGATION POLICY (read first) ────────────────
 # Per ADR-006 (capability router) and ADR-007 (cross-agent delegation):
 # Kobe is ONE agent in a mesh; the failure mode this block exists to
@@ -716,24 +746,69 @@ def _current_date_block() -> str:
     )
 
 
+def _current_dislikes_block() -> str:
+    """Belt-and-suspenders: surface the user's active dislike list
+    directly in the system prompt so the reasoner has the blacklist
+    in-context even if it skips get_dislikes(). Added Day-9 after
+    the second hallucination-class incident — the get_* tools are
+    the primary defense, this block is the secondary one.
+
+    Reads from agents.the_scientist.dislikes (the substrate-native
+    store, ADR-003). If the import fails (test sandbox, fresh DB,
+    missing module), returns the empty-state line — the model just
+    knows there are no dislikes today, which is a safe default.
+    """
+    try:
+        from agents.the_scientist import dislikes as _dl
+        rows = _dl.active_movements()
+    except Exception:
+        rows = []
+    if not rows:
+        return ("ACTIVE DISLIKES (live snapshot): none. The user has "
+                "no movements muted right now.")
+    lines = ["ACTIVE DISLIKES (live snapshot, do NOT suggest these):"]
+    for r in rows:
+        # Each row is {movement: str, scope: str, note: str?}.
+        mv = r.get("movement", "?")
+        scope = r.get("scope", "?")
+        note = r.get("note") or r.get("reason")
+        suffix = f" ({note})" if note else ""
+        lines.append(f"  - {mv} [scope={scope}]{suffix}")
+    lines.append(
+        "If the user asks for substitutions or programming and any of "
+        "the above are involved, propose alternatives or call "
+        "get_dislikes() for the authoritative current list.")
+    return "\n".join(lines)
+
+
 def system_text() -> str:
     """The full system_instruction string for Gemini's
-    GenerateContentConfig. Concatenation of six blocks with blank
+    GenerateContentConfig. Concatenation of eight blocks with blank
     lines so the model treats them as distinct sections.
 
-    Order matters: CURRENT DATE first (so all date references are
-    grounded), then DELEGATION_POLICY (the "defer instead of
-    hallucinate" stance — leads the prompt so it's the first
-    discipline the model loads, per ADR-006/-007), then
-    ATHLETE_IDENTITY (who is this user), then COACHING_MINDSET (how to
-    think), then VOICE_RULES (how to speak), then ANTI_HALLUCINATION
-    (what's off-limits). Reading top-down, the model loads
-    now → boundaries → context → stance → register → constraints —
-    the same way a senior coach onboards while staying inside lane.
+    Order matters (Day-9 update):
+      1. CURRENT DATE — temporal grounding
+      2. FACTUAL_QUERIES — "call the tool, don't hallucinate" (NEW)
+      3. DELEGATION_POLICY — "defer to other agents, don't pretend"
+      4. ATHLETE_IDENTITY — who is this user
+      5. ACTIVE DISLIKES (live snapshot) — belt-and-suspenders for
+         get_dislikes() (NEW). Dynamic, re-read per call.
+      6. COACHING_MINDSET — how to think
+      7. VOICE_RULES — how to speak
+      8. ANTI_HALLUCINATION — what's off-limits
+
+    Reading top-down: now → call-the-tool discipline → cross-agent
+    discipline → context → live-state → stance → register → constraints.
+    Both "discipline" blocks lead because they're the failure-mode
+    countermeasures — if the model skips them, the rest of the
+    prompt won't save it.
     """
     return "\n\n".join([_current_date_block(),
+                        FACTUAL_QUERIES,
                         DELEGATION_POLICY,
-                        ATHLETE_IDENTITY, COACHING_MINDSET,
+                        ATHLETE_IDENTITY,
+                        _current_dislikes_block(),
+                        COACHING_MINDSET,
                         VOICE_RULES, ANTI_HALLUCINATION])
 
 
@@ -752,8 +827,10 @@ def system_blocks() -> list[dict]:
     the module docstring.
     """
     return [
+        {"type": "text", "text": FACTUAL_QUERIES},
         {"type": "text", "text": DELEGATION_POLICY},
         {"type": "text", "text": ATHLETE_IDENTITY},
+        {"type": "text", "text": _current_dislikes_block()},
         {"type": "text", "text": VOICE_RULES},
         {"type": "text", "text": ANTI_HALLUCINATION},
     ]
