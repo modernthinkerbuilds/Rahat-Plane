@@ -105,6 +105,24 @@ LAYERS: list[LayerSpec] = [
             #     turns red, Kobe is back to hallucinating WODs.
             "tests/test_kobe_description_contract.py",
             "tests/test_kobe_mesh_routing.py",
+            # Day-9 (2026-05-17) Bug 1 — handle_show_plan stops lying
+            # "No gym plan synced" when parse_gym_plan() returns real
+            # data. Production incident: user synced the bookmarklet
+            # AFTER replan_week ran; the user_state.plan_fallback_*
+            # flag stayed stale "1" and handle_show_plan kept emitting
+            # the false-negative warning. Fix derives is_fallback from
+            # CURRENT gym data per render.
+            "tests/test_kobe_show_plan_fix.py",
+            # Day-9 (2026-05-17) Bug 2 — reasoner-with-tools. The six
+            # factual-lookup wrappers (get_plan, get_workout_on,
+            # get_dislikes, get_tier, get_weight_history, get_pace) +
+            # the FACTUAL QUERIES system-prompt directive + the
+            # live ACTIVE DISLIKES snapshot block. Named regression
+            # gate: TestSystemPromptDirectives::
+            # test_system_text_says_never_synthesize_from_priors —
+            # if it turns red, the prompt directive lost its teeth
+            # and the reasoner will hallucinate again.
+            "tests/test_kobe_reasoner_tools.py",
             # Fraser Day-1 scaffold (2026-05-14, feat/fraser-day1-scaffold).
             # Pins the 11 entity-body protocols, Workout Card round-trip,
             # input-mode classifier, and state.py substrate compliance
@@ -163,6 +181,14 @@ LAYERS: list[LayerSpec] = [
             # contract that Fraser does NOT synthesize Kobe/Huberman
             # domain answers. Motivating bug: 2026-05-16 production.
             "tests/test_fraser_delegation.py",
+            # Day-9 Bug 3 (2026-05-19): byte-pins the verbatim
+            # lookup-disclaim clause in FraserAgent.description.
+            # Production bug: "what is my workout for Tuesday?" was
+            # routing to Fraser via classifier because Fraser's
+            # description claimed workout territory too broadly.
+            # Fix is description tightening, not regex; this file
+            # locks the wording so a future reflow surfaces in diff.
+            "tests/test_fraser_description_contract.py",
         ],
     ),
     LayerSpec(

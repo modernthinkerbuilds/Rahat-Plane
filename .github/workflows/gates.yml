@@ -1,0 +1,144 @@
+name: gates
+
+# The "test hardening" gates. Layered on top of the existing tests.yml
+# workflow — that one runs the 5-layer suite; this one runs the
+# regression registry + silent-failure guard + bug-to-test policy +
+# TZ matrix.
+#
+# Failure here means a known-fixed bug just walked back in. The PR
+# is blocked.
+
+on:
+  push:
+    branches: [main, "feat/*", "fix/*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: gates-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ─── 1. Regression registry — the immutable floor ──────────────────
+  regression-registry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    env:
+      RAHAT_TEST_MODE: '1'
+      RAHAT_VOICE: neutral
+      GEMINI_API_KEY: ''
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # need history for bug-to-test gate
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+      - name: Run regression registry
+        run: |
+          python -m pytest tests/regression_registry -v --no-header
+
+  # ─── 2. Silent-failure guard ────────────────────────────────────────
+  silent-failure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    env:
+      RAHAT_TEST_MODE: '1'
+      RAHAT_VOICE: neutral
+      GEMINI_API_KEY: ''
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - name: Run silent-failure guard
+        run: |
+          python -m pytest tests/silent_failure -v --no-header
+
+  # ─── 3. Bug-to-test policy ─────────────────────────────────────────
+  bug-to-test-policy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify every 'fix:' commit added a registry test
+        run: |
+          # Determine base ref.
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            base="origin/${{ github.base_ref }}"
+          else
+            base="origin/main"
+          fi
+          python scripts/check_bug_has_regression_test.py \
+            --gate=ci --base="$base"
+
+  # ─── 4. Production-parity TZ matrix ────────────────────────────────
+  production-parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    strategy:
+      fail-fast: false
+      matrix:
+        tz: ["UTC", "America/Los_Angeles", "Asia/Kolkata"]
+
+    env:
+      RAHAT_TEST_MODE: '1'
+      RAHAT_VOICE: neutral
+      GEMINI_API_KEY: ''
+      TZ: ${{ matrix.tz }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - name: Run TZ-matrix parity tests
+        run: |
+          python -m pytest tests/production_parity -v --no-header
+
+  # ─── 5. Adversarial phrasings (best-effort if corpus exists) ───────
+  adversarial:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    env:
+      RAHAT_TEST_MODE: '1'
+      RAHAT_VOICE: neutral
+      GEMINI_API_KEY: ''
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - name: Run adversarial phrasings (corpus-bootstrap)
+        # Doesn't block if corpus isn't populated yet — the suite
+        # falls back to the BOOTSTRAP_CORPUS.
+        run: |
+          python -m pytest tests/adversarial -v --no-header
+
+  # ─── 6. Hourly health check on main ────────────────────────────────
+  # (separate job below — different schedule)
