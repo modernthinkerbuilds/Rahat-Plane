@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+# pre-push — the local gate that runs before every `git push`.
+#
+# Goal: under 60s, blocks the push if anything in the IMMUTABLE FLOOR
+# is broken. Aimed at catching the bugs we've already fixed before they
+# regress into production.
+#
+# What runs:
+#   1. unit layer       (target <5s)   — tests/test_*.py at the root
+#   2. contract layer   (target <30s)  — tests/test_miya_*.py, charter
+#   3. regression layer (target <10s)  — tests/regression_registry/
+#   4. silent-failure   (target <5s)   — tests/silent_failure/
+#   5. bug-policy check (instant)      — scripts/check_bug_has_regression_test.py
+#
+# Anything red here exits non-zero. Git refuses the push.
+#
+# To bypass for an emergency (NOT recommended):
+#   git push --no-verify
+#
+# Install:
+#   bash scripts/install_hooks.sh
+
+set -euo pipefail
+
+# Move to repo root so relative paths just work.
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+# Locate the venv python — fall back to system python3.
+if [[ -x "venv/bin/python" ]]; then
+    PY="venv/bin/python"
+elif [[ -x ".venv/bin/python" ]]; then
+    PY=".venv/bin/python"
+else
+    PY="$(command -v python3)"
+fi
+
+echo "════════════════════════════════════════════════════════════════════"
+echo "  pre-push gate — $(date '+%H:%M:%S')"
+echo "  Python: $PY"
+echo "════════════════════════════════════════════════════════════════════"
+
+# Hermetic environment — never let pre-push talk to the wire.
+export RAHAT_TEST_MODE=1
+export RAHAT_VOICE=neutral
+unset GEMINI_API_KEY
+export PYTHONDONTWRITEBYTECODE=1
+
+# Track failures so we can show them all in one report.
+FAILED=()
+START_TIME=$(date +%s)
+
+step() {
+    local name="$1"
+    shift
+    local t0=$(date +%s)
+    echo ""
+    echo "── $name ──"
+    if "$@"; then
+        local elapsed=$(($(date +%s) - t0))
+        echo "✓ $name (${elapsed}s)"
+    else
+        local elapsed=$(($(date +%s) - t0))
+        echo "✗ $name FAILED (${elapsed}s)"
+        FAILED+=("$name")
+    fi
+}
+
+# 1. Bug-to-test policy — instant.
+step "bug-to-test policy" \
+    "$PY" scripts/check_bug_has_regression_test.py --gate=pre-push || true
+
+# 2. Regression registry — THE IMMUTABLE FLOOR.
+#    If this is red, an old bug walked back in. Hard block.
+step "regression registry" \
+    "$PY" -m pytest tests/regression_registry -q --no-header -x
+
+# 3. Silent-failure layer.
+step "silent-failure guard" \
+    "$PY" -m pytest tests/silent_failure -q --no-header -x
+
+# 4. Unit + contract layers via the existing run_all harness.
+#    --layer flags route to the right subset.
+if [[ -f tests/run_all.py ]]; then
+    step "unit layer" "$PY" -m tests.run_all --layer unit || true
+    step "contract layer" "$PY" -m tests.run_all --layer contract || true
+fi
+
+# Summary.
+TOTAL_ELAPSED=$(($(date +%s) - START_TIME))
+echo ""
+echo "════════════════════════════════════════════════════════════════════"
+if [[ ${#FAILED[@]} -eq 0 ]]; then
+    echo "  ✓ pre-push GREEN (${TOTAL_ELAPSED}s) — push allowed"
+    echo "════════════════════════════════════════════════════════════════════"
+    exit 0
+else
+    echo "  ✗ pre-push RED (${TOTAL_ELAPSED}s) — push BLOCKED"
+    echo ""
+    echo "  Failed gates:"
+    for f in "${FAILED[@]}"; do
+        echo "    - $f"
+    done
+    echo ""
+    echo "  To bypass (only for true emergencies): git push --no-verify"
+    echo "════════════════════════════════════════════════════════════════════"
+    exit 1
+fi

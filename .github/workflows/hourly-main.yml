@@ -1,0 +1,51 @@
+name: hourly-main
+
+# Re-runs the gates on main every hour to catch drift caused by
+# external factors (Python upgrades, dependency changes, OS quirks).
+# Goes red → user gets a Telegram alert.
+
+on:
+  schedule:
+    - cron: '15 * * * *'   # every hour at :15
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  health-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      RAHAT_TEST_MODE: '1'
+      RAHAT_VOICE: neutral
+      GEMINI_API_KEY: ''
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - name: Run regression + silent-failure + run_all
+        run: |
+          python -m pytest tests/regression_registry -q
+          python -m pytest tests/silent_failure -q
+          python -m tests.run_all
+      # On failure, send a Telegram alert. The webhook secret is set
+      # in the repo's GitHub Actions secrets (TELEGRAM_BOT_TOKEN +
+      # TELEGRAM_CHAT_ID). If those aren't set, this step no-ops.
+      - name: Alert on red
+        if: failure() && env.TELEGRAM_BOT_TOKEN != ''
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          curl -s "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d chat_id="${TELEGRAM_CHAT_ID}" \
+            -d text="⚠️ hourly-main RED — ${{ github.repository }} on $(date '+%Y-%m-%d %H:%M UTC')" \
+            -d parse_mode=Markdown || true

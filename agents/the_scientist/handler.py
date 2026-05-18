@@ -709,7 +709,59 @@ def handle_show_plan(next_week: bool = False) -> str:
 
     header = "Next week" if next_week else "This week"
     week_key = monday.strftime("%Y-%m-%d")
-    is_fallback = state_get(f"plan_fallback_{week_key}", "0") == "1"
+    # Day-9 bug 1 fix (2026-05-17): derive is_fallback from CURRENT
+    # parse_gym_plan() output, not from the stale
+    # user_state.plan_fallback_{week_key} flag. Background:
+    # replan_week() writes that flag at the moment it picks CF days,
+    # snapshotting a TRANSIENT condition (gym not yet synced, or had
+    # too many blocked days). The flag never gets re-evaluated, so
+    # when the user runs the SugarWOD bookmarklet AFTER replan, the
+    # flag stays "1" and handle_show_plan lies: "No gym plan synced"
+    # — even though parse_gym_plan() now returns full bodies.
+    #
+    # The fix re-derives is_fallback from current gym data every
+    # render. If the synced file has >=3 blacklist-clean CF weekdays,
+    # we are NOT in fallback regardless of what the stale flag says.
+    # The stale flag is kept as the third-fallback case (no synced
+    # data AND no clean days computed → trust the historical signal).
+    #
+    # Pinned by tests/test_kobe_show_plan_fix.py.
+    gym_days_for_warn = parse_gym_plan()
+    has_synced_data = any((d.body or "").strip() for d in gym_days_for_warn)
+    prefs_for_warn = get_prefs(monday)
+    tolerated_for_warn = {
+        normalize_blacklist_term(t)
+        for t in prefs_for_warn["tolerated_blacklist"]
+    }
+    clean_wds: set[int] = set()
+    for d in gym_days_for_warn:
+        wd_idx = WEEKDAY_INDEX.get(d.weekday[:3])
+        if wd_idx is None:
+            continue
+        blocked = False
+        for b in d.blockers:
+            core = b.split(" (")[0]
+            if normalize_blacklist_term(core) not in tolerated_for_warn:
+                blocked = True
+                break
+        if not blocked:
+            clean_wds.add(wd_idx)
+    stale_fallback_flag = state_get(f"plan_fallback_{week_key}", "0") == "1"
+    if has_synced_data and len(clean_wds) >= 3:
+        # Gym IS synced and supports 3+ clean CF days — definitively
+        # not fallback. Override any stale flag.
+        is_fallback = False
+    elif has_synced_data:
+        # Gym synced but too few clean days. Surface the partial-clean
+        # warning (not the misleading "no plan synced" one). is_fallback
+        # is True so we enter the warning block, but the warning text
+        # below branches on has_synced_data to pick the right message.
+        is_fallback = True
+    else:
+        # No synced data at all. Trust the stale flag for the historical
+        # signal — replan_week sets it to "1" only when it had to
+        # backfill from defaults.
+        is_fallback = stale_fallback_flag
     lines = [
         f"*{header} — {monday.strftime('%b %-d')} – {sun.strftime('%b %-d')}*",
         f"Tier `{tier}`, target *{fmt_kcal(weekly_total)}* "
@@ -717,48 +769,23 @@ def handle_show_plan(next_week: bool = False) -> str:
         "",
     ]
     if is_fallback:
-        # Either no gym plan synced, OR the synced plan had too many
-        # blacklisted movements this week to fill 3 CF days from gym
-        # programming alone. The plan picks 3 CF days regardless;
-        # surface a context-aware warning so the user knows whether
-        # to sync or scale.
-        #
-        # CRITICAL: count only CF days whose gym programming is
-        # blacklist-CLEAN (after applying tolerated_blacklist for
-        # this week). Days that have a gym_label but blacklisted
-        # movements don't count as "clean" — they require scaling
-        # so the user needs to know.
-        gym_days_for_warn = parse_gym_plan()
-        prefs_for_warn = get_prefs(monday)
-        tolerated_for_warn = {
-            normalize_blacklist_term(t)
-            for t in prefs_for_warn["tolerated_blacklist"]
-        }
-        clean_wds: set[int] = set()
-        for d in gym_days_for_warn:
-            wd_idx = WEEKDAY_INDEX.get(d.weekday[:3])
-            if wd_idx is None:
-                continue
-            blocked = False
-            for b in d.blockers:
-                core = b.split(" (")[0]
-                if normalize_blacklist_term(core) not in tolerated_for_warn:
-                    blocked = True
-                    break
-            if not blocked:
-                clean_wds.add(wd_idx)
-        clean_picks = sum(
-            1 for r in plan
-            if r.get("day_type") == "cf" and r["weekday"] in clean_wds)
-        if clean_picks == 0:
+        # has_synced_data picks the message: True → partial-clean
+        # warning (the user CAN sync; the issue is blockers).
+        # False → "no plan synced" (the user needs to run the
+        # bookmarklet). Pre-Day-9 this branch was decided by
+        # clean_picks counted against the committed (possibly stale)
+        # plan — which gave the wrong message when the committed plan
+        # was stale-fallback but the gym was now synced.
+        if not has_synced_data:
             warning = ("_⚠️ No gym plan synced — using default "
                        "Mon/Wed/Fri cadence._")
             sub = ("_Sync via the SugarWOD bookmarklet for "
                    "blacklist-aware picks._")
         else:
+            n_clean = len(clean_wds)
             warning = (
-                f"_⚠️ Only {clean_picks} day"
-                f"{'s' if clean_picks != 1 else ''} in this week's gym "
+                f"_⚠️ Only {n_clean} day"
+                f"{'s' if n_clean != 1 else ''} in this week's gym "
                 f"plan are blacklist-clean — backfilled the rest from "
                 f"default cadence._")
             sub = ("_Tolerate a movement to widen picks: `tolerate "

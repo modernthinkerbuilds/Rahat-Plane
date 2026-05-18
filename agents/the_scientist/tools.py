@@ -1555,6 +1555,109 @@ def get_recent_actions(n: int = 5) -> dict:
     return {"items": actions, "count": len(actions)}
 
 
+# ───── Day-9 (2026-05-17) factual-lookup wrappers ───────────────────
+# These six tools exist to STOP THE REASONER FROM HALLUCINATING
+# user-state values. Both 2026-05-16 and 2026-05-17 production
+# incidents had the same shape: the LLM answered a factual question
+# ("what is my WOD" / "what's my plan next week") from training-data
+# priors instead of calling a tool. Adding these wrappers is a
+# necessary but not sufficient fix — the coach_system.py FACTUAL
+# QUERIES directive is the other half.
+#
+# Signatures intentionally return `str` (not the dict shape the older
+# tools use): the values are USER-FACING strings produced by the
+# legacy handle_* functions, so wrapping in a {"text": ...} dict
+# would force the reasoner to unpack them just to render. The
+# dispatch() function passes strings through to Gemini's tool_result
+# unchanged.
+
+def get_plan(next_week: bool = False) -> str:
+    """Tool: read the user's locked weekly plan as Kobe would render
+    it. Wraps handle_show_plan, which (Day-9 fix) reads the synced
+    SugarWOD weekly_plan.txt directly via parse_gym_plan() rather
+    than trusting the stale plan_fallback flag. Use for any question
+    about which days the user works out, their CF/Z2/rest cadence,
+    or "what's my plan this/next week"."""
+    sci = _sci()
+    return sci.handle_show_plan(next_week=bool(next_week))
+
+
+_DAY_NAME_TO_IDX = {
+    "mon": 0, "monday": 0,
+    "tue": 1, "tues": 1, "tuesday": 1,
+    "wed": 2, "weds": 2, "wednesday": 2,
+    "thu": 3, "thur": 3, "thurs": 3, "thursday": 3,
+    "fri": 4, "friday": 4,
+    "sat": 5, "saturday": 5,
+    "sun": 6, "sunday": 6,
+}
+
+
+def get_workout_on(day: str) -> str:
+    """Tool: read the planned workout for a specific weekday this
+    week. Accepts any case + 3+ leading letters: 'Mon', 'monday',
+    'TUE', 'tues', 'wednesday'. Wraps handle_workout_on, which
+    surfaces day_type + gym programming for that day. Use for
+    'what is my workout on Tuesday', 'what am I doing Friday',
+    'show me Wednesday's WOD'. Returns a string with the day's
+    planned cadence + workout details; falls back to a polite error
+    if the day token can't be parsed."""
+    if not day:
+        return "❌ No day given. Try `mon` / `monday` / `Tuesday`."
+    idx = _DAY_NAME_TO_IDX.get(day.strip().lower())
+    if idx is None:
+        return (f"❌ Couldn't parse day {day!r}. "
+                "Try `mon` / `monday` / `Tuesday`.")
+    sci = _sci()
+    return sci.handle_workout_on(idx)
+
+
+def get_dislikes() -> str:
+    """Tool: list every movement the user has actively muted. Wraps
+    handle_list_dislikes. Use for 'what am I skipping', 'what's
+    blacklisted', 'show my dislikes', 'what movements am I avoiding'.
+    Critical for the reasoner: knowing the active dislike set is
+    how it avoids suggesting movements the user has explicitly
+    refused (e.g. 'no deadlifts today')."""
+    sci = _sci()
+    return sci.handle_list_dislikes()
+
+
+def get_tier() -> str:
+    """Tool: read the user's current recovery tier in human-readable
+    form. (For the structured dict-shaped read use get_recovery_tier.)
+    Use for 'what tier am I on', 'am I in hammer tier', 'show my
+    current recovery state'. Returns a one-liner like 'Tier:
+    performance (week target 6,000 kcal / 3 CF + 1 Z2 + 3 rest)'."""
+    sci = _sci()
+    tier = sci.state_get("recovery_tier", sci.DEFAULT_TIER)
+    cfg = sci.TIERS.get(tier, sci.TIERS[sci.DEFAULT_TIER])
+    return (f"Tier: *{tier}* (per-session cap {sci.fmt_kcal(cfg['cap'])}, "
+            f"weekly target {sci.fmt_kcal(cfg['weekly'])}).")
+
+
+def get_weight_history(days: int = 14) -> str:
+    """Tool: read the user's recent weight trajectory and the locked-
+    rate projection toward the 84 kg intermediate / 80 kg final
+    targets. `days` is currently advisory — the timeline tool reads
+    every weighin in the window. Wraps handle_weight_timeline.
+    Use for 'weight history', 'weight trend', 'how am I tracking
+    against my target', 'when will I hit 80 kg'."""
+    sci = _sci()
+    # handle_weight_timeline with no args renders both intermediate
+    # and final ETAs against current weight — what the user usually
+    # wants from a "weight history" query.
+    return sci.handle_weight_timeline()
+
+
+def get_pace() -> str:
+    """Tool: read today's burn vs prorated day target + week-to-date
+    framing. Wraps handle_pace. Use for 'pace check', 'am I on
+    track', 'how am I doing today', 'status'."""
+    sci = _sci()
+    return sci.handle_pace()
+
+
 def delegate_to(agent_name: str, query: str,
                 context: dict | None = None) -> dict:
     """Tool: hand the question off to another agent in the mesh.
@@ -2039,6 +2142,143 @@ SCHEMAS: list[dict] = [
             "required": [],
         },
     },
+    # Day-9 (2026-05-17) factual-lookup wrappers — the named
+    # countermeasure to the WOD-hallucination class of bugs.
+    # Triggering descriptions are deliberately long + paraphrase-rich
+    # so the model picks them up across user phrasings.
+    {
+        "name": "get_plan",
+        "description": (
+            "Read the user's locked weekly plan as Kobe would render "
+            "it — CF/Z2/rest cadence, day-by-day targets, gym labels. "
+            "ALWAYS call this for any question about the user's weekly "
+            "plan, which days they work out, what the cadence is, "
+            "'what's my plan this week', 'what's my plan next week', "
+            "'which days am I working out', 'show my schedule', 'what "
+            "are my CF days next week'. NEVER synthesize a plan from "
+            "training-data priors — the user's real synced plan comes "
+            "from this tool. Pass next_week=true for the upcoming "
+            "Mon–Sun, false (default) for the current week."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "next_week": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": (
+                        "true to render Mon–Sun of the upcoming week, "
+                        "false (default) for the current Mon–Sun."
+                    ),
+                },
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "get_workout_on",
+        "description": (
+            "Read the planned workout for a SPECIFIC weekday this "
+            "week — day_type (CF / Z2 / rest), gym programming "
+            "details if applicable. ALWAYS call this when the user "
+            "asks 'what is my workout on Tuesday', 'what am I doing "
+            "Friday', 'show me Wednesday's WOD', 'what's Monday's "
+            "session'. NEVER guess from training-data priors — the "
+            "user's real plan comes from this tool. Accepts day "
+            "names in any case, 3+ leading letters: 'Mon', 'monday', "
+            "'TUE', 'tues', 'wednesday'."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "day": {
+                    "type": "string",
+                    "description": (
+                        "Weekday name. Mon / Monday / mon / MON all "
+                        "accepted; same for Tue–Sun and their long "
+                        "forms."
+                    ),
+                },
+            },
+            "required": ["day"],
+        },
+    },
+    {
+        "name": "get_dislikes",
+        "description": (
+            "List every movement the user has actively muted via "
+            "'no deadlifts today', 'skip thrusters this week', etc. "
+            "ALWAYS call this when the user asks 'what am I "
+            "skipping', 'what's blacklisted', 'show my dislikes', "
+            "'what movements am I avoiding', 'am I muting anything'. "
+            "Critical context BEFORE making any movement-substitution "
+            "or workout-pacing suggestion — recommending a muted "
+            "movement is a UX failure."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
+    {
+        "name": "get_tier",
+        "description": (
+            "Read the user's current recovery tier in human-readable "
+            "form (one-liner with caps + weekly target). For the "
+            "structured dict-shaped read use get_recovery_tier "
+            "instead. ALWAYS call this when the user asks 'what tier "
+            "am I on', 'am I in hammer tier', 'show my current "
+            "recovery state', 'what's my tier right now'."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
+    {
+        "name": "get_weight_history",
+        "description": (
+            "Read the user's recent weight trajectory + locked-rate "
+            "projection toward 84 kg intermediate / 80 kg final "
+            "targets. ALWAYS call this for 'weight history', 'weight "
+            "trend', 'how am I tracking against my target', 'when "
+            "will I hit 80 kg', 'show my weight progress'. NEVER "
+            "fabricate a weight number — the source of truth is the "
+            "weighin_log table read via this tool."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "days": {
+                    "type": "integer",
+                    "default": 14,
+                    "description": (
+                        "How many days of history to include "
+                        "(advisory; current impl returns the full "
+                        "timeline projection)."
+                    ),
+                },
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "get_pace",
+        "description": (
+            "Read today's burn vs prorated day target + the "
+            "week-to-date framing. ALWAYS call this for 'pace "
+            "check', 'am I on track', 'how am I doing today', "
+            "'status', 'pace today'. Returns a Kobe-voiced "
+            "one-screen summary."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
     {
         "name": "delegate_to",
         "description": (
@@ -2130,6 +2370,16 @@ _DISPATCH: dict[str, Callable[..., Any]] = {
     # calls this when the user asks about Fraser's or Huberman's
     # territory instead of hallucinating an answer in-domain.
     "delegate_to":                         delegate_to,
+    # Day-9 (2026-05-17): factual-lookup wrappers. Each maps to the
+    # legacy handle_* function that produces the user-facing string.
+    # The named countermeasure to the WOD-hallucination class of
+    # bugs (motivating incidents: 2026-05-16, 2026-05-17).
+    "get_plan":                            get_plan,
+    "get_workout_on":                      get_workout_on,
+    "get_dislikes":                        get_dislikes,
+    "get_tier":                            get_tier,
+    "get_weight_history":                  get_weight_history,
+    "get_pace":                            get_pace,
 }
 
 
