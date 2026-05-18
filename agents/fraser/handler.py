@@ -1176,6 +1176,25 @@ _KOBE_DELEGATION_PATTERNS = [
     re.compile(r"\b(am i in|am i on)\s+(hammer|zone[\s-]?2|deload|survival)", re.I),
     re.compile(r"\b(set|change)\s+tier\b", re.I),
     re.compile(r"\bgoal\s+by\s+", re.I),  # "weight target by May 23"
+    # ──────── ADDED 2026-05-17 (production silent-response fix) ────────
+    # Weekly-planning / scheduling / "what's next" intents are Kobe's
+    # territory (the weekly plan grid lives in Kobe's tools). Before
+    # this, the classifier picked Fraser for "what's the plan for next
+    # week" / "which days am I working out" / "when is my next run"
+    # because of the workout-keyword affinity, but Fraser's
+    # design_workout couldn't handle them and returned empty → silent
+    # responses in Telegram (production incident 2026-05-17).
+    #
+    # By delegating these back to Kobe, the user gets their answer
+    # from Kobe's existing handle_show_plan / handle_next_workout /
+    # handle_pick_days handlers without any new logic.
+    re.compile(r"\b(?:the\s+|my\s+|this\s+|next\s+)?(?:weekly?\s+plan|plan\s+for\s+(?:this\s+|next\s+)?week)\b", re.I),
+    re.compile(r"\bwhich\s+days?\s+(?:am|are|do|will)\b", re.I),
+    re.compile(r"\bwhen\s+is\s+(?:my\s+)?next\s+\w+", re.I),
+    re.compile(r"^\s*next\s+(?:workout|run|crossfit|cf|z2|wod)\b", re.I),
+    # Slash commands — should never reach Fraser, but if they do
+    # (classifier misroute), forward to Kobe who owns the slash table.
+    re.compile(r"^\s*/", re.I),
 ]
 
 # Huberman's territory: sleep quality, RHR trends, recovery color

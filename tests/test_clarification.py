@@ -145,7 +145,7 @@ def test_clarification_has_60s_ttl(fresh_db):
     miya.register(_Kobe())
     miya.register(_Fraser())
 
-    before = datetime.now()
+    before = datetime.utcnow()  # match the UTC valid_until written by miya
     miya.ask_clarification(
         "anything",
         candidates=[("kobe", 0.4), ("fraser", 0.3)],
