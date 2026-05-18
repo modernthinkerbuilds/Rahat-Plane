@@ -353,3 +353,114 @@ class TestClassifierPicksFraserForWorkoutQueries:
         assert reply is not None
         # Kobe's reply doesn't start with [Fraser] — different surface.
         assert "[Fraser]" not in reply.text
+
+
+# ─── 7. Silent-response regression (2026-05-17 production incident) ──
+# When the classifier misroutes a non-workout-design query to Fraser,
+# Fraser MUST delegate it back to Kobe instead of returning the
+# default-mode stub or going silent. Pins five named-query patterns
+# from the production incident.
+class TestSilentResponseRegression:
+    """Production 2026-05-17: /next /plan and natural-language plan
+    queries returned silence. Root cause: classifier picked Fraser
+    by semantic affinity; Fraser's design_workout couldn't shape the
+    input and either returned empty or crashed. Fix: Fraser delegates
+    these patterns back to Kobe via _should_delegate."""
+
+    @pytest.mark.parametrize("msg", [
+        "/next",
+        "/plan",
+        "/today",
+        "/pace",
+        "/week",
+        "what is the plan for next week",
+        "what's the plan for this week",
+        "which days am I working out next week?",
+        "which days will I be working out",
+        "when is my next run?",
+        "when is my next workout",
+        "next workout",
+        "next run",
+    ])
+    def test_fraser_delegates_back_to_kobe(self, msg):
+        """For each named pattern, Fraser._should_delegate(msg) must
+        return 'kobe'. If this fails, the query goes silent in
+        production because Fraser's design_workout can't handle it."""
+        from agents.fraser.handler import _should_delegate
+        assert _should_delegate(msg) == "kobe", (
+            f"Fraser should delegate {msg!r} to Kobe. The 2026-05-17 "
+            f"silent-response incident was caused by Fraser receiving "
+            f"this pattern and running design_workout() on it. Add "
+            f"the pattern to _KOBE_DELEGATION_PATTERNS in "
+            f"agents/fraser/handler.py."
+        )
+
+    @pytest.mark.parametrize("msg", [
+        "what is the WOD",
+        "give me today's workout",
+        "design a WOD",
+        "scaled load for back squat",
+    ])
+    def test_fraser_still_handles_workout_design(self, msg):
+        """Negative-space sanity: real workout-design queries must
+        NOT delegate back. The new delegate-back patterns must be
+        precise enough to leave Fraser's primary territory alone."""
+        from agents.fraser.handler import _should_delegate
+        assert _should_delegate(msg) is None, (
+            f"Workout-design query {msg!r} should stay with Fraser, "
+            f"not delegate to Kobe. The new silent-response patterns "
+            f"are too broad."
+        )
+
+
+# ─── 8. Miya slash bypass routes directly to Kobe (2026-05-17) ───────
+# Even before reaching Fraser, slash commands should be intercepted at
+# Miya's Tier-1 bypass and dispatched directly to Kobe (who owns the
+# slash table). Pins this so a future refactor doesn't drop the bypass.
+class TestMiyaSlashBypass:
+    def test_miya_route_dispatches_slash_to_kobe_directly(
+            self, fresh_db, monkeypatch):
+        """msg.startswith('/') must dispatch to Kobe without ever
+        calling classify_intent or _route_via_triggers."""
+        from core import miya
+        from core.agent import Agent, Reply
+
+        miya.clear_registry()
+
+        class _Kobe(Agent):
+            name = "kobe"
+            description = "Vitality coach."
+            triggers = []
+            def route(self, msg):
+                return Reply(text=f"kobe got: {msg}", confidence=1.0)
+
+        class _Fraser(Agent):
+            name = "fraser"
+            description = "Workout designer."
+            triggers = []
+            def route(self, msg):
+                return Reply(text=f"fraser got: {msg}", confidence=1.0)
+
+        miya.register(_Kobe())
+        miya.register(_Fraser())
+
+        classify_called: list[str] = []
+        monkeypatch.setattr(
+            miya, "classify_intent",
+            lambda m, **kw: classify_called.append(m) or {"fraser": 0.99},
+        )
+
+        for cmd in ("/pace", "/today", "/next", "/week", "/plan", "/fix mon 581"):
+            classify_called.clear()
+            reply = miya.route(cmd)
+            assert reply is not None, f"{cmd!r} returned None"
+            assert "kobe got:" in reply.text, (
+                f"Slash command {cmd!r} should land at Kobe, got: "
+                f"{reply.text[:80]!r}"
+            )
+            assert cmd not in classify_called, (
+                f"Slash command {cmd!r} hit the classifier — the "
+                f"Tier-1 bypass is broken."
+            )
+
+        miya.clear_registry()

@@ -480,7 +480,13 @@ def _clarification_remember(
     try:
         from core import memory as _mem
         from datetime import datetime as _dt
-        valid_until = _dt.now() + timedelta(seconds=60)
+        # CRITICAL: use UTC for valid_until — list_entities filters with
+        # SQL CURRENT_TIMESTAMP which is UTC. Using datetime.now() (local
+        # time) on a non-UTC host (e.g., US Pacific = UTC-7) makes the
+        # ISO timestamp compare as if it's already 7h in the past, so
+        # the entity is treated as expired immediately. Production
+        # incident 2026-05-17: clarifications never resolved on the host.
+        valid_until = _dt.utcnow() + timedelta(seconds=60)
         _mem.put_entity(
             agent="miya",
             type="miya_clarification",
@@ -589,14 +595,32 @@ def route(
         return None
     tid = trace_id or decisions.new_trace()
 
-    # Tier 1 (slash commands) — bypass the classifier entirely.
-    # Slash commands are deterministic shortcuts owned by specific
-    # agents (Kobe owns /pace /today /next /week /plan /fix). They
-    # must reach their agent's handler without going through the
-    # capability classifier, which would otherwise route them based
-    # on semantic similarity to agent descriptions and miss the
-    # slash-handler entirely. See ADR-006 §"Routing tiers".
+    # Tier 1 (slash commands) — bypass classifier AND trigger router.
+    # Slash commands are deterministic shortcuts owned by Kobe
+    # (/pace /today /next /week /plan /fix /help). They must reach
+    # Kobe's slash dispatcher directly. Routing them through the
+    # classifier picks based on semantic similarity (wrong); routing
+    # through triggers picks based on regex (also wrong after Kobe's
+    # Day-2 trigger pruning, since /plan and /next no longer match
+    # any kept trigger and fall to the LLM tiebreaker — which lands
+    # them at Fraser, which doesn't know slash commands).
+    #
+    # Future: when other agents own their own slash commands, replace
+    # this hardcode with a per-agent slash registry (Agent.slash_commands).
+    # See ADR-006 §"Routing tiers" for the contract.
     if msg.strip().startswith("/"):
+        for a in _AGENTS:
+            if a.name == "kobe":
+                with decisions.span(
+                    "miya.route", trace_id=tid, actor="miya",
+                    input={"msg": msg, "tier": "slash_bypass"},
+                    db_path=db_path,
+                ) as s:
+                    s.output = {"strategy": "slash_bypass",
+                                "winner": "kobe"}
+                return _dispatch_to(a, msg, tid, db_path)
+        # Kobe not registered (shouldn't happen in prod) — fall back
+        # defensively to the trigger router.
         return _route_via_triggers(msg, tid, db_path)
 
     # 0. If there's a pending clarification for this chat AND the user
