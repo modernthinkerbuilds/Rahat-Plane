@@ -670,7 +670,7 @@ def replan_week(monday: datetime, *, force: bool = False) -> list[dict]:
         gym_label_by_wd: dict[int, str] = {}
         eligible_wds: list[int] = []
         for d in gym_days:
-            wd = WEEKDAY_INDEX.get(d.weekday[:3])
+            wd = WEEKDAY_INDEX.get(d.weekday[:3].capitalize())  # 2026-05-17: 'MON' → 'Mon'
             if wd is None:
                 continue
             gym_label_by_wd[wd] = d.label
@@ -933,7 +933,7 @@ def compute_week_recalibration(now: datetime | None = None) -> dict:
         gym_days = parse_gym_plan()
         gym_eligible: set[int] = set()
         for d in gym_days:
-            wd = WEEKDAY_INDEX.get(d.weekday[:3])
+            wd = WEEKDAY_INDEX.get(d.weekday[:3].capitalize())  # 2026-05-17: 'MON' → 'Mon'
             if wd is None:
                 continue
             blocked = False

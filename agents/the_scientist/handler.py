@@ -735,7 +735,14 @@ def handle_show_plan(next_week: bool = False) -> str:
     }
     clean_wds: set[int] = set()
     for d in gym_days_for_warn:
-        wd_idx = WEEKDAY_INDEX.get(d.weekday[:3])
+        # parse_gym_plan returns weekday in upper case ('MON', 'TUE'…)
+        # but WEEKDAY_INDEX has Title Case keys ('Mon', 'Tue'…). Normalize
+        # via .capitalize() — 'MON' → 'Mon'. This is the 2026-05-17
+        # production bug: every day silently failed the lookup, clean_wds
+        # stayed empty, "Only 0 days blacklist-clean" warning fired and
+        # the response fell back to the default Tue/Thu/Sat/Sun cadence
+        # instead of showing the real synced SugarWOD plan.
+        wd_idx = WEEKDAY_INDEX.get(d.weekday[:3].capitalize())
         if wd_idx is None:
             continue
         blocked = False

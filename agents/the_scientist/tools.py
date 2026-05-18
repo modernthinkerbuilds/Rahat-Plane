@@ -288,7 +288,10 @@ def get_eligible_cf_days(week_offset: int = 0) -> list[dict]:
     days = sci.parse_gym_plan()
     out = []
     for d in days:
-        wd = sci.WEEKDAY_INDEX.get(d.weekday[:3])
+        # parse_gym_plan returns weekday upper ('MON'); WEEKDAY_INDEX has
+        # Title Case keys. Normalize with .capitalize() — same bug as
+        # handle_show_plan, 2026-05-17.
+        wd = sci.WEEKDAY_INDEX.get(d.weekday[:3].capitalize())
         if wd is None:
             continue
         out.append({
