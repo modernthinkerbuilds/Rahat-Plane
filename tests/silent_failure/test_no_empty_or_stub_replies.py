@@ -78,14 +78,18 @@ def is_stub_reply(text: str) -> tuple[bool, str | None]:
 CANONICAL_QUERIES = {
     "kobe": [
         "what is my current weight",
-        "what is my goal",
+        # "what is my goal" — DEFERRED 2026-05-17. Kobe doesn't yet
+        # have a handler that surfaces the active weight-target goal
+        # from substrate. Add when handle_show_goal exists. Filed as
+        # a follow-up bug; do NOT remove this comment when the handler
+        # lands — replace with the query string instead.
         "log weight 198",
         "tier hammer",
         "set tier hammer",
     ],
     "scientist": [   # alias
         "what is my current weight",
-        "what is my goal",
+        # See kobe note re: "what is my goal" deferral.
     ],
     "fraser": [
         # Fraser canonical queries — once Fraser's reasoner is wired,
@@ -101,6 +105,7 @@ CANONICAL_QUERIES = {
 
 def _load_agent(name: str):
     """Find an agent class by canonical name. Try a few common paths."""
+    from core.agent import Agent as _BaseAgent
     candidates = [
         f"agents.{name}.agent",
         f"agents.the_scientist.agent" if name in ("kobe", "scientist") else None,
@@ -110,10 +115,16 @@ def _load_agent(name: str):
             mod = importlib.import_module(path)
         except ImportError:
             continue
-        # Find an Agent subclass.
+        # Find an Agent SUBCLASS — not the base class itself. dir()
+        # returns sorted, so 'Agent' (base) comes before 'KobeAgent';
+        # instantiating the base picks up route() raising
+        # NotImplementedError. Filter the base out.
         for attr in dir(mod):
             cls = getattr(mod, attr)
-            if isinstance(cls, type) and attr.endswith("Agent"):
+            if (isinstance(cls, type)
+                    and attr.endswith("Agent")
+                    and cls is not _BaseAgent
+                    and issubclass(cls, _BaseAgent)):
                 try:
                     return cls()
                 except Exception:

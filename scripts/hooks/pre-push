@@ -82,8 +82,8 @@ step "silent-failure guard" \
 # 4. Unit + contract layers via the existing run_all harness.
 #    --layer flags route to the right subset.
 if [[ -f tests/run_all.py ]]; then
-    step "unit layer" "$PY" -m tests.run_all --layer unit --quiet || true
-    step "contract layer" "$PY" -m tests.run_all --layer contract --quiet || true
+    step "unit layer" "$PY" -m tests.run_all --layer unit || true
+    step "contract layer" "$PY" -m tests.run_all --layer contract || true
 fi
 
 # Summary.
