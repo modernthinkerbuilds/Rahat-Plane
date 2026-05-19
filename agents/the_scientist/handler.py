@@ -156,7 +156,7 @@ def eligible_cf_days(days=None):
     return _proto_eligible_cf_days(days)
 
 
-__all__ = ['API_KEY', 'FIX_BURN_RE', 'HOME', 'MODEL_ID', 'PLAN_PATH', 'SLASH_COMMANDS', '_active_model', '_extract_wod_summary', '_internal_safety_downgrade', '_is_workout_on_day_query', '_legacy_route', '_n', '_parse_date', '_prorated_day_target', '_prorated_week_target', '_slash_help', '_split_for_telegram', '_try_slash_command', '_which_monday', 'client', 'daily_target', 'eligible_cf_days', 'handle_breathing', 'handle_clear_prefs', 'handle_current_weight', 'handle_daily_burn', 'handle_decision_run_or_wod', 'handle_dislike_movement', 'handle_drop_dislike', 'handle_filter', 'handle_fix_burn', 'handle_hrv', 'handle_last_week', 'handle_list_dislikes', 'handle_manual_burn', 'handle_next_week_target', 'handle_next_workout', 'handle_pace', 'handle_pick_days', 'handle_post_recovery', 'handle_pre_fuel', 'handle_recalibrate', 'handle_replan', 'handle_scheduling_help', 'handle_set_tier', 'handle_show_plan', 'handle_split_target', 'handle_swap', 'handle_today_target', 'handle_tolerate', 'handle_unavailable', 'handle_weekly_remaining', 'handle_weighin_when', 'handle_weight', 'handle_weight_timeline', 'handle_workout_on', 'handle_workout_today', 'latest_hrv', 'llm_coach', 'maybe_morning_briefing', 'maybe_recovery_nudge', 'maybe_walk_nudge', 'maybe_weekly_reset', 'parse_gym_plan', 'route', 'send', 'start']
+__all__ = ['API_KEY', 'FIX_BURN_RE', 'HOME', 'MODEL_ID', 'PLAN_PATH', 'SLASH_COMMANDS', '_active_model', '_extract_wod_summary', '_internal_safety_downgrade', '_is_workout_on_day_query', '_legacy_route', '_n', '_parse_date', '_prorated_day_target', '_prorated_week_target', '_slash_help', '_split_for_telegram', '_try_slash_command', '_which_monday', 'client', 'daily_target', 'eligible_cf_days', 'handle_breathing', 'handle_clear_prefs', 'handle_current_weight', 'handle_daily_burn', 'handle_decision_run_or_wod', 'handle_dislike_movement', 'handle_drop_dislike', 'handle_filter', 'handle_fix_burn', 'handle_gym_wod_on', 'handle_hrv', 'handle_last_week', 'handle_list_dislikes', 'handle_manual_burn', 'handle_next_week_target', 'handle_next_workout', 'handle_pace', 'handle_pick_days', 'handle_post_recovery', 'handle_pre_fuel', 'handle_recalibrate', 'handle_replan', 'handle_scheduling_help', 'handle_set_tier', 'handle_show_plan', 'handle_split_target', 'handle_swap', 'handle_today_target', 'handle_tolerate', 'handle_unavailable', 'handle_weekly_remaining', 'handle_weighin_when', 'handle_weight', 'handle_weight_timeline', 'handle_workout_on', 'handle_workout_today', 'latest_hrv', 'llm_coach', 'maybe_morning_briefing', 'maybe_recovery_nudge', 'maybe_walk_nudge', 'maybe_weekly_reset', 'parse_gym_plan', 'route', 'send', 'start']
 
 
 def handle_recalibrate() -> str:
@@ -820,6 +820,18 @@ def handle_show_plan(next_week: bool = False) -> str:
     else:
         missed_wds = set()
 
+    # Day-10 (2026-05-18): build a weekday→GymDay lookup so each row
+    # can surface the gym's programming inline. parse_gym_plan returns
+    # GymDay.weekday in UPPER case (post-2026-05-18 case-mismatch fix
+    # remains in force); we map via the canonical Title-Case 3-letter
+    # WEEKDAY_INDEX. `gym_days_for_warn` was already populated above,
+    # so we reuse it.
+    wd_to_gym: dict[int, "GymDay"] = {}
+    for d in gym_days_for_warn:
+        wd_idx = WEEKDAY_INDEX.get((d.weekday or "")[:3].capitalize())
+        if wd_idx is not None:
+            wd_to_gym[wd_idx] = d
+
     for row in plan:
         wd = row["weekday"]
         is_today = (not next_week) and wd == today_idx
@@ -840,6 +852,35 @@ def handle_show_plan(next_week: bool = False) -> str:
         lines.append(
             f"{marker} {name}: {kind}{gym} → ideal "
             f"{fmt_kcal(row['target_kcal'])}{actual_s}")
+
+        # Day-10 gym-alongside-cadence sub-line. Surface the gym's
+        # programming on every NON-CF day with synced data. CF days
+        # collapse — either the cadence row's gym_label is set (in
+        # which case it's already shown in parens on the main line)
+        # or state.py's known-broken parse_gym_plan() call drops the
+        # gym_label (in which case the sub-line would lie about a
+        # "different gym day" that's actually the same one). Either
+        # way, no sub-line on CF days is the cleaner UX.
+        if row["day_type"] == "cf":
+            continue
+        gym_day = wd_to_gym.get(wd)
+        if gym_day is None:
+            continue
+        gym_summary = _one_line_gym_summary(gym_day)
+        if not gym_summary:
+            continue
+        if gym_day.blockers:
+            # Surface blocker so the user knows scaling is needed.
+            blocker_first = gym_day.blockers[0].split(" (")[0]
+            hint = (f"(blocked: {blocker_first} — `tolerate "
+                    f"{blocker_first}` to scale in)")
+        else:
+            # Non-CF day with clean gym programming → the override hint.
+            hint = (f"(skip per your plan, or `pick {name} for "
+                    f"CrossFit` to swap)")
+        lines.append(f"    ⤷ gym today: {gym_summary}")
+        lines.append(f"       {hint}")
+
     if not next_week:
         burned, _ = burn_this_week()
         lines.append(f"\nWeek so far: *{fmt_kcal(burned)}* / {fmt_kcal(weekly_total)}.")
@@ -963,7 +1004,73 @@ def handle_pick_days(weekday_text: str, next_week: bool = False) -> str:
         parts.append("CF: " + ", ".join(WEEKDAY_NAME[i] for i in cf_picks))
     if z2_pick is not None:
         parts.append(f"Z2: {WEEKDAY_NAME[z2_pick]}")
-    return (f"✅ Locked picks for {label} → {' | '.join(parts)}.\n\n"
+
+    # Day-10 (2026-05-18) — auto-recalibration warnings. After the
+    # replan, surface two classes of advisory:
+    #   (a) overshoot: the new cadence's plan_sum > weekly_target by
+    #       a meaningful margin. Common case: 4 CF days at performance
+    #       tier (4×1300 + 1×1400 + 2×600 = 7800 vs 6000 target).
+    #   (b) blacklist hit on a forced CF pick: gym programmed a
+    #       blacklisted movement that day and it's not in the
+    #       tolerated list. Surface with the tolerate hint so the
+    #       user knows the scale-in path.
+    warnings: list[str] = []
+    try:
+        new_plan = current_plan(monday)
+        plan_sum = sum(d["target_kcal"] for d in new_plan)
+        weekly_total = weekly_target()
+        # Threshold: 500 kcal over target is the floor for "warn me."
+        # Below that is normal drift inside the locked cadence; above
+        # that means the user added work that won't fit within the
+        # 7000-kcal envelope without compensation.
+        if plan_sum > weekly_total + 500:
+            overshoot = plan_sum - weekly_total
+            warnings.append(
+                f"⚠️ This cadence overshoots your week target by "
+                f"~{fmt_kcal(overshoot)} ({fmt_kcal(plan_sum)} vs "
+                f"{fmt_kcal(weekly_total)}). Either drop a CF day, "
+                f"scale a session, or shift to baseline tier.")
+    except Exception:
+        # Recalibration math is advisory — never crash the handler if
+        # current_plan or weekly_target can't compute.
+        pass
+
+    try:
+        prefs = get_prefs(monday)
+        tolerated = {normalize_blacklist_term(t)
+                     for t in prefs["tolerated_blacklist"]}
+        gym_days = parse_gym_plan()
+        wd_to_gym = {}
+        for d in gym_days:
+            wd_idx = WEEKDAY_INDEX.get((d.weekday or "")[:3].capitalize())
+            if wd_idx is not None:
+                wd_to_gym[wd_idx] = d
+        hit_summaries: list[str] = []
+        for wd in cf_picks:
+            day = wd_to_gym.get(wd)
+            if not day or not day.blockers:
+                continue
+            unresolved = [
+                b for b in day.blockers
+                if normalize_blacklist_term(
+                    b.split(" (")[0]) not in tolerated
+            ]
+            if unresolved:
+                first = unresolved[0].split(" (")[0]
+                hit_summaries.append(
+                    f"{WEEKDAY_NAME[wd]} hits `{first}`")
+        if hit_summaries:
+            warnings.append(
+                f"⚠️ Blacklist conflicts on your picks: "
+                f"{'; '.join(hit_summaries)}. Confirm by `tolerate "
+                f"{hit_summaries[0].split('`')[1]}` to scale in, or "
+                f"swap to a different day.")
+    except Exception:
+        pass
+
+    warn_block = ("\n\n" + "\n\n".join(warnings)) if warnings else ""
+    return (f"✅ Locked picks for {label} → {' | '.join(parts)}."
+            f"{warn_block}\n\n"
             + handle_show_plan(next_week=next_week))
 
 
@@ -1303,6 +1410,134 @@ def handle_workout_on(idx: int) -> str:
     return header + "\n" + body
 
 
+def _one_line_gym_summary(day) -> str:
+    """Day-10 (2026-05-18): squeeze a GymDay into one line for inline
+    rendering in /plan. Used by handle_show_plan's sub-line.
+
+    Heuristic — works on the SugarWOD shape parse_gym_plan produces:
+        Strength: <strength header line>
+        WOD: <named WOD or first content line>
+    The output collapses both into 'Strength + "WOD name"', or just
+    'Strength' / '"WOD name"' if only one is present. Returns "" if
+    we can't extract anything meaningful — caller skips the sub-line
+    in that case so we never render an empty bullet.
+
+    Why one-line: full WOD bodies are 5–10 lines; rendering 7 of them
+    inline blows past Telegram's ergonomic length and buries the
+    cadence view this method is for. The user can `gym wod for Mon`
+    (Day-10 D1) to drill into a specific day.
+    """
+    if day is None:
+        return ""
+    # Strength: first non-blank line of day.strength after the
+    # "Strength" header (the header itself is meta, the content is
+    # what we want).
+    strength_line = ""
+    for raw in (day.strength or "").splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        if line.lower().startswith("strength"):
+            continue
+        if line in ("0", "0 results"):
+            continue
+        strength_line = line
+        break
+    # WOD title: look for a section in body whose header line is
+    # "WOD" / "Workout" / "MetCon" / "Conditioning"; take the first
+    # content line under it. Also pick up the case where the WOD body
+    # itself starts with a quoted name like "MURPH" or "Furiosa" — in
+    # that case prefer the quoted name as the title.
+    wod_title = ""
+    in_wod_section = False
+    for raw in (day.body or "").splitlines():
+        line = raw.strip()
+        low = line.lower().lstrip("# *").strip()
+        if not line or line in ("0", "0 results"):
+            continue
+        if low in ("wod", "workout", "metcon", "conditioning"):
+            in_wod_section = True
+            continue
+        if low.startswith("strength"):
+            in_wod_section = False
+            continue
+        if in_wod_section:
+            wod_title = line
+            break
+    # Final composition.
+    parts = []
+    if strength_line:
+        # Strip any leading bullets / markers for cleanliness.
+        parts.append(strength_line.lstrip("•-* ").strip())
+    if wod_title:
+        parts.append(wod_title.lstrip("•-* ").strip())
+    if not parts:
+        return ""
+    # Cap each part to keep the sub-line scannable.
+    capped = []
+    for p in parts:
+        if len(p) > 80:
+            p = p[:80].rstrip() + "..."
+        capped.append(p)
+    return " + ".join(capped)
+
+
+def handle_gym_wod_on(weekday_idx: int) -> str:
+    """Day-10 (2026-05-18): surface the gym's WOD for `weekday_idx`
+    REGARDLESS of whether that day is a CF day in the user's cadence.
+
+    Contrast with `handle_workout_on` — that surfaces the
+    cadence-determined activity (returns "Active rest" for non-CF
+    days). This handler skips cadence entirely and reads
+    `parse_gym_plan()` directly. Use for "what is the WOD for
+    Monday?" — the user wants to see what the gym programmed for
+    Monday so they can decide whether to swap their cadence around it,
+    not just be told "Monday is your rest day."
+
+    Three return shapes:
+      • Day has gym programming + no blockers → strength + WOD body.
+      • Day has gym programming + blockers → surface the blockers
+        with the option to tolerate them.
+      • Gym has no entry for that weekday (e.g., Sunday in a
+        Mon-Sat-only SugarWOD pull) → say so explicitly so the user
+        knows it's a gap, not a parse failure.
+
+    Returns a multi-line string suitable for direct Telegram render.
+    Never hallucinates WOD content — the source is parse_gym_plan().
+    """
+    if not (0 <= weekday_idx <= 6):
+        return f"❌ Invalid weekday index {weekday_idx}; expected 0–6."
+    name = WEEKDAY_NAME[weekday_idx]
+    # parse_gym_plan returns GymDay with .weekday in UPPER case
+    # (2026-05-18 case-mismatch fix anchor). Lookup uses canonical
+    # 3-letter capitalize() form for symmetry with WEEKDAY_INDEX.
+    gym_days = parse_gym_plan()
+    target_token = name.upper()[:3]   # "MON" / "TUE" / ...
+    match = next((d for d in gym_days
+                  if (d.weekday or "").upper()[:3] == target_token),
+                 None)
+
+    if match is None:
+        return (f"*{name}* — no gym programming for that day.\n"
+                "_The SugarWOD pull doesn't include this weekday — "
+                "either the gym hasn't posted yet or the day is off "
+                "the schedule. Try the bookmarklet again._")
+
+    body_summary = _extract_wod_summary(match.body) or \
+        "_(WOD details not available — check SugarWOD app)_"
+
+    if match.blockers:
+        blockers_str = ", ".join(match.blockers)
+        return (f"*{name}: {match.label}* — ⚠️ blacklist hit\n"
+                f"Blockers: _{blockers_str}_\n\n"
+                f"{body_summary}\n\n"
+                f"_Tolerate to keep this day in scope: "
+                f"`tolerate {match.blockers[0].split(' (')[0]}`._")
+
+    return (f"*{name}: {match.label}*\n\n"
+            f"{body_summary}")
+
+
 def handle_workout_today(when: str = "today") -> str:
     """Yes/no answer for 'am I working out today' (or tomorrow). Distinct
     from today_target (returns kcal number) and daily burn (returns
@@ -1594,6 +1829,56 @@ def _is_workout_on_day_query(m: str) -> int | None:
     if has_workout_ctx and len(m.split()) <= 6:
         return days[0]
     return None
+
+
+def _is_gym_wod_on_day_query(m: str) -> int | None:
+    """Day-10 (2026-05-18): return weekday index (0=Mon..6=Sun) if the
+    message is a GYM-SPECIFIC workout-lookup for a named weekday.
+
+    Distinct from `_is_workout_on_day_query` — that one routes to
+    handle_workout_on (which returns 'Active rest' for non-CF days
+    in cadence). This one routes to handle_gym_wod_on (which always
+    surfaces the gym's programming if present).
+
+    Matches phrasings like:
+        what is the WOD for Monday
+        what's the WOD on Tuesday
+        gym workout for Wednesday
+        what's at the gym on Thursday
+        show me Friday's WOD at the gym
+        sugarwod for Saturday
+
+    Requires an explicit GYM/WOD anchor token — the bare "what am I
+    doing Friday" stays with handle_workout_on so the cadence answer
+    still flows for non-gym-specific phrasings.
+    """
+    if not m:
+        return None
+    # Skip the per-week-pref mutator family (same guard as
+    # _is_workout_on_day_query).
+    if re.search(
+            r"\b(can'?t|cannot|won'?t|skip(?:ping)?|miss(?:ing)?|busy|"
+            r"unavailable|out\s+(?:on|for)|"
+            r"prefer|swap|switch|move|change|"
+            r"\bpick\b|fine\s+with|tolerate|scale|ignore|allow|"
+            r"clear|reset|rather|instead\s+of|in\s+place\s+of)\b", m, re.I):
+        return None
+    days = parse_weekdays(m, include_relative=False)
+    if len(days) != 1:
+        return None
+    # Explicit gym / WOD anchor — distinguishes from the generic
+    # workout-on-day query. "WOD" alone is enough; "gym" must pair
+    # with a workout-ish word or 'at the gym'.
+    has_gym_anchor = re.search(
+        r"\bwod\b|\bsugarwod\b|"
+        r"\b(?:at\s+the\s+)?gym(?:'s)?\s+(?:workout|wod|programming|"
+        r"prescribed|prescription|class|session)\b|"
+        r"\b(?:gym|programming)\s+(?:workout\s+)?(?:on|for)\b|"
+        r"\b(?:what'?s|what\s+is)\s+(?:at|on)\s+(?:the\s+)?gym\b",
+        m, re.I)
+    if not has_gym_anchor:
+        return None
+    return days[0]
 
 
 # "Am I working out today?" — must explicitly mention today/now or 'today' as
@@ -2066,6 +2351,14 @@ def _legacy_route(msg: str) -> str:
     if HINDI_STATUS_RE.search(m):
         return handle_pace()
     # "What am I doing on Friday?" — single named weekday + workout intent
+    # Day-10 (2026-05-18): GYM-SPECIFIC lookup ("what is the WOD for
+    # Monday", "gym workout for Wednesday") must fire BEFORE the
+    # cadence-determined workout-on-day check. The gym lookup
+    # ignores cadence — surfaces the gym's programming for that
+    # weekday whether or not it's a CF day in the user's plan.
+    gym_day_idx = _is_gym_wod_on_day_query(m)
+    if gym_day_idx is not None:
+        return handle_gym_wod_on(gym_day_idx)
     # → show that day's planned session with WOD details.
     day_idx = _is_workout_on_day_query(m)
     if day_idx is not None:

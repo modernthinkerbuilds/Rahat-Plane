@@ -1615,6 +1615,32 @@ def get_workout_on(day: str) -> str:
     return sci.handle_workout_on(idx)
 
 
+def get_gym_wod_on(day: str) -> str:
+    """Tool: read the GYM's WOD for a specific weekday, ignoring the
+    user's cadence. Wraps handle_gym_wod_on. Use for 'what is the
+    WOD for Monday', 'gym workout for Wednesday', 'what's at the
+    gym on Friday' — the user wants the SugarWOD programming for
+    that day, not their cadence-determined activity. Distinct from
+    get_workout_on: that one returns 'Active rest' if the day isn't
+    a CF day in cadence; this one always returns the gym's content
+    if the gym programmed something for that weekday.
+
+    Returns one of three shapes:
+      • Day has clean gym programming → strength + WOD body
+      • Day has gym programming + blacklist hit → blockers surfaced
+        with the tolerate hint
+      • Gym has no entry for that weekday → explicit gap message
+    """
+    if not day:
+        return "❌ No day given. Try `mon` / `monday` / `Tuesday`."
+    idx = _DAY_NAME_TO_IDX.get(day.strip().lower())
+    if idx is None:
+        return (f"❌ Couldn't parse day {day!r}. "
+                "Try `mon` / `monday` / `Tuesday`.")
+    sci = _sci()
+    return sci.handle_gym_wod_on(idx)
+
+
 def get_dislikes() -> str:
     """Tool: list every movement the user has actively muted. Wraps
     handle_list_dislikes. Use for 'what am I skipping', 'what's
@@ -2207,6 +2233,36 @@ SCHEMAS: list[dict] = [
         },
     },
     {
+        "name": "get_gym_wod_on",
+        "description": (
+            "Read the GYM's WOD for a SPECIFIC weekday, IGNORING the "
+            "user's cadence. ALWAYS call this when the user asks "
+            "'what is the WOD for Monday', 'gym workout for "
+            "Wednesday', 'what's at the gym on Friday', 'gym wod for "
+            "[day]', 'show me the gym's programming for [day]'. "
+            "Distinct from get_workout_on — that returns 'Active "
+            "rest' for non-CF days in the cadence; THIS tool returns "
+            "the gym's content regardless of whether the day is a CF "
+            "day. NEVER synthesize gym WOD content from training-data "
+            "priors — the source is parse_gym_plan(). Day accepts any "
+            "case + 3+ leading letters."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "day": {
+                    "type": "string",
+                    "description": (
+                        "Weekday name. Mon / Monday / mon / MON all "
+                        "accepted; same for Tue–Sun and their long "
+                        "forms."
+                    ),
+                },
+            },
+            "required": ["day"],
+        },
+    },
+    {
         "name": "get_dislikes",
         "description": (
             "List every movement the user has actively muted via "
@@ -2379,6 +2435,8 @@ _DISPATCH: dict[str, Callable[..., Any]] = {
     # bugs (motivating incidents: 2026-05-16, 2026-05-17).
     "get_plan":                            get_plan,
     "get_workout_on":                      get_workout_on,
+    # Day-10 (2026-05-18): gym-WOD lookup decoupled from cadence.
+    "get_gym_wod_on":                      get_gym_wod_on,
     "get_dislikes":                        get_dislikes,
     "get_tier":                            get_tier,
     "get_weight_history":                  get_weight_history,

@@ -37,16 +37,25 @@ Why this is plain text (no Anthropic-style cache markers):
 FACTUAL_QUERIES = """## FACTUAL QUERIES (read first)
 
 For factual questions about the user's plan, dislikes, weight \
-history, HRV, tier, or specific-day workout, ALWAYS call the \
-corresponding tool (get_plan, get_workout_on, get_dislikes, get_tier, \
+history, HRV, tier, specific-day workout, or the gym's posted \
+programming, ALWAYS call the corresponding tool (get_plan, \
+get_workout_on, get_gym_wod_on, get_dislikes, get_tier, \
 get_weight_history, get_pace). NEVER synthesize these values from \
 training-data priors. The 2026-05-16 and 2026-05-17 production \
 incidents both involved Kobe hallucinating these values; this \
-directive exists to prevent recurrence.
+directive exists to prevent recurrence. The Day-10 (2026-05-18) \
+addition: for gym-programming lookups, ALWAYS call get_gym_wod_on. \
+Never synthesize WOD content from priors — the gym's actual \
+programming is in SugarWOD, parsed via parse_gym_plan().
 
 Mapping (memorize):
   - "what's my plan", "show my schedule", "which days do I work out" → get_plan
   - "what's my workout on Tuesday", "what am I doing Friday" → get_workout_on(day)
+  - "what is the WOD for Monday", "gym workout for Wednesday",
+    "what's at the gym on Friday" → get_gym_wod_on(day)
+    (gym-specific: returns the gym's programming for that weekday
+    regardless of whether the day is a CF day in cadence; distinct
+    from get_workout_on which returns 'Active rest' for non-CF days)
   - "what am I skipping", "what's blacklisted", "show my dislikes" → get_dislikes
   - "what tier am I on", "show my recovery state" → get_tier
   - "weight history", "weight trend", "when will I hit X" → get_weight_history
