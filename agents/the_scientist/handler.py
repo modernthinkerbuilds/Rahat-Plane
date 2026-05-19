@@ -2207,8 +2207,27 @@ def _should_delegate(msg: str) -> str | None:
     ("what's my weight", "log hrv 42", "tier hammer", "pace check")
     never match these patterns and route to Kobe's existing
     handlers / reasoner.
+
+    PRIORITY GUARD (2026-05-18, post Day-10): Gym-WOD-day lookups
+    ("what is the WOD for Tuesday", "gym workout for Saturday")
+    are KOBE's lookup territory via handle_gym_wod_on. They MUST
+    NOT be delegated to Fraser even though they contain "WOD" — the
+    user is asking what's already programmed at the gym for a
+    specific weekday, not asking Fraser to design something. Before
+    this guard, _should_delegate's _FRASER_DELEGATION_PATTERNS
+    matched the generic 'WOD' keyword and routed the query to
+    Fraser, who returned a [Fraser] mode=default stub because Fraser
+    doesn't read parse_gym_plan(). Pinned by
+    tests/regression_registry/test_2026_05_18_gym_wod_lookup_
+    ignores_cadence.py — but the test exercised _legacy_route
+    directly without going through Kobe's route() pre-delegation
+    check, so the production bug slipped past. This guard fixes the
+    end-to-end path.
     """
     if not msg:
+        return None
+    if _is_gym_wod_on_day_query(msg) is not None:
+        # Kobe owns this lookup — do NOT delegate.
         return None
     for pat in _FRASER_DELEGATION_PATTERNS:
         if pat.search(msg):
