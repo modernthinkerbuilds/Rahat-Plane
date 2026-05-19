@@ -348,8 +348,12 @@ def test_slash_command_unknown_falls_through_to_reasoner(monkeypatch):
         "the next branch (model-first or legacy) gets a chance."
     )
     assert h.route("/foobar") == sentinel
-    # Plain text — definitely not a slash, must reach the reasoner.
-    assert h.route("how am I doing") == sentinel
+    # Plain text that hits NO deterministic route — must reach the
+    # reasoner. Note: "how am I doing" used to be the example here, but
+    # post-ADR-009 (Option C single dispatcher, 2026-05-19) that phrase
+    # matches the dispatcher's pace route. Use a truly open-ended
+    # phrase instead so this test asserts the right invariant.
+    assert h.route("explain Zone-2 training philosophy") == sentinel
 
 
 @pytest.mark.parametrize("variant", [

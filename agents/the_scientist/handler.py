@@ -2284,7 +2284,28 @@ def route(msg: str) -> str:
     cascade into the legacy path, so this is also the live resilience
     boundary.
     """
+    # 0. Option C single dispatcher (ADR-009, 2026-05-19).
+    # Runs FIRST. If a deterministic route matches, return its handler
+    # output and skip the rest of the cake entirely. The LLM reasoner
+    # and the legacy regex router are both bypassed for matched queries.
+    # See specs/ADR-009-single-dispatcher.md.
+    #
+    # Feature-flagged via RAHAT_USE_DISPATCHER (default ON). Setting to
+    # 0 falls back to the legacy ten-layer flow below.
+    try:
+        from core import dispatcher as _dispatcher
+        _dispatched = _dispatcher.dispatch(msg)
+        if _dispatched is not None:
+            return _dispatched
+    except Exception as _e:
+        # Dispatcher itself crashing should never take down the bot.
+        # Fall through to the legacy path.
+        print(f"[scientist.route] dispatcher crashed, falling back: {_e}")
+
     # 1. Slash dispatcher (Day-1 R1 step 1).
+    # The dispatcher above already handles slash routes, but this stays
+    # as a defensive fallback when the dispatcher is disabled via the
+    # feature flag.
     slash = _try_slash_command(msg)
     if slash is not None:
         return slash
