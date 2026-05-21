@@ -82,7 +82,9 @@ DESIGN_KEYWORDS = {"design", "scale", "scaling", "programming",
                    "compose", "build", "adapt"}
 
 
-@pytest.mark.xfail(strict=False, reason="Day 9 Bug 3 fix may not have landed")
+# Day-11 (2026-05-19): Day-9 Bug-3 fix landed in Kobe + Fraser
+# descriptions; XPASS observed when registry was wired into gate.
+# Mark dropped per strict cadence.
 def test_kobe_description_owns_lookup():
     """Kobe's description must explicitly claim lookup/scheduling
     intents. Without it, the classifier has nothing to pick on for
@@ -111,7 +113,8 @@ def test_fraser_description_does_not_claim_lookup():
         f"desc={desc[:200]!r}")
 
 
-@pytest.mark.xfail(strict=False, reason="Day 9 Bug 3 fix may not have landed")
+# Day-11 (2026-05-19): Day-9 Bug-3 fix landed; XPASS observed.
+# Mark dropped per strict cadence.
 def test_fraser_description_claims_design_explicitly():
     """Fraser must explicitly claim design/scale/scaling."""
     desc = _fraser_desc()

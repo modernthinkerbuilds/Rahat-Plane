@@ -95,13 +95,16 @@ class TestFinding1KcalModel:
 
 # ─── Finding 2: Cool-down renders ──────────────────────────────────
 class TestFinding2CoolDownRenders:
-    def test_card_has_cool_down_movements_from_prvn_reset(self, fresh_db):
+    def test_card_has_cool_down_movements_from_prvn_reset(self, fresh_db, tmp_path):
         """When source has a PRVN Reset section, the adapted card's
-        cool_down.movements is populated."""
-        from agents.fraser.source import ingest_source_week
+        cool_down.movements is populated.
+
+        Wall-clock-hermetic via fresh fetched_at so the freshness gate
+        doesn't return STALE and mask this assertion."""
         from agents.fraser.handler import design_workout
         from agents.fraser import state
-        ingest_source_week(REAL_ARCHIVE)
+        from tests.test_fraser_source import _ingest_real_archive_fresh
+        _ingest_real_archive_fresh(tmp_path)
         state.set_mock_huberman_state({"hrv": 55, "sleep_hours": 7.5,
                                        "recovery_color": "green"})
         state.set_mock_kobe_tier("zone2")
@@ -261,14 +264,15 @@ class TestFinding4KobeTargetReadAndScaling:
         assert label == "scaled-down"
         assert scaled.wod.predicted_burn_kcal_low < 1800
 
-    def test_target_and_predicted_appear_in_notes(self, fresh_db):
+    def test_target_and_predicted_appear_in_notes(self, fresh_db, tmp_path):
         """End-to-end: design_workout against real archive produces
         a card whose NOTES carries 'Kobe target' + 'Predicted' +
-        'Adjustment'."""
-        from agents.fraser.source import ingest_source_week
+        'Adjustment'. Hermetic via fresh fetched_at — stale source
+        path skips the Kobe-target NOTES line."""
         from agents.fraser.handler import design_workout
         from agents.fraser import state
-        ingest_source_week(REAL_ARCHIVE)
+        from tests.test_fraser_source import _ingest_real_archive_fresh
+        _ingest_real_archive_fresh(tmp_path)
         state.set_mock_huberman_state({"hrv": 55, "sleep_hours": 7.5,
                                        "recovery_color": "green"})
         state.set_mock_kobe_tier("zone2")

@@ -35,6 +35,23 @@ REAL_ARCHIVE = (ROOT / "staging" / "workspace" / "gym-programming"
                 / "archive" / "sugarwod.20260511.20260510-232607.json")
 
 
+def _ingest_real_archive_fresh(tmp_path):
+    """Ingest REAL_ARCHIVE but with `fetched_at` re-stamped to "now"
+    so the freshness gate doesn't fire on calendar drift. The archive
+    file itself is fixed-date (2026-05-11 week); when wall-clock time
+    advances past the 7-day staleness threshold, raw ingestion makes
+    get_todays_source_workout return STALE_SOURCE_WORKOUT regardless
+    of the `today` arg. This helper rewrites fetched_at to now so
+    tests that want to exercise the post-freshness paths can do so.
+    """
+    fresh = tmp_path / "fresh_archive.json"
+    data = json.loads(REAL_ARCHIVE.read_text())
+    data["fetched_at"] = (datetime.now(timezone.utc).isoformat())
+    fresh.write_text(json.dumps(data))
+    from agents.fraser.source import ingest_source_week
+    return ingest_source_week(fresh)
+
+
 @pytest.fixture
 def fresh_db(tmp_path, monkeypatch):
     db = tmp_path / "test.db"
@@ -277,14 +294,16 @@ def test_freshness_gate_passes_at_3_days(fresh_db, tmp_path):
     assert result.date_int == "20260514"
 
 
-def test_get_todays_source_workout_returns_substrate_data(fresh_db):
+def test_get_todays_source_workout_returns_substrate_data(fresh_db, tmp_path):
     """Spec §P0.7 acceptance check: ingest the real archive, read
     THU 14, verify the body comes back. Owner verifies this case in
-    DAY5_DEMO_CARD too."""
-    from agents.fraser.source import ingest_source_week
+    DAY5_DEMO_CARD too.
+
+    Uses `_ingest_real_archive_fresh` so wall-clock drift past the
+    archive's fetched_at doesn't trigger the freshness gate."""
     from agents.fraser import state as fst
 
-    ingest_source_week(REAL_ARCHIVE)
+    _ingest_real_archive_fresh(tmp_path)
     body = fst.get_todays_source_workout(today="20260514")
     assert body is not None
     assert body.date_int == "20260514"
@@ -295,11 +314,12 @@ def test_get_todays_source_workout_returns_substrate_data(fresh_db):
     assert "Lava Plume" in primary.title
 
 
-def test_no_source_for_today_returns_none(fresh_db):
-    from agents.fraser.source import ingest_source_week
+def test_no_source_for_today_returns_none(fresh_db, tmp_path):
+    """Wall-clock-hermetic: re-stamp fetched_at so the freshness gate
+    doesn't fire and mask the None-on-missing-date assertion."""
     from agents.fraser import state as fst
 
-    ingest_source_week(REAL_ARCHIVE)
+    _ingest_real_archive_fresh(tmp_path)
     # A date that's not in the archive.
     assert fst.get_todays_source_workout(today="20991231") is None
 

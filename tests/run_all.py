@@ -189,6 +189,12 @@ LAYERS: list[LayerSpec] = [
             # Fix is description tightening, not regex; this file
             # locks the wording so a future reflow surfaces in diff.
             "tests/test_fraser_description_contract.py",
+            # Regression registry — the "things that broke once,
+            # must never break again" log. Each file pins ONE
+            # historical bug with verbatim symptom + root cause +
+            # fix. Day-11 adds the chat-memory + LLM-failure
+            # fallback contract. Directory grows with every fix.
+            "tests/regression_registry/",
         ],
     ),
     LayerSpec(
