@@ -75,11 +75,25 @@ class Agent:
         used by Miya before calling route()."""
         return any(p.search(msg) for p in self._compiled_triggers)
 
-    def route(self, msg: str) -> Reply | None:
+    def route(
+        self,
+        msg: str,
+        *,
+        chat_id: str | int | None = None,
+        db_path: str | None = None,
+    ) -> Reply | None:
         """Handle a user message. Return a Reply or None (not mine).
 
         Subclasses must override. The default raises so that an agent
         that forgets to implement routing fails loudly in tests.
+
+        `chat_id` and `db_path` are keyword-only and optional so that
+        the ABI is backward compatible: legacy callers that pass only
+        `msg` continue to work. Agents that maintain per-conversation
+        state (e.g. Fraser's chat memory) read `chat_id`; agents that
+        don't simply ignore it. Threading it here — rather than reaching
+        into a global — keeps each route() call self-describing and lets
+        Miya hand the same conversation context to every specialist.
         """
         raise NotImplementedError(
             f"{self.name}: route() not implemented")

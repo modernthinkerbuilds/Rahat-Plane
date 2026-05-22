@@ -128,12 +128,20 @@ class FraserAgent(Agent):
         self._mod = _load_fraser_module()
 
     # ── Agent ABI ─────────────────────────────────────────────────
-    def route(self, msg: str) -> Reply | None:
-        """Delegate to handler.route(). Returns the low-confidence
-        stub Reply on Day 1. Day 3 swaps in the real reasoner output.
+    def route(
+        self,
+        msg: str,
+        *,
+        chat_id: str | int | None = None,
+        db_path: str | None = None,
+    ) -> Reply | None:
+        """Delegate to handler.route(), forwarding chat_id so the
+        composer's conversational memory resolves refinements against
+        prior turns. Backward compatible — callers may still pass only
+        `msg`.
         """
         try:
-            return self._mod.route(msg)
+            return self._mod.route(msg, chat_id=chat_id)
         except Exception as e:
             # An error during the stub phase should NOT crash Miya's
             # poll loop — log and decline. Day-3 hardening can replace

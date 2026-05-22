@@ -1229,7 +1229,7 @@ def _should_delegate(msg: str) -> str | None:
     return None
 
 
-def route(msg: str) -> Any:
+def route(msg: str, *, chat_id: str | int | None = None) -> Any:
     """Miya entry-point.
 
     Day-8 routing (per ADR-006/-007):
@@ -1268,6 +1268,36 @@ def route(msg: str) -> Any:
         return Reply(text=fallback, confidence=0.3)
 
     # 2. Workout-design path — Fraser's primary territory.
+    #
+    # Day-11 (2026-05-19) replaces the Day-1 telemetry stub with the
+    # full composer (agents/fraser/composer.py). The composer produces
+    # a 4-section markdown session (warm-up / strength / WOD / cool-
+    # down) by calling Gemini with the athlete profile + Kobe plan +
+    # Huberman state + pain + user request as context. Gemini-quality
+    # output is the eval bar — see specs/FRASER_GEMINI_CHAT_REFERENCE.md.
+    #
+    # The Day-1 `design_workout(msg)` Workout-Card builder stays in the
+    # module as the telemetry-friendly snapshot path: it's used by
+    # the structured `fraser_workout` commit pipeline and by the
+    # eval suite (tests/evals/test_fraser_conversation.py) which
+    # asserts on card structure. Composer is for USER replies; the
+    # Workout-Card adapter is for SUBSTRATE writes. Two surfaces,
+    # each with the right shape.
+    try:
+        from agents.fraser import composer
+        text = composer.design_session(msg, chat_id=chat_id)
+        if text and text.strip():
+            return Reply(text=text, confidence=1.0)
+    except Exception as e:
+        # The composer never *should* propagate (it has its own
+        # _fallback_no_llm path). If it does, surface the
+        # telemetry-stub so the user gets *something* rather than
+        # silence — and so the test sandbox (no GEMINI_API_KEY)
+        # still has a deterministic response shape.
+        print(f"[fraser.handler] composer raised: {e}; using telemetry stub")
+
+    # Last-resort fallback — Day-1 telemetry snapshot. The composer
+    # has its own fallback so this only fires on unexpected exceptions.
     card = design_workout(msg)
     text = (
         f"[Fraser] mode={card.input_mode.value} · "

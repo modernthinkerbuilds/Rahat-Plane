@@ -24,6 +24,7 @@ etc. ship, they're added to AGENTS — no Miya code changes required.
 """
 from __future__ import annotations
 
+import inspect
 import re
 import time
 from datetime import datetime
@@ -618,10 +619,10 @@ def route(
                 ) as s:
                     s.output = {"strategy": "slash_bypass",
                                 "winner": "kobe"}
-                return _dispatch_to(a, msg, tid, db_path)
+                return _dispatch_to(a, msg, tid, db_path, chat_id=chat_id)
         # Kobe not registered (shouldn't happen in prod) — fall back
         # defensively to the trigger router.
-        return _route_via_triggers(msg, tid, db_path)
+        return _route_via_triggers(msg, tid, db_path, chat_id=chat_id)
 
     # 0. If there's a pending clarification for this chat AND the user
     #    just replied A/B/C, resolve it and dispatch to the chosen
@@ -641,7 +642,8 @@ def route(
                     ) as s:
                         s.output = {"strategy": "clarification_resolved",
                                     "winner": resolved_name}
-                    return _dispatch_to(a, original_msg, tid, db_path)
+                    return _dispatch_to(a, original_msg, tid, db_path,
+                                        chat_id=chat_id)
 
     # 1. Try the classifier first.
     scores = classify_intent(msg, db_path=db_path)
@@ -658,7 +660,7 @@ def route(
 
     # 2a. Classifier returned no scores → fall back to triggers.
     if strategy == "empty":
-        return _route_via_triggers(msg, tid, db_path)
+        return _route_via_triggers(msg, tid, db_path, chat_id=chat_id)
 
     # 2b. Pure noise → generic /help reply.
     if strategy == "noise":
@@ -675,8 +677,9 @@ def route(
             top_name = decision["candidates"][0][0]
             for a in _AGENTS:
                 if a.name == top_name:
-                    return _dispatch_to(a, msg, tid, db_path)
-            return _route_via_triggers(msg, tid, db_path)
+                    return _dispatch_to(a, msg, tid, db_path,
+                                        chat_id=chat_id)
+            return _route_via_triggers(msg, tid, db_path, chat_id=chat_id)
         return ask_clarification(
             msg, decision["candidates"],
             chat_id=chat_id, db_path=db_path,
@@ -684,7 +687,8 @@ def route(
 
     # 2d. Multi-dispatch — call both top agents, merge replies.
     if strategy == "dispatch_multi":
-        return _dispatch_multi(decision["agents"], msg, tid, db_path)
+        return _dispatch_multi(decision["agents"], msg, tid, db_path,
+                               chat_id=chat_id)
 
     # 2e. Single dispatch (with or without caveat).
     agent_name = decision["agent"]
@@ -692,10 +696,50 @@ def route(
     for a in _AGENTS:
         if a.name == agent_name:
             return _dispatch_to(a, msg, tid, db_path, caveat=caveat,
-                                 confidence_score=decision["confidence"])
+                                 confidence_score=decision["confidence"],
+                                 chat_id=chat_id)
     # Agent named but not registered — shouldn't happen because the
     # classifier only knows registered agents. Fall back defensively.
-    return _route_via_triggers(msg, tid, db_path)
+    return _route_via_triggers(msg, tid, db_path, chat_id=chat_id)
+
+
+def _safe_route(
+    agent: Agent,
+    msg: str,
+    *,
+    chat_id: str | int | None = None,
+    db_path: str | None = None,
+) -> Reply | None:
+    """Invoke `agent.route(msg)`, forwarding the optional ABI fields
+    (`chat_id`, `db_path`) ONLY to agents whose `route()` declares them.
+
+    Why introspect instead of always passing the kwargs?  A control
+    plane must not crash because one specialist hasn't adopted an
+    optional field yet. The route ABI evolved (Day-11) to carry
+    per-conversation context; older or third-party agents whose
+    signature is still `route(self, msg)` keep working — Miya negotiates
+    each agent's capabilities from its signature rather than assuming
+    conformance. An agent that declares `**kwargs` receives everything.
+
+    This deliberately does NOT swallow TypeErrors raised *inside* an
+    agent's route() — it only avoids passing kwargs the callee can't
+    accept, so genuine bugs still surface."""
+    try:
+        params = inspect.signature(agent.route).parameters
+    except (TypeError, ValueError):
+        # Builtin / C-callable without an introspectable signature —
+        # fall back to the minimal call.
+        return agent.route(msg)
+
+    has_var_kw = any(
+        p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values()
+    )
+    kwargs: dict[str, Any] = {}
+    if has_var_kw or "chat_id" in params:
+        kwargs["chat_id"] = chat_id
+    if has_var_kw or "db_path" in params:
+        kwargs["db_path"] = db_path
+    return agent.route(msg, **kwargs)
 
 
 def _dispatch_to(
@@ -706,9 +750,13 @@ def _dispatch_to(
     *,
     caveat: bool = False,
     confidence_score: float | None = None,
+    chat_id: str | int | None = None,
 ) -> Reply | None:
     """Call agent.route() with span instrumentation. Optionally
-    prepend a medium-confidence caveat per ADR-008."""
+    prepend a medium-confidence caveat per ADR-008.
+
+    `chat_id` is forwarded to the agent so per-conversation memory
+    (e.g. Fraser's composer) resolves against prior turns."""
     with decisions.span(
         f"agent.{agent.name}.route",
         trace_id=tid, actor=agent.name,
@@ -716,7 +764,7 @@ def _dispatch_to(
                "router_confidence": confidence_score},
         db_path=db_path,
     ) as s:
-        reply = agent.route(msg)
+        reply = _safe_route(agent, msg, chat_id=chat_id, db_path=db_path)
         s.output = {
             "text_len": len(reply.text) if reply else 0,
             "confidence": reply.confidence if reply else 0,
@@ -741,6 +789,8 @@ def _dispatch_multi(
     msg: str,
     tid: str,
     db_path: str | None,
+    *,
+    chat_id: str | int | None = None,
 ) -> Reply | None:
     """Call multiple agents in sequence, merge their non-empty replies
     into a single combined Reply with attribution. Used when classifier
@@ -757,7 +807,8 @@ def _dispatch_multi(
                     input={"msg": msg, "multi_dispatch": True},
                     db_path=db_path,
                 ) as s:
-                    reply = a.route(msg)
+                    reply = _safe_route(a, msg, chat_id=chat_id,
+                                        db_path=db_path)
                     s.output = {
                         "text_len": len(reply.text) if reply else 0,
                         "confidence": reply.confidence if reply else 0,
@@ -778,6 +829,8 @@ def _route_via_triggers(
     msg: str,
     tid: str,
     db_path: str | None,
+    *,
+    chat_id: str | int | None = None,
 ) -> Reply | None:
     """Pre-ADR-006 routing: regex triggers + LLM tiebreaker. Used only
     when the classifier is unavailable (no API key, network down, or
@@ -802,7 +855,7 @@ def _route_via_triggers(
             winner = _classify_via_llm(msg, _AGENTS) or _AGENTS[0]
             s.output = {"strategy": "llm-only", "winner": winner.name}
 
-    return _dispatch_to(winner, msg, tid, db_path)
+    return _dispatch_to(winner, msg, tid, db_path, chat_id=chat_id)
 
 
 # ─────────────────────────── Outbound (Charter-mediated) ───────────────────────────
@@ -900,7 +953,7 @@ def run_loop(*, poll_timeout: int = 10,
                 # user that a message landed and is being routed.
                 print(f"[in]  chat={chat_id} text={txt!r}")
                 tid = decisions.new_trace()
-                reply = route(txt, trace_id=tid)
+                reply = route(txt, trace_id=tid, chat_id=chat_id)
                 if reply and reply.text:
                     # User-initiated reply — kind=notify.user.reply (default).
                     # The Charter's quiet_hours policy explicitly allows

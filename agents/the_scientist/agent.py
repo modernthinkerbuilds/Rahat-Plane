@@ -157,7 +157,13 @@ class KobeAgent(Agent):
         self._sci = _load_scientist_module()
 
     # ─── routing ───
-    def route(self, msg: str) -> Reply | None:
+    def route(
+        self,
+        msg: str,
+        *,
+        chat_id: str | int | None = None,
+        db_path: str | None = None,
+    ) -> Reply | None:
         """Delegate to legacy main.route(). Returns None if the legacy
         router would have fallen through to LLM coaching with no domain
         anchor — Miya may then route elsewhere or synthesize.
@@ -166,6 +172,10 @@ class KobeAgent(Agent):
         returns None today (it falls through to llm_coach). Confidence
         is 1.0 for trigger-matched messages, 0.5 for fallthroughs that
         landed here by classifier.
+
+        `chat_id`/`db_path` are accepted for ABI parity (Miya passes
+        them to every agent) but Kobe doesn't keep per-conversation
+        memory yet, so they're intentionally unused here.
         """
         text = self._sci.route(msg) or ""
         confidence = 1.0 if self.matches(msg) else 0.5
