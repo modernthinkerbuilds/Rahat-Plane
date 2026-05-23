@@ -151,6 +151,21 @@ def _h_gym_wod_relative(msg: str, match: re.Match) -> str:
     return _kobe.handle_gym_wod_on(idx)
 
 
+def _h_plan_mutation(msg: str, match: re.Match):
+    """Deterministic plan-EDIT dispatch (pick days, mark unavailable, set
+    a rest day, tolerate, swap, clear, replan). Delegates to Kobe's
+    _try_plan_mutation, which does the precise per-intent routing and
+    returns None when `msg` isn't actually a plan edit — in which case
+    this route returns None and the caller falls through to the reasoner.
+
+    2026-05-23 fix (#47): these handlers used to live only in the dead
+    legacy router, so plan edits silently no-op'd in production. This is
+    the LAST route in the table so it only claims messages no read route
+    matched, and never steals a query a specific route should own."""
+    from agents.the_scientist import handler as _kobe
+    return _kobe._try_plan_mutation(msg)  # None → caller falls through
+
+
 def _h_weight_log(msg: str, match: re.Match) -> str:
     from agents.the_scientist import handler as _kobe
     return _kobe.handle_weight(float(match.group(1)))
@@ -348,6 +363,24 @@ _LAST_WEEK_RE = re.compile(
     re.I,
 )
 
+# Plan EDITS (mutations). Coarse gate — the precise per-intent routing +
+# weekday/question gating happens in handler._try_plan_mutation, which
+# returns None (→ fall through to the reasoner) for anything that isn't
+# actually a plan edit. This route is placed LAST so it only claims
+# messages no read route matched. Over-matching here is safe.
+_PLAN_MUTATION_RE = re.compile(
+    r"\b(?:"
+    r"pick|crossfit\s+on|cf\s+on|do\s+(?:crossfit|cf|wod)\s+on|"
+    r"for\s+(?:crossfit|cf|wod|run|z2|zone\s*2|easy\s+run)|"
+    r"can'?t|cannot|won'?t|skip|miss|busy|unavailable|out\s+(?:on|for)|no\s+gym|"
+    r"rest|off\s+day|day\s+off|take\s+\w+\s+off|"
+    r"replan|rebuild\s+plan|reset\s+plan|new\s+plan|reset\s+week|"
+    r"clear\s+(?:prefs|preferences|overrides)|use\s+defaults|forget\s+my\s+(?:prefs|preferences|overrides)|"
+    r"tolerate|prefer|instead\s+of|rather\s+than|in\s+place\s+of"
+    r")\b",
+    re.I,
+)
+
 
 # ─────────────────────── The ordered route table ───────────────────────
 # Add new routes by appending. Place specific patterns FIRST. Tests in
@@ -390,6 +423,12 @@ ROUTES: list[Route] = [
     Route("breathing_715", _BREATH_715_RE, _h_breathing_715),
     Route("pre_fuel", _PRE_FUEL_RE, _h_pre_fuel),
     Route("post_recovery", _POST_RECOVERY_RE, _h_post_recovery),
+
+    # 8. Plan EDITS — LAST. Only claims messages no read route matched;
+    # _try_plan_mutation returns None for non-edits → fall through to the
+    # reasoner. This is the deterministic catch that stops plan edits
+    # ("Mon for crossfit", "Wed rest", "replan") from silently no-op'ing.
+    Route("plan_mutation", _PLAN_MUTATION_RE, _h_plan_mutation),
 ]
 
 

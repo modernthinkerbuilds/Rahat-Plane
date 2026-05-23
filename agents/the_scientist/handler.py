@@ -955,6 +955,29 @@ def handle_unavailable(weekday_text: str, next_week: bool = False) -> str:
             + handle_show_plan(next_week=next_week))
 
 
+def handle_rest_day(weekday_text: str, next_week: bool = False) -> str:
+    """Make one or more weekdays a rest day. Marks them unavailable (so
+    the replanner schedules no CF/Z2 there) AND pulls them out of any
+    existing forced CF/Z2 picks so the rest request actually sticks."""
+    monday, label = _which_monday(next_week)
+    named = parse_weekdays(weekday_text, include_relative=False)
+    indices = named if named else parse_weekdays(weekday_text)
+    if not indices:
+        return ("Couldn't find a weekday to rest. Try "
+                "'make Wednesday a rest day' or 'Fri rest'.")
+    prefs = get_prefs(monday)
+    merged_unavail = sorted(set(prefs["unavailable_days"]) | set(indices))
+    new_cf = [d for d in prefs["forced_cf_days"] if d not in indices]
+    updates = {"unavailable_days": merged_unavail, "forced_cf_days": new_cf}
+    if prefs["forced_z2_day"] in indices:
+        updates["forced_z2_day"] = None
+    set_prefs(monday, **updates)
+    replan_week(monday, force=True)
+    names = ", ".join(WEEKDAY_NAME[i] for i in indices)
+    return (f"✅ {names} set as rest {label}. Replanned.\n\n"
+            + handle_show_plan(next_week=next_week))
+
+
 def handle_pick_days(weekday_text: str, next_week: bool = False) -> str:
     """Explicit day picks. If the message mentions 'run'/'z2'/'zone 2', that
     set goes to Z2; otherwise everything goes to CF. Mixed phrasing splits
@@ -996,12 +1019,38 @@ def handle_pick_days(weekday_text: str, next_week: bool = False) -> str:
         else:
             cf_picks = indices[:3]
 
-    set_prefs(monday, forced_cf_days=cf_picks, forced_z2_day=z2_pick)
+    # ── #48 fix: add-vs-replace + never clobber the other discipline ──
+    # A single named CF day with no "just/only" is ADDITIVE — it augments
+    # the existing forced CF days. The morning brief literally tells the
+    # user "convert Sun → CF, apply with `pick Sun for crossfit`", which
+    # MUST add Sunday, not collapse the whole week to Sunday alone (the
+    # old code did set_prefs(forced_cf_days=[Sun]) → 1 CF day). An explicit
+    # multi-day list, or the words just/only/instead, REPLACES. A Z2-only
+    # pick ("Sun for run") must not wipe the CF days, and an additive CF
+    # pick must not clear a previously forced Z2 day.
+    prefs_now = get_prefs(monday)
+    existing_cf = list(prefs_now["forced_cf_days"])
+    replace_intent = bool(
+        re.search(r"\b(just|only|instead|exactly|replace)\b", text_lc)
+    ) or len(cf_picks) >= 2
+
+    updates: dict = {}
+    final_cf = existing_cf
+    if cf_picks:
+        final_cf = (sorted(set(cf_picks)) if replace_intent
+                    else sorted(set(existing_cf) | set(cf_picks)))
+        updates["forced_cf_days"] = final_cf
+    if z2_pick is not None:
+        updates["forced_z2_day"] = z2_pick
+
+    if not updates:
+        return "Couldn't find any CF or Z2 days to set in that."
+    set_prefs(monday, **updates)
     replan_week(monday, force=True)
 
     parts = []
-    if cf_picks:
-        parts.append("CF: " + ", ".join(WEEKDAY_NAME[i] for i in cf_picks))
+    if "forced_cf_days" in updates:
+        parts.append("CF: " + ", ".join(WEEKDAY_NAME[i] for i in final_cf))
     if z2_pick is not None:
         parts.append(f"Z2: {WEEKDAY_NAME[z2_pick]}")
 
@@ -1046,7 +1095,7 @@ def handle_pick_days(weekday_text: str, next_week: bool = False) -> str:
             if wd_idx is not None:
                 wd_to_gym[wd_idx] = d
         hit_summaries: list[str] = []
-        for wd in cf_picks:
+        for wd in final_cf:
             day = wd_to_gym.get(wd)
             if not day or not day.blockers:
                 continue
@@ -1099,6 +1148,62 @@ def handle_clear_prefs(next_week: bool = False) -> str:
     replan_week(monday, force=True)
     return (f"✅ Cleared all overrides for {label}. Plan reverts to "
             "auto-picker.\n\n" + handle_show_plan(next_week=next_week))
+
+
+def _looks_like_question(msg: str) -> bool:
+    """Heuristic: is this a read/question rather than a command? Used to
+    keep 'is Tuesday good for crossfit?' from being taken as a pick."""
+    s = (msg or "").strip().lower()
+    if s.endswith("?"):
+        return True
+    return bool(re.match(
+        r"^(is|are|was|were|do|does|did|can|could|should|would|will|"
+        r"what|when|which|who|how|why)\b", s))
+
+
+def _try_plan_mutation(msg: str) -> str | None:
+    """Deterministic dispatch for plan-EDIT intents (pick days, mark
+    unavailable, set a rest day, tolerate a blacklist movement, swap
+    days, clear overrides, replan).
+
+    Why this exists (#47, 2026-05-23): these handlers historically lived
+    ONLY inside `_legacy_route`, which is OFF in production
+    (RAHAT_LEGACY_DISPATCH unset). So natural-language plan edits —
+    "Mon for crossfit", "Wed rest", "replan" — fell through the ADR-009
+    dispatcher to the LLM reasoner, which replied conversationally
+    without persisting → silent no-op. The dispatcher now calls this
+    function (core.dispatcher → _h_plan_mutation) so plan edits land on
+    the deterministic, persisting handlers.
+
+    Returns the handler reply, or None if `msg` is not a plan edit (so
+    the dispatcher falls through to the reasoner). Mirrors the ordering
+    in `_legacy_route`."""
+    if not msg:
+        return None
+    m = msg
+    next_week_q = bool(NEXT_WEEK_RE.search(m))
+
+    if CLEAR_PREFS_RE.search(m):
+        return handle_clear_prefs(next_week=next_week_q)
+    if TOLERATE_RE.search(m):
+        return handle_tolerate(m, next_week=next_week_q)
+    # SWAP before UNAVAILABLE/PICK — "prefer Mon over Sun" names two days.
+    if SWAP_RE.search(m) and len(parse_weekdays(m)) >= 2:
+        return handle_swap(m, next_week=next_week_q)
+    if REST_RE.search(m) and parse_weekdays(m) and not _looks_like_question(m):
+        return handle_rest_day(m, next_week=next_week_q)
+    if UNAVAILABLE_RE.search(m) and parse_weekdays(m):
+        return handle_unavailable(m, next_week=next_week_q)
+    # Pick: explicit "pick…" verb, OR the bare "<day> for crossfit" form
+    # (but not a question like "is Tuesday good for crossfit?").
+    pick_intent = bool(PICK_RE.search(m)) or (
+        DAY_FOR_DISCIPLINE_RE.search(m) is not None
+        and not _looks_like_question(m))
+    if pick_intent and parse_weekdays(m):
+        return handle_pick_days(m, next_week=next_week_q)
+    if REPLAN_RE.search(m):
+        return handle_replan()
+    return None
 
 
 # ─── Dislike capture (user-stated negative movement prefs) ──────────
@@ -1738,6 +1843,20 @@ UNAVAILABLE_RE = re.compile(
 PICK_RE = re.compile(
     r"\b(pick|do (?:crossfit|cf|wod) on|crossfit on|cf on|"
     r"i(?:'?ll| will| want to) do.*?(?:crossfit|cf|wod|run|z2|zone\s*2))\b", re.I)
+# "Mon for crossfit" / "Sun for run" — a pick WITHOUT the leading "pick"
+# verb. The morning brief suggests "pick Sun for crossfit", but users
+# (and #47's title) also type the bare "<day> for crossfit" form. Gated
+# by _looks_like_question so "is Tuesday good for crossfit?" isn't taken
+# as a pick.
+DAY_FOR_DISCIPLINE_RE = re.compile(
+    r"\bfor\s+(?:crossfit|cf|wod|run|z2|zone\s*2|easy\s+run)\b", re.I)
+# REST_RE catches "Wed rest" / "make Wednesday a rest day" / "rest on
+# Sunday" / "take Friday off". The bare "rest" arm excludes "rest of …"
+# so "what's the rest of Monday's plan" isn't taken as a rest command.
+# Always paired with a weekday gate + question gate at the call site.
+REST_RE = re.compile(
+    r"(?:\brest\s*day\b|\bday\s+off\b|\boff\s+day\b|\btake\s+\w+\s+off\b|"
+    r"\brest\b(?!\s+of\b))", re.I)
 TOLERATE_RE = re.compile(
     r"\b(scale|tolerate|fine\s+with|ok(?:ay)?\s+with|ignore|allow|"
     r"let me do|i can do|i'?ll do|i can scale|happy to (?:scale|do)|"
