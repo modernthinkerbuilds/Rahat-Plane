@@ -186,6 +186,20 @@ def design_session(msg: str,
     if chat_id and chat_memory.is_reset_intent(msg):
         chat_memory.clear(chat_id, db_path=db_path)
 
+    # Day-15: conversational mode. A follow-up question about the session
+    # already in the conversation ("what weights should I follow?", "how
+    # many calories will I burn?", "swap the burpees", "make it shorter")
+    # must be ANSWERED against that session — NOT answered by regenerating
+    # a brand-new 4-section session with different numbers. Regenerating
+    # is exactly the "hallucinating when I personalize / it hardcodes a
+    # different WOD" symptom: the user asks a narrow question and gets a
+    # different workout back. _is_followup_question gates this; it only
+    # fires when there's prior conversation to resolve against.
+    if _is_followup_question(msg, chat_id, db_path=db_path):
+        out = _answer_followup(msg, db_path=db_path, chat_id=chat_id)
+        _record_turn(chat_id, msg, out, db_path=db_path)
+        return out
+
     prompt = build_design_prompt(req, db_path=db_path, chat_id=chat_id)
 
     # Call the LLM. We use the same cio.llm_generate plumbing as the
@@ -419,9 +433,184 @@ def _wrap_loose_response(text: str, req: SessionRequest) -> str:
     )
 
 
+# ─────────────────────── Day-15: conversational follow-ups ──────────
+# The composer's one job used to be "design a full 4-section session."
+# That made every message regenerate a session — so a narrow follow-up
+# ("what weights should I follow?") came back as a DIFFERENT workout with
+# DIFFERENT numbers. To the user that reads as hallucination / hardcoding.
+# These helpers add a second mode: detect a follow-up and ANSWER it
+# against the session already in the conversation, staying consistent
+# with the numbers Fraser already gave.
+
+# Explicit (new) design requests — override follow-up detection so
+# "design me a session" / "give me a WOD" always builds a fresh session.
+_DESIGN_REQUEST_SIGNALS = (
+    "design", "give me a", "give me an", "build me", "create a", "make me a",
+    "program me", "i want a", "plan me", "put together", "new workout",
+    "new session", "workout for", "session for", "wod for", "another workout",
+    "another session", "from scratch",
+)
+
+# Nouns that mean "(re)build a session," not "ask about the current one."
+# A short message containing one of these is treated as a design request,
+# not a refinement.
+_DESIGN_NOUNS = ("workout", "session", "wod", "metcon", "amrap", "emom")
+
+# Phrasings that lean on a session already in context — strong follow-up
+# signals. Kept lowercase; matched as substrings.
+_FOLLOWUP_SIGNALS = (
+    "what weight", "what's the weight", "whats the weight",
+    "how many cal", "how much", "how many", "how long",
+    "what about", "swap", "replace", "instead of", "drop the", "add the",
+    "shorter", "longer", "make it", "why ", "can i", "should i", "what if",
+    "lighter", "heavier", "more reps", "less reps", "same but", "tempo",
+    "the cleans", "those", "that wod", "this wod", "explain", "scale it",
+    "no running", "no row", "without",
+)
+
+
+def _is_followup_question(msg: str, chat_id: str | None,
+                          db_path: str | None = None) -> bool:
+    """True when `msg` is a follow-up about the session already in the
+    conversation, so we ANSWER it instead of regenerating a full session.
+
+    Requires (a) a chat_id with prior turns in memory and (b) the message
+    reading like a question/refinement rather than an explicit design
+    request. Conservative by design: when in doubt it returns False (full
+    design), because mis-answering a genuine design request as a follow-up
+    is a worse failure than the reverse."""
+    if not chat_id:
+        return False
+    if chat_memory.is_reset_intent(msg):
+        return False
+    try:
+        history = chat_memory.recent(chat_id, n=4, db_path=db_path)
+    except Exception:
+        history = []
+    if not history:
+        return False
+
+    low = " ".join((msg or "").lower().split())
+    if not low:
+        return False
+
+    # Explicit new-design request → not a follow-up.
+    if any(sig in low for sig in _DESIGN_REQUEST_SIGNALS):
+        return False
+
+    # Strong follow-up phrasings.
+    if any(sig in low for sig in _FOLLOWUP_SIGNALS):
+        return True
+
+    # A very short message on top of an existing session is almost always
+    # a refinement ("shorter", "lighter please", "and the cleans?") — but
+    # only if it isn't naming a workout to build.
+    if len(low.split()) <= 4 and not any(n in low for n in _DESIGN_NOUNS):
+        return True
+
+    return False
+
+
+_FOLLOWUP_DIRECTIVE = """You are Fraser, a world-class CrossFit coach in the Rahat
+mesh, MID-CONVERSATION with your athlete. The RECENT CONVERSATION block below already
+contains the session you designed. The athlete is now asking a FOLLOW-UP about THAT
+session.
+
+Answer the question directly and concisely. Hard rules:
+
+- Do NOT regenerate the full 4-section session. Answer ONLY what was asked.
+- Stay CONSISTENT with the movements, weights, reps, and structure you already gave
+  in the conversation above. If you prescribed Back Squat at 60 kg, the answer cites
+  60 kg — never silently invent a different weight or a different workout. Consistency
+  is the whole point: the athlete is asking about the session they already have.
+- Ground any load you cite in the athlete's recorded 1RMs (in the profile) and the
+  exact lifts from the prior session. Show kg + lbs and the 1RM %.
+- Keep baseline constraints in force: borderline-high BP (exhale on exertion, no
+  breath-holding), The Hunch (chest up / shoulders back), heel lift for squats,
+  mandatory trap release if the neck flares.
+- Honor any active pain reports.
+- If — and only if — the athlete is clearly asking for a NEW or fully re-designed
+  session, you may design one. Otherwise, answer the question.
+"""
+
+_FOLLOWUP_OUTPUT_RULES = """═══ OUTPUT (FOLLOW-UP ANSWER) ═══
+- Reply in a few short lines or a tight list. Telegram-friendly Markdown.
+- Lead with the direct answer; add the *why* in one line only if it helps.
+- Quote exact weights / reps / movements from the session above; include kg + lbs
+  and the 1RM % for any load you cite.
+- If you genuinely cannot answer from the prior session (there is none in context),
+  say so in one line and offer to design one.
+- NO four-section template. NO "[Fraser] mode=..." stub. NO invented workout.
+"""
+
+
+def build_followup_prompt(msg: str,
+                          db_path: str | None = None,
+                          chat_id: str | None = None) -> str:
+    """Prompt for answering a follow-up. Same grounding context as the
+    design prompt (profile / Kobe / Huberman / pain / history) but with
+    the follow-up directive + answer rules instead of the 4-section
+    schema."""
+    profile_block = athlete_profile.to_system_prompt_block()
+    kobe_block = kobe_bridge.to_prompt_block(db_path=db_path)
+    huberman_block = huberman_bridge.to_prompt_block(db_path=db_path)
+    pain_block = pain_state.to_prompt_block(db_path=db_path)
+    history_block = (
+        chat_memory.to_prompt_block(chat_id, db_path=db_path)
+        if chat_id else "")
+
+    parts = [_FOLLOWUP_DIRECTIVE, "", profile_block, ""]
+    if kobe_block:
+        parts.extend([kobe_block, ""])
+    parts.extend([huberman_block, ""])
+    if pain_block:
+        parts.extend([pain_block, ""])
+    if history_block:
+        parts.extend([history_block, ""])
+    parts.extend([
+        "═══ ATHLETE FOLLOW-UP ═══",
+        f"{msg!r}",
+        "",
+        _FOLLOWUP_OUTPUT_RULES,
+    ])
+    return "\n".join(parts)
+
+
+def _answer_followup(msg: str,
+                     db_path: str | None = None,
+                     chat_id: str | None = None) -> str:
+    """Answer a follow-up question against the session in chat memory.
+    Returns the rendered reply, or a graceful 'LLM unavailable' note —
+    never a stub, never a fabricated workout."""
+    prompt = build_followup_prompt(msg, db_path=db_path, chat_id=chat_id)
+    try:
+        from core import io as cio
+        response = cio.llm_generate(prompt)
+    except Exception as e:  # noqa: BLE001
+        return _fallback_followup(msg, str(e))
+    response = (response or "").strip()
+    if not response or response == "[LLM-FALLBACK]":
+        return _fallback_followup(msg, "LLM unavailable")
+    return response
+
+
+def _fallback_followup(msg: str, reason: str) -> str:
+    """No-LLM path for a follow-up. We will NOT guess at numbers — that
+    is the exact failure mode we're fixing — so we say so plainly and
+    offer the deterministic way to get an answer."""
+    return (
+        "*Fraser:* I can't reach my reasoning model this second, so I won't "
+        "guess at numbers for that.\n"
+        "Ask again in a moment — or name the lift and I'll give you the working "
+        "weight straight off your 1RM.\n"
+        f"_(LLM error: {reason})_"
+    )
+
+
 __all__ = [
     "SessionRequest",
     "parse_request",
     "build_design_prompt",
+    "build_followup_prompt",
     "design_session",
 ]

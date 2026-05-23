@@ -298,20 +298,97 @@ _DEFAULT = AthleteProfile(
 
 _cached_profile: AthleteProfile | None = None
 
+# Substrate namespace for persisted 1RM edits made via `/profile set`.
+# One row per (lift, value); newest active row per lift wins on read.
+_PROFILE_AGENT = "fraser"
+_ONE_RM_TYPE = "profile_1rm"
+
 
 def get(refresh: bool = False) -> AthleteProfile:
     """Return the athlete profile. Cached for the process lifetime; pass
-    refresh=True to re-read from substrate (Day-11+ when /profile edits
-    are persisted)."""
+    refresh=True to re-read persisted `/profile set` edits from substrate.
+
+    The returned profile is `_DEFAULT` with any persisted 1RM overrides
+    merged on top, so a user's `/profile set deadlift 160` survives
+    process restarts and is reflected in every weight Fraser computes."""
     global _cached_profile
     if _cached_profile is None or refresh:
-        # Future: try substrate first, fall back to _DEFAULT.
-        _cached_profile = _DEFAULT
+        _cached_profile = _build_profile()
     return _cached_profile
 
 
+def _build_profile(db_path: str | None = None) -> AthleteProfile:
+    """Compose the live profile = deep copy of _DEFAULT + persisted 1RM
+    overrides. Deep-copies so we never mutate the module-level seed."""
+    import copy
+    p = copy.deepcopy(_DEFAULT)
+    overrides = _load_1rm_overrides(db_path=db_path)
+    if overrides:
+        p.one_rms.update(overrides)
+    return p
+
+
+def _load_1rm_overrides(db_path: str | None = None) -> dict[str, float]:
+    """Read persisted 1RM edits from substrate. Newest active row per
+    lift wins. Soft-fails to {} if substrate is unavailable."""
+    out: dict[str, float] = {}
+    try:
+        from core import memory as _mem
+        rows = _mem.list_entities(
+            agent=_PROFILE_AGENT, type=_ONE_RM_TYPE, status="active",
+            include_expired=False, limit=200, db_path=db_path)
+    except Exception:
+        return out
+    # list_entities returns newest-first; first value seen per lift wins.
+    for row in rows:
+        payload = row.get("payload") or {}
+        lift = (payload.get("lift") or "").strip().lower()
+        kg = payload.get("weight_kg")
+        if lift and kg is not None and lift not in out:
+            try:
+                out[lift] = float(kg)
+            except (TypeError, ValueError):
+                continue
+    return out
+
+
+def set_one_rm(lift: str, weight_kg: float,
+               db_path: str | None = None) -> float:
+    """Persist a 1RM override (from `/profile set`). Returns the saved kg.
+
+    Validates the lift name + weight, writes to substrate, and resets
+    the process cache so the next get() reflects the change. Raises
+    ValueError on bad input."""
+    lift = (lift or "").strip().lower().replace(" ", "_")
+    if not lift:
+        raise ValueError("lift name is required")
+    try:
+        weight_kg = float(weight_kg)
+    except (TypeError, ValueError):
+        raise ValueError(f"weight must be a number, got {weight_kg!r}")
+    if not (0 < weight_kg <= 1000):
+        raise ValueError("weight must be between 0 and 1000 kg")
+
+    from datetime import datetime, timedelta, timezone
+    from core import memory as _mem
+    # No natural expiry for a 1RM; park it far in the future so the
+    # active-window filter never drops it.
+    far_future = datetime.now(timezone.utc) + timedelta(days=3650)
+    _mem.put_entity(
+        agent=_PROFILE_AGENT, type=_ONE_RM_TYPE,
+        payload={"lift": lift, "weight_kg": weight_kg},
+        valid_until=far_future,
+        rationale=f"user set {lift} 1RM = {weight_kg:g}kg via /profile set",
+        # Multiple lifts coexist; don't supersede other lifts' overrides.
+        supersede_existing=False,
+        db_path=db_path)
+    reset()
+    return weight_kg
+
+
 def reset() -> None:
-    """Test helper. Reset the cached profile."""
+    """Test helper / cache invalidator. Reset the cached profile so the
+    next get() rebuilds from _DEFAULT + persisted overrides."""
     global _cached_profile
     _cached_profile = None
 
@@ -380,6 +457,7 @@ __all__ = [
     "HealthFlag",
     "Substitution",
     "get",
+    "set_one_rm",
     "reset",
     "to_system_prompt_block",
 ]

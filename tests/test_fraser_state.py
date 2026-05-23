@@ -284,8 +284,12 @@ def test_commit_workout_then_log_session(fresh_db):
         WorkoutCard, CompletionStatus, FRASER_SYSTEM_PROMPT_VERSION,
     )
 
+    # Date must be INSIDE the get_recent_workouts(days=7) window, so use
+    # a relative date (today) — a hardcoded date silently falls out of
+    # the window as the clock advances (this test failed from 2026-05-21
+    # onward when it pinned "2026-05-14").
     card = WorkoutCard(
-        date_iso="2026-05-14", time_of_day="evening",
+        date_iso=datetime.now().strftime("%Y-%m-%d"), time_of_day="evening",
         target_kcal=600, target_minutes=60,
     )
     eid, v = fst.commit_workout(card, target_kcal=600, target_minutes=60)

@@ -2054,6 +2054,11 @@ def _slash_help() -> str:
         "• `/next` — next scheduled workout\n"
         "• `/fix <day> <kcal>` — overwrite recorded burn for one day "
         "(e.g. `/fix mon 581`)\n"
+        "• `/pain <where> [mild|moderate|sharp|severe]` — report a tweak so "
+        "Fraser adapts every section around it (e.g. `/pain left shoulder sharp`); "
+        "`/pain` lists active, `/pain clear <where>` resolves it\n"
+        "• `/profile` — view your 1RMs + constraints Fraser sizes from; "
+        "`/profile set <lift> <kg>` updates a max (e.g. `/profile set deadlift 160`)\n"
         "• `/help` — this card"
     )
 
@@ -2095,6 +2100,135 @@ _SLASH_FIX_RE = re.compile(
 _SLASH_BOT_SUFFIX_RE = re.compile(r"@[\w_]+\s*$")
 
 
+# ─────────────────────── /pain + /profile (Fraser-domain inputs) ─────
+# These slash commands are the missing INPUT path for two things the
+# Fraser composer already reads but the user could never set from
+# Telegram: active pain (core.pain_state) and the athlete profile
+# (core.athlete_profile). They live in Kobe's slash table because that
+# is the single, centralized slash dispatcher (ADR-009 + core.dispatcher
+# → _try_slash_command); the handlers are thin wrappers over the
+# agent-neutral core modules, so domain ownership stays clean.
+_PAIN_SEVERITIES = ("mild", "moderate", "sharp", "severe")
+
+
+def handle_pain(msg: str) -> str:
+    """`/pain` family. Report / list / clear active pain niggles.
+
+      • `/pain`                       → list active pain
+      • `/pain <location> [severity]` → report (severity defaults mild)
+      • `/pain clear [location]`      → clear one (or all if omitted)
+    """
+    from core import pain_state
+    body = re.sub(r"^/pain\b", "", (msg or "").strip(), flags=re.I).strip()
+
+    # No args → list active pain.
+    if not body:
+        active = pain_state.list_active()
+        if not active:
+            return (
+                "No active pain reports — you're clear for full programming. 💪\n"
+                "Report a tweak with `/pain <where> [mild|moderate|sharp|severe]` "
+                "— e.g. `/pain left shoulder sharp`."
+            )
+        lines = ["*Active pain (Fraser is adapting around these):*"]
+        for p in active:
+            hrs = int(round(p.hours_remaining()))
+            lines.append(f"• {p.location} — _{p.severity}_ ({hrs}h left)")
+        lines.append("\nClear one with `/pain clear <where>`.")
+        return "\n".join(lines)
+
+    # Clear.
+    m = re.match(r"^clear\b\s*(.*)$", body, re.I)
+    if m:
+        loc = m.group(1).strip()
+        if not loc:
+            active = pain_state.list_active()
+            cleared = sum(pain_state.clear(p.location) for p in active)
+            return (f"Cleared {cleared} pain report(s). Back to full programming. 💪"
+                    if cleared else "No active pain to clear.")
+        n = pain_state.clear(loc)
+        if n:
+            return (f"✅ Cleared pain at *{loc}*. Fraser will stop adapting "
+                    f"around it on the next session.")
+        return (f"No active pain matching *{loc}*. Type `/pain` to see "
+                f"what's currently logged.")
+
+    # Report. Trailing token may be a severity.
+    tokens = body.split()
+    severity = "mild"
+    if tokens and tokens[-1].lower() in _PAIN_SEVERITIES:
+        severity = tokens[-1].lower()
+        tokens = tokens[:-1]
+    location = " ".join(tokens).strip()
+    if not location:
+        return ("Tell me where it hurts: `/pain <where> "
+                "[mild|moderate|sharp|severe]` — e.g. `/pain right knee moderate`.")
+    try:
+        pr = pain_state.report(location, severity=severity)
+    except ValueError as e:
+        return f"❌ {e}"
+    return (
+        f"✅ Logged *{pr.location}* — _{pr.severity}_. For the next 48h Fraser "
+        f"will adapt every section around it: activation in the warm-up, load + "
+        f"movement swaps in strength/WOD, targeted release in the cool-down.\n"
+        f"Clear it with `/pain clear {pr.location}` once it settles."
+    )
+
+
+def _render_profile_summary() -> str:
+    """Concise Telegram view of the athlete profile (NOT the full
+    prompt block). Surfaces the numbers Fraser sizes weights from."""
+    from core import athlete_profile
+    p = athlete_profile.get(refresh=True)
+    lines = [f"*Athlete profile — {p.name}* · {p.height_cm} cm", "", "*1RMs:*"]
+    for lift, kg in sorted(p.one_rms.items()):
+        lbs = round(float(kg) * 2.2046)
+        lines.append(f"• {lift}: *{kg:g} kg* ({lbs} lbs)")
+    if p.health_flags:
+        lines.append("\n*Health:* "
+                     + ", ".join(h.name.replace("_", " ") for h in p.health_flags))
+    if p.mobility_constraints:
+        lines.append("*Mobility:* "
+                     + ", ".join(m.name.replace("_", " ")
+                                 for m in p.mobility_constraints))
+    if p.movement_blacklist:
+        lines.append("*Blacklist:* " + ", ".join(sorted(p.movement_blacklist)))
+    lines.append("\nUpdate a max with `/profile set <lift> <kg>` "
+                 "— e.g. `/profile set deadlift 160`.")
+    return "\n".join(lines)
+
+
+def handle_profile(msg: str) -> str:
+    """`/profile` family. View the profile, or set a 1RM.
+
+      • `/profile`                  → render the profile summary
+      • `/profile set <lift> <kg>`  → persist a 1RM override
+    """
+    from core import athlete_profile
+    body = re.sub(r"^/profile\b", "", (msg or "").strip(), flags=re.I).strip()
+
+    if not body:
+        return _render_profile_summary()
+
+    m = re.match(r"^set\s+([A-Za-z][A-Za-z _]*?)\s+(\d{1,3}(?:\.\d+)?)\s*(?:kg)?\s*$",
+                 body, re.I)
+    if m:
+        lift = m.group(1).strip().lower().replace(" ", "_")
+        kg = float(m.group(2))
+        try:
+            athlete_profile.set_one_rm(lift, kg)
+        except ValueError as e:
+            return f"❌ {e}"
+        except Exception as e:  # noqa: BLE001 — substrate write failure
+            return f"❌ Couldn't save that: {e}"
+        lbs = round(kg * 2.2046)
+        return (f"✅ Updated *{lift}* 1RM → *{kg:g} kg* ({lbs} lbs). "
+                f"Fraser will size all {lift.replace('_', ' ')} work from this.")
+
+    return ("Usage: `/profile` to view, or `/profile set <lift> <kg>` to update "
+            "a 1RM — e.g. `/profile set deadlift 160`.")
+
+
 def _try_slash_command(msg: str) -> str | None:
     """If `msg` is a recognized slash shortcut, run its handler and
     return the response. Otherwise return None so route() can fall
@@ -2132,6 +2266,14 @@ def _try_slash_command(msg: str) -> str | None:
         # contract: once the user typed /fix they're in command mode.
         return ("❌ `/fix` needs a day and a kcal value. "
                 "Try `/fix mon 581` or `/fix monday 1200`.")
+
+    # /pain and /profile are args-bearing (like /fix) — match the FIRST
+    # token exactly so "/painful" or "/profiler" don't false-trigger.
+    head_token = norm.split(None, 1)[0]
+    if head_token == "/pain":
+        return handle_pain(msg)
+    if head_token == "/profile":
+        return handle_profile(msg)
 
     # Zero-arg dispatch: first whitespace-separated token must match a
     # known key. Everything after is ignored.
