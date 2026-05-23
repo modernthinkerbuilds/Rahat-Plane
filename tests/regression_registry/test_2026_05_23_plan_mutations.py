@@ -47,7 +47,8 @@ class TestPlanEditRouting:
         ("box breathing", "breathing_box"),
         ("how much is left this week", "weekly_remaining"),
         ("show me my plan", "show_plan_this_week"),
-        ("what is the WOD today", "gym_wod_relative"),
+        ("what's the wod tomorrow", "gym_wod_relative"),
+        ("what is the WOD for Tuesday", "gym_wod_on_day"),
         ("/pace", "slash"),
     ])
     def test_reads_not_stolen_by_mutation_route(self, msg, expected):

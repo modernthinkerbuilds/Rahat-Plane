@@ -1209,17 +1209,57 @@ _HUBERMAN_DELEGATION_PATTERNS = [
 ]
 
 
+# Day-specified workout LOOKUPS belong to Kobe (the gym programming
+# lives in Kobe's plan), even if the classifier hands them to Fraser.
+# Runtime backstop for the 2026-05-17 lookup-vs-design misroute, robust
+# to whichever way the semantic classifier leans:
+#   "what is the WOD for Tuesday" / "what's the WOD today" / "show me
+#   Friday's session"            → Kobe lookup
+#   "what's my WOD" (no day)      → stays Fraser (design today's)
+#   "design/give me/scale a WOD for Friday" (design verb) → stays Fraser
+_LOOKUP_VERB_RE = re.compile(
+    r"\b(?:what(?:'s|\s+is)|show\s+me|when(?:'s|\s+is)|which\s+day)\b", re.I)
+_WORKOUT_NOUN_RE = re.compile(
+    r"\b(?:wod|workout|session|crossfit|cf|programming|class)\b", re.I)
+# NOTE: "today"/"tonight" are intentionally EXCLUDED. "what's today's
+# workout?" / "what's the WOD today?" are Fraser's daily-driver design
+# intent (the composer already folds in today's synced gym WOD) — a
+# long-standing contract (tests/test_fraser_delegation.py). Only OTHER
+# days (named weekday, tomorrow, yesterday) are gym-schedule lookups.
+_DAY_TOKEN_RE = re.compile(
+    r"\b(?:mon|tue|wed|thu|fri|sat|sun)\w*\b|"
+    r"\b(?:tomorrow|tmrw|tmr|yesterday)\b", re.I)
+_DESIGN_VERB_RE = re.compile(
+    r"\b(?:design|give\s+me|build|make|create|scale|adapt|substitut\w*|"
+    r"sub|program|i\s+want|prescrib\w*|generate)\b", re.I)
+
+
+def _is_day_specified_workout_lookup(msg: str) -> bool:
+    """True for 'what is the WOD for <day>/today' style LOOKUPS that
+    must go to Kobe — but NOT for design requests (which keep a workout
+    noun + day but carry a design verb) and NOT for the day-less
+    'what's my WOD' (which stays Fraser's design-today path)."""
+    if not msg or _DESIGN_VERB_RE.search(msg):
+        return False
+    return bool(
+        _LOOKUP_VERB_RE.search(msg)
+        and _WORKOUT_NOUN_RE.search(msg)
+        and _DAY_TOKEN_RE.search(msg))
+
+
 def _should_delegate(msg: str) -> str | None:
     """Return the target agent name if `msg` is in Kobe/Huberman
     territory, None if Fraser should handle it.
 
-    Order: Kobe patterns first (broader territory), then Huberman.
-    First match wins. Workout-shaped questions ("what's my WOD",
-    "give me today's workout") never match these patterns and route
-    to Fraser's adaptation pipeline.
+    Order: day-specified workout lookups → Kobe, then Kobe patterns
+    (broader territory), then Huberman. First match wins. Design
+    requests and day-less "what's my WOD" never match and route to
+    Fraser's composer.
     """
     if not msg:
         return None
+    if _is_day_specified_workout_lookup(msg):
+        return "kobe"
     for pat in _KOBE_DELEGATION_PATTERNS:
         if pat.search(msg):
             return "kobe"

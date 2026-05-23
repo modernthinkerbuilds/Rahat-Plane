@@ -134,19 +134,18 @@ def _h_gym_wod_on_day(msg: str, match: re.Match) -> str:
 
 
 def _h_gym_wod_relative(msg: str, match: re.Match) -> str:
-    """Gym WOD lookup for a RELATIVE day (today / tonight / tomorrow /
-    yesterday). Resolves the relative token to a weekday index and calls
-    the same handle_gym_wod_on as the named-weekday route, so "what's the
-    WOD today" behaves identically to "what's the WOD for Tuesday".
+    """Gym WOD lookup for a RELATIVE day (tomorrow / yesterday). Resolves
+    the token to a weekday index and calls the same handle_gym_wod_on as
+    the named-weekday route, so "what's the WOD tomorrow" behaves like
+    "what's the WOD for Tuesday".
 
-    2026-05-23 fix (#41): the named-day routes only matched explicit
-    weekdays, so "today"/"tomorrow" fell through to Fraser and got a
-    re-designed session instead of the gym's actual programming."""
+    2026-05-23 (#41): named-day routes only matched explicit weekdays, so
+    relative days fell through to Fraser. "today"/"tonight" are handled by
+    Fraser (daily-driver design), so they are NOT routed here."""
     from datetime import datetime, timedelta
     from agents.the_scientist import handler as _kobe
     rel = match.group("rel").lower()
-    offset = {"today": 0, "tonight": 0, "tmrw": 1, "tmr": 1,
-              "tomorrow": 1, "yesterday": -1}.get(rel, 0)
+    offset = {"tmrw": 1, "tmr": 1, "tomorrow": 1, "yesterday": -1}.get(rel, 0)
     idx = (datetime.now() + timedelta(days=offset)).weekday()
     return _kobe.handle_gym_wod_on(idx)
 
@@ -272,17 +271,19 @@ _SHOW_DAY_WORKOUT_RE = re.compile(
     r"(?:'?s)?\s+(?:workout|wod|session|gym)\b",
     re.I,
 )
-# Relative-day gym WOD lookup ("what's the WOD today", "gym wod tomorrow").
-# Requires a WOD/gym anchor AND a relative-day token, so a bare "what's
-# the WOD" (no day) still falls through to Fraser. The day token may be
-# preceded by an optional "for"/"on".
+# Relative-day gym WOD lookup ("what's the WOD tomorrow", "gym wod
+# yesterday"). Requires a WOD/gym anchor AND a relative-day token, so a
+# bare "what's the WOD" (no day) still falls through to Fraser. NOTE:
+# "today"/"tonight" are deliberately NOT here — "what's the WOD today" is
+# Fraser's daily-driver design intent, not a schedule peek. The day token
+# may be preceded by an optional "for"/"on".
 _GYM_WOD_RELATIVE_RE = re.compile(
     r"\b(?:"
     r"what(?:'s|\s+is)\s+(?:the\s+|my\s+|today'?s\s+)?wod"
     r"|gym\s+(?:workout|wod|session)"
     r"|what'?s?\s+at\s+the\s+gym"
     r")"
-    r"(?:\s+(?:for|on))?\s+(?P<rel>today|tonight|tomorrow|tmrw|tmr|yesterday)\b",
+    r"(?:\s+(?:for|on))?\s+(?P<rel>tomorrow|tmrw|tmr|yesterday)\b",
     re.I,
 )
 
