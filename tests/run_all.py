@@ -207,6 +207,9 @@ LAYERS: list[LayerSpec] = [
             # enrichment; structural assertions covered by the
             # deterministic adapter.
             "tests/evals/test_fraser_conversation.py",
+            # 2026-05-23: grounding (composer hands the LLM real 1RMs +
+            # constraints + pain) and routing-fidelity evals.
+            "tests/evals/test_fraser_grounding_evals.py",
         ],
     ),
     LayerSpec(
