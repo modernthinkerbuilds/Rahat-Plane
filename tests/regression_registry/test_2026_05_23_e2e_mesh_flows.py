@@ -61,7 +61,9 @@ def mesh(monkeypatch):
 
     def _llm(prompt, *a, **k):
         prompts.append(prompt)
-        if "OUTPUT (FOLLOW-UP ANSWER)" in prompt:
+        # Unified composer (ADR-011): the model designs when there's no
+        # prior conversation and answers concisely when there is.
+        if "RECENT CONVERSATION" in prompt:
             return _FOLLOWUP_ANSWER
         return _SESSION_4SECTION
 
@@ -104,7 +106,8 @@ class TestDesignAndFollowupFlow:
             "4-section session — proves the conversational mode is live "
             "through the whole mesh")
         assert "60 kg" in reply.text
-        assert "OUTPUT (FOLLOW-UP ANSWER)" in mesh.prompts[-1]
+        # The prior session threaded into the prompt as conversation.
+        assert "RECENT CONVERSATION" in mesh.prompts[-1]
 
     def test_followup_is_isolated_per_chat_id(self, bootstrap_substrate, mesh):
         """A first message in a DIFFERENT chat has no history, so it must

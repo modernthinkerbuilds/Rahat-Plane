@@ -77,11 +77,18 @@ class TestComposerDesignGrounding:
     def test_includes_heel_lift_rule(self):
         assert "heel" in self._prompt().lower()
 
-    def test_includes_4_section_output_schema(self):
+    def test_includes_default_4_section_output_schema(self):
         p = self._prompt()
-        assert "OUTPUT FORMAT (MANDATORY)" in p
+        assert "═══ OUTPUT ═══" in p
         for part in ("Part 1", "Part 2", "Part 3", "Part 4"):
             assert part in p
+        # The schema is a DEFAULT, not a mandate (ADR-011).
+        assert "MANDATORY" not in p
+
+    def test_includes_precedence_and_real_clock(self):
+        p = self._prompt()
+        assert "OVERRIDE" in p              # request overrides gym WOD + profile
+        assert "Current local time" in p    # real clock, not a guess
 
     def test_includes_never_assume_rule(self):
         # The "don't assume unreported HRV/sleep" guardrail must be present.
@@ -101,29 +108,31 @@ class TestComposerDesignGrounding:
         assert "170" in self._prompt()
 
 
-# ───────────────────── 2. Follow-up prompt shape ────────────────────
-class TestFollowupPromptShape:
+# ───────────────────── 2. Conversation prompt shape (unified) ───────
+class TestConversationPromptShape:
+    """ADR-011 unified path: there is ONE prompt. When a chat_id has prior
+    turns, the SAME build_design_prompt injects the conversation + the
+    refine directive, so the model answers/refines against it — no
+    separate follow-up prompt."""
+
     def _seed_and_prompt(self, chat_id="EVAL-FU"):
         from core import chat_memory
         chat_memory.append(chat_id, chat_memory.ROLE_USER, "design a session")
         chat_memory.append(chat_id, chat_memory.ROLE_BOT,
                            "## Part 2: Strength\nBack Squat 60 kg")
-        return composer.build_followup_prompt(
-            "what weights should I follow?", chat_id=chat_id)
+        return composer.build_design_prompt(
+            composer.parse_request("what weights should I follow?"),
+            chat_id=chat_id)
 
-    def test_followup_has_answer_directive(self):
-        assert "OUTPUT (FOLLOW-UP ANSWER)" in self._seed_and_prompt()
-
-    def test_followup_omits_4_section_schema(self):
-        # A follow-up must NOT carry the design schema, or the model
-        # regenerates a full session (the bug we fixed).
-        assert "OUTPUT FORMAT (MANDATORY)" not in self._seed_and_prompt()
-
-    def test_followup_includes_recent_conversation(self):
+    def test_includes_recent_conversation(self):
         assert "RECENT CONVERSATION" in self._seed_and_prompt()
 
-    def test_followup_still_grounds_in_profile(self):
-        # Consistency: the follow-up answer must use the same 1RMs.
+    def test_includes_refine_vs_answer_directive(self):
+        p = self._seed_and_prompt()
+        assert "REFINES" in p and "ASKS about the prior session" in p
+
+    def test_still_grounds_in_profile(self):
+        # Consistency: a refinement/answer must use the same 1RMs.
         assert "ATHLETE PROFILE" in self._seed_and_prompt()
 
 

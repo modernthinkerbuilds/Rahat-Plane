@@ -333,18 +333,21 @@ class TestLLMFailureFallback:
         out = composer.design_session("give me a session")
         assert "LLM is unavailable" in out
 
-    def test_loose_response_gets_wrapped_not_silently_passed(
+    def test_non_section_response_is_passed_through_verbatim(
             self, fresh_db, monkeypatch):
-        """If the LLM returns prose that doesn't match the 4-section
-        schema, the composer wraps it with a schema-failure header
-        rather than silently passing a half-formed answer through."""
+        """ADR-011: the composer no longer enforces a rigid 4-section
+        shape. The prompt instructs the model on structure (full session
+        vs compact vs a short answer), so a non-section reply IS the
+        athlete's answer — returned verbatim, NOT wrapped as a 'schema
+        failure' (which used to mangle legitimate follow-up answers)."""
         from agents.fraser import composer
         from core import io as cio
+        answer = "Back Squat today is 60 kg (132 lbs) — 60% of your 102 kg max."
         monkeypatch.setattr(
-            cio, "llm_generate",
-            lambda p, *, model=None: "Here's some loose prose without sections.")
-        out = composer.design_session("give me a session")
-        assert "schema" in out.lower()
+            cio, "llm_generate", lambda p, *, model=None: answer)
+        out = composer.design_session("what weight for back squat?")
+        assert out == answer
+        assert "schema validation failed" not in out.lower()
 
     def test_fallback_records_turn_pair_when_chat_id_set(
             self, fresh_db, monkeypatch):

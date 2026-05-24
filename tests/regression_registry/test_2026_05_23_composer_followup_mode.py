@@ -1,25 +1,17 @@
-"""Regression: composer answers follow-ups instead of regenerating
-(2026-05-23).
+"""Regression: composer conversational behavior — unified path (ADR-011).
 
-The bug
--------
-The composer had ONE mode: design a full 4-section session. Every message
-re-ran that path — so a narrow follow-up like "what weights should I
-follow?" or "how many calories will I burn in this WOD?" produced a
-DIFFERENT workout with DIFFERENT numbers. To the user that reads as
-hallucination / hardcoding: you ask about the session you were just given
-and get a different one back.
+The composer used to have a hardcoded two-path gate (`_is_followup_question`
++ a separate follow-up prompt + a mandatory 4-section schema). ADR-011 removed
+it: ONE prompt now carries the full context — profile, Kobe's plan, pain, the
+RECENT CONVERSATION, real local time — plus a directive that tells the LLM to
+refine the prior session, answer a question about it, or design fresh. The
+MODEL decides; no regex gate.
 
-The fix
--------
-composer._is_followup_question detects a follow-up (prior conversation in
-chat_memory + question/refinement phrasing, NOT an explicit design
-request) and routes to _answer_followup, which prompts the LLM to ANSWER
-against the session already in the conversation — no 4-section schema, no
-invented workout.
-
-These tests force the LLM via a fake so they're hermetic, and assert on
-WHICH prompt was built (design vs follow-up) plus the routing predicate.
+These tests pin that (a) the conversation threads into the prompt, (b) a
+follow-up given history is answered rather than regenerated, and (c) the
+directive carries the precedence + refine rules. They force the LLM via a fake
+that designs when there's no history and answers concisely when there is —
+simulating the model's own judgment.
 """
 from __future__ import annotations
 
@@ -28,93 +20,83 @@ import pytest
 from agents.fraser import composer
 
 
+_FULL_SESSION = ("## Part 1: Warm-up\n..\n## Part 2: Strength\n"
+                 "Back Squat 60 kg (132 lbs) — 60% of 102 kg\n"
+                 "## Part 3: WOD\n..\n## Part 4: Cool-down\n..\n"
+                 "### Coach's Note\nGo.")
+_ANSWER = "Back Squat today is **60 kg (132 lbs)** — 60% of your 102 kg max."
+
+CID = "CHAT-CONV"
+
+
 @pytest.fixture
 def fake_llm(monkeypatch):
-    """Capture prompts and return scripted responses based on which
-    schema the composer asked for."""
     calls: list[str] = []
 
     def _gen(prompt, *a, **k):
         calls.append(prompt)
-        if "OUTPUT (FOLLOW-UP ANSWER)" in prompt:
-            return ("Back Squat is **60 kg (132 lbs)** — 60% of your 102 kg "
-                    "max. Heels on 2.5 lb plates, exhale on the drive up.")
-        return ("## Part 1: Warm-up (10 min)\n- cat-cow\n"
-                "## Part 2: Strength (20 min)\n- Back Squat 60 kg (132 lbs) "
-                "— 60% of 102 kg\n## Part 3: WOD / Metcon (20 min)\n- row\n"
-                "## Part 4: Cool-down (10 min)\n- legs up the wall\n"
-                "### Coach's Note\nGo get it.")
+        # Simulate the model: with prior conversation, answer concisely;
+        # otherwise design a full session.
+        return _ANSWER if "RECENT CONVERSATION" in prompt else _FULL_SESSION
 
     from core import io as cio
     monkeypatch.setattr(cio, "llm_generate", _gen)
     return calls
 
 
-CID = "CHAT-FOLLOWUP"
+def _is_4section(text: str) -> bool:
+    low = text.lower()
+    return all(p in low for p in ("part 1", "part 2", "part 3", "part 4"))
 
 
-class TestFollowupRouting:
-    def test_design_then_followup_does_not_regenerate(self, bootstrap_substrate,
-                                                       fake_llm):
-        # Turn 1: design — full 4-section session.
-        out1 = composer.design_session(
-            "design me a 60 minute session for today", chat_id=CID)
-        assert composer._looks_like_4_section(out1)
-        assert "OUTPUT FORMAT (MANDATORY)" in fake_llm[-1]
+class TestUnifiedConversation:
+    def test_first_turn_designs_full_session(self, bootstrap_substrate, fake_llm):
+        out = composer.design_session("design me a session for today", chat_id=CID)
+        assert _is_4section(out)
+        assert "RECENT CONVERSATION" not in fake_llm[0]
 
-        # Turn 2: the exact failing query.
-        out2 = composer.design_session(
-            "what weights should I follow?", chat_id=CID)
-        assert "OUTPUT (FOLLOW-UP ANSWER)" in fake_llm[-1], (
-            "a follow-up must build the follow-up prompt, not the "
-            "4-section design prompt")
-        assert not composer._looks_like_4_section(out2), (
-            "a follow-up must NOT come back as a regenerated 4-section "
-            "session — that's the hallucination/hardcoding symptom")
-        assert "60 kg" in out2
+    def test_followup_threads_history_and_answers(self, bootstrap_substrate,
+                                                  fake_llm):
+        composer.design_session("design me a session for today", chat_id=CID)
+        out = composer.design_session("what weights should I follow?", chat_id=CID)
+        # The 2nd prompt carries the prior session as conversation.
+        assert "RECENT CONVERSATION" in fake_llm[-1]
+        # And the reply is the concise answer, NOT a regenerated session.
+        assert "60 kg" in out
+        assert not _is_4section(out)
 
-    def test_calorie_followup_routes_to_answer(self, bootstrap_substrate,
-                                               fake_llm):
-        composer.design_session("design a session for today", chat_id=CID)
-        composer.design_session(
-            "how many calories will I burn in this WOD?", chat_id=CID)
-        assert "OUTPUT (FOLLOW-UP ANSWER)" in fake_llm[-1]
+    def test_returns_llm_output_verbatim(self, bootstrap_substrate, fake_llm):
+        # No rigid 4-section wrapping/validation any more — the model's
+        # output is the athlete's reply.
+        out = composer.design_session("design a session", chat_id=CID)
+        assert "schema validation failed" not in out
+        assert out == _FULL_SESSION
 
-    def test_explicit_new_design_still_builds_session(self, bootstrap_substrate,
-                                                       fake_llm):
-        """Even WITH history, an explicit design request must rebuild —
-        not be mistaken for a follow-up."""
-        composer.design_session("design a session for today", chat_id=CID)
-        composer.design_session(
-            "design me a new session for tomorrow", chat_id=CID)
-        assert "OUTPUT FORMAT (MANDATORY)" in fake_llm[-1]
-
-
-class TestFollowupPredicate:
-    def test_no_history_is_never_followup(self, bootstrap_substrate):
-        assert composer._is_followup_question(
-            "what weights should I follow?", "FRESH-CHAT") is False
-
-    def test_no_chat_id_is_never_followup(self):
-        assert composer._is_followup_question(
-            "what weights should I follow?", None) is False
-
-    def test_design_signal_overrides_short_message(self, bootstrap_substrate):
-        # Seed history so the predicate has something to resolve against.
+    def test_reset_intent_clears_memory_before_prompt(self, bootstrap_substrate,
+                                                      fake_llm):
         from core import chat_memory
-        chat_memory.append("C1", chat_memory.ROLE_USER, "design a session")
-        chat_memory.append("C1", chat_memory.ROLE_BOT, "## Part 1 ...")
-        assert composer._is_followup_question("design a wod", "C1") is False
+        composer.design_session("design me a session", chat_id=CID)
+        assert chat_memory.recent(CID)            # turn-1 recorded
+        composer.design_session("start over, design from scratch", chat_id=CID)
+        # The reset turn's prompt (2nd call) must carry NO prior conversation.
+        assert "RECENT CONVERSATION" not in fake_llm[1]
 
-    def test_question_with_history_is_followup(self, bootstrap_substrate):
-        from core import chat_memory
-        chat_memory.append("C2", chat_memory.ROLE_USER, "design a session")
-        chat_memory.append("C2", chat_memory.ROLE_BOT, "## Part 1 ...")
-        assert composer._is_followup_question(
-            "what weights should I follow?", "C2") is True
 
-    def test_short_refinement_is_followup(self, bootstrap_substrate):
+class TestPromptCarriesDirectives:
+    def test_precedence_refine_and_clock_present(self, bootstrap_substrate):
+        p = composer.build_design_prompt(
+            composer.parse_request("clean-based session under 30 minutes"))
+        assert "OVERRIDE" in p              # precedence over gym WOD + profile
+        assert "REFINES" in p               # refine-vs-new conversation rule
+        assert "Current local time" in p    # real clock, not a guess
+        assert "MANDATORY" not in p          # 4-section is a default, not forced
+
+    def test_history_block_present_only_with_chat_id(self, bootstrap_substrate):
         from core import chat_memory
-        chat_memory.append("C3", chat_memory.ROLE_USER, "design a session")
-        chat_memory.append("C3", chat_memory.ROLE_BOT, "## Part 1 ...")
-        assert composer._is_followup_question("make it shorter", "C3") is True
+        chat_memory.append("C9", chat_memory.ROLE_USER, "design a session")
+        chat_memory.append("C9", chat_memory.ROLE_BOT, "## Part 1 ...")
+        with_hist = composer.build_design_prompt(
+            composer.parse_request("shorter"), chat_id="C9")
+        without = composer.build_design_prompt(composer.parse_request("shorter"))
+        assert "RECENT CONVERSATION" in with_hist
+        assert "RECENT CONVERSATION" not in without
