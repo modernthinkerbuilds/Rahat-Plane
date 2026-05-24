@@ -574,6 +574,64 @@ def resolve_clarification(
 
 
 # ─── Main routing entry point ────────────────────────────────────
+# ─────────────────────── Tier-0: explicit agent addressing ───────────────────────
+# ADR-012: an "@fraser ..." or "/fraser ..." prefix names a specific
+# agent and bypasses the classifier — the user has told us who they
+# want, so honor it instead of guessing. The prefix token matches
+# (case-insensitively) against agent names AND aliases, so "@kobe" and
+# the legacy "@the_scientist" both resolve. A slash prefix whose token
+# is NOT a registered agent ("/pace", "/week") resolves to None here so
+# the existing Kobe slash bypass still owns it. Disable the whole
+# feature with RAHAT_AGENT_ADDRESS=0.
+_ADDRESS_RE = re.compile(
+    r"^\s*[@/](?P<name>[A-Za-z_][A-Za-z0-9_]*)(?:[ \t]+(?P<rest>.*))?$",
+    re.S)
+
+
+def _agent_addressing_enabled() -> bool:
+    return _os.environ.get("RAHAT_AGENT_ADDRESS", "1").lower().strip() not in (
+        "0", "false", "off", "no")
+
+
+def _find_agent_by_name(name: str) -> "Agent | None":
+    """Resolve an address token to a registered agent by name or alias."""
+    n = (name or "").strip().lower()
+    if not n:
+        return None
+    for a in _AGENTS:
+        if a.name.lower() == n:
+            return a
+        if n in {al.lower() for al in getattr(a, "aliases", [])}:
+            return a
+    return None
+
+
+def resolve_explicit_address(msg: str) -> "tuple[Agent, str] | None":
+    """If `msg` is explicitly addressed to a registered agent
+    ('@fraser what weights today' / '/kobe replan'), return
+    (agent, remainder_text). Otherwise None.
+
+    Returns None — so normal routing proceeds — when:
+      • the feature is disabled (RAHAT_AGENT_ADDRESS=0),
+      • the prefix token isn't a known agent ('/pace' → the Kobe slash
+        bypass still handles it), or
+      • there's no message body after the address (a bare '@fraser' is
+        ambiguous; let the classifier handle it).
+    """
+    if not msg or not _agent_addressing_enabled():
+        return None
+    m = _ADDRESS_RE.match(msg)
+    if not m:
+        return None
+    agent = _find_agent_by_name(m.group("name"))
+    if agent is None:
+        return None
+    rest = (m.group("rest") or "").strip()
+    if not rest:
+        return None
+    return agent, rest
+
+
 def route(
     msg: str,
     *,
@@ -595,6 +653,20 @@ def route(
     if not _AGENTS:
         return None
     tid = trace_id or decisions.new_trace()
+
+    # Tier 0 (explicit addressing, ADR-012) — "@fraser ..." / "/fraser ..."
+    # names a specific agent and skips the classifier entirely. Resolved
+    # against agent names + aliases. A slash prefix that is NOT an agent
+    # ("/pace") returns None and falls through to the Kobe slash bypass.
+    addressed = resolve_explicit_address(msg)
+    if addressed is not None:
+        _agent, _rest = addressed
+        with decisions.span("miya.route", trace_id=tid, actor="miya",
+                            input={"msg": msg, "tier": "explicit_address",
+                                   "to": _agent.name},
+                            db_path=db_path) as s:
+            s.output = {"strategy": "explicit_address", "winner": _agent.name}
+        return _dispatch_to(_agent, _rest, tid, db_path, chat_id=chat_id)
 
     # Tier 1 (slash commands) — bypass classifier AND trigger router.
     # Slash commands are deterministic shortcuts owned by Kobe
