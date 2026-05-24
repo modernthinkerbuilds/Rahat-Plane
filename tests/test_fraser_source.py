@@ -31,8 +31,16 @@ import pytest
 
 
 ROOT = Path(__file__).resolve().parent.parent
-REAL_ARCHIVE = (ROOT / "staging" / "workspace" / "gym-programming"
-                / "archive" / "sugarwod.20260511.20260510-232607.json")
+# Hermetic fix (2026-05-24): the live archive lives in gitignored
+# staging/, so CI's fresh checkout has no such file (FileNotFoundError —
+# the 6 CI failures on a6a7270). Use the live archive when present (local
+# dev) and the committed copy in tests/fixtures/ otherwise. The fixture
+# is a byte copy, so every assertion ("Lava Plume", 7 days, …) still holds.
+_LIVE_ARCHIVE = (ROOT / "staging" / "workspace" / "gym-programming"
+                 / "archive" / "sugarwod.20260511.20260510-232607.json")
+_FIXTURE_ARCHIVE = (ROOT / "tests" / "fixtures"
+                    / "sugarwod_archive_2026-05-11.json")
+REAL_ARCHIVE = _LIVE_ARCHIVE if _LIVE_ARCHIVE.exists() else _FIXTURE_ARCHIVE
 
 
 def _ingest_real_archive_fresh(tmp_path):

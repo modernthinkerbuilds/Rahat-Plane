@@ -28,8 +28,13 @@ import pytest
 
 
 ROOT = Path(__file__).resolve().parent.parent
-REAL_ARCHIVE = (ROOT / "staging" / "workspace" / "gym-programming"
-                / "archive" / "sugarwod.20260511.20260510-232607.json")
+# Hermetic fix (2026-05-24): live archive is in gitignored staging/, absent
+# in CI's fresh checkout. Use it when present, else the committed fixture.
+_LIVE_ARCHIVE = (ROOT / "staging" / "workspace" / "gym-programming"
+                 / "archive" / "sugarwod.20260511.20260510-232607.json")
+_FIXTURE_ARCHIVE = (ROOT / "tests" / "fixtures"
+                    / "sugarwod_archive_2026-05-11.json")
+REAL_ARCHIVE = _LIVE_ARCHIVE if _LIVE_ARCHIVE.exists() else _FIXTURE_ARCHIVE
 
 
 @pytest.fixture
