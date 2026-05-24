@@ -1181,6 +1181,18 @@ def _try_plan_mutation(msg: str) -> str | None:
     if not msg:
         return None
     m = msg
+
+    # ADR-011 P1 (flag-gated, default OFF): let the LLM planner translate
+    # the edit into tool calls (set_rest/set_crossfit/replan/…). Falls
+    # through to the deterministic regex path below if the planner yields
+    # nothing (unparseable, or not actually a plan edit). Enable with
+    # RAHAT_PLAN_TOOLS=1 after a real-Gemini smoke test.
+    if os.getenv("RAHAT_PLAN_TOOLS", "").lower() in ("1", "true", "yes", "on"):
+        from agents.the_scientist import plan_tools as _pt
+        _out = _pt.plan_via_tools(m)
+        if _out:
+            return _out
+
     next_week_q = bool(NEXT_WEEK_RE.search(m))
 
     if CLEAR_PREFS_RE.search(m):

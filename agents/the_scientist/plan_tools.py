@@ -139,4 +139,93 @@ def execute_actions(actions: list[dict[str, Any]]) -> list[str]:
     return results
 
 
-__all__ = ["TOOL_SCHEMAS", "TOOL_NAMES", "execute_actions"]
+# ─────────────────────── LLM planner (flag-gated) ───────────────────
+# ADR-011 P1: instead of regexes, the model reads a plan edit and returns
+# a JSON list of tool calls, which we validate + execute. Uses the same
+# cio.llm_generate(text)->text plumbing as the rest of the codebase
+# (LLM-as-planner, not native function-calling) so it's hermetic to test
+# and consistent with the existing classifier pattern. Wired into Kobe's
+# route only when RAHAT_PLAN_TOOLS is enabled; default OFF = no change.
+
+_PLANNER_DIRECTIVE = """You convert a fitness-plan edit into a JSON list of tool calls.
+
+Available tools (name → description → args):
+{schemas}
+
+Rules:
+- Return ONLY a JSON object: {{"actions": [{{"tool": "<name>", "args": {{...}}}}]}}.
+- Use the fewest actions that satisfy the request.
+- Examples: "I rested today" → set_rest day=today. "running tomorrow" →
+  set_zone2 day=tomorrow. "replan" / "rebuild my week" → replan (place it
+  LAST when other edits come first). "my left shoulder hurts" → report_pain.
+- If the message is NOT a plan edit, return {{"actions": []}}.
+- No prose, no markdown fences — just the JSON object.
+"""
+
+
+def build_planner_prompt(msg: str) -> str:
+    """Prompt that asks the model for a JSON action plan over TOOL_SCHEMAS."""
+    import json
+    schemas = json.dumps(TOOL_SCHEMAS, indent=2)
+    return (_PLANNER_DIRECTIVE.format(schemas=schemas)
+            + f"\n═══ ATHLETE MESSAGE ═══\n{msg!r}\n")
+
+
+def _parse_actions(raw: str) -> list[dict[str, Any]]:
+    """Extract the actions list from the model's reply. Tolerates markdown
+    fences and surrounding prose. Returns [] on any parse failure."""
+    import json
+    import re
+    if not raw:
+        return []
+    text = raw.strip()
+    m = re.search(r"```(?:json)?\s*(.*?)```", text, re.DOTALL)
+    if m:
+        text = m.group(1).strip()
+    if not text.startswith("{"):
+        m2 = re.search(r"\{.*\}", text, re.DOTALL)
+        if m2:
+            text = m2.group(0)
+    try:
+        data = json.loads(text)
+    except Exception:
+        return []
+    actions = data.get("actions") if isinstance(data, dict) else None
+    return actions if isinstance(actions, list) else []
+
+
+def plan_via_tools(msg: str, db_path: str | None = None) -> str | None:
+    """Translate a natural-language plan edit into tool calls and execute
+    them. Returns the combined confirmation (+ the refreshed week), or None
+    if the model produced no actions — so the caller falls back to the
+    deterministic regex path. Never raises."""
+    from core import io as cio
+    prompt = build_planner_prompt(msg)
+    try:
+        raw = cio.llm_generate(prompt)
+    except Exception:
+        return None
+    if not raw or raw == "[LLM-FALLBACK]":
+        return None
+    actions = _parse_actions(raw)
+    if not actions:
+        return None
+    results = [r for r in execute_actions(actions) if r]
+    if not results:
+        return None
+    body = "\n".join(results)
+    # Best-effort: append the refreshed week so the user sees the result.
+    try:
+        from agents.the_scientist import handler as _k
+        plan = _k.handle_show_plan()
+        if plan:
+            body = f"{body}\n\n{plan}"
+    except Exception:
+        pass
+    return body
+
+
+__all__ = [
+    "TOOL_SCHEMAS", "TOOL_NAMES", "execute_actions",
+    "build_planner_prompt", "plan_via_tools",
+]

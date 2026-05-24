@@ -78,3 +78,75 @@ class TestPersistence:
                                             "severity": "sharp"}}])
         assert out[0].startswith("✅")
         assert pain_state.has_pain_at("shoulder")
+
+
+class TestParseActions:
+    def test_plain_json(self):
+        assert pt._parse_actions('{"actions":[{"tool":"replan","args":{}}]}') \
+            == [{"tool": "replan", "args": {}}]
+
+    def test_fenced_json(self):
+        raw = '```json\n{"actions":[{"tool":"replan","args":{}}]}\n```'
+        assert pt._parse_actions(raw) == [{"tool": "replan", "args": {}}]
+
+    def test_prose_wrapped(self):
+        raw = 'Sure: {"actions":[{"tool":"set_rest","args":{"day":"today"}}]} done'
+        assert pt._parse_actions(raw)[0]["tool"] == "set_rest"
+
+    def test_garbage_returns_empty(self):
+        assert pt._parse_actions("not json") == []
+        assert pt._parse_actions("") == []
+        assert pt._parse_actions('{"nope": 1}') == []
+
+
+class TestPlanner:
+    def test_planner_executes_and_persists(self, bootstrap_substrate, monkeypatch):
+        from agents.the_scientist import state as st
+        from core import io as cio
+        monday, _ = st.week_bounds()
+        st.set_prefs(monday, forced_cf_days=[0, 2, 4], forced_z2_day=None,
+                     unavailable_days=[])
+        plan = ('{"actions":[{"tool":"set_rest","args":{"day":"Wednesday"}},'
+                '{"tool":"set_zone2","args":{"day":"Sunday"}}]}')
+        monkeypatch.setattr(cio, "llm_generate", lambda p, **k: plan)
+        out = pt.plan_via_tools("I rested Wednesday, running Sunday")
+        assert out and "Wed" in out
+        prefs = st.get_prefs(monday)
+        assert 2 in prefs["unavailable_days"]   # Wednesday → rest
+        assert prefs["forced_z2_day"] == 6      # Sunday → Z2
+
+    def test_none_on_empty_actions(self, monkeypatch):
+        from core import io as cio
+        monkeypatch.setattr(cio, "llm_generate", lambda p, **k: '{"actions":[]}')
+        assert pt.plan_via_tools("hello there") is None
+
+    def test_none_on_llm_fallback(self, monkeypatch):
+        from core import io as cio
+        monkeypatch.setattr(cio, "llm_generate", lambda p, **k: "[LLM-FALLBACK]")
+        assert pt.plan_via_tools("replan") is None
+
+
+class TestFlagGatedHook:
+    def test_flag_on_routes_through_planner(self, bootstrap_substrate, monkeypatch):
+        from core import io as cio
+        monkeypatch.setenv("RAHAT_PLAN_TOOLS", "1")
+        called = {}
+
+        def _gen(p, **k):
+            called["yes"] = True
+            return '{"actions":[{"tool":"replan","args":{}}]}'
+
+        monkeypatch.setattr(cio, "llm_generate", _gen)
+        out = kobe._try_plan_mutation("rebuild my week please")
+        assert called.get("yes"), "planner LLM must run when the flag is on"
+        assert out, "planner result should be returned"
+
+    def test_flag_off_does_not_call_planner(self, bootstrap_substrate, monkeypatch):
+        from core import io as cio
+        monkeypatch.delenv("RAHAT_PLAN_TOOLS", raising=False)
+        called = {}
+        monkeypatch.setattr(
+            cio, "llm_generate",
+            lambda p, **k: called.setdefault("yes", True) or '{"actions":[]}')
+        kobe._try_plan_mutation("replan")   # deterministic path handles this
+        assert "yes" not in called, "planner must NOT run when the flag is off"
