@@ -22,6 +22,7 @@ drag in the whole Kobe → google.genai chain.
 """
 from __future__ import annotations
 
+import re
 from typing import Any, Callable
 
 
@@ -194,6 +195,25 @@ def _parse_actions(raw: str) -> list[dict[str, Any]]:
     return actions if isinstance(actions, list) else []
 
 
+# Each plan handler appends a FULL week render to its confirmation
+# ("✅ …\n\n" + handle_show_plan()). The slash path runs one handler per turn,
+# so the user sees the week once. The planner, however, runs several handlers
+# in a single turn — so naively joining their results stacks the same week
+# 3–4 times (a wall of text on Telegram). We strip each handler's embedded
+# render here and render the week exactly ONCE in plan_via_tools. The render
+# always begins with "*This week" / "*Next week".
+_WEEK_RENDER_HEAD = re.compile(r"\*(?:This|Next) week")
+
+
+def _confirmation_only(result: str) -> str:
+    """A handler result with its trailing week render removed, keeping the
+    confirmation line(s) and any warnings. Returns the (stripped) string
+    unchanged when there's no embedded render (e.g. report_pain, error
+    strings), so non-plan tools are unaffected."""
+    m = _WEEK_RENDER_HEAD.search(result)
+    return (result[:m.start()] if m else result).rstrip()
+
+
 def plan_via_tools(msg: str, db_path: str | None = None) -> str | None:
     """Translate a natural-language plan edit into tool calls and execute
     them. Returns the combined confirmation (+ the refreshed week), or None
@@ -213,8 +233,12 @@ def plan_via_tools(msg: str, db_path: str | None = None) -> str | None:
     results = [r for r in execute_actions(actions) if r]
     if not results:
         return None
-    body = "\n".join(results)
-    # Best-effort: append the refreshed week so the user sees the result.
+    # Each handler appends its own week render; for a multi-action plan that
+    # would stack the same week 3–4 times. Keep only the confirmations/
+    # warnings here …
+    confirmations = [c for c in (_confirmation_only(r) for r in results) if c]
+    body = "\n".join(confirmations)
+    # … then render the resulting week exactly ONCE at the end.
     try:
         from agents.the_scientist import handler as _k
         plan = _k.handle_show_plan()
