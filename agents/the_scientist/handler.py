@@ -1541,11 +1541,27 @@ def handle_workout_on(idx: int) -> str:
     # CF day — pull the actual WOD from the gym schedule.
     gym_label = row.get("gym_label")
     summary = ""
+    gym_days = parse_gym_plan()
     if gym_label:
-        gym_days = parse_gym_plan()
         match = next((d for d in gym_days if d.label == gym_label), None)
         if match:
             summary = _extract_wod_summary(match.body)
+    if not summary:
+        # Fallback (2026-05-24, #A): the cadence row's gym_label can miss
+        # the currently-loaded gym plan (e.g. the SugarWOD pull is next
+        # week's), but the programming for THIS weekday is still right
+        # there. Read it by weekday token — the same source
+        # handle_gym_wod_on uses — so "workout for Tuesday" surfaces the
+        # WOD whenever "WOD for Tuesday" would, instead of punting to the
+        # app. ADR-011: never send the user to the app when we hold the
+        # data ourselves.
+        token = name.upper()[:3]
+        wd_match = next((d for d in gym_days
+                         if (d.weekday or "").upper()[:3] == token), None)
+        if wd_match:
+            summary = _extract_wod_summary(wd_match.body)
+            if summary and not gym_label:
+                gym_label = wd_match.label
 
     header = (f"*{name}: CrossFit ({gym_label})* — target "
               f"~{fmt_kcal(target)}\n") if gym_label else (
