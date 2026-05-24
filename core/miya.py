@@ -814,6 +814,44 @@ def _safe_route(
     return agent.route(msg, **kwargs)
 
 
+# ─────────────────────── Mesh-level conversation memory ───────────────────────
+# ADR-012 (transcript bugs B/C/D, 2026-05-24): the deterministic
+# dispatcher serves WOD/coaching replies (e.g. Kobe's "WOD for Tuesday")
+# WITHOUT writing them to chat_memory, so Fraser — which reads
+# chat_memory for conversational context — can't resolve "scale this" /
+# "scale Tuesday's session" against what Kobe just showed. That is why
+# the live transcript had Fraser say "you haven't shared the workout"
+# two turns after Kobe printed it. Record every NON-Fraser agent turn
+# into the shared chat window so the conversation is unified across the
+# mesh. Fraser self-records via its composer (composer._record_turn), so
+# we skip it here to avoid double-recording. Default OFF — enable with
+# RAHAT_XAGENT_MEMORY=1 after review.
+def _xagent_memory_enabled() -> bool:
+    return _os.environ.get("RAHAT_XAGENT_MEMORY", "0").lower().strip() in (
+        "1", "true", "yes", "on")
+
+
+def _record_mesh_turn(agent_name: str, msg: str, reply: "Reply | None", *,
+                      chat_id: str | int | None,
+                      db_path: str | None) -> None:
+    """Best-effort: append a non-Fraser agent's turn to the shared
+    chat_memory so other agents can resolve references to it. Never
+    breaks a reply over a memory write."""
+    if not _xagent_memory_enabled():
+        return
+    if not chat_id or agent_name == "fraser":
+        return
+    if not (reply and (reply.text or "").strip()):
+        return
+    try:
+        from core import chat_memory as cm
+        if (msg or "").strip():
+            cm.append(str(chat_id), cm.ROLE_USER, msg, db_path=db_path)
+        cm.append(str(chat_id), cm.ROLE_BOT, reply.text, db_path=db_path)
+    except Exception as e:  # noqa: BLE001 — a memory write must never crash a turn
+        print(f"[miya._record_mesh_turn] {e}")
+
+
 def _dispatch_to(
     agent: Agent,
     msg: str,
@@ -853,6 +891,11 @@ def _dispatch_to(
         reply = Reply(text=caveat_text + (reply.text or ""),
                       confidence=reply.confidence,
                       work_orders=reply.work_orders)
+
+    # Mesh-level conversation memory (ADR-012, default OFF) — record this
+    # turn so sibling agents can resolve references to it next turn.
+    _record_mesh_turn(agent.name, msg, reply, chat_id=chat_id,
+                      db_path=db_path)
     return reply
 
 
