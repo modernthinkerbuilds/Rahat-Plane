@@ -2302,7 +2302,9 @@ def _render_profile_summary() -> str:
     lines = [f"*Athlete profile — {p.name}* · {p.height_cm} cm", "", "*1RMs:*"]
     for lift, kg in sorted(p.one_rms.items()):
         lbs = round(float(kg) * 2.2046)
-        lines.append(f"• {lift}: *{kg:g} kg* ({lbs} lbs)")
+        # Display with spaces — Markdown italicizes a lone underscore, so
+        # "back_squat" rendered as "backsquat" in Telegram.
+        lines.append(f"• {lift.replace('_', ' ')}: *{kg:g} kg* ({lbs} lbs)")
     if p.health_flags:
         lines.append("\n*Health:* "
                      + ", ".join(h.name.replace("_", " ") for h in p.health_flags))
@@ -2311,7 +2313,8 @@ def _render_profile_summary() -> str:
                      + ", ".join(m.name.replace("_", " ")
                                  for m in p.mobility_constraints))
     if p.movement_blacklist:
-        lines.append("*Blacklist:* " + ", ".join(sorted(p.movement_blacklist)))
+        lines.append("*Blacklist:* " + ", ".join(
+            m.replace("_", " ") for m in sorted(p.movement_blacklist)))
     lines.append("\nUpdate a max with `/profile set <lift> <kg>` "
                  "— e.g. `/profile set deadlift 160`.")
     return "\n".join(lines)

@@ -50,10 +50,29 @@ more risks sounding like a parody, so each new word earns its place):
 """
 from __future__ import annotations
 
+import datetime
 import os
 import random
 import re
 from typing import Literal
+
+
+# Greetings that ASSERT a time of day. When the kind was guessed from the
+# message body (not passed explicitly by a scheduler), it must agree with
+# the real local clock — otherwise a workout whose cool-down section says
+# "recovery" gets a "🌙 9pm check" night greeting at 2:30 PM (the
+# 2026-05-23 bug). See ADR-011.
+_TIME_OF_DAY_KINDS = frozenset({"morning", "recovery"})
+
+
+def _clock_matches(kind: str) -> bool:
+    """True if `kind`'s implied time of day matches the real local hour."""
+    h = datetime.datetime.now().astimezone().hour
+    if kind == "morning":
+        return 4 <= h < 12
+    if kind == "recovery":
+        return h >= 20 or h < 4
+    return True
 
 
 VoiceMode = Literal["hyderabadi", "neutral"]
@@ -157,7 +176,10 @@ CLOSERS: dict[str, list[str]] = {
 # Scientist's templates so this stays deterministic.
 _KIND_PATTERNS: list[tuple[str, re.Pattern]] = [
     ("morning",      re.compile(r"morning\s+briefing|☀️|good morning", re.I)),
-    ("recovery",     re.compile(r"9pm\s+check|🌙|recovery|sleep", re.I)),
+    # Narrowed 2026-05-23: only the actual 9pm check-in marker — NOT the
+    # generic words "recovery"/"sleep"/🌙, which match every workout's
+    # cool-down section and mislabeled designs as night check-ins.
+    ("recovery",     re.compile(r"9pm\s+check", re.I)),
     ("walk",         re.compile(r"pace\s+check|walk\s+nudge|🚶", re.I)),
     ("weekly_reset", re.compile(r"week\s+ending|📅|new\s+week\s+starts", re.I)),
     ("schedule",     re.compile(r"this week —|next week —|tier\s+`", re.I)),
@@ -224,7 +246,12 @@ def dress(text: str, *, kind: str | None = None) -> str:
     if _should_skip(text):
         return text
 
-    kind = kind or _classify(text)
+    if kind is None:
+        kind = _classify(text)
+        # A content-GUESSED time-of-day greeting must agree with the real
+        # clock; an explicit kind= from a scheduler is trusted as-is.
+        if kind in _TIME_OF_DAY_KINDS and not _clock_matches(kind):
+            kind = "status"
     opener_pool = OPENERS.get(kind) or OPENERS["default"]
     closer_pool = CLOSERS.get(kind, [])
 
