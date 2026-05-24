@@ -2325,27 +2325,33 @@ def handle_profile(msg: str) -> str:
     """
     from core import athlete_profile
     body = re.sub(r"^/profile\b", "", (msg or "").strip(), flags=re.I).strip()
+    # Tolerate trailing punctuation users add ("... 120." / "... 120 kg!").
+    body = body.rstrip(" .!?,")
 
     if not body:
         return _render_profile_summary()
 
-    m = re.match(r"^set\s+([A-Za-z][A-Za-z _]*?)\s+(\d{1,3}(?:\.\d+)?)\s*(?:kg)?\s*$",
-                 body, re.I)
+    # Lift name may be multi-word / hyphenated ("back squat", "back-squat");
+    # weight is up to 3 digits with optional decimal + optional kg unit.
+    m = re.match(
+        r"^set\s+([A-Za-z][A-Za-z _-]*?)\s+(\d{1,3}(?:\.\d+)?)\s*(?:kg|kgs)?\s*$",
+        body, re.I)
     if m:
-        lift = m.group(1).strip().lower().replace(" ", "_")
         kg = float(m.group(2))
         try:
-            athlete_profile.set_one_rm(lift, kg)
+            canon = athlete_profile.set_one_rm(m.group(1), kg)
         except ValueError as e:
             return f"❌ {e}"
         except Exception as e:  # noqa: BLE001 — substrate write failure
             return f"❌ Couldn't save that: {e}"
         lbs = round(kg * 2.2046)
-        return (f"✅ Updated *{lift}* 1RM → *{kg:g} kg* ({lbs} lbs). "
-                f"Fraser will size all {lift.replace('_', ' ')} work from this.")
+        nice = canon.replace("_", " ")
+        return (f"✅ Updated *{nice}* 1RM → *{kg:g} kg* ({lbs} lbs). "
+                f"Fraser will size all {nice} work from this.")
 
     return ("Usage: `/profile` to view, or `/profile set <lift> <kg>` to update "
-            "a 1RM — e.g. `/profile set deadlift 160`.")
+            "a 1RM — e.g. `/profile set deadlift 160` or "
+            "`/profile set back squat 120`.")
 
 
 def _try_slash_command(msg: str) -> str | None:

@@ -352,14 +352,40 @@ def _load_1rm_overrides(db_path: str | None = None) -> dict[str, float]:
     return out
 
 
-def set_one_rm(lift: str, weight_kg: float,
-               db_path: str | None = None) -> float:
-    """Persist a 1RM override (from `/profile set`). Returns the saved kg.
+# Common ways users name lifts → canonical 1RM keys, so "/profile set
+# back squat 120" / "backsquat" / "bench" all land on the key the
+# composer actually reads.
+_LIFT_ALIASES = {
+    "squat": "back_squat", "backsquat": "back_squat", "bs": "back_squat",
+    "frontsquat": "front_squat",
+    "bench": "bench_press", "benchpress": "bench_press",
+    "dl": "deadlift", "dead_lift": "deadlift",
+    "powerclean": "power_clean", "clean": "power_clean",
+    "squatclean": "squat_clean",
+    "pushpress": "push_press",
+    "strictpress": "strict_press", "press": "strict_press",
+    "ohp": "strict_press", "overhead_press": "strict_press",
+    "shoulder_press": "strict_press",
+}
 
-    Validates the lift name + weight, writes to substrate, and resets
-    the process cache so the next get() reflects the change. Raises
-    ValueError on bad input."""
-    lift = (lift or "").strip().lower().replace(" ", "_")
+
+def _canonical_lift(name: str) -> str:
+    """Normalize a user-typed lift name to a canonical 1RM key.
+    'Back Squat' / 'back-squat' / 'backsquat' → 'back_squat'; 'bench' →
+    'bench_press'. Unknown lifts pass through cleaned (custom lifts OK)."""
+    key = "_".join((name or "").strip().lower().replace("-", " ").split())
+    return _LIFT_ALIASES.get(key, key)
+
+
+def set_one_rm(lift: str, weight_kg: float,
+               db_path: str | None = None) -> str:
+    """Persist a 1RM override (from `/profile set`). Returns the CANONICAL
+    lift name it was stored under.
+
+    Canonicalizes the lift name, validates the weight, writes to
+    substrate, and resets the process cache so the next get() reflects
+    the change. Raises ValueError on bad input."""
+    lift = _canonical_lift(lift)
     if not lift:
         raise ValueError("lift name is required")
     try:
@@ -383,7 +409,7 @@ def set_one_rm(lift: str, weight_kg: float,
         supersede_existing=False,
         db_path=db_path)
     reset()
-    return weight_kg
+    return lift
 
 
 def reset() -> None:

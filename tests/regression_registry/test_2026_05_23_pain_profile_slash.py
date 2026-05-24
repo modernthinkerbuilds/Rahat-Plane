@@ -116,3 +116,35 @@ class TestProfileCommand:
 
     def test_profiler_does_not_trigger_profile(self, bootstrap_substrate):
         assert h._try_slash_command("/profiler") is None
+
+
+class TestProfileSetRobustness:
+    """2026-05-23 live bug: '/profile set back squat 120.' was rejected.
+    Two causes — a trailing period broke the parser, and 'backsquat' /
+    'bench' didn't map to the canonical 1RM key the composer reads."""
+
+    def test_trailing_period_is_tolerated(self, bootstrap_substrate):
+        out = h._try_slash_command("/profile set back squat 120.")
+        assert "Updated" in out, f"trailing period must not reject; got {out!r}"
+        assert athlete_profile.get(refresh=True).one_rms["back_squat"] == 120.0
+
+    def test_multiword_lift_maps_to_canonical_key(self, bootstrap_substrate):
+        h._try_slash_command("/profile set back squat 118")
+        assert athlete_profile.get(refresh=True).one_rms["back_squat"] == 118.0
+
+    def test_oneword_alias_maps_to_canonical_key(self, bootstrap_substrate):
+        h._try_slash_command("/profile set backsquat 125")
+        assert athlete_profile.get(refresh=True).one_rms["back_squat"] == 125.0
+
+    def test_bench_alias_maps_to_bench_press(self, bootstrap_substrate):
+        h._try_slash_command("/profile set bench 65")
+        assert athlete_profile.get(refresh=True).one_rms["bench_press"] == 65.0
+
+    def test_unit_and_trailing_period_together(self, bootstrap_substrate):
+        out = h._try_slash_command("/profile set deadlift 160 kg.")
+        assert "Updated" in out
+        assert athlete_profile.get(refresh=True).one_rms["deadlift"] == 160.0
+
+    def test_set_one_rm_returns_canonical_name(self, bootstrap_substrate):
+        assert athlete_profile.set_one_rm("back squat", 120) == "back_squat"
+        assert athlete_profile.set_one_rm("bench", 60) == "bench_press"
