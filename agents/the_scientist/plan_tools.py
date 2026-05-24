@@ -2,9 +2,10 @@
 
 The substrate half of "Agent = system_prompt + tools". These are typed,
 deterministic wrappers over the existing, already-tested plan handlers
-(handle_rest_day / handle_pick_days / handle_unavailable / handle_replan /
-pain_state.report), exposed as a small tool registry the LLM planner can
-call instead of a regex scramble.
+(handle_rest_day / set_crossfit_days / set_zone2_day / handle_unavailable /
+handle_replan / pain_state.report), exposed as a small tool registry the
+LLM planner can call instead of a regex scramble. The CF/Z2 wrappers call
+the STRUCTURED core (ADR-012 M0) — no natural-language round-trip.
 
 Design (ADR-011):
   • Deterministic + additive. Nothing here changes runtime routing; the
@@ -37,14 +38,18 @@ def _set_rest(day: str) -> str:
 
 def _set_crossfit(days: str) -> str:
     from agents.the_scientist import handler as _k
-    # Reuse the pick handler (additive for a single day, replace for a
-    # list) via its natural-language form so the merge/backfill rules apply.
-    return _k.handle_pick_days(f"pick {days} for crossfit")
+    # ADR-012 M0: call the structured core directly — no NL round-trip.
+    # set_crossfit_days adds a single day and replaces a multi-day list
+    # (the same add-vs-replace rule the slash path applies), so behavior
+    # matches without re-serializing the intent back into a sentence.
+    return _k.set_crossfit_days(str(days))
 
 
 def _set_zone2(day: str) -> str:
     from agents.the_scientist import handler as _k
-    return _k.handle_pick_days(f"{day} for run")
+    # ADR-012 M0: structured Z2 pick — no NL round-trip, no synthesized
+    # sentence; the kind is explicit in the call, not sniffed from text.
+    return _k.set_zone2_day(str(day))
 
 
 def _mark_unavailable(day: str) -> str:

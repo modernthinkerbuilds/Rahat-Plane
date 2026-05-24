@@ -1019,21 +1019,25 @@ def handle_pick_days(weekday_text: str, next_week: bool = False) -> str:
         else:
             cf_picks = indices[:3]
 
-    # ── #48 fix: add-vs-replace + never clobber the other discipline ──
-    # A single named CF day with no "just/only" is ADDITIVE — it augments
-    # the existing forced CF days. The morning brief literally tells the
-    # user "convert Sun → CF, apply with `pick Sun for crossfit`", which
-    # MUST add Sunday, not collapse the whole week to Sunday alone (the
-    # old code did set_prefs(forced_cf_days=[Sun]) → 1 CF day). An explicit
-    # multi-day list, or the words just/only/instead, REPLACES. A Z2-only
-    # pick ("Sun for run") must not wipe the CF days, and an additive CF
-    # pick must not clear a previously forced Z2 day.
-    prefs_now = get_prefs(monday)
-    existing_cf = list(prefs_now["forced_cf_days"])
     replace_intent = bool(
         re.search(r"\b(just|only|instead|exactly|replace)\b", text_lc)
     ) or len(cf_picks) >= 2
+    return _apply_day_picks(cf_picks, z2_pick, replace_intent=replace_intent,
+                            next_week=next_week)
 
+
+def _apply_day_picks(cf_picks, z2_pick, *, replace_intent,
+                     next_week=False):
+    """Shared structured core for CF/Z2 day picks (ADR-012 M0).
+
+    Both the NL slash path (handle_pick_days) and the plan-tool
+    wrappers (set_crossfit_days / set_zone2_day) funnel here, so
+    behavior matches exactly and the tools never round-trip through
+    synthesized phrasing ("pick {days} for crossfit"). cf_picks is
+    additive unless replace_intent; z2_pick is a single weekday index
+    or None."""
+    monday, label = _which_monday(next_week)
+    existing_cf = list(get_prefs(monday)["forced_cf_days"])
     updates: dict = {}
     final_cf = existing_cf
     if cf_picks:
@@ -1121,6 +1125,29 @@ def handle_pick_days(weekday_text: str, next_week: bool = False) -> str:
     return (f"✅ Locked picks for {label} → {' | '.join(parts)}."
             f"{warn_block}\n\n"
             + handle_show_plan(next_week=next_week))
+
+
+def set_crossfit_days(days_text: str, next_week: bool = False) -> str:
+    """Structured CrossFit pick (ADR-012 M0). Parse the weekday
+    token(s) and route straight through the shared core — no NL
+    round-trip. A single day is ADDITIVE; an explicit multi-day list
+    REPLACES (the same add-vs-replace rule the slash path applies)."""
+    indices = parse_weekdays(days_text)
+    if not indices:
+        return "Couldn't find any weekdays in that."
+    return _apply_day_picks(indices, None,
+                            replace_intent=len(indices) >= 2,
+                            next_week=next_week)
+
+
+def set_zone2_day(day_text: str, next_week: bool = False) -> str:
+    """Structured Zone-2 pick (ADR-012 M0). Sets a single Z2 day
+    without touching the forced CF days — no NL round-trip."""
+    indices = parse_weekdays(day_text)
+    if not indices:
+        return "Couldn't find any weekdays in that."
+    return _apply_day_picks([], indices[0],
+                            replace_intent=False, next_week=next_week)
 
 
 def handle_tolerate(term_text: str, next_week: bool = False) -> str:
