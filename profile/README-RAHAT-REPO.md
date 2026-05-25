@@ -2,427 +2,225 @@
 
 # 🪶 Rahat
 
-### A Sovereign Habitat for Personal AI Agents
+### A control plane for AI agents — built at human scale
 
-*A local-first multi-agent runtime with a memory substrate and a model-first reasoner over a deterministic tool catalog.*
+*A local-first system that gives a mesh of personal AI agents one shared memory, one rulebook, and one orchestrator — so adding the next agent is configuration, not a rebuild.*
 
-[Vision](#-the-vision) · [Architecture](#-architecture-four-layers) · [Memory](#-memory-the-layer-that-makes-agents-trustworthy) · [Reasoner](#-the-model-first-reasoner) · [Agents](#-the-agent-mesh) · [What's Shipped](#-whats-actually-shipped) · [Roadmap](#-roadmap-now--next--later) · [Diagrams](#-architecture-diagrams)
+[What this is](#what-this-is) · [Why it matters](#why-this-matters-beyond-my-house) · [The four problems](#the-four-problems-a-control-plane-has-to-solve) · [How it works](#how-it-works) · [What's shipped](#whats-actually-shipped) · [The roadmap](#the-roadmap--an-everyday-mesh) · [Architecture docs](#specs--decision-records)
 
 </div>
 
 ---
 
-## 🌅 The Vision
+## What this is
 
-**The substrate is the moat.** The model layer of personal AI is rapidly commoditizing — Gemini ↔ Claude ↔ open-weight ↔ on-device, swapped in hours. The non-commodity layer is the *habitat* underneath: shared memory, shared state, a policy chokepoint, a heartbeat. Whoever ships those primitives as first-class objects owns the next decade of personal AI platforms.
+Most AI today is a **chatbot you prompt**: you open it, it answers, it forgets you the moment you close the tab. Each new assistant starts from zero, and nothing one of them knows is shared with another.
 
-**Rahat** (Urdu: *رہات* — relief, ease, the lifting of a burden) is a bet on that thesis:
+**Rahat is the opposite.** It's a small fleet of specialized AI agents that share *one* memory of your life, follow *one* set of rules, and are coordinated by *one* orchestrator. Because they remember you and work together, they can help with the messy, real moments — not just answer one-off questions.
 
-> A **habitat** for personal agents — the complete environment where they live, remember, decide, and act. An ambient mesh of specialized agents that observe your life, **share a single source of truth and a single memory substrate**, run a model-first reasoner over a deterministic tool catalog, and quietly coordinate to close the gap between where you are and where you want to be.
+The interesting part isn't any single agent. It's the layer underneath them — the part that lets many agents share state safely, stay within bounds, and coordinate. In platform terms, that layer is a **control plane**: the thing that decides what each agent knows, what it's allowed to do, and how they all fit together. Rahat is a working control plane for agents, running locally on a Mac Mini, used daily through one person's life.
 
-Most personal AI today is a **chatbot you prompt** — reactive, siloed, amnesiac. Rahat is the opposite: ambient, integrated, persistent. Built on a Mac Mini. Owned by you. Powered by a heartbeat, not a prompt.
-
----
-
-## ⚡ Why this exists
-
-The forcing function for any agent platform is the **N+1 problem**: most agent systems ship three-to-five specialized agents and stall. The 6th, 11th, 20th agent each demands a custom integration, custom eval, custom memory schema. That integration tax is what separates demos from products. Rahat is that forcing function applied to one person's life: 21 agents by month 18, ~1 day per new agent — or the substrate bet is wrong and the build log will say so.
-
-I'm a Google PM with a toddler, a newborn, a CrossFit habit, an 80kg target weight, a 155kg deadlift goal, a guitar I'm learning, and a fairly demanding job. The number of small decisions and trivial logging required to "stay on track" with any of it is genuinely exhausting.
-
-Existing tools fail in three ways:
-
-1. **They're reactive.** I have to open them, log into them, prompt them. They never act on their own.
-2. **They're siloed.** My fitness app doesn't know I had a heavy lunch. My calendar doesn't know my HRV is low.
-3. **They forget.** I commit to something, and they don't remember the next time I open them.
-
-Rahat is the habitat that fixes all three. **Cognitive offload, by design.**
+> **Rahat** (Urdu: *رہات* — relief, ease, the lifting of a burden) is a bet on one idea: **AI gets genuinely useful when it remembers your life and coordinates — not just when the model gets smarter.** The model is the engine; the control plane is the car.
 
 ---
 
-## 🏗️ Architecture: Four Layers
+## Why the first agents are about training — and why that's not the point
 
-The original three-plane model held until I hit a wall: agents need to *actively manage their own memory* the way a human coach remembers your goals, your commitments, and last week's conversation. Memory isn't passive infrastructure — it's an agent-facing responsibility. So Rahat now has four conceptual layers:
+If you skim the live code, you'll see agents about workouts and recovery, and you might conclude this is a fitness project. It isn't.
 
-| Layer | What lives here | Implementation |
-|---|---|---|
-| **Control** | Charter (policy enforcement), agent capability registry | `core/charter.py`, `core/agent.py` |
-| **Data** | Intent ledger, decisions trace, **memory substrate** (4 tiers) | `vault/rahat.db` (SQLite) |
-| **Runtime** | Miya orchestrator, reasoner loop, tool dispatch, voice layer | `core/miya.py`, `core/voice.py`, agents' `reasoner.py` |
-| **Agent Adapter** | Per-agent context assemblers + state extractors over shared memory | `agents/<name>/memory.py` |
+I needed a **real, unforgiving domain** to prove the architecture on, and my own life was the most honest test available — a domain where the agent is wrong in ways I'll actually notice, every day. So the first agents coach training and recovery. They're the **proving ground, not the product.**
 
-**Plain-English version (the restaurant analogy):**
+What's actually being built is **domain-agnostic**: the shared memory, the policy rulebook, the orchestration, the evaluation harness. None of that knows or cares that the first agents happen to be about fitness. The roadmap below is a 21-agent *everyday* mesh — planning the family weekend, getting a gift right, sorting out dinner, planning a trip. Same control plane underneath; different lens on top.
 
-| Plane | Restaurant | Rahat |
-|---|---|---|
-| **Control** | Recipes, kitchen rules, who can use which station | Charter + agent registry |
-| **Data** | Pantry, walk-in, reservation book, **the chef's notebook of regulars** | Intent ledger + memory substrate |
-| **Runtime** | Friday-night kitchen, tickets, expediter | Miya + reasoner + tools |
-| **Adapter** | Each chef's personal mise en place + tasting notes | Per-agent memory.py |
+---
+
+## Why this matters beyond my house
+
+Here's the bridge that makes this more than a personal toy.
+
+The moment *any* team goes from running one agent to running a fleet, they hit the exact problems Rahat is built around: *How do these agents share what they know? Who decides what an agent is allowed to do on its own? How do you keep them coordinated, debuggable, and within budget? How do you even know an agent is any good?*
+
+Those are not personal-assistant questions. They're **control-plane questions**, and every company deploying agents is wrestling with them right now. In fact, "agent control plane" became *the* enterprise-AI category in 2026 — orchestration plus governance, observability, and identity, often described as "Kubernetes for AI agents." What's striking is the convergence: a system built for one household and a platform built for thousands land on the **same primitives** — shared memory, central governance, orchestration, and evaluation. When the small case and the huge case agree on the primitives, the primitives are probably right. Rahat solves them small, locally, and for real — which makes it an honest laboratory for how agent infrastructure should work anywhere.
+
+To be clear about scale: **Rahat is a personal-scale build, not enterprise software.** The claim isn't that it's a product for companies — it's that the *problems* are the same class, and solving them at human scale is a real way to understand them.
+
+---
+
+## The four problems a control plane has to solve
+
+Each one is stated plainly, then how Rahat handles it, then why it matters once you have more than one agent.
+
+### 1. Memory — agents that actually remember you
+
+**The problem:** chat history is too raw and too short-lived to rely on. An agent that "remembers" by re-reading the transcript forgets your commitments within an hour. (This is exactly how Rahat's first agent failed, repeatedly, until the memory layer existed.)
+
+**What Rahat does:** a shared, typed memory layer that every agent reads from and writes to — facts, ongoing commitments, preferences (which fade if you stop reinforcing them), and a searchable long-term archive. A nightly job compacts it so it stays sharp instead of bloating. Memory is something an agent *does* (decides when to remember, recall, or forget), not always-on plumbing.
+
+**Why it matters at scale:** when one agent learns something, the others should benefit. Shared memory is what turns a pile of separate bots into a coordinated system — and it's the single thing most multi-agent setups get wrong.
+
+### 2. Governance — one rulebook, enforced once
+
+**The problem:** five agents that can each take actions will each reinvent the rules — quiet hours, what needs confirmation, what's simply off-limits — three different, conflicting ways.
+
+**What Rahat does:** a single policy layer (the **Charter**) that every action-taking tool must pass through before it runs. Rules are written once and applied to every agent uniformly, with an audit log of every decision.
+
+**Why it matters at scale:** governance is the difference between a demo and something you can actually let act on your behalf. A central policy chokepoint is how you keep a growing fleet safe and accountable — and it barely exists as a first-class primitive in commercial agent platforms yet.
+
+### 3. Orchestration — many agents, one coherent experience
+
+**The problem:** the user shouldn't have to know which agent to talk to, and agents shouldn't talk over each other.
+
+**What Rahat does:** a single orchestrator (**Miya**) owns the conversation, routes each request to the right agent, lets agents hand work to each other, and speaks back to you in one consistent voice. Adding an agent doesn't change the interface.
+
+**Why it matters at scale:** routing and a single coherent surface are what make a fleet feel like one assistant instead of twenty disconnected ones.
+
+### 4. Evaluation & reliability — knowing it's good, and proving it
+
+**The problem:** "the chat felt fine today" is not a quality metric once agents take real actions and persist state.
+
+**What Rahat does:** a **deterministic shell around an LLM core** — the model proposes; tested, deterministic code does the math, enforces the rules, and executes. Every routing decision, tool call, and policy verdict is logged with a trace, latency, and cost. Every bug fix ships with a regression test, and a pre-push gate blocks any change that breaks the suite.
+
+**Why it matters at scale:** this is how you debug *"what happened at 9pm Tuesday"* across twenty agents instead of shrugging — and how you change the architecture without silently breaking behavior.
+
+---
+
+## How it works
+
+**The governing principle ([ADR-011](./specs/ADR-011-deterministic-shell-llm-core.md)):**
+
+> **Deterministic shell, LLM core.** The substrate — state, math, routing, persistence, safety vetoes — is deterministic and tested. The intelligence — understanding intent, structure, phrasing, constraints — is the model's job. *The LLM proposes; deterministic guards dispose.*
+
+This keeps the system both smart and trustworthy: the model never does the arithmetic or invents a number, because numbers come from tools. It just decides which tools to call.
+
+**The agent contract.** Every agent is defined the same way:
 
 ```
-        Telegram ┐                                          ┌ Notifications
-        Sensors  ┘                                          ┘
-                 │                                          ▲
-                 ▼                                          │
-         ┌────────────────┐         ┌──────────────────────┴────┐
-         │   The Miya     │         │  The Charter (policy)      │
-         │  Orchestrator  │         │  approve · modify · veto   │
-         │  Supervisor    │         └──────────────────────▲────┘
-         │  Capability    │                                │
-         │  registry      │                                │
-         └───────┬────────┘                                │
-                 │                                         │
-        ┌────────┼────────────────────────────┐            │
-        ▼        ▼                            ▼            │
-   ┌─────────┐ ┌──────────┐             ┌──────────┐      │
-   │  Kobe   │ │ Huberman │     ...     │  +20     │ ─────┘
-   │ + reasoner│ + reasoner│             │  agents  │   write tools
-   │ +25 tools │ + tools   │             │          │   pass through
-   └────┬────┘ └─────┬────┘             └─────┬────┘   Charter
-        │            │                        │
-        │  context   │                        │
-        │  assembler │  state extractor       │
-        ▼            ▼                        ▼
-  ┌──────────────────────────────────────────────────────┐
-  │            Memory Substrate (universal)              │
-  │  events · entities · threads · prefs · archival     │
-  │  + intent ledger + decisions trace                   │
-  │  ────────────────────────────────────────────────   │
-  │            vault/rahat.db (SQLite)                  │
-  └──────────────────────────────────────────────────────┘
-                          ▲
-                          │
-          ┌───────────────┴───────────────┐
-          │  Sleep-time consolidation     │
-          │  03:00 cron · summarize       │
-          │  decay · archive · GC         │
-          └───────────────────────────────┘
+Agent = { name, description, system_prompt, tools[] }
 ```
 
-### What makes this different from a "multi-agent framework"
+The model returns a structured action plan over a set of typed tools; deterministic code validates and executes it. That uniformity is the whole bet: once the runtime is shared, the *next* agent is mostly a prompt plus a tool list — configuration, not a new pipeline.
 
-**1. Sovereignty as infrastructure.** All state lives in `vault/rahat.db` on a local Mac Mini M4. Git-ignored. No cloud syncs of biometric data. Trust is silicon-deep.
+**The layers:**
 
-**2. Shared memory, not shared chat history.** RAG over conversation logs is brittle. Rahat's substrate has six first-class primitives every agent reads/writes (events, entities, threads, prefs, archival, relationships). When the Kobe commits a goal, the Foodie sees it on next turn. When Huberman flags low HRV, the Kobe's reasoner downgrades intensity automatically.
-
-**3. The Charter as the single chokepoint.** Every write-tool — across every agent — calls `charter.check()` first. Quiet hours, HRV-red blocks, family-priority overrides: written once, applied uniformly. Writes to `governance_log` for audit.
-
-**4. Decisions trace, end-to-end.** Every routing call, tool invocation, charter verdict, and reasoner hop gets a row in `decisions` with `trace_id`, latency, tokens, cost, outcome. With 20 agents, this is the difference between *"I can debug what happened at 9pm Tuesday"* and *"no idea."*
-
-**5. Voice as a layer, not an agent property.** Miya wraps every outbound message through `core/voice.py` — a deterministic Hyderabadi Dakhini phrasebook. Idempotent. Numbers/structure preserved verbatim. Adding a new agent doesn't require teaching it Dakhini.
-
-**6. Model-first reasoner over a deterministic tool catalog.** Each agent runs a Gemini 2.5 Flash reasoning loop with a registered tool catalog (the Kobe has 25 tools). The model decides what to call; tools execute deterministically; results return; reply composed. Regex routing remains as a fallback when the API is unreachable.
-
----
-
-## 🧠 Memory: the layer that makes agents trustworthy
-
-> *The cutting-edge insight: memory operations are tools the agent calls, not infrastructure that's always-on. The agent learns when to remember, when to forget, when to recall.* — internal SOTA review
-
-### Why memory had to be built
-
-Kobe was supposed to remember commitments. Instead, every message was a fresh start. I'd say *"I'll do 7,000 kcal of burn this week"* (a real commitment), and an hour later the bot would suggest a plan that ignored it. I'd commit to *"hammer tier for 2 weeks,"* and the next day it would lecture me about recovery — even though I'd just said I wanted to push.
-
-After ten rounds of patches (60-minute lookbacks, re-reading chat history, hardcoding "don't lecture after commit"), the root cause was undeniable: **the system had no memory architecture.** Chat history is too raw, too short-lived, and too unstructured to be reliable. The agent needed to actively manage its own state — like a human coach.
-
-### The four-tier substrate
+| Layer | What lives here | Plain-English analogy (a restaurant) |
+|---|---|---|
+| **Control** | The Charter (policy) + the registry of what each agent can do | The kitchen's rules and who's allowed at which station |
+| **Data** | Shared memory + a ledger of intents and decisions | The pantry, the reservation book, and the chef's notebook of regulars |
+| **Runtime** | Miya (orchestrator), the reasoning loop, tool dispatch, voice | The Friday-night line: tickets, the expediter, the pass |
+| **Adapter** | Each agent's thin connector to the shared memory | Each chef's personal mise en place |
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│  Working memory (recall)                                │
-│  memory_events — append-only firehose, ~5K rows/day    │
-│  Every meaningful event: messages, tools, vitals       │
-└─────────────────────────────────────────────────────────┘
-┌─────────────────────────────────────────────────────────┐
-│  Core memory (entities)                                 │
-│  memory_entities — first-class objects with lifecycle  │
-│  Kobe: goal, plan, commitment, tier_change        │
-│  Huberman: recovery_protocol, sleep_concern, hrv_window│
-└─────────────────────────────────────────────────────────┘
-┌─────────────────────────────────────────────────────────┐
-│  Semantic memory (preferences)                          │
-│  memory_preferences — sticky k/v, confidence decay     │
-│  "preferred_lunch=paneer+jowar" reinforced per turn    │
-│  decays 5%/week without reinforcement                  │
-└─────────────────────────────────────────────────────────┘
-┌─────────────────────────────────────────────────────────┐
-│  Archival memory (long-term)                            │
-│  memory_archival — text + 768-d embeddings             │
-│  Gemini text-embedding-004; cosine search              │
-│  "what did I tell you about Tokyo 3 months ago"        │
-└─────────────────────────────────────────────────────────┘
+        you (Telegram, sensors) 
+                 │
+                 ▼
+        ┌──────────────────┐        ┌────────────────────────────┐
+        │      Miya        │        │   The Charter (policy)     │
+        │  orchestrator /  │  ────► │  approve · modify · veto   │  ◄── every
+        │     router       │        │       + audit log          │      action
+        └────────┬─────────┘        └────────────────────────────┘      passes
+                 │                                                       through
+     ┌───────────┼───────────────┐
+     ▼           ▼               ▼
+ ┌───────┐  ┌─────────┐     ┌──────────┐
+ │ Kobe  │  │ Fraser  │ ... │  + more  │
+ └───┬───┘  └────┬────┘     └────┬─────┘
+     │           │               │
+     ▼           ▼               ▼
+ ┌──────────────────────────────────────────┐
+ │           Shared memory layer             │
+ │  events · facts · preferences · archive   │
+ │      + intent & decision ledger           │
+ │            (local SQLite)                  │
+ └──────────────────────────────────────────┘
+                 ▲
+       nightly consolidation (summarize · decay · archive)
 ```
 
-Plus `memory_threads` (conversation topics) and `memory_relationships` (entity-to-entity links — including cross-agent: a Kobe commitment can link to a Huberman recovery protocol).
-
-### How agents use it (the adapter pattern)
-
-Each agent at `agents/<name>/memory.py` exports just two functions:
-
-```python
-def assemble_context(db_path=None) -> str:
-    """Pure-Python, deterministic, no LLM. Returns a [state] block:
-       [Today: Friday May 8] [Active goal: 198lb by 2026-05-22]
-       [Commitments: hammer tier × 2wk] [Plan: 3-CF, 1-Z2]
-    """
-
-def extract_state(user_msg, bot_reply, db_path=None) -> None:
-    """Gemini Flash JSON-mode parses the (msg, reply) pair.
-       Writes new entities/commitments/preferences back to substrate.
-       Costs ~$0.0001/turn.
-    """
-```
-
-The substrate is universal; adapters are thin (Kobe's is ~365 LOC, Huberman's stub is ~110 LOC). **Every future agent — Curriculum, Foodie, Voyager — onboards in ~1 day.**
-
-### Sleep-time consolidation
-
-A nightly cron at 03:00 runs `scripts/memory_consolidate.py`:
-
-- Summarizes threads inactive >24h
-- Decays preferences not reinforced in 7 days
-- Archives entities past `valid_until`
-- GCs events older than 365 days
-- Purges unused archival entries
-
-Without this, the substrate would bloat to junk. With it, the data plane stays sharp.
+Six standalone SVG diagrams live in [`/specs/diagrams/`](./specs/diagrams/) (memory, the reasoning loop, mesh extensibility, the roadmap).
 
 ---
 
-## 🔁 The Model-First Reasoner
+## What's actually shipped
 
-Kobe used to be a regex router with 25 hardcoded handlers and an LLM fallback for unmatched messages. It failed on five distinct classes of bug — multi-clause questions, ad-hoc constraints, week-so-far reasoning, multi-source composition, the Dakhini-English mix. The intuition *"regex for cheap determinism, LLM for free-form fallback"* aged poorly. Modern Gemini 2.5 Flash with structured tool calling doesn't hallucinate math when the math comes from tools.
+Honest status. This is a real running system, not a slide.
 
-### The new flow (per inbound message)
-
-1. **Assembler.** Memory adapter builds the `[state]` block (~5ms, pure Python).
-2. **Reasoner.** Gemini 2.5 Flash receives `[state] + user_msg + 25-tool catalog + system prompt`.
-3. **Loop (≤8 hops).** Model emits `function_call` parts; `tools.dispatch()` executes the tool deterministically (read or charter-gated write); results return as `function_response` parts; model composes the reply.
-4. **Extractor.** Flash JSON-mode parses (msg, reply) → new entities/prefs.
-5. **Voice.** `core/voice.py` dresses the reply with a Dakhini opener.
-6. **Send.** Telegram splitter chunks at <4000 chars.
-7. **Trace.** Every hop logged to `decisions` with tokens + cost.
-
-### The tool catalog (25 tools, 3 categories)
-
-| Category | Examples |
-|---|---|
-| **Read (cheap, safe)** | `get_week_burn`, `get_today_target`, `get_weight_timeline`, `get_eligible_cf_days`, `get_blacklist`, `get_missed_workouts`, `get_hrv_status`, `get_recent_context` |
-| **Write (charter-gated)** | `propose_replan`, `commit_picks`, `tolerate_movement`, `log_weight`, `swap_day`, `set_recovery_tier` |
-| **Memory (used by extractor)** | `recall_search`, `archival_search`, `archival_insert`, `list_active`, `upsert_pref` |
-
-### Cost & resilience
-
-- **Cost ledger:** `core/cost.py` is the single source of truth. Gemini 2.5 Flash: `$0.30/M in, $2.50/M out`. Cost per turn: **~$0.001**. Latency: **~2–6s** (1–3 hops typical).
-- **Two-tier fallback:** Gemini 5xx or no API key → `legacy_route()` (regex dispatcher, fully working) → `_ensure_nonempty()` (last-resort canned reply). No silent failure modes.
-- **Provider-agnostic by design:** `core/gemini_reasoner_io.py` is the active adapter; `core/anthropic_io.py` is a tombstone (removed for vendor-risk concentration). Swappable later if needed.
-
----
-
-## 🤖 The Agent Mesh
-
-Every agent is named after a renowned figure whose actual life embodies the agent's domain — same logic as Fraser (Matt Fraser, CrossFit GOAT), extended across the 21-agent cast.
-
-### Live today
-
-| Agent | Status | Role | Memory entity types |
-|---|---|---|---|
-| **The Miya** | ✅ Live | Orchestrator + supervisor; single voice; capability registry; cross-agent broker | (orchestration only) |
-| **Kobe** | ✅ Live | Vitality — trajectory math, weekly planning, recalibration. *Named after Kobe Bryant: Mamba Mentality applied to the body-goal arc.* | `goal`, `plan`, `commitment`, `tier_change` |
-| **Huberman** | 🚧 Stub shipped | Recovery — HRV/sleep/RHR; advises (Charter enforces). *Named after Andrew Huberman: evidence-based recovery, the agent with veto power.* | `recovery_protocol`, `sleep_concern`, `hrv_window` |
-| **The Charter** | ✅ Live (infrastructure) | Policy plane — every write-tool passes through; quiet hours, HRV-red, external veto | (writes to `governance_log`) |
-
-### Coming next (months 1–6)
-
-| Agent | Domain | Named after |
+| Component | Status | What it is |
 |---|---|---|
-| **Fraser** | CrossFit programming, load auditing | Matt Fraser — 5× CrossFit GOAT |
-| **Montessori** | Toddler + newborn developmental phases | Maria Montessori |
-| **Buffett** | Calendar + scheduling | Warren Buffett — disciplined daily schedule |
-| **Ramu Kaka** | Pantry + grocery | Bollywood trusted-household-helper trope |
-| **Ramsay** | Cooking + dietary audit | Gordon Ramsay |
-| **La Marzocco** | Espresso ritual | Italian espresso machine maker |
+| **Miya** — orchestrator | ✅ Live | Routing, single voice out, cross-agent hand-off |
+| **The Charter** — policy layer | ✅ Live | Every action-taking tool checks it first; decisions audited |
+| **Shared memory layer** | ✅ Live | Events, facts, decaying preferences, semantic archive + nightly consolidation |
+| **Kobe** — first full agent | ✅ Live | Real daily use; full memory + a typed tool catalog; the proving-ground agent |
+| **Fraser** — second full agent | ✅ Live | Built on the shared runtime — the proof the pattern generalizes |
+| **Huberman / Bajrangi** — stubs | ✅ Shipped | Minimal agents that prove a *new* agent reuses the memory layer cleanly |
+| **Deterministic shell / LLM core** | ✅ Live | Model proposes, tested code disposes; full decision trace per turn |
+| **Test discipline** | ✅ Live | Five-layer suite (unit / contract / eval / adversarial / regression); every fix adds a regression test; a pre-push gate blocks red changes |
+| **Frictionless setup** | ✅ Live | `bootstrap.sh` + `.env.example`; clone to a green test suite in one command, no hardcoded paths |
+| The everyday mesh (Genie, Santa, …) | 🔜 Roadmap | Not built yet — the next agents, each ~1 day on the shared contract |
 
-### Coming later (months 6–18, concierge-class)
+**Three working agents today.** The goal isn't twenty agents for their own sake — it's to test one hypothesis: *can the control plane make the next agent cheap?* The build log will say whether it's working.
 
-| Agent | Domain | Named after |
+---
+
+## The roadmap — an everyday mesh
+
+This is where the control plane points: away from fitness, toward the ordinary moments anyone recognizes. Each new agent is meant to onboard in roughly a day on the shared contract — same memory, same rulebook, same runtime, different lens.
+
+| Agent | The everyday job | Status |
 |---|---|---|
-| **Disney** | Weekend kids composer | Walt Disney |
-| **Genie** | Weekend family composer | Aladdin's Genie |
-| **Polo** | Pre-trip planner | Marco Polo |
-| **Bourdain** | In-trip concierge | Anthony Bourdain |
-| **Santa** | Gift conductor | Santa Claus |
-| **Mocha** | Coffee shop curator | Yemeni port-of-coffee-origin |
-| **Antoinette** | Pastry / sweet-spot curator | Marie Antoinette |
-| **Luwak** | Coffee beans orderer | Asian palm civet (Kopi Luwak) |
-| **Sherlock** | Local treasure finder | Sherlock Holmes |
-| **Ustad** | Guitar audit + practice | Urdu for "master" |
-| *(held)* **Casanova** | Date night composer | Giacomo Casanova |
+| **Genie** | Plans the family weekend around everyone's real energy | 🔜 Next |
+| **Santa** | Gets the gift right because it remembers what people love | 🔜 Next |
+| **Ramsay** | Figures out dinner from what's in the kitchen and who's eating | 🔜 Next |
+| **Montessori** | Keeps a newborn and a toddler in the picture | 🔜 Next |
+| **Disney** | Plans a weekend day the kids will actually love | 🔜 Next |
+| **Polo / Bourdain** | Plans a trip, then guides you once you're there | 🔜 Later (travel-triggered) |
+| *(+ a dozen more across calendar, pantry, coffee, music)* | | 🔜 Later |
 
-Each future agent is **~1 day to onboard**: define entity types, write the adapter (~120–280 LOC), register tools, register with Miya. Same substrate, different lens. The whole roadmap is one hypothesis test: *can the substrate make agent N+1 as cheap as agent #1?*
+The naming convention: each agent is named after a renowned figure whose life embodies its job. It keeps the cast memorable — and keeps me honest that an agent should be as good at its one thing as its namesake was.
 
 ---
 
-## 📈 What's actually shipped
-
-| Component | Status | Notes |
-|---|---|---|
-| `core/` scaffolding | ✅ Shipped | 10 modules: `io.py`, `agent.py`, `decisions.py`, `charter.py`, `miya.py`, `eval.py`, `voice.py`, `cost.py`, `gemini_reasoner_io.py`, plus `memory/` package |
-| Kobe (production) | ✅ Live | Four files: `protocols.py` (~325 LOC) + `state.py` (~1,000 LOC) + `handler.py` (~2,040 LOC) + `main.py` (~200 LOC). Originally a 2,930-LOC monolith — split 2026-05-11 (specs/PHASE_4D_R1_PLAN.md). 25-tool reasoner, full memory adapter, Dakhini routing |
-| The Miya (orchestrator) | ✅ Live | Hybrid router, single-voice-out, supervisor with capability registry, cross-agent broker |
-| Hyderabadi voice layer | ✅ Live | `core/voice.py` — idempotent, neutral-mode toggle for debug |
-| The Charter (policy plane) | ✅ Live | Quiet hours, HRV-red, external-veto policies; writes `governance_log` |
-| Memory substrate (4 tiers) | ✅ Live | `core/memory/` package — `__init__.py` (~620 LOC, 5 primitives) + `archival.py` (~250 LOC, embeddings) + Kobe adapter (~365 LOC) |
-| Sleep-time consolidation | ✅ Live | `scripts/memory_consolidate.py` (~270 LOC), nightly 03:00 cron |
-| Huberman (stub) | ✅ Shipped | Demonstrates substrate reuse for non-Kobe agents (~110 LOC adapter) |
-| Decisions trace log | ✅ Live | Every routing call, tool invocation, verdict logged with `trace_id`, latency, tokens, cost |
-| Frictionless setup | ✅ Live | `bootstrap.sh` + `.env.example` + templated `*.plist.template` files. Anyone can clone the repo and reach a green hermetic test suite in one command — zero hardcoded `/Users/<name>/...` paths in tracked files. Promoted to a first-class architectural principle in `specs/ARCHITECTURE.md §3` |
-| Model-first reasoner | ✅ Live | Gemini 2.5 Flash + 25 tools; legacy regex as fallback |
-| Cost ledger | ✅ Live | `core/cost.py` — single source of pricing truth; daily-digest scaffold |
-| Eval harness | ✅ Live | **475 cases passing** across 8 suites (legacy / wrapper / extended / reasoner / reasoner-robust / Gemini-parity / memory / PDF use-cases) |
-| Apple Watch ingestion | ✅ Live | HRV + active calories via local FastAPI bridge |
-| Curriculum, Foodie, Voyager | 🔜 Later | Each ~1 day — define entity types + adapter + tools |
-
-### Test breakdown (475 cases, 100% passing)
-
-| Suite | Cases | What it covers |
-|---|---|---|
-| `eval_suite` (legacy regex) | 148 | All 25 handler intents through `sci.route()`. Moved to `tests/scientist/` in the Phase 4 cleanup; runnable as `python -m tests.scientist.eval_suite` |
-| `eval_extended` (7-dimension) | 54 | Tick behavior, Charter integration, state persistence, time-of-day, edges, recalibration, conversation invariants |
-| `eval_reasoner` (B8) | 10 | Reasoner happy-path: tool calls, cost ledger, voice idempotence |
-| `eval_reasoner_robust` (B9) | 21 | Hallucination guardrails, fallback ladder, 8-hop ceiling |
-| `eval_gemini_parity` (G1–G38) | 39 | Reasoner output matches legacy regex on all 38 high-signal intents |
-| `eval_memory` (M1–M6) | 22 | Memory write/read parity across tiers, decay, consolidation |
-| `eval_gemini_pdf_usecases` (P1–P33) | 33 | Multimodal smoke tests (PDF use-cases for vision tools) |
-
-Plus `eval_reasoner_live.py` (10 cases, opt-in behind `RAHAT_EVAL_LIVE=1`).
-
----
-
-## 🗺️ Roadmap: Now / Next / Later
-
-### Now (months 1–6) — scaling to ~20 agents
-
-The forcing function: by month 6 the mesh is 20 deep. Anything done 20 times must be cheap.
-
-- ✅ Single voice (Miya owns the inbox; agents never speak directly to user)
-- ✅ Shared tools (`core/io.py`)
-- ✅ Charter as single chokepoint with `governance_log` audit
-- ✅ Decisions trace log (debug + replay)
-- ✅ Generalized eval harness (every agent ships `cases.yaml`)
-- ✅ Episodic memory (Kobe's weight cycles, Coach's training blocks, Curriculum's newborn phases)
-- ✅ **Memory substrate** (4 tiers: events / entities / preferences / archival) + **sleep-time consolidation**
-- ✅ **Model-first reasoner** (Gemini 2.5 Flash + 25-tool catalog) with legacy regex fallback
-- ✅ **Cost ledger** (per-turn telemetry, daily-digest scaffold)
-- 🚧 Cut launchd from Kobe-as-entrypoint to Miya-as-entrypoint
-- 🚧 Huberman full agent (stub already proves substrate reuse)
-- 🚧 Curriculum agent (toddler + newborn — Months 1–3)
-
-### Next (months 6–12) — when concierge agents arrive
-
-Triggered by use cases, not the calendar.
-
-- **Profile store** — `profile_facts(subject, key, value, confidence, source, valid_from, valid_to)`. Pulled in when Foodie/Voyager need persistent preferences.
-- **Embedding-based agent retrieval** — when 20 agents have overlapping descriptions and the Flash classifier starts misrouting.
-- **Event log + projection rebuild** — when "replay last week through a new Miya routing strategy" becomes a real ask.
-- **The Foodie & Voyager** — each ~1 day on the new contract.
-
-### Later (12+ months) — when mobile and multi-user are real
-
-- **FastAPI gateway over Tailscale** — read-only projections to a thin mobile cockpit.
-- **Mobile client** — SwiftUI, Sign-in-with-Apple, APNs push, offline cache. Mac Mini stays the brain.
-- **Multi-tenant** — partner and toddler get their own subjects (cheap insurance: `subject_id` columns added now).
-- **Skill manifests + true registry** — only worth it if external/third-party agents plug in.
-
----
-
-## 📊 Architecture Diagrams
-
-Six standalone SVG diagrams live in [`/specs/diagrams/`](./specs/diagrams/):
-
-| File | Title |
-|---|---|
-| [`01-three-plane-architecture.svg`](./specs/diagrams/01-three-plane-architecture.svg) | Three planes — Control / Data / Runtime, Miya as orchestrator |
-| [`02-now-next-later-roadmap.svg`](./specs/diagrams/02-now-next-later-roadmap.svg) | Now / Next / Later — shipped vs. deferred with trigger conditions |
-| [`03-routing-and-trace-flow.svg`](./specs/diagrams/03-routing-and-trace-flow.svg) | Routing & trace flow — one inbound message, end to end (legacy regex) |
-| [`04-memory-architecture.svg`](./specs/diagrams/04-memory-architecture.svg) | **Memory architecture** — four-tier hierarchy, agent adapters, consolidation |
-| [`05-model-first-reasoner-flow.svg`](./specs/diagrams/05-model-first-reasoner-flow.svg) | **Model-first reasoner flow** — Gemini 2.5 Flash + tools + memory + voice |
-| [`06-mesh-extensibility.svg`](./specs/diagrams/06-mesh-extensibility.svg) | **Mesh extensibility** — per-agent adapters over shared substrate |
-
-These are hand-written SVG with named CSS classes, diff-friendly, and embed cleanly into Google Docs / Notion / GitHub / printed PDFs. See [`specs/diagrams/README.md`](./specs/diagrams/README.md) for usage and editing notes.
-
----
-
-## 📐 Specs & ADRs
+## Specs & decision records
 
 Living documentation in [`/specs/`](./specs/):
 
-- [`PRD.md`](./specs/PRD.md) — agent personas, deterministic logic, intent-ledger schema
-- [`ARCHITECTURE.md`](./specs/ARCHITECTURE.md) — current target architecture (807 LOC)
-- [`ADR-001-rahat-control-plane.md`](./specs/ADR-001-rahat-control-plane.md) — three-plane decision record
-- [`MEMORY-AND-STATE-ARCHITECTURE.md`](./specs/MEMORY-AND-STATE-ARCHITECTURE.md) — the four-tier memory contract
-- [`MODEL-FIRST-PIVOT.md`](./specs/MODEL-FIRST-PIVOT.md) — why we left regex behind
-- [`SOTA-AGENT-ARCHITECTURE-REVIEW.md`](./specs/SOTA-AGENT-ARCHITECTURE-REVIEW.md) — gap analysis that motivated memory
-- [`SOTA-BUILD-STATUS.md`](./specs/SOTA-BUILD-STATUS.md) — what's actually shipped
-- [`LLM-COST-OPTIMIZATION.md`](./specs/LLM-COST-OPTIMIZATION.md) — pricing model + cost-control playbook
-- [`RUNBOOK-miya-cutover.md`](./specs/RUNBOOK-miya-cutover.md) — launchd swap procedure
-- [`RUNBOOK-model-first-cutover.md`](./specs/RUNBOOK-model-first-cutover.md) — pivot rollback procedure
+- [`ADR-011-deterministic-shell-llm-core.md`](./specs/ADR-011-deterministic-shell-llm-core.md) — the governing principle: deterministic shell, LLM core
+- [`ADR-001-rahat-control-plane.md`](./specs/ADR-001-rahat-control-plane.md) — the control-plane decision and the Now / Next / Later trajectory
+- [`ARCHITECTURE.md`](./specs/ARCHITECTURE.md) — the current target architecture
+- [`MEMORY-AND-STATE-ARCHITECTURE.md`](./specs/MEMORY-AND-STATE-ARCHITECTURE.md) — the memory contract
+- [`SOTA-AGENT-ARCHITECTURE-REVIEW.md`](./specs/SOTA-AGENT-ARCHITECTURE-REVIEW.md) — the review that motivated the memory layer
+- ADRs 002–012 — storage conventions, the agent file pattern, budget enforcement, routing, delegation, the shared tool-calling runtime
 
 ---
 
-## 🛠️ Tech Stack
+## Tech stack
 
-| Layer | Tool | Why |
+| Layer | Choice | Why |
 |---|---|---|
-| **Orchestration** | [OpenClaw](https://openclaw.ai) + custom Miya | Heartbeat-driven, async, single Telegram inbox owner |
-| **State** | SQLite (+ JSON1) | One file, ACID, zero ops; vector layer added when needed |
-| **Memory** | `core/memory.py` (4 tiers) + `core/archival.py` (embeddings) | Letta-style substrate; agent-agnostic; sleep-time consolidation |
-| **Reasoner** | Gemini 2.5 Flash + tool calling | $0.001/turn, 2–6s latency, 25-tool catalog per agent |
-| **Embeddings** | Gemini `text-embedding-004` (768-d) | Archival semantic search |
-| **Compute** | Mac Mini M4 | Quiet, sovereign, always-on |
-| **Voice** | `core/voice.py` (deterministic phrasebook) | Hyderabadi Dakhini, idempotent, zero per-message LLM cost |
-| **Interface** | Telegram | Native multimodal, zero app-store friction |
-| **Sensors** | HealthKit (Apple Watch), Calendar, CSV | Ambient, passive, opt-in |
-| **Daemonization** | macOS `launchd` | Resilient KeepAlive, native logging |
-| **Testing** | Hermetic eval harness | **475 cases / 8 suites**, runs in <60s |
+| **Reasoning** | Frontier LLM + structured tool calling | The model orchestrates; tools enforce the math, so numbers are never hallucinated |
+| **State & memory** | Local SQLite | One file, transactional, zero ops; a semantic layer is added only where it earns its place |
+| **Compute** | Mac Mini (Apple Silicon) | Quiet, always-on, and the data never leaves the machine |
+| **Interface** | Telegram | Native, multimodal, no app-store friction |
+| **Sensors** | HealthKit, calendar (opt-in) | Ambient and passive, so the system can act without being prompted |
+| **Always-on** | macOS `launchd` | Production-grade daemonization with auto-restart |
+| **Quality** | Hermetic five-layer test suite | Runs locally in seconds; gates every change |
+
+Local-first by design: state lives on the machine, not in the cloud. A frontier model handles novel reasoning; the personal state and the policy decisions stay local. That cloud-plus-local split is, not coincidentally, the same shape enterprise agent platforms are converging on.
 
 ---
 
-## 📓 The Build Journey — three architectural commitments
+## Status & who's building it
 
-I shipped the first version of Rahat during parental leave with a newborn — naps and bedtime were the build windows. The architecture is the result of **three deliberate commitments**, each made because the alternative failed first. None of them are clever; all of them compound.
+Rahat is a **personal build, not a product.** The architecture, decision records, and diagrams are public; the personal data and runtime configuration are private and stay that way — that's the point of "local-first."
 
-**Commitment 1 — Typed three-plane substrate over in-process calls.** Agent #2 couldn't see Agent #1's context. The easy fix was direct method calls; the structurally correct fix was a shared SQLite intent ledger, a Charter as policy plane, and Miya as a broker. Direct calls produce a working 2-agent product and an unworkable 10-agent one. *The right primitive isn't a function call — it's a row.*
+Built by a Bay Area product manager with a toddler, a newborn, and a long-running interest in where agent platforms are going. The first version shipped during parental leave, in the gaps between naps. If you're building something similar and want to compare architectures, open a Discussion.
 
-**Commitment 2 — Memory as a typed substrate, accessed by agents as a tool.** Kobe kept forgetting commitments after ten rounds of reactive patches. Built a four-tier substrate (events / entities / preferences / archival) with per-agent adapters that *actively manage* what each agent knows. The "agent forgot what I told it yesterday" failure mode is now killed at the architecture level, not the prompt level. Cost per turn for substrate ops: ~$0.0001. Sleep-time consolidation runs nightly.
-
-**Commitment 3 — Model-first reasoner over a deterministic tool catalog.** Regex routing broke on multi-clause questions and Hyderabadi-English code-mixing. Replaced it with a Gemini 2.5 Flash loop over 25 deterministic tools: tools enforce the math, dates, rate limits, policy; the model orchestrates. Cost per turn: ~$0.001. Latency: 2–6s. Hallucination risk on numbers: zero, because numbers come from tools.
-
-Each commitment made adding the next agent cheaper. Today, **the 11th agent costs ~1 day** (entity types + adapter + tool registration). That's the moat. The roadmap exists to test exactly one hypothesis: *the marginal cost of agent N+1 is bounded by the substrate, not the integration tax.* If commitments 1–3 are right, agent #6 ships in ~1 day. If they're wrong, the build log will say so.
-
-Follow along via commits, the [PRD](./specs/PRD.md), the [ADR](./specs/ADR-001-rahat-control-plane.md), the [SOTA review](./specs/SOTA-AGENT-ARCHITECTURE-REVIEW.md), and [Discussions](../../discussions).
-
----
-
-## 🚦 Status
-
-Rahat is a **personal build**, not a product. The architecture, PRDs, ADRs, and diagrams are public. The agent personas, vault data, and runtime configuration are private (and will stay that way — that's the whole point of "sovereign").
-
-If you're building something similar and want to compare architectures, open a Discussion. If you're a PM thinking through the agentic future, the build journal in commits is for you.
-
----
-
-## 📜 License & credit
-
-Architecture and documentation: MIT.
-Built on top of [OpenClaw](https://github.com/openclaw/openclaw) — credit and respect to that team.
+Built on top of [OpenClaw](https://github.com/openclaw/openclaw) — credit and respect to that team. Architecture and documentation: MIT.
 
 ---
 
 <div align="center">
 
-*"The future of personal AI isn't a smarter chatbot. It's a quieter life."*
+*"The future of personal AI isn't a smarter chatbot. It's a system that remembers your life — and a quieter you."*
 
 — Building Rahat in public
 
