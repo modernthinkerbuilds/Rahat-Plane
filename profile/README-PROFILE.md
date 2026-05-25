@@ -1,10 +1,10 @@
 # Venkat Sadras
 
-> **AI PM building AI agents — at the overlap of personal and enterprise. I make agents make sense.**
+> **I build the habitat AI agents live in — the control plane, the shared memory, the runtime, the orchestration. Personal scale today; the patterns the enterprise is converging on.**
 
-I build **Rahat**: a *habitat* for AI agents — a *control plane*, in platform terms — where a mesh of agents share one memory, one rulebook, and one orchestrator. I run it daily, at human scale, in my own life — and write about what it teaches for personal *and* enterprise AI.
+I don't build individual agents — I build **Rahat**, the *habitat* they all live in: one shared memory, one rulebook, one runtime, one orchestrator. A **control plane for the agent era**, run daily at human scale in my own life. I write about what building the whole environment — not the apps on top of it — teaches for personal *and* enterprise AI.
 
-My bet, in one line: **AI gets genuinely useful when it remembers your life and coordinates — not just when the model gets smarter.** The same lesson holds whether it's one household or a company running a fleet of agents. That overlap is where I work.
+My bet, in one line: **AI gets genuinely useful when the environment around the model remembers your life and coordinates — not when the model alone gets smarter.** The habitat is the product; the model is a component. Same lesson whether it's one household or a company running a fleet of agents.
 
 → **[See the architecture: Rahat →](https://github.com/modernthinkerbuilds/Rahat-Plane)**
 

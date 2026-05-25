@@ -16,9 +16,9 @@
 
 Most AI today is a **chatbot you prompt**: you open it, it answers, it forgets you the moment you close the tab. Each new assistant starts from zero, and nothing one of them knows is shared with another.
 
-**Rahat is the opposite.** It's a small fleet of specialized AI agents that share *one* memory of your life, follow *one* set of rules, and are coordinated by *one* orchestrator. Because they remember you and work together, they can help with the messy, real moments — not just answer one-off questions.
+**Rahat is the opposite — and the agents are only the visible part.** The real thing being built is the **habitat** underneath them: one shared memory of your life, one rulebook, one runtime, one orchestrator that the whole fleet lives in. Because they share that environment, they remember you and work together — helping with the messy, real moments, not just one-off questions.
 
-Think of it as a **habitat** for agents — a place where they live together, sharing one memory and one set of house rules. In platform terms, that habitat is a **control plane**: the layer that decides what each agent knows, what it's allowed to do, and how they coordinate. It's the same idea at two scales — a warm word for a household, a technical one for a company running a fleet of agents. Rahat is a working version of it, running locally on a Mac Mini, used daily through one person's life.
+In platform terms, that habitat is a **control plane** for agents: the layer that decides what each agent knows, what it's allowed to do, and how they coordinate. It's the same idea at two scales — a warm word for a household, a technical one for a company running a fleet of agents. Rahat is a working version of it, running locally on a Mac Mini, used daily through one person's life. The agents on top happen to be about training and recovery today; the habitat doesn't care what they're about.
 
 > **Rahat** (Urdu: *رہات* — relief, ease, the lifting of a burden) is a bet on one idea: **AI gets genuinely useful when it remembers your life and coordinates — not just when the model gets smarter.** The model is the engine; the habitat around it is the car.
 
