@@ -36,11 +36,18 @@ class TestFailSafeExecution:
 
 class TestDispatch:
     def test_dispatch_routes_to_handlers_with_right_args(self, monkeypatch):
+        # ADR-012 M0: the CF/Z2 tools route through the STRUCTURED entry
+        # points (set_crossfit_days / set_zone2_day) with the bare day
+        # token — NOT through handle_pick_days with a synthesized
+        # "pick Sunday for crossfit" / "Saturday for run" sentence. This
+        # pins that the NL round-trip is gone.
         calls: list = []
         monkeypatch.setattr(kobe, "handle_rest_day",
                             lambda t, **k: calls.append(("rest", t)) or "ok")
-        monkeypatch.setattr(kobe, "handle_pick_days",
-                            lambda t, **k: calls.append(("pick", t)) or "ok")
+        monkeypatch.setattr(kobe, "set_crossfit_days",
+                            lambda t, **k: calls.append(("cf", t)) or "ok")
+        monkeypatch.setattr(kobe, "set_zone2_day",
+                            lambda t, **k: calls.append(("z2", t)) or "ok")
         monkeypatch.setattr(kobe, "handle_unavailable",
                             lambda t, **k: calls.append(("unavail", t)) or "ok")
         monkeypatch.setattr(kobe, "handle_replan",
@@ -54,8 +61,8 @@ class TestDispatch:
         ])
         assert results == ["ok"] * 5
         assert ("rest", "Wednesday") in calls
-        assert ("pick", "pick Sunday for crossfit") in calls
-        assert ("pick", "Saturday for run") in calls
+        assert ("cf", "Sunday") in calls            # structured, no NL synthesis
+        assert ("z2", "Saturday") in calls          # structured, no NL synthesis
         assert ("unavail", "Thursday") in calls
         assert ("replan",) in calls
 

@@ -275,3 +275,80 @@ def test_tick_nudge_paths_through_charter(captured_tg, sandbox_db,
     )
     assert sent is True
     assert "hydrate" in captured_tg.last()
+
+
+# ─── Tier-0: explicit agent addressing (@agent / /agent), ADR-012 ──────
+class _Aliased(Agent):
+    name = "huberman"
+    description = "Recovery agent."
+    aliases = ["bajrangi"]
+    triggers: list[str] = []
+
+    def route(self, msg):
+        return Reply(text=f"huberman: {msg}", confidence=1.0)
+
+
+def test_at_prefix_routes_to_named_agent_and_skips_classifier(fake_llm):
+    """'@math ...' goes straight to math; the LLM classifier must not be
+    consulted (the sentinel would surface as a wrong route if it were)."""
+    miya.register(_Echo())
+    miya.register(_Math())
+    fake_llm.set("UNEXPECTED_LLM_CALL")
+    reply = miya.route("@math what is my hrv")
+    assert reply is not None
+    assert reply.text == "math: what is my hrv"
+
+
+def test_slash_prefix_routes_to_named_agent(fake_llm):
+    miya.register(_Echo())
+    miya.register(_Math())
+    fake_llm.set("UNEXPECTED_LLM_CALL")
+    reply = miya.route("/echo hello there")
+    assert reply is not None
+    assert reply.text == "echo: hello there"
+
+
+def test_explicit_address_beats_trigger_match(fake_llm):
+    """'echo this' fires _Echo's trigger, but the user explicitly
+    addressed math — the address wins and the classifier never runs."""
+    miya.register(_Echo())
+    miya.register(_Math())
+    fake_llm.set("UNEXPECTED_LLM_CALL")
+    reply = miya.route("@math echo this")
+    assert reply is not None
+    assert reply.text == "math: echo this"
+
+
+def test_address_resolves_alias():
+    miya.register(_Aliased())
+    res = miya.resolve_explicit_address("@bajrangi how is my recovery")
+    assert res is not None
+    agent, rest = res
+    assert agent.name == "huberman"
+    assert rest == "how is my recovery"
+
+
+def test_unknown_slash_token_falls_through_to_slash_bypass():
+    """'/pace' is not a registered agent → explicit addressing returns
+    None so the existing Kobe slash bypass keeps owning slash commands."""
+    miya.register(_Echo())
+    miya.register(_Math())
+    assert miya.resolve_explicit_address("/pace") is None
+
+
+def test_bare_address_with_no_body_is_ambiguous():
+    miya.register(_Echo())
+    assert miya.resolve_explicit_address("@echo") is None
+    assert miya.resolve_explicit_address("@echo   ") is None
+
+
+def test_addressing_disabled_by_flag(monkeypatch):
+    miya.register(_Echo())
+    monkeypatch.setenv("RAHAT_AGENT_ADDRESS", "0")
+    assert miya.resolve_explicit_address("@echo hello") is None
+
+
+def test_non_prefixed_at_mention_is_not_addressing():
+    """An '@' mid-message is not an address — only a leading prefix is."""
+    miya.register(_Echo())
+    assert miya.resolve_explicit_address("ping me @echo later") is None
