@@ -1,10 +1,10 @@
 # Venkat Sadras
 
-> **AI PM who builds agent infrastructure — and makes it make sense.**
+> **AI PM building AI agents — at the overlap of personal and enterprise. I make agents make sense.**
 
-I build **Rahat**, a *control plane for AI agents*, at human scale — a local-first system that gives a mesh of personal agents one shared memory, one rulebook, and one orchestrator. I work on it daily, and I write about what it teaches about deploying agents anywhere.
+I build **Rahat**: a *habitat* for AI agents — a *control plane*, in platform terms — where a mesh of agents share one memory, one rulebook, and one orchestrator. I run it daily, at human scale, in my own life — and write about what it teaches for personal *and* enterprise AI.
 
-The short version of my bet: **AI gets genuinely useful when it remembers your life and coordinates — not just when the model gets smarter.** The model is the engine; the layer underneath it — memory, governance, orchestration, evaluation — is the car. That layer is where I spend my time.
+My bet, in one line: **AI gets genuinely useful when it remembers your life and coordinates — not just when the model gets smarter.** The same lesson holds whether it's one household or a company running a fleet of agents. That overlap is where I work.
 
 → **[See the architecture: Rahat →](https://github.com/modernthinkerbuilds/Rahat-Plane)**
 
@@ -12,19 +12,19 @@ The short version of my bet: **AI gets genuinely useful when it remembers your l
 
 ## How I think about agents
 
-Not a manifesto — the questions I'm actually working on, and where the field stands in 2026. I work on each one concretely in Rahat, so these are positions I can defend with a running system, not just opinions.
+Not a manifesto — the questions I work on concretely in Rahat, and where the field stands in 2026. Positions I can defend with a running system, not just opinions.
 
-**1. "Agent control plane" became the category — and that's the tell.** The enterprise fight in 2026 is no longer about building one clever agent; it's about the *control plane* — orchestration plus governance, observability, and identity, often described as "Kubernetes for AI agents." What I find most interesting is the convergence: a personal system built for one household and an enterprise platform built for thousands land on the **same four primitives** — memory, governance, orchestration, evaluation. When the small case and the huge case agree on the primitives, the primitives are probably right. That convergence is why I think personal-scale agent work transfers directly to the enterprise problem.
+**1. "Agent control plane" became the category — and that's the tell.** The 2026 enterprise fight isn't about one clever agent; it's the control plane — orchestration, governance, observability, identity ("Kubernetes for agents"). The striking part: a one-household system and a thousand-seat platform converge on the *same* primitives — memory, governance, orchestration, evaluation. When the small case and the huge case agree, personal-scale work transfers straight to the enterprise problem.
 
-**2. Memory went from a feature to a category — and "typed" beat "retrieval."** Two years ago "agent memory" meant a vector store bolted onto a chat log. By 2026 the research and the tooling have converged on something closer to what I bet on early: a *typed, structured* memory the agent updates deliberately — not everything dumped into embeddings and hoped for. The live open problems now are multi-scope memory (per-user / per-agent / per-run, merged at read time) and *restraint* — not letting an agent treat every passing fact as something worth keeping forever. Memory should be an action an agent takes, not always-on plumbing.
+**2. Memory went from a feature to a category — and "typed" beat "retrieval."** "Agent memory" used to mean a vector store bolted onto a chat log; by 2026 the field moved to typed, structured memory the agent updates deliberately. The live problems now: multi-scope memory (per-user / per-agent / per-run) and *restraint* — not letting an agent keep every passing fact forever.
 
-**3. The standards settled faster than the patterns.** MCP (the model-to-tool connection) crossed into default status across enterprises and moved under a neutral foundation; A2A is consolidating the agent-to-agent half. The honest position for me: I built Rahat's tool layer *before* those standards settled, which makes the real question concrete rather than abstract — **what migrates to the open protocols, and what stays bespoke?** The interoperability layer is being poured right now, and the interesting work is deciding where to stand on it.
+**3. The standards settled faster than the patterns.** MCP (model-to-tool) is effectively default now; A2A is consolidating the agent-to-agent half. I built Rahat's tool layer *before* the standards landed — so my real question is concrete: what migrates to the open protocols, and what stays bespoke?
 
-**4. Governance, not capability, is the gate.** The 2026 consensus — and my experience — is that what decides whether an agent deployment survives production isn't model quality or cost; it's governance. Can you say, and enforce, what an agent is allowed to do on its own? Rahat has had a single policy layer that every action passes through from the start. It's the least glamorous primitive and the one that actually determines whether you can let an agent act at all.
+**4. Governance, not capability, is the gate.** What decides whether an agent ships to production isn't model quality or cost — it's whether you can state and enforce what an agent may do on its own. Rahat has had one policy layer every action passes through from day one. Least glamorous primitive; the one that matters most.
 
-**5. The runtime is becoming the product.** Providers are packaging permissions, checkpointing, and memory into the runtime itself — 2026's "agent harness." That's exactly Rahat's next milestone: a shared runtime where the next agent is a prompt plus a tool list, not a hand-written pipeline. The architectural question that follows me: *what makes adding agent number eleven as cheap as agent number one?* Whoever answers that cleanly owns a lot of the next decade.
+**5. The runtime is becoming the product.** Providers now package permissions, checkpointing, and memory into the runtime — 2026's "agent harness." That's Rahat's next milestone too, and it turns on one question: *what makes adding agent #11 as cheap as agent #1?*
 
-**6. Local and cloud, not local versus cloud.** Frontier reasoning belongs in the cloud; personal state and policy decisions belong on the device. Rahat routes the hard reasoning out and keeps the memory and the vetoes local — the same split enterprise platforms are landing on, for the same reasons: cost, latency, and privacy. "Your data never leaves your machine" is becoming a product claim that sits *alongside* cloud features, not against them.
+**6. Local and cloud, not local versus cloud.** Frontier reasoning in the cloud; personal state and policy on the device. Rahat routes the hard thinking out and keeps memory and vetoes local — the same split enterprise platforms are landing on, for the same reasons: cost, latency, privacy.
 
 ---
 

@@ -18,9 +18,9 @@ Most AI today is a **chatbot you prompt**: you open it, it answers, it forgets y
 
 **Rahat is the opposite.** It's a small fleet of specialized AI agents that share *one* memory of your life, follow *one* set of rules, and are coordinated by *one* orchestrator. Because they remember you and work together, they can help with the messy, real moments — not just answer one-off questions.
 
-The interesting part isn't any single agent. It's the layer underneath them — the part that lets many agents share state safely, stay within bounds, and coordinate. In platform terms, that layer is a **control plane**: the thing that decides what each agent knows, what it's allowed to do, and how they all fit together. Rahat is a working control plane for agents, running locally on a Mac Mini, used daily through one person's life.
+Think of it as a **habitat** for agents — a place where they live together, sharing one memory and one set of house rules. In platform terms, that habitat is a **control plane**: the layer that decides what each agent knows, what it's allowed to do, and how they coordinate. It's the same idea at two scales — a warm word for a household, a technical one for a company running a fleet of agents. Rahat is a working version of it, running locally on a Mac Mini, used daily through one person's life.
 
-> **Rahat** (Urdu: *رہات* — relief, ease, the lifting of a burden) is a bet on one idea: **AI gets genuinely useful when it remembers your life and coordinates — not just when the model gets smarter.** The model is the engine; the control plane is the car.
+> **Rahat** (Urdu: *رہات* — relief, ease, the lifting of a burden) is a bet on one idea: **AI gets genuinely useful when it remembers your life and coordinates — not just when the model gets smarter.** The model is the engine; the habitat around it is the car.
 
 ---
 
@@ -40,7 +40,7 @@ Here's the bridge that makes this more than a personal toy.
 
 The moment *any* team goes from running one agent to running a fleet, they hit the exact problems Rahat is built around: *How do these agents share what they know? Who decides what an agent is allowed to do on its own? How do you keep them coordinated, debuggable, and within budget? How do you even know an agent is any good?*
 
-Those are not personal-assistant questions. They're **control-plane questions**, and every company deploying agents is wrestling with them right now. In fact, "agent control plane" became *the* enterprise-AI category in 2026 — orchestration plus governance, observability, and identity, often described as "Kubernetes for AI agents." What's striking is the convergence: a system built for one household and a platform built for thousands land on the **same primitives** — shared memory, central governance, orchestration, and evaluation. When the small case and the huge case agree on the primitives, the primitives are probably right. Rahat solves them small, locally, and for real — which makes it an honest laboratory for how agent infrastructure should work anywhere.
+Those aren't personal-assistant questions — they're **control-plane questions**, and every company deploying agents is wrestling with them now. "Agent control plane" became *the* enterprise-AI category in 2026 ("Kubernetes for agents"). The striking part: a system for one household and a platform for thousands converge on the *same* primitives — shared memory, central governance, orchestration, evaluation. When the small case and the huge case agree, the primitives are probably right — and solving them at human scale is an honest way to understand them anywhere.
 
 To be clear about scale: **Rahat is a personal-scale build, not enterprise software.** The claim isn't that it's a product for companies — it's that the *problems* are the same class, and solving them at human scale is a real way to understand them.
 
