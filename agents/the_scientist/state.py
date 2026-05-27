@@ -104,6 +104,7 @@ __all__ = [
     "compute_week_recalibration",
     "current_plan",
     "day_type_target",
+    "expected_week_burn_to_date",
     "detect_missed_workouts",
     "get_active_intent",
     "get_prefs",
@@ -113,6 +114,7 @@ __all__ = [
     "log_workout",
     "mark_nudge",
     "nudge_already_sent",
+    "nudge_count",
     "recalibrate_intents",
     "replan_week",
     "set_prefs",
@@ -346,6 +348,16 @@ def weekly_target() -> float:
         # Fall through silently to tier-based default.
         pass
 
+    # ─── (1b) Goal-derived (dynamic; RAHAT_GOAL_DRIVEN_TARGET) ───
+    # When goal-driven targeting is on and a goal is committed, the
+    # weekly burn TRACKS the goal (hold intake, flex burn, capped) so the
+    # plan adjusts to "X lbs by Y date" automatically. An explicit weekly
+    # commitment above still wins — the user telling us their capacity
+    # ("I can only burn 6,000/wk") overrides the goal math. Default off.
+    derived = _goal_derived_weekly_burn()
+    if derived is not None:
+        return float(derived)
+
     # ─── (2) Active tier ───
     tier = state_get("recovery_tier", DEFAULT_TIER)
     if tier in TIERS:
@@ -360,6 +372,116 @@ def weekly_target() -> float:
         return float(row[0]) if row else float(WEEKLY_ACTIVE_TARGET_KCAL)
     finally:
         con.close()
+
+
+def _active_weekly_commitment() -> float | None:
+    """The user's explicit custom weekly active-burn commitment, if one
+    is active in the memory substrate; else None.
+
+    This is the trigger for rescaling the per-day plan targets in
+    `replan_week` so they SUM to the committed number (Bug B,
+    2026-05-25). A "6,000/wk" commitment must reshape the daily ideals,
+    not just the header — the live transcript showed a plan header of
+    6,000 while the days still summed to the hammer-tier 7,100. Weeks
+    with NO commitment are left on the documented tier template (so the
+    tier tables and their tests are preserved); only an explicit
+    commitment reshapes the distribution.
+
+    Mirrors weekly_target()'s path-(1) read so the two never diverge."""
+    try:
+        from core import memory as _mem
+        for ent in _mem.list_entities("scientist", type="commitment"):
+            payload = ent.get("payload") or {}
+            if payload.get("kind") == "weekly_target":
+                v = payload.get("value")
+                if isinstance(v, (int, float)) and v > 0:
+                    return float(v)
+    except Exception:
+        return None
+    return None
+
+
+def _goal_derived_weekly_burn() -> float | None:
+    """Weekly active-burn implied by the active COMMITTED goal, under the
+    "hold intake, flex burn (capped)" policy (user-chosen 2026-05-25).
+
+    This is the goal → weekly-burn half of the closed loop: a goal of
+    "X lbs by Y date" sets the weekly burn target, which `replan_week`
+    then distributes into the daily ideals (Bug B). So the plan tracks
+    the goal instead of a static tier constant.
+
+    DYNAMIC: recomputed from CURRENT weight + remaining time on every
+    call — it goes through `compute_goal_plan`, which reads
+    `latest_weight()` — so as weight drops or the date nears, the
+    required burn updates. Reuses compute_goal_plan's "Hold intake, push
+    activity" option so the math stays identical to the goal-plan tool.
+
+    Returns None (→ caller falls back to tier) when:
+      • RAHAT_GOAL_DRIVEN_TARGET is off (DEFAULT — preserves tier/commit
+        behavior and every test that depends on it),
+      • no goal is committed in the memory substrate,
+      • the goal is a gain, already met, or past-due (burn isn't the
+        lever there).
+
+    Clamped to a safe ceiling (hammer-tier weekly) so an aggressive goal
+    can never auto-prescribe overtraining; compute_goal_plan separately
+    warns the user when the date also needs an intake cut or a later
+    date. An explicit weekly commitment still outranks this in
+    weekly_target() — the user stating their capacity wins over the math.
+    """
+    import os as _os
+    if _os.environ.get("RAHAT_GOAL_DRIVEN_TARGET", "0").lower().strip() not in (
+            "1", "true", "yes", "on"):
+        return None
+    try:
+        from agents.the_scientist import tools as _tools
+        goal = _tools.get_active_goal()
+        if not isinstance(goal, dict) or not goal.get("active"):
+            return None
+        target_lbs = goal.get("target_lbs")
+        target_date = goal.get("target_date") or goal.get("target_date_iso")
+        if target_lbs is None or not target_date:
+            return None
+        plan = _tools.compute_goal_plan(target_lbs=float(target_lbs),
+                                        target_date=str(target_date)[:10])
+        if not isinstance(plan, dict) or plan.get("error"):
+            return None
+        opt = next((o for o in plan.get("options", [])
+                    if "hold intake" in str(o.get("name", "")).lower()), None)
+        if opt is None:
+            return None
+        burn = float(opt.get("weekly_active_kcal") or 0)
+        if burn <= 0:
+            return None
+        ceiling = float(TIERS.get("hammer", {}).get("weekly", 6500))
+        return min(burn, ceiling)
+    except Exception:
+        return None
+
+
+def expected_week_burn_to_date(now: datetime | None = None,
+                               weekly_t: float | None = None) -> float:
+    """The SINGLE definition of "how much should I have burned by now"
+    for the current week: a linear prorate of the weekly active-burn
+    target across elapsed seconds from this week's Monday 00:00 to next
+    Monday 00:00.
+
+    Both the `/week` view (handler._prorated_week_target) and the daily
+    recalibration verdict (compute_week_recalibration) consume this, so
+    the hourly pace check and the morning brief can no longer disagree
+    about whether the user is ahead or behind pace (Bug C, 2026-05-25).
+
+    Clamped to [0, weekly_t]; seconds-granular so the line moves smoothly
+    through the day rather than jumping at midnight."""
+    n = now or datetime.now()
+    if weekly_t is None:
+        weekly_t = weekly_target()
+    week_start = (n - timedelta(days=n.weekday())).replace(
+        hour=0, minute=0, second=0, microsecond=0)
+    elapsed_sec = (n - week_start).total_seconds()
+    week_sec = 7 * 24 * 3600
+    frac = max(0.0, min(elapsed_sec / week_sec, 1.0))
+    return float(weekly_t) * frac
 
 
 
@@ -570,6 +692,21 @@ def mark_nudge(kind: str, day: str) -> None:
     try:
         con.execute("INSERT INTO nudge_log (kind, day) VALUES (?, ?)", (kind, day))
         con.commit()
+    finally:
+        con.close()
+
+
+def nudge_count(kind: str, day: str) -> int:
+    """How many `kind` rows were logged for `day`.
+
+    Used to cap a nudge family per day on top of the per-hour throttle.
+    `nudge_log` has no unique constraint, so each send appends a row and
+    COUNT(*) gives the true number sent."""
+    con = _db()
+    try:
+        return int(con.execute(
+            "SELECT COUNT(*) FROM nudge_log WHERE kind=? AND day=?",
+            (kind, day)).fetchone()[0])
     finally:
         con.close()
 
@@ -786,6 +923,36 @@ def replan_week(monday: datetime, *, force: bool = False) -> list[dict]:
                 "target_kcal": target,
             })
 
+        # Bug B (2026-05-25): when the user has committed a custom weekly
+        # active-burn target, the per-day ideals must SUM to it. Without
+        # this, the tier template (e.g. hammer ≈ 7,100) ignored a
+        # "6,000/wk" commitment — the header showed 6,000 while the days
+        # still summed to 7,100, so pace/nudge calcs and the displayed
+        # daily ideals disagreed. Scale the non-zero days proportionally,
+        # snap to a 25-kcal grid, and absorb the rounding remainder on the
+        # largest day so the plan sums EXACTLY to the commitment.
+        # Effective weekly target: an explicit commitment wins; otherwise
+        # the goal-derived burn (when goal-driven targeting is on). Either
+        # way the daily ideals are rescaled to sum to it. Tier-default
+        # weeks (both None) keep the documented tier template untouched.
+        committed = _active_weekly_commitment()
+        effective_weekly = (committed if committed is not None
+                            else _goal_derived_weekly_burn())
+        if effective_weekly is not None:
+            nonzero = [r for r in plan if r["target_kcal"] > 0]
+            base_sum = sum(r["target_kcal"] for r in nonzero)
+            if nonzero and base_sum > 0:
+                scale = effective_weekly / base_sum
+                for r in nonzero:
+                    r["target_kcal"] = max(
+                        0, int(round(r["target_kcal"] * scale / 25.0)) * 25)
+                drift = int(round(effective_weekly)) - sum(
+                    r["target_kcal"] for r in nonzero)
+                if drift:
+                    biggest = max(nonzero, key=lambda r: r["target_kcal"])
+                    biggest["target_kcal"] = max(
+                        0, biggest["target_kcal"] + drift)
+
         if force:
             con.execute("DELETE FROM weekly_plan WHERE week_start=?", (week_key,))
         for row in plan:
@@ -910,6 +1077,17 @@ def compute_week_recalibration(now: datetime | None = None) -> dict:
     gap = remaining_to_goal - remaining_planned
     on_track = abs(gap) <= tolerance
 
+    # Pace-to-date: how much SHOULD be burned by now vs how much actually
+    # is. This is the same definition the hourly /week pace check uses, so
+    # the brief can't say "ahead of pace" while the hourly check says
+    # "behind" (Bug C, 2026-05-25). `gap` answers a different question —
+    # "does the remaining PLAN cover the remaining goal" (forward capacity)
+    # — and a plan can over-cover the goal (gap < 0) while the user is
+    # still behind pace-to-date after, e.g., a missed Monday (Bug G). When
+    # that happens we must not call it "ahead / comfortable buffer".
+    expected_to_date = expected_week_burn_to_date(now, weekly_t)
+    behind_pace = burned_so_far < (expected_to_date - tolerance)
+
     proposal: list[dict] = []
     if not on_track and gap > 0:
         # Behind. Convert future rest days to CF until the gap closes —
@@ -974,14 +1152,28 @@ def compute_week_recalibration(now: datetime | None = None) -> dict:
 
     # Build a human summary.
     if on_track and gap >= 0:
-        summary = (
-            f"On track. Burned {fmt_kcal(burned_so_far)} of "
-            f"{fmt_kcal(weekly_t)}; planned {fmt_kcal(remaining_planned)} "
-            f"more covers the gap.")
+        if behind_pace:
+            summary = (
+                f"Behind pace-to-date — burned {fmt_kcal(burned_so_far)} "
+                f"of ~{fmt_kcal(expected_to_date)} expected by now, but the "
+                f"{fmt_kcal(remaining_planned)} still planned covers the "
+                f"rest of the {fmt_kcal(weekly_t)} target.")
+        else:
+            summary = (
+                f"On track. Burned {fmt_kcal(burned_so_far)} of "
+                f"{fmt_kcal(weekly_t)}; planned {fmt_kcal(remaining_planned)} "
+                f"more covers the gap.")
     elif on_track and gap < 0:
-        summary = (
-            f"Ahead of pace. Burned {fmt_kcal(burned_so_far)} vs "
-            f"{fmt_kcal(weekly_t)} target — comfortable buffer.")
+        if behind_pace:
+            summary = (
+                f"Behind pace-to-date — burned {fmt_kcal(burned_so_far)} "
+                f"of ~{fmt_kcal(expected_to_date)} expected by now. The "
+                f"remaining plan still covers the {fmt_kcal(weekly_t)} "
+                f"target IF you hit every session.")
+        else:
+            summary = (
+                f"Ahead of pace. Burned {fmt_kcal(burned_so_far)} vs "
+                f"{fmt_kcal(weekly_t)} target — comfortable buffer.")
     elif gap > 0 and proposal:
         added = ", ".join(p["weekday_name"] for p in proposal)
         summary = (
@@ -997,14 +1189,25 @@ def compute_week_recalibration(now: datetime | None = None) -> dict:
             f"in the remaining schedule. Consider extending Saturday's "
             f"Z2 run or adding a second Z2 if HRV allows.")
     else:
-        # gap <= 0: ahead of pace but outside the on-track tolerance
-        # band. fmt_kcal of a negative number reads "−1,685 kcal", which
-        # is correct but parses awkwardly in "Behind by …" framing —
-        # so flip the sign and frame as "ahead of plan".
-        summary = (
-            f"Ahead of plan by {fmt_kcal(-gap)} — the remaining schedule "
-            f"already over-covers your weekly target. You can take a "
-            f"rest day if HRV is low without losing the goal.")
+        # gap <= 0: the remaining schedule over-covers the weekly target.
+        # But if the user is ALSO behind pace-to-date (e.g. after a missed
+        # Monday), framing this as a pure "ahead of plan" buffer is
+        # misleading — it only holds if every remaining session lands.
+        if behind_pace:
+            summary = (
+                f"Behind pace-to-date — burned {fmt_kcal(burned_so_far)} "
+                f"of ~{fmt_kcal(expected_to_date)} expected by now. The "
+                f"remaining schedule over-covers the {fmt_kcal(weekly_t)} "
+                f"target, so you can still catch up by hitting every "
+                f"session.")
+        else:
+            # fmt_kcal of a negative number reads "−1,685 kcal", which is
+            # correct but parses awkwardly in "Behind by …" framing — so
+            # flip the sign and frame as "ahead of plan".
+            summary = (
+                f"Ahead of plan by {fmt_kcal(-gap)} — the remaining "
+                f"schedule already over-covers your weekly target. You can "
+                f"take a rest day if HRV is low without losing the goal.")
 
     # Also detect any missed workouts so callers can surface them.
     missed_workouts = detect_missed_workouts(plan, today_idx, monday)
@@ -1015,6 +1218,8 @@ def compute_week_recalibration(now: datetime | None = None) -> dict:
         "weekly_target":     weekly_t,
         "remaining_to_goal": remaining_to_goal,
         "remaining_planned": remaining_planned,
+        "expected_to_date":  expected_to_date,
+        "behind_pace":       behind_pace,
         "gap":               gap,
         "on_track":          on_track,
         "proposal":          proposal,

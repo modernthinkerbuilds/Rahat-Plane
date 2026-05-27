@@ -69,6 +69,23 @@ def enabled() -> bool:
     return val not in ("0", "false", "off", "no")
 
 
+# Routes that return a STATIC coaching block and should YIELD to the
+# personalized LLM path when RAHAT_COOLDOWN_LLM is on. The 2026-05-25
+# transcript showed a cool-down ask returning the identical canned block
+# on every re-ask, ignoring HRV / pain / mobility. With the flag on, the
+# dispatcher skips these so the message falls through to delegation /
+# the composer / the reasoner. Default OFF preserves current behavior.
+# See ARCHITECT_REVIEW_2026-05-24.md (A4).
+_COOLDOWN_LLM_ROUTES = frozenset({"post_recovery", "pre_fuel"})
+
+
+def cooldown_llm_enabled() -> bool:
+    """When True, the canned cool-down / pre-fuel routes yield so the ask
+    reaches the personalized LLM path instead of a static block."""
+    return os.getenv("RAHAT_COOLDOWN_LLM", "0").lower().strip() in (
+        "1", "true", "yes", "on")
+
+
 # ─────────────────────── Route shape ───────────────────────
 @dataclass(frozen=True)
 class Route:
@@ -453,7 +470,12 @@ def dispatch(msg: str) -> Optional[str]:
     if not msg:
         return None
 
+    yield_cooldown = cooldown_llm_enabled()
     for route in ROUTES:
+        if yield_cooldown and route.name in _COOLDOWN_LLM_ROUTES:
+            # Flag on: yield the canned cool-down / pre-fuel block so the
+            # ask reaches the personalized LLM path instead.
+            continue
         match = route.pattern.search(msg)
         if match is None:
             continue
@@ -492,6 +514,7 @@ def match_route(msg: str) -> Optional[str]:
 __all__ = [
     "Route",
     "ROUTES",
+    "cooldown_llm_enabled",
     "dispatch",
     "enabled",
     "list_routes",

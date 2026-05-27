@@ -77,25 +77,31 @@ def parse_request(msg: str) -> SessionRequest:
     if m:
         kcal = int(m.group(1))
 
-    # Preferences (negative + positive flags)
-    prefs = []
-    for needle, flag in [
-        ("no run", "no_running"),
-        ("no running", "no_running"),
-        ("don't run", "no_running"),
-        ("no row", "no_rowing"),
-        ("no bike", "no_biking"),
-        ("no lunges", "no_lunges"),
-        ("no jump", "no_jumping"),
-        ("bench", "bench_focus"),
-        ("squat", "squat_focus"),
-        ("deadlift", "deadlift_focus"),
-        ("shoulder", "shoulder_focus"),
-        ("chest", "chest_focus"),
-        ("strength focus", "strength_focus"),
-        ("recovery", "recovery_focus"),
-    ]:
-        if needle in text:
+    # Preferences — explicit "no X" avoid-flags ONLY.
+    #
+    # 2026-05-25: we deliberately removed the positive "focus" inference
+    # (bare "bench"/"squat"/"deadlift"/… → X_focus). It was plain
+    # substring matching, so "I already did deadlifts and squats, don't
+    # have those" set deadlift_focus + squat_focus — the EXACT OPPOSITE
+    # of the user's intent. Inferring focus/avoid from free text is the
+    # LLM's job, and the model already receives the verbatim message
+    # (`Raw text:` in _user_request_block). We keep only self-contained
+    # negations (the word itself carries the "no"), matched on word
+    # boundaries and de-duplicated by construction (one flag per group),
+    # which also fixes the old duplicate bug ("no running" used to append
+    # no_running twice because "no run" is a substring of it).
+    avoid_map = [
+        ("no_running", [r"\bno run\b", r"\bno running\b",
+                        r"\bdon'?t run\b", r"\bno more runs?\b"]),
+        ("no_rowing",  [r"\bno row\b", r"\bno rowing\b"]),
+        ("no_biking",  [r"\bno bike\b", r"\bno biking\b"]),
+        ("no_lunges",  [r"\bno lunges?\b"]),
+        ("no_jumping", [r"\bno jump\b", r"\bno jumps\b",
+                        r"\bno jumping\b", r"\bno jump rope\b"]),
+    ]
+    prefs: list[str] = []
+    for flag, patterns in avoid_map:
+        if any(re.search(p, text) for p in patterns):
             prefs.append(flag)
 
     # Tomorrow note

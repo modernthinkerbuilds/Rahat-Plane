@@ -939,6 +939,102 @@ def _parse_target_date(s: str) -> datetime | None:
     return None
 
 
+def project_goal_eta(target_lbs: float | None = None,
+                     target_kg: float | None = None,
+                     daily_intake_kcal: float | None = None,
+                     weekly_active_kcal: float | None = None) -> dict:
+    """Tool: the INVERSE of compute_goal_plan (2026-05-25).
+
+    compute_goal_plan answers "what intake/burn hits weight X by date Y?".
+    This answers the question the user actually asked in the live
+    transcript — "if I burn 6,000/wk and eat 2,250/day, WHEN do I hit
+    197?" — which compute_goal_plan structurally could not. It also backs
+    "when will I get to 196?" (project from current habits).
+
+    Sign-aware: a target BELOW current weight needs an energy DEFICIT
+    (lose); a target ABOVE needs a SURPLUS (gain). If the supplied
+    intake/burn don't move weight in the required direction we say so,
+    rather than returning a fantasy date.
+
+    Returns:
+      { current_lbs, target_lbs, daily_intake_kcal, weekly_active_kcal,
+        tdee_kcal, daily_energy_balance_kcal, rate_lb_per_wk, direction,
+        weeks_to_target, eta_date_iso, summary }   (eta None if unreachable)
+    """
+    sci = _sci()
+    if target_kg is not None:
+        target = float(target_kg) * 2.20462
+    elif target_lbs is not None:
+        target = float(target_lbs)
+    else:
+        return {"error": "must supply target_lbs or target_kg"}
+
+    if daily_intake_kcal is None or weekly_active_kcal is None:
+        return {"error": ("must supply daily_intake_kcal and "
+                          "weekly_active_kcal to project an ETA")}
+
+    current = sci.latest_weight()
+    if current is None:
+        return {"error": "no current weight on record — log a weigh-in first"}
+
+    intake = float(daily_intake_kcal)
+    weekly_active = float(weekly_active_kcal)
+
+    # Energy balance: TDEE (BMR + daily active) minus intake.
+    # +ve balance = deficit (losing); -ve = surplus (gaining).
+    daily_active = weekly_active / 7.0
+    tdee = sci.BMR_KCAL + daily_active
+    daily_balance = tdee - intake
+    rate_lb_per_wk = daily_balance * 7.0 / sci.KCAL_PER_LB_FAT  # +ve = losing
+
+    net_lbs = current - target          # +ve = must lose; -ve = must gain
+    direction = ("lose" if net_lbs > 0.05
+                 else "gain" if net_lbs < -0.05 else "maintain")
+
+    base = {
+        "current_lbs":               round(current, 1),
+        "target_lbs":                round(target, 1),
+        "daily_intake_kcal":         round(intake),
+        "weekly_active_kcal":        round(weekly_active),
+        "tdee_kcal":                 round(tdee),
+        "daily_energy_balance_kcal": round(daily_balance),
+        "rate_lb_per_wk":            round(rate_lb_per_wk, 2),
+        "direction":                 direction,
+        "weeks_to_target":           None,
+        "eta_date_iso":              None,
+    }
+
+    if direction == "maintain":
+        base["summary"] = (
+            f"You're already at {round(current, 1)} lbs — essentially at "
+            f"the {round(target, 1)} lb target.")
+        return base
+
+    moving_right = (net_lbs > 0 and rate_lb_per_wk > 0) or \
+                   (net_lbs < 0 and rate_lb_per_wk < 0)
+    if not moving_right or abs(rate_lb_per_wk) < 0.05:
+        need = ("an energy DEFICIT (eat less or burn more)" if net_lbs > 0
+                else "an energy SURPLUS (eat more or burn less)")
+        base["summary"] = (
+            f"At {round(intake)} kcal/day intake and {round(weekly_active)} "
+            f"kcal/wk active, your energy balance is {round(daily_balance)} "
+            f"kcal/day → {round(rate_lb_per_wk, 2)} lb/wk. To reach "
+            f"{round(target, 1)} lbs you need {need}; these numbers won't "
+            f"get you there.")
+        return base
+
+    weeks = abs(net_lbs) / abs(rate_lb_per_wk)
+    eta = datetime.now() + timedelta(weeks=weeks)
+    base["weeks_to_target"] = round(weeks, 1)
+    base["eta_date_iso"] = eta.strftime("%Y-%m-%d")
+    base["summary"] = (
+        f"At {round(intake)} kcal/day and {round(weekly_active)} kcal/wk "
+        f"active (~{round(rate_lb_per_wk, 2)} lb/wk {direction}), you'd "
+        f"reach {round(target, 1)} lbs around {eta.strftime('%b %-d, %Y')} "
+        f"(~{round(weeks, 1)} weeks).")
+    return base
+
+
 def compute_goal_plan(target_lbs: float | None = None,
                       target_kg: float | None = None,
                       target_date: str | None = None) -> dict:
@@ -1940,6 +2036,32 @@ SCHEMAS: list[dict] = [
         },
     },
     {
+        "name": "project_goal_eta",
+        "description": (
+            "INVERSE of compute_goal_plan: given a FIXED daily intake and "
+            "weekly active-burn, project the DATE the user would reach a "
+            "target weight. Use when the user says 'if I eat 2,250/day and "
+            "burn 6,000/wk, when do I hit 197?' or 'when will I get to 196 "
+            "at my current habits?'. Sign-aware: deficit→lose, surplus→"
+            "gain; returns no ETA if the numbers don't move weight the "
+            "right way. DO NOT estimate this in prose — call the tool."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "target_lbs": {"type": "number", "minimum": 100,
+                               "maximum": 400},
+                "target_kg":  {"type": "number", "minimum": 50,
+                               "maximum": 180},
+                "daily_intake_kcal": {"type": "number",
+                                      "description": "Fixed daily food intake in kcal."},
+                "weekly_active_kcal": {"type": "number",
+                                       "description": "Fixed weekly active-burn in kcal."},
+            },
+            "required": ["daily_intake_kcal", "weekly_active_kcal"],
+        },
+    },
+    {
         "name": "assess_recovery",
         "description": (
             "Classify current recovery state from HRV / RHR / sleep and "
@@ -2411,6 +2533,7 @@ _DISPATCH: dict[str, Callable[..., Any]] = {
     "compute_remaining_burn_given_schedule": compute_remaining_burn_given_schedule,
     "compute_what_if":                     compute_what_if,
     "compute_goal_plan":                   compute_goal_plan,
+    "project_goal_eta":                    project_goal_eta,
     "assess_recovery":                     assess_recovery,
     "generate_recovery_routine":           generate_recovery_routine,
     "generate_breathing_protocol":         generate_breathing_protocol,

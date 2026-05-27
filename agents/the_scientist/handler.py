@@ -54,7 +54,7 @@ from agents.the_scientist.protocols import (  # noqa: E402
     BLACKLIST, STRENGTH_BLACKLIST,
     Z2_RUN_KCAL_DEFAULT, NONWORKOUT_BURN_FLOOR,
     NUDGE_MORNING_HOUR, NUDGE_HOURLY_START, NUDGE_HOURLY_END,
-    NUDGE_RECOVERY_HOUR, HAMMER_KCAL,
+    NUDGE_RECOVERY_HOUR, WALK_NUDGE_DAILY_CAP, HAMMER_KCAL,
     MISSED_WORKOUT_THRESHOLD_KCAL,
     DAY_TYPE_BY_TIER, DAY_TYPE_LABEL,
     WEEKDAY_INDEX, WEEKDAY_NAME, Z2_PREFERRED_WEEKDAY,
@@ -1420,15 +1420,13 @@ def _prorated_week_target(full_target: float,
 
     Seconds-granular (not days-granular) so the pacing line updates
     smoothly through the day rather than jumping at midnight.
+
+    2026-05-25: delegates to state.expected_week_burn_to_date so there is
+    exactly ONE week-pace formula in the system. The morning-brief
+    recalibration verdict reads the same helper, so the `/week` view and
+    the brief can no longer disagree about ahead/behind (Bug C).
     """
-    n = now or datetime.now()
-    # Monday 00:00:00 of THIS week. weekday() returns 0 for Monday.
-    week_start = (n - timedelta(days=n.weekday())).replace(
-        hour=0, minute=0, second=0, microsecond=0)
-    elapsed_sec = (n - week_start).total_seconds()
-    week_sec = 7 * 24 * 3600
-    frac = max(0.0, min(elapsed_sec / week_sec, 1.0))
-    return float(full_target) * frac
+    return expected_week_burn_to_date(now=now, weekly_t=full_target)
 
 
 def handle_pace() -> str:
@@ -3164,7 +3162,12 @@ def maybe_walk_nudge() -> str | None:
     pace = target * (elapsed / span)
     if today_burn >= 0.7 * pace:
         return None
+    # Per-day cap on SENT walk nudges, on top of the per-hour throttle:
+    # a day spent behind pace must not fire one nudge every hour.
+    if nudge_count("walk_sent", today) >= WALK_NUDGE_DAILY_CAP:
+        return None
     mark_nudge(slot, today)
+    mark_nudge("walk_sent", today)
     if row["day_type"] == "rest":
         suggestion = ("Take a 10–15 min walk *or* a 10-min stretch/cooldown "
                       "(pigeon, couch stretch, thoracic foam roller).")

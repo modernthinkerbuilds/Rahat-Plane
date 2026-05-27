@@ -625,6 +625,10 @@ DATA TOOLS — MUST call before stating a numeric fact in this turn:
   - "I have N workouts + M rests left"      → compute_remaining_burn_given_schedule()
   - "If I burn X today, total?"             → compute_what_if()
   - "Goal X kg by date Y" (compute the path) → compute_goal_plan()
+  - "If I eat A/day + burn B/wk, WHEN do I hit X?" → project_goal_eta()
+    Also the right tool for "when will I get to X (at my current habits)?"
+    — it projects a DATE from intake+burn. compute_goal_plan goes the
+    other way (date → required intake/burn) and CANNOT answer a "when".
   - "I want to hit X by date Y" (LOCK IT IN) → commit_goal()
     Call commit_goal IMMEDIATELY when the user clearly states a target
     weight + date. This writes the goal to the memory substrate so it

@@ -133,6 +133,11 @@ NUDGE_MORNING_HOUR    = 8
 NUDGE_HOURLY_START    = 10
 NUDGE_HOURLY_END      = 20
 NUDGE_RECOVERY_HOUR   = 21
+# Cap on walk/pace nudges actually SENT per day. Per-hour throttling
+# alone let a behind-pace day fire one nudge every hour (the 5/6/7/8pm
+# spam in the 2026-05-25 transcript). This bounds the total regardless
+# of how many hours the user stays behind pace.
+WALK_NUDGE_DAILY_CAP  = int(os.getenv("WALK_NUDGE_DAILY_CAP", "2"))
 HAMMER_KCAL           = 1000
 # A past CF/Z2 day with active burn below this threshold is treated as
 # "no workout happened" for plan-recalibration purposes. Per user spec:
