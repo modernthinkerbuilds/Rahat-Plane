@@ -10,6 +10,26 @@ My bet, in one line: **AI gets genuinely useful when the environment around the 
 
 ---
 
+## What it actually does (a real example)
+
+I talk to it in plain English on Telegram. One request, end to end:
+
+> *"can I train hard tomorrow morning?"* → the orchestrator routes it to the right agent → the agent pulls my recent recovery signal from shared memory and drafts a session → the rulebook checks it against my rules *first* (quiet hours? a red recovery flag?) → I get the plan, or an honest *"not tomorrow — here's why."* Every step is logged.
+
+Swap that for *"what's for dinner?"* or *"plan the weekend"* and the machinery is identical — that's what makes it a platform, not an app.
+
+**What works today:**
+
+- Plain-English chat on Telegram; one orchestrator routes to the right agent — you never pick
+- Structured memory shared across agents: typed facts, commitments, and preferences that decay if unused
+- One policy layer every action passes through — quiet hours, vetoes, an audit log
+- A deterministic core: the model proposes, tested code executes, nothing is hallucinated
+- A full decision trace per turn; adding an agent is a prompt + a tool list, not a rebuild
+
+**The bug that forced the architecture:** my first agent kept forgetting commitments — I'd say *"I'm committing to this for the week,"* and an hour later it ignored it. Ten patches in, the real problem was obvious: it had no memory, just a transcript. So I built a typed memory layer where a commitment is a first-class object with a lifespan. That's the line between a chatbot and a system you can trust to act.
+
+---
+
 ## How I think about agents
 
 Not a manifesto — the questions I work on concretely in Rahat, and where the field stands in 2026. Positions I can defend with a running system, not just opinions.
@@ -28,11 +48,9 @@ Not a manifesto — the questions I work on concretely in Rahat, and where the f
 
 ---
 
-## Rahat — what it actually is
+## Rahat — under the hood
 
-> *Rahat (Urdu: رہات) — relief, ease, the lifting of a burden.*
-
-A small fleet of specialized agents that share one memory, follow one rulebook (a central policy layer), and are coordinated by one orchestrator — so they can help with real, messy moments instead of answering one-off prompts. It runs locally on a Mac Mini and is used daily through my own life.
+> *Rahat (Urdu: رہات) — relief, ease, the lifting of a burden.* It runs locally on a Mac Mini, daily, through my own life.
 
 **The governing principle:** *deterministic shell, LLM core.* The model proposes; tested, deterministic code does the math, enforces the rules, and executes. The model never invents a number, because numbers come from tools — it just decides which tools to call. Every agent is defined the same way: `name + description + system_prompt + tools`.
 

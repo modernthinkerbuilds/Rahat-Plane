@@ -34,6 +34,30 @@ What's actually being built is **domain-agnostic**: the shared memory, the polic
 
 ---
 
+## What it's actually like to use
+
+I talk to Rahat in plain language on Telegram. Here's one request, end to end:
+
+> **I text:** *"can I train hard tomorrow morning?"*
+> **Miya** (the orchestrator) reads it and routes it to the right agent — I never pick one.
+> The **agent** pulls my recent recovery signal from shared memory and drafts a session.
+> The **Charter** (the rulebook) checks that draft against my rules *before* it reaches me — quiet hours, a red recovery flag, anything off-limits.
+> **I get back** either the plan, or an honest *"not tomorrow — here's why"* — and every step lands in a decision log I can replay.
+
+Now swap *"train tomorrow"* for *"what's for dinner?"* or *"what do we do this weekend?"* — **the machinery is identical.** The agent on top changes; the memory, the rulebook, and the orchestration underneath don't. That sameness is the whole point of a control plane — and it's why the next agent is a prompt plus a tool list, not a new app.
+
+**What works today**
+
+- **Plain-English chat, no menus.** One orchestrator routes every message to the right agent.
+- **Memory with structure.** Typed facts, commitments, and preferences that fade if you stop reinforcing them — shared across every agent, not trapped in one chat.
+- **One rulebook, enforced once.** Every action passes through the Charter first: quiet hours, vetoes, a full audit log.
+- **The model proposes; tested code disposes.** Numbers and rules come from deterministic tools, so nothing gets hallucinated — the model just decides which tool to call.
+- **Every turn is traceable.** Which agent, how many steps, how long, what it cost — one row per decision.
+
+**Where it's going** *(roadmap, not built yet):* text *"what do we do this weekend?"* and get a plan that already knows the baby skipped his nap, that Saturday's the open day, and that last weekend's crowded museum was a miss. Same habitat — a new agent on top.
+
+---
+
 ## Why this matters beyond my house
 
 Here's the bridge that makes this more than a personal toy.
@@ -52,7 +76,7 @@ Each one is stated plainly, then how Rahat handles it, then why it matters once 
 
 ### 1. Memory — agents that actually remember you
 
-**The problem:** chat history is too raw and too short-lived to rely on. An agent that "remembers" by re-reading the transcript forgets your commitments within an hour. (This is exactly how Rahat's first agent failed, repeatedly, until the memory layer existed.)
+**The problem — and the bug that forced the whole architecture:** my first agent was supposed to remember what I told it. I'd say *"I'm committing to this plan for the week"* — and an hour later it would suggest something that ignored it. I patched it ten ways: longer look-backs, re-reading the chat history, hard-coding *"don't contradict a commitment."* It kept forgetting. The real problem wasn't the prompt — the system had no memory, just a transcript.
 
 **What Rahat does:** a shared, typed memory layer that every agent reads from and writes to — facts, ongoing commitments, preferences (which fade if you stop reinforcing them), and a searchable long-term archive. A nightly job compacts it so it stays sharp instead of bloating. Memory is something an agent *does* (decides when to remember, recall, or forget), not always-on plumbing.
 
@@ -62,7 +86,7 @@ Each one is stated plainly, then how Rahat handles it, then why it matters once 
 
 **The problem:** five agents that can each take actions will each reinvent the rules — quiet hours, what needs confirmation, what's simply off-limits — three different, conflicting ways.
 
-**What Rahat does:** a single policy layer (the **Charter**) that every action-taking tool must pass through before it runs. Rules are written once and applied to every agent uniformly, with an audit log of every decision.
+**What Rahat does:** a single policy layer (the **Charter**) that every action-taking tool must pass through before it runs. Rules are written once and applied to every agent uniformly, with an audit log of every decision. *Concretely:* ask for a 6am session at 11pm and the Charter sees both quiet-hours and a red recovery flag — it blocks the action before any agent can take it, and records why.
 
 **Why it matters at scale:** governance is the difference between a demo and something you can actually let act on your behalf. A central policy chokepoint is how you keep a growing fleet safe and accountable — and it barely exists as a first-class primitive in commercial agent platforms yet.
 
