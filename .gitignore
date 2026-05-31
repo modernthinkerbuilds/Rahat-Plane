@@ -57,3 +57,6 @@ tests/last_run_status.json
 # Generated daily evangelist digests (scheduled task output) — artifacts,
 # not source.
 evangelist-digests/
+.venv/
+node_modules/
+**/node_modules/
