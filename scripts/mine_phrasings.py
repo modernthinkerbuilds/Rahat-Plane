@@ -69,7 +69,11 @@ def query_messages(db_path: Path, since_days: int) -> list[dict]:
         print(f"  ✗ DB not found: {db_path}", file=sys.stderr)
         return []
     try:
-        con = sqlite3.connect(str(db_path))
+        # READ-ONLY by contract: the live vault/rahat.db must never be
+        # written by the mining pass (SCOPE_BOUNDARIES — the 2026-05-08
+        # corruption guard). mode=ro makes the SQLite handle reject any
+        # write at the driver level, independent of RAHAT_TEST_MODE.
+        con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     except sqlite3.Error as e:
         print(f"  ✗ couldn't open {db_path}: {e}", file=sys.stderr)
         return []

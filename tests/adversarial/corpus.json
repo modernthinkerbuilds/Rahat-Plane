@@ -1,0 +1,1490 @@
+[
+  {
+    "text": "/week",
+    "first_seen": "2026-05-12",
+    "occurrences": 48,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "slash_command"
+  },
+  {
+    "text": "/today",
+    "first_seen": "2026-05-12",
+    "occurrences": 32,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "slash_command"
+  },
+  {
+    "text": "/pace",
+    "first_seen": "2026-05-12",
+    "occurrences": 30,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "slash_command"
+  },
+  {
+    "text": "/plan",
+    "first_seen": "2026-05-12",
+    "occurrences": 20,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "slash_command"
+  },
+  {
+    "text": "Yes",
+    "first_seen": "2026-05-13",
+    "occurrences": 9,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "casual_followup"
+  },
+  {
+    "text": "What is the WOD for Tuesday ?",
+    "first_seen": "2026-05-18",
+    "occurrences": 7,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "wod_lookup"
+  },
+  {
+    "text": "/fix",
+    "first_seen": "2026-05-13",
+    "occurrences": 6,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "slash_command"
+  },
+  {
+    "text": "/next",
+    "first_seen": "2026-05-12",
+    "occurrences": 5,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "slash_command"
+  },
+  {
+    "text": "/fix sun 1312",
+    "first_seen": "2026-06-07",
+    "occurrences": 3,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "slash_command"
+  },
+  {
+    "text": "/help",
+    "first_seen": "2026-05-12",
+    "occurrences": 3,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "slash_command"
+  },
+  {
+    "text": "/profile",
+    "first_seen": "2026-05-24",
+    "occurrences": 3,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "slash_command"
+  },
+  {
+    "text": "What is the WOD",
+    "first_seen": "2026-05-17",
+    "occurrences": 3,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "wod_lookup"
+  },
+  {
+    "text": "What is the plan for next week ?",
+    "first_seen": "2026-05-17",
+    "occurrences": 3,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "What is today\u2019s WOD?",
+    "first_seen": "2026-05-26",
+    "occurrences": 3,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "wod_lookup"
+  },
+  {
+    "text": "Which days am I working out next week ?",
+    "first_seen": "2026-05-17",
+    "occurrences": 3,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "/fix Mon 530",
+    "first_seen": "2026-05-27",
+    "occurrences": 2,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "slash_command"
+  },
+  {
+    "text": "/fix Mon 879",
+    "first_seen": "2026-06-03",
+    "occurrences": 2,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "slash_command"
+  },
+  {
+    "text": "/fix Tue 1142",
+    "first_seen": "2026-05-27",
+    "occurrences": 2,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "slash_command"
+  },
+  {
+    "text": "/fix fri 1042",
+    "first_seen": "2026-06-06",
+    "occurrences": 2,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "slash_command"
+  },
+  {
+    "text": "/fix sun 1290",
+    "first_seen": "2026-05-25",
+    "occurrences": 2,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "slash_command"
+  },
+  {
+    "text": "Mon for crossfit",
+    "first_seen": "2026-05-19",
+    "occurrences": 2,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "plan_mutation"
+  },
+  {
+    "text": "What is the WOD for Friday ?",
+    "first_seen": "2026-05-21",
+    "occurrences": 2,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "wod_lookup"
+  },
+  {
+    "text": "What is the WOD for Wednesday ?",
+    "first_seen": "2026-05-19",
+    "occurrences": 2,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "wod_lookup"
+  },
+  {
+    "text": "What\u2019s my current weight ?",
+    "first_seen": "2026-05-25",
+    "occurrences": 2,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "status_query"
+  },
+  {
+    "text": "What\u2019s the WOD for tommorow",
+    "first_seen": "2026-05-19",
+    "occurrences": 2,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "wod_lookup"
+  },
+  {
+    "text": "Which days am i working out this week ?",
+    "first_seen": "2026-05-12",
+    "occurrences": 2,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "/ fix sat 407",
+    "first_seen": "2026-05-24",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "slash_command"
+  },
+  {
+    "text": "/fix Mon 581",
+    "first_seen": "2026-05-12",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "slash_command"
+  },
+  {
+    "text": "/fix Saturday 375",
+    "first_seen": "2026-05-31",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "slash_command"
+  },
+  {
+    "text": "/fix Sun 995",
+    "first_seen": "2026-05-24",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "slash_command"
+  },
+  {
+    "text": "/fix Thu 1121",
+    "first_seen": "2026-05-29",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "slash_command"
+  },
+  {
+    "text": "/fix Thu 364",
+    "first_seen": "2026-05-22",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "slash_command"
+  },
+  {
+    "text": "/fix Thu 598",
+    "first_seen": "2026-06-07",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "slash_command"
+  },
+  {
+    "text": "/fix fri 1025",
+    "first_seen": "2026-05-23",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "slash_command"
+  },
+  {
+    "text": "/fix fri 600",
+    "first_seen": "2026-05-30",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "slash_command"
+  },
+  {
+    "text": "/fix fri 900",
+    "first_seen": "2026-05-30",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "slash_command"
+  },
+  {
+    "text": "/fix mon 1050",
+    "first_seen": "2026-05-22",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "slash_command"
+  },
+  {
+    "text": "/fix sat 407",
+    "first_seen": "2026-05-24",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "slash_command"
+  },
+  {
+    "text": "/fix sat 528",
+    "first_seen": "2026-06-07",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "slash_command"
+  },
+  {
+    "text": "/fix sun 1130",
+    "first_seen": "2026-05-25",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "slash_command"
+  },
+  {
+    "text": "/fix sun 1151",
+    "first_seen": "2026-06-07",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "slash_command"
+  },
+  {
+    "text": "/fix sun 1190",
+    "first_seen": "2026-05-25",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "slash_command"
+  },
+  {
+    "text": "/fix sun 1367",
+    "first_seen": "2026-06-08",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "slash_command"
+  },
+  {
+    "text": "/fix sun 1500",
+    "first_seen": "2026-06-08",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "slash_command"
+  },
+  {
+    "text": "/fix sun 1550",
+    "first_seen": "2026-06-08",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "slash_command"
+  },
+  {
+    "text": "/fix sun 950",
+    "first_seen": "2026-06-07",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "slash_command"
+  },
+  {
+    "text": "/fix tue 1006",
+    "first_seen": "2026-05-22",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "slash_command"
+  },
+  {
+    "text": "/fix tue 1078",
+    "first_seen": "2026-06-05",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "slash_command"
+  },
+  {
+    "text": "/fix tue 551",
+    "first_seen": "2026-05-13",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "slash_command"
+  },
+  {
+    "text": "/fix wed 608",
+    "first_seen": "2026-05-29",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "slash_command"
+  },
+  {
+    "text": "/fix wed 622",
+    "first_seen": "2026-06-05",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "slash_command"
+  },
+  {
+    "text": "/fix wed 728",
+    "first_seen": "2026-05-22",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "slash_command"
+  },
+  {
+    "text": "/profile set back squat 120.",
+    "first_seen": "2026-05-24",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "slash_command"
+  },
+  {
+    "text": "/profile set backsquat 120.",
+    "first_seen": "2026-05-24",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "slash_command"
+  },
+  {
+    "text": "/recaliberate",
+    "first_seen": "2026-06-09",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "slash_command"
+  },
+  {
+    "text": "/replan rest Monday , CrossFit on Tuesday, Wednesday and Thursday. Zone 2 run on Saturday",
+    "first_seen": "2026-06-09",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "slash_command"
+  },
+  {
+    "text": "/replan rest today , Zone 2 run tommorow",
+    "first_seen": "2026-05-31",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "slash_command"
+  },
+  {
+    "text": "3 , hybrid approach",
+    "first_seen": "2026-05-16",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "30 min is a lot of for EMOM , break it up into one EMOM and one RFT , have running in cash in cash out format",
+    "first_seen": "2026-05-25",
+    "occurrences": 1,
+    "expected_agent": "fraser",
+    "expected_path": "orchestrate",
+    "intent": "design_workout"
+  },
+  {
+    "text": "@Fraser what is today\u2019s WOD",
+    "first_seen": "2026-05-26",
+    "occurrences": 1,
+    "expected_agent": "fraser",
+    "expected_path": "fraser_route",
+    "intent": "address_fraser"
+  },
+  {
+    "text": "@fraser I want a 75 min WOD , Bench press strength and 2 metcons- one 10 min Amrap and one 3 or 4 rft .burn 750 calories",
+    "first_seen": "2026-05-29",
+    "occurrences": 1,
+    "expected_agent": "fraser",
+    "expected_path": "fraser_route",
+    "intent": "address_fraser"
+  },
+  {
+    "text": "@fraser deadlifts instea di rows and kbs instead of burpees",
+    "first_seen": "2026-05-29",
+    "occurrences": 1,
+    "expected_agent": "fraser",
+    "expected_path": "fraser_route",
+    "intent": "address_fraser"
+  },
+  {
+    "text": "@fraser it\u2019s too intense , the Metcon, too many movements",
+    "first_seen": "2026-05-29",
+    "occurrences": 1,
+    "expected_agent": "fraser",
+    "expected_path": "fraser_route",
+    "intent": "address_fraser"
+  },
+  {
+    "text": "@fraser reduce the Metcon to 25 minutes",
+    "first_seen": "2026-05-29",
+    "occurrences": 1,
+    "expected_agent": "fraser",
+    "expected_path": "fraser_route",
+    "intent": "address_fraser"
+  },
+  {
+    "text": "@fraser too many movements in the Metcon",
+    "first_seen": "2026-05-29",
+    "occurrences": 1,
+    "expected_agent": "fraser",
+    "expected_path": "fraser_route",
+    "intent": "address_fraser"
+  },
+  {
+    "text": "@kobe if I eat 2250 cal a day and burn 6000 a well , when will I hit 196 ?",
+    "first_seen": "2026-05-27",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "address_kobe"
+  },
+  {
+    "text": "Add a bit more on one of the CrossFit days",
+    "first_seen": "2026-05-13",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "Ask Fraser for the specific movements",
+    "first_seen": "2026-05-19",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "Assuming I can burn 6000 active calories a week and can eat 2250 calories a day, when can I get to 197 pounds?",
+    "first_seen": "2026-05-25",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "Based on my 1Rmfir deadlifts, tell me how I should scale",
+    "first_seen": "2026-05-19",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "Bench press for strength, 10 min Amrap and 3 rft \u2014 all PRVN style",
+    "first_seen": "2026-05-29",
+    "occurrences": 1,
+    "expected_agent": "fraser",
+    "expected_path": "orchestrate",
+    "intent": "design_workout"
+  },
+  {
+    "text": "Can you give yesterdays workout movements",
+    "first_seen": "2026-05-17",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "Can you reduce the power clean WOD for under 30 minutes ?",
+    "first_seen": "2026-05-24",
+    "occurrences": 1,
+    "expected_agent": "fraser",
+    "expected_path": "orchestrate",
+    "intent": "design_workout"
+  },
+  {
+    "text": "Design a clean based strength PRVN WOD for today",
+    "first_seen": "2026-05-23",
+    "occurrences": 1,
+    "expected_agent": "fraser",
+    "expected_path": "orchestrate",
+    "intent": "design_workout"
+  },
+  {
+    "text": "Feels great, let\u2019s target that",
+    "first_seen": "2026-05-27",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "Fix Thu 364",
+    "first_seen": "2026-05-22",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "Fri for crossfit",
+    "first_seen": "2026-05-19",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "plan_mutation"
+  },
+  {
+    "text": "Friday for rest",
+    "first_seen": "2026-06-09",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "plan_mutation"
+  },
+  {
+    "text": "Give me a PRVN CrossFit workout for today",
+    "first_seen": "2026-05-16",
+    "occurrences": 1,
+    "expected_agent": "fraser",
+    "expected_path": "orchestrate",
+    "intent": "design_workout"
+  },
+  {
+    "text": "Give me a detailed plan for the rest of the week to hit 7000",
+    "first_seen": "2026-05-15",
+    "occurrences": 1,
+    "expected_agent": "fraser",
+    "expected_path": "orchestrate",
+    "intent": "design_workout"
+  },
+  {
+    "text": "Give me a detailed target to hit 7000",
+    "first_seen": "2026-05-15",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "Give me a good PRVN style cleans based strength WOD for tomorrow",
+    "first_seen": "2026-05-23",
+    "occurrences": 1,
+    "expected_agent": "fraser",
+    "expected_path": "orchestrate",
+    "intent": "design_workout"
+  },
+  {
+    "text": "Give me a good PRVN style cleans based strength workout for tomorrow",
+    "first_seen": "2026-05-23",
+    "occurrences": 1,
+    "expected_agent": "fraser",
+    "expected_path": "orchestrate",
+    "intent": "design_workout"
+  },
+  {
+    "text": "Give me the cool down after the zone2 10k today",
+    "first_seen": "2026-05-25",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "Give me the last workout from my gym plan",
+    "first_seen": "2026-05-17",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "wod_lookup"
+  },
+  {
+    "text": "Give me the workout for Friday",
+    "first_seen": "2026-05-17",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "wod_lookup"
+  },
+  {
+    "text": "Give me warm up and cooldown",
+    "first_seen": "2026-05-19",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "Good",
+    "first_seen": "2026-05-29",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "How do I catch up",
+    "first_seen": "2026-05-17",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "How many bakeries did I burn last week",
+    "first_seen": "2026-05-18",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "status_query"
+  },
+  {
+    "text": "How many calories did I burn from last Sunday till now?",
+    "first_seen": "2026-05-30",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "status_query"
+  },
+  {
+    "text": "How many calories did I burn yesterday",
+    "first_seen": "2026-05-12",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "status_query"
+  },
+  {
+    "text": "How many calories should I burn per week to get there ?",
+    "first_seen": "2026-05-25",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "status_query"
+  },
+  {
+    "text": "How many calories will I burn in this WOD?",
+    "first_seen": "2026-05-19",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "status_query"
+  },
+  {
+    "text": "How should I scale the tuesday's session ?",
+    "first_seen": "2026-05-24",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "How should I scale this WOD ?",
+    "first_seen": "2026-05-19",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "How should I scale this for me ?",
+    "first_seen": "2026-05-21",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "How should I scale this workout?",
+    "first_seen": "2026-05-25",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "How should scale this?",
+    "first_seen": "2026-05-24",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "I can only burn 6000 calories per week",
+    "first_seen": "2026-05-25",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "I couldn\u2019t do this in the morning after the run, I am cooling down now. So give the cooldown accordingly",
+    "first_seen": "2026-05-25",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "I couldn\u2019t workout today , replan my week",
+    "first_seen": "2026-05-13",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "plan_mutation"
+  },
+  {
+    "text": "I did a zone 2 run today, how should i Cool down ?",
+    "first_seen": "2026-05-24",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "I did crossfit today",
+    "first_seen": "2026-05-19",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "I don\u2019t like barbell rows, and 35 min is long for an AMRAP, break it with nice movements into two 2 smaller wids",
+    "first_seen": "2026-05-29",
+    "occurrences": 1,
+    "expected_agent": "fraser",
+    "expected_path": "orchestrate",
+    "intent": "design_workout"
+  },
+  {
+    "text": "I don\u2019t like barbell rows, and 35 min is long for an AMRAP, break it with nice movements into two 2 smaller wods",
+    "first_seen": "2026-05-29",
+    "occurrences": 1,
+    "expected_agent": "fraser",
+    "expected_path": "orchestrate",
+    "intent": "design_workout"
+  },
+  {
+    "text": "I need power clean WOD",
+    "first_seen": "2026-05-23",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "I took rest day today and will do a zone 2 run tommorow",
+    "first_seen": "2026-05-24",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "I want a 75 min WOD , Bench press strength and 2 metcons- one 10 min Amrap and one 3 or 4 rft .burn 750 calories",
+    "first_seen": "2026-05-29",
+    "occurrences": 1,
+    "expected_agent": "fraser",
+    "expected_path": "orchestrate",
+    "intent": "design_workout"
+  },
+  {
+    "text": "I want a 75 min session , Bench press strength and 2 metcons- one 10 min Amrap and one 3 or 4 rft .burn 750 calories",
+    "first_seen": "2026-05-29",
+    "occurrences": 1,
+    "expected_agent": "fraser",
+    "expected_path": "orchestrate",
+    "intent": "design_workout"
+  },
+  {
+    "text": "I want to do CrossFit today",
+    "first_seen": "2026-05-18",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "I want to do the PRVN workout now",
+    "first_seen": "2026-05-17",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "I want to run tommorow",
+    "first_seen": "2026-05-24",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "I will write down a workout for Saturday, let\u2019s do zone 2 run on Sunday",
+    "first_seen": "2026-05-16",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "Is this cool down specific to my mobility ?",
+    "first_seen": "2026-05-24",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "I\u2019ll do CrossFit on Monday, Tuesday and Thursday. Run on Saturday",
+    "first_seen": "2026-05-25",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "I\u2019ll do CrossFit today and done 2 run on Sunday",
+    "first_seen": "2026-05-16",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "Nice! One adjustment, can\u2019t go deadlifts and barbell rows, i had a back day on Friday, did something else",
+    "first_seen": "2026-05-25",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "No barbell rows, and two smaller wods instead of 35 min Amrap",
+    "first_seen": "2026-05-29",
+    "occurrences": 1,
+    "expected_agent": "fraser",
+    "expected_path": "orchestrate",
+    "intent": "design_workout"
+  },
+  {
+    "text": "Ok, I did the deadlift and angie WOD today , I\u2019d like to bike in the box a bit and do a. Good cool down , give me that",
+    "first_seen": "2026-05-13",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "Ok, I need to get to 196 by 06/06",
+    "first_seen": "2026-05-25",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "Outline a quick dynamic warm up routine for the run tommorow",
+    "first_seen": "2026-06-06",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "Pick sun for CrossFit",
+    "first_seen": "2026-05-17",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "plan_mutation"
+  },
+  {
+    "text": "Plan my week",
+    "first_seen": "2026-05-12",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "Propose a detailed plan for the remaining days to hit 7000 kcal",
+    "first_seen": "2026-05-15",
+    "occurrences": 1,
+    "expected_agent": "fraser",
+    "expected_path": "orchestrate",
+    "intent": "design_workout"
+  },
+  {
+    "text": "Replan , I am running tomorrow , I rested today",
+    "first_seen": "2026-05-24",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "plan_mutation"
+  },
+  {
+    "text": "Replan , since I couldn\u2019t do CrossFit today, add CrossFit on Friday or Sunday",
+    "first_seen": "2026-05-13",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "plan_mutation"
+  },
+  {
+    "text": "Replan calories target based on 196 lbs by 06/06",
+    "first_seen": "2026-05-25",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "plan_mutation"
+  },
+  {
+    "text": "Replan calories target based on 196 lbs by 06/06 assuming I can only burn 6000 calories a week",
+    "first_seen": "2026-05-25",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "plan_mutation"
+  },
+  {
+    "text": "Replan, I want to hit 7000 calories by end of the week",
+    "first_seen": "2026-05-16",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "plan_mutation"
+  },
+  {
+    "text": "Rest on Monday",
+    "first_seen": "2026-06-09",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "plan_mutation"
+  },
+  {
+    "text": "Should I warmup before my 10K run tommorow to avoid headaches",
+    "first_seen": "2026-06-06",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "That\u2019s not what I meant , I can workout for 75 min, give me an EMOM and 3 RFT for metrcon,",
+    "first_seen": "2026-05-25",
+    "occurrences": 1,
+    "expected_agent": "fraser",
+    "expected_path": "orchestrate",
+    "intent": "design_workout"
+  },
+  {
+    "text": "This is the back squat workout for 05/15- give me the detailed plan",
+    "first_seen": "2026-05-17",
+    "occurrences": 1,
+    "expected_agent": "fraser",
+    "expected_path": "orchestrate",
+    "intent": "design_workout"
+  },
+  {
+    "text": "Thu for CrossFit",
+    "first_seen": "2026-06-09",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "plan_mutation"
+  },
+  {
+    "text": "Tuesday for CrossFit",
+    "first_seen": "2026-06-09",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "plan_mutation"
+  },
+  {
+    "text": "Tuesdays WOD is with you already",
+    "first_seen": "2026-05-24",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "Update May 17th calories to 1341",
+    "first_seen": "2026-05-18",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "Update the plan - Crossfit on Monday and Tuesday, Wednesday rest",
+    "first_seen": "2026-05-19",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "Update yesterday\u2019s calories to 581",
+    "first_seen": "2026-05-12",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "Wed for CrossFit",
+    "first_seen": "2026-06-09",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "plan_mutation"
+  },
+  {
+    "text": "Wednesday for Active rest",
+    "first_seen": "2026-05-19",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "We\u2019d for CrossFit",
+    "first_seen": "2026-06-09",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "What am I doing tommorow?",
+    "first_seen": "2026-05-16",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "What can I do to get to 300 calories",
+    "first_seen": "2026-05-17",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "What is Thursdays WOD",
+    "first_seen": "2026-05-28",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "wod_lookup"
+  },
+  {
+    "text": "What is WOD for Friday",
+    "first_seen": "2026-05-19",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "wod_lookup"
+  },
+  {
+    "text": "What is my 1 RM for deadlifts",
+    "first_seen": "2026-05-19",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "What is my next WOD",
+    "first_seen": "2026-05-18",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "wod_lookup"
+  },
+  {
+    "text": "What is my plan for next week",
+    "first_seen": "2026-05-18",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "What is my workout for Tuesday ?",
+    "first_seen": "2026-05-18",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "wod_lookup"
+  },
+  {
+    "text": "What is teh WOD for Tuesday ?>",
+    "first_seen": "2026-05-19",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "wod_lookup"
+  },
+  {
+    "text": "What is teh workout for Tuesday ?",
+    "first_seen": "2026-05-24",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "wod_lookup"
+  },
+  {
+    "text": "What is the WOD for Saturday",
+    "first_seen": "2026-05-19",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "wod_lookup"
+  },
+  {
+    "text": "What is the WOD for today ?",
+    "first_seen": "2026-05-19",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "wod_lookup"
+  },
+  {
+    "text": "What is the WOD for tommorow?",
+    "first_seen": "2026-05-21",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "wod_lookup"
+  },
+  {
+    "text": "What is the WOD for tomorrow?",
+    "first_seen": "2026-05-22",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "wod_lookup"
+  },
+  {
+    "text": "What is the WOD today ?",
+    "first_seen": "2026-05-19",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "wod_lookup"
+  },
+  {
+    "text": "What is the gym workout for Tuesday",
+    "first_seen": "2026-05-18",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "wod_lookup"
+  },
+  {
+    "text": "What is the workout for Friday ?",
+    "first_seen": "2026-05-22",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "wod_lookup"
+  },
+  {
+    "text": "What is the workout today",
+    "first_seen": "2026-05-18",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "wod_lookup"
+  },
+  {
+    "text": "What is today\u2019s workout?",
+    "first_seen": "2026-05-26",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "wod_lookup"
+  },
+  {
+    "text": "What is tommorows WOD",
+    "first_seen": "2026-06-09",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "wod_lookup"
+  },
+  {
+    "text": "What is tommorows workout ?",
+    "first_seen": "2026-05-19",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "wod_lookup"
+  },
+  {
+    "text": "What is tommorws WOD",
+    "first_seen": "2026-06-10",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "wod_lookup"
+  },
+  {
+    "text": "What was the workout for last Friday?",
+    "first_seen": "2026-05-17",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "wod_lookup"
+  },
+  {
+    "text": "What weighst shoudl i follow",
+    "first_seen": "2026-05-19",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "What weights should I use ?",
+    "first_seen": "2026-05-22",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "What weights should i follow?",
+    "first_seen": "2026-05-19",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "What were my average calories per week over last 4 weeks",
+    "first_seen": "2026-06-07",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "What\u2019s sundays workout ?",
+    "first_seen": "2026-05-16",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "wod_lookup"
+  },
+  {
+    "text": "What\u2019s the plan for next week",
+    "first_seen": "2026-05-25",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "What\u2019s the plan for the rest of the week",
+    "first_seen": "2026-05-13",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "What\u2019s the workout for Tuesday",
+    "first_seen": "2026-05-25",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "wod_lookup"
+  },
+  {
+    "text": "What\u2019s the workout for tommorow",
+    "first_seen": "2026-05-24",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "wod_lookup"
+  },
+  {
+    "text": "What\u2019s today\u2019s WOD",
+    "first_seen": "2026-05-28",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "wod_lookup"
+  },
+  {
+    "text": "When am I running this week ?",
+    "first_seen": "2026-05-22",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "When is my next run ?",
+    "first_seen": "2026-05-17",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "When will I get to 196?",
+    "first_seen": "2026-05-25",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "Which days am i working out ?",
+    "first_seen": "2026-05-19",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "Ye check with Fraser",
+    "first_seen": "2026-05-18",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "Yes I want to make-up for that session today",
+    "first_seen": "2026-05-17",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "Yes make the swap",
+    "first_seen": "2026-05-31",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "dislikes",
+    "first_seen": "2026-05-14",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  },
+  {
+    "text": "replan",
+    "first_seen": "2026-05-19",
+    "occurrences": 1,
+    "expected_agent": "kobe",
+    "expected_path": "kobe_route",
+    "intent": "plan_mutation"
+  },
+  {
+    "text": "what weights should i use for the clean complex ?",
+    "first_seen": "2026-05-24",
+    "occurrences": 1,
+    "expected_agent": "miya",
+    "expected_path": "orchestrate",
+    "intent": "open_coaching"
+  }
+]
