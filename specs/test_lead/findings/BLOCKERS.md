@@ -14,3 +14,20 @@ outside test-lead scope. I run new_plane with `--ignore` for these two.
 Architect note: pin `starlette`/`httpx` in `requirements-dev.txt` or
 gate `TestClient` construction so collection doesn't hard-fail on a
 version skew. Does not affect any test I add.
+
+## B-03 — `git push` has no credentials in sandbox (commit locally)
+`git push origin test-lead-agent-2026-06-10` →
+`could not read Username for 'https://github.com'`. The sandbox has no
+GitHub auth. I commit every hour locally so the branch is intact; the
+user/architect pushes it. Per AGENT_PROMPT §10, with no `gh`/push I
+write the PR title+body to `findings/PR_DESCRIPTION.md` at hour 15.
+Also: `.git/objects` carries files owned by the Mac user, so git prints
+"Operation not permitted" on temp-object unlink — cosmetic; commits
+land (verified via `git log`/`git show --stat`).
+
+## B-04 — `new_plane/` is untracked in git (pre-existing)
+The whole `new_plane/` tree (plus some scripts/specs) is untracked
+working-tree content, not committed to `main`. Tests import it fine
+from disk. All my deliverables live under tracked `tests/` and
+`specs/test_lead/`, so `git diff origin/main` reflects exactly my test
+additions. No action.
