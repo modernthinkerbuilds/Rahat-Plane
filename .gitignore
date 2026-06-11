@@ -38,6 +38,7 @@ scripts/jobs/com.rahat.regression.plist
 scripts/jobs/com.rahat.greenstreak.plist
 scripts/jobs/com.rahat.hygiene.plist
 scripts/jobs/com.rahat.evolve.plist
+scripts/com.rahat.miya.v2.plist
 
 # PM working drafts — docx renders of PRDs/briefs. Markdown is the canonical text.
 specs/*.docx
@@ -57,3 +58,23 @@ tests/last_run_status.json
 # Generated daily evangelist digests (scheduled task output) — artifacts,
 # not source.
 evangelist-digests/
+compliance-digests/
+.venv/
+
+# Artifacts from unexpanded $HOME in env vars (e.g. cost_router.log
+# landing in a literal $HOME directory). Defensive guard so a stray
+# shell-expansion miss doesn't pollute the repo.
+$HOME/
+
+# Node.js — never commit installed deps; reproducible from package-lock.json.
+node_modules/
+**/node_modules/
+
+# TypeScript build artifacts
+**/dist/
+**/*.tsbuildinfo
+
+# IDE
+.vscode/
+.idea/
+compliance-digests/

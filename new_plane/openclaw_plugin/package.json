@@ -1,0 +1,26 @@
+{
+  "name": "rahat-new-plane",
+  "version": "0.1.0",
+  "description": "Rahat new-plane OpenClaw plugin — new Miya orchestrating Kobe/Fraser via the Python adapter.",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "dev": "tsc --watch"
+  },
+  "peerDependencies": {
+    "openclaw": "*"
+  },
+  "peerDependenciesMeta": {
+    "openclaw": { "optional": true }
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "@types/node": "^20.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
