@@ -1,0 +1,1780 @@
+{
+  "scorecard": {
+    "turns_replayed": 126,
+    "routing_distribution": {
+      "kobe_route": 72,
+      "orchestrate": 51,
+      "verbatim_wod": 3
+    },
+    "voice_leak_rate": 0.0,
+    "validation_issue_rate": 0.047619047619047616,
+    "median_response_len": 90,
+    "max_response_len": 222,
+    "issues_by_kind": {
+      "rest_target": 6
+    },
+    "sample_leaks": [],
+    "sample_validation_issues": [
+      {
+        "user": "What was the workout for last Friday ?",
+        "kinds": [
+          "rest_target"
+        ],
+        "bot_preview": "[new_miya] What was the workout for last Friday ?\nworkout: Active rest today. Mon: Active rest \u2192 ideal 0 kcal."
+      },
+      {
+        "user": "What is my current weight",
+        "kinds": [
+          "rest_target"
+        ],
+        "bot_preview": "[new_miya] What is my current weight\nworkout: Active rest today. Mon: Active rest \u2192 ideal 0 kcal."
+      },
+      {
+        "user": "/fix sun 1550",
+        "kinds": [
+          "rest_target"
+        ],
+        "bot_preview": "[new_miya] /fix sun 1550\nworkout: Active rest today. Mon: Active rest \u2192 ideal 0 kcal."
+      },
+      {
+        "user": "/fix wed 622",
+        "kinds": [
+          "rest_target"
+        ],
+        "bot_preview": "[new_miya] /fix wed 622\nworkout: Active rest today. Mon: Active rest \u2192 ideal 0 kcal."
+      },
+      {
+        "user": "What is today\u2019s WOD",
+        "kinds": [
+          "rest_target"
+        ],
+        "bot_preview": "[new_miya] What is today\u2019s WOD\nworkout: Active rest today. Mon: Active rest \u2192 ideal 0 kcal."
+      },
+      {
+        "user": "/fix sun 1190",
+        "kinds": [
+          "rest_target"
+        ],
+        "bot_preview": "[new_miya] /fix sun 1190\nworkout: Active rest today. Mon: Active rest \u2192 ideal 0 kcal."
+      }
+    ]
+  },
+  "turns": [
+    {
+      "user_message": "What is the WOD for tommorow",
+      "bot_text": "[new_miya] What is the WOD for tommorow\nworkout: : Today's WOD is 5 rounds of 10 thrusters.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 91,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "Give me the exact stretches , knowing my limitations",
+      "bot_text": "[new_miya] Give me the exact stretches , knowing my limitations",
+      "delegation_path": "orchestrate",
+      "routing_model": "gemini-2.5-flash",
+      "routing_reason": "default-flash",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 63,
+      "tools_used": [
+        "kobe_charter_check"
+      ]
+    },
+    {
+      "user_message": "How should I warmup and cooldown for the zone 2 10 K tommorow",
+      "bot_text": "[new_miya] How should I warmup and cooldown for the zone 2 10 K tommorow",
+      "delegation_path": "orchestrate",
+      "routing_model": "gemini-2.5-pro",
+      "routing_reason": "hard-prompt-patterns-matched",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 72,
+      "tools_used": [
+        "kobe_charter_check"
+      ]
+    },
+    {
+      "user_message": "What are my 1 rep maxes in kg",
+      "bot_text": "[new_miya] What are my 1 rep maxes in kg",
+      "delegation_path": "orchestrate",
+      "routing_model": "gemini-2.5-flash",
+      "routing_reason": "default-flash",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 40,
+      "tools_used": [
+        "kobe_charter_check"
+      ]
+    },
+    {
+      "user_message": "What are my 1 rep maxes",
+      "bot_text": "[new_miya] What are my 1 rep maxes",
+      "delegation_path": "orchestrate",
+      "routing_model": "gemini-2.5-flash",
+      "routing_reason": "default-flash",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 34,
+      "tools_used": [
+        "kobe_charter_check"
+      ]
+    },
+    {
+      "user_message": "I meant I took rest today",
+      "bot_text": "[new_miya] I meant I took rest today\nworkout: WOD: 5 rounds for time of 10 deadlifts @ 60% / 200m run.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 102,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "I took test today - I\u2019ll do zone 2 run tomorrow",
+      "bot_text": "[new_miya] I took test today - I\u2019ll do zone 2 run tomorrow",
+      "delegation_path": "orchestrate",
+      "routing_model": "gemini-2.5-flash",
+      "routing_reason": "default-flash",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 58,
+      "tools_used": [
+        "kobe_charter_check"
+      ]
+    },
+    {
+      "user_message": "/plan",
+      "bot_text": "[new_miya] /plan\nworkout: You're on pace. Keep going.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 53,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "How many calories did I burn this week",
+      "bot_text": "[new_miya] How many calories did I burn this week\nworkout: Your goal of 196 lbs is realistic by Sep 1 at this rate.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 115,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "Where am I on pace",
+      "bot_text": "[new_miya] Where am I on pace\nactive_goal: 196 lbs by Sep 1\nrecalibration: Within tolerance",
+      "delegation_path": "orchestrate",
+      "routing_model": "gemini-2.5-flash",
+      "routing_reason": "default-flash",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 91,
+      "tools_used": [
+        "kobe_active_goal",
+        "kobe_recalibration",
+        "kobe_charter_check"
+      ]
+    },
+    {
+      "user_message": "What is plan for the week",
+      "bot_text": "[new_miya] What is plan for the week\nactive_goal: 196 lbs by Sep 1\nrecalibration: Within tolerance",
+      "delegation_path": "orchestrate",
+      "routing_model": "gemini-2.5-pro",
+      "routing_reason": "hard-prompt-patterns-matched",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 98,
+      "tools_used": [
+        "kobe_active_goal",
+        "kobe_recalibration",
+        "kobe_charter_check"
+      ]
+    },
+    {
+      "user_message": "Assume I need to hit 196 by 06/22 - create a plan for me",
+      "bot_text": "[new_miya] Assume I need to hit 196 by 06/22 - create a plan for me\nactive_goal: 196 lbs by Sep 1\nrecalibration: Within tolerance\nworkout: 5 rounds: 10 thrusters, 10 burpees",
+      "delegation_path": "orchestrate",
+      "routing_model": "gemini-2.5-pro",
+      "routing_reason": "hard-prompt-patterns-matched",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 173,
+      "tools_used": [
+        "kobe_active_goal",
+        "kobe_recalibration",
+        "fraser_design_session",
+        "kobe_charter_check"
+      ]
+    },
+    {
+      "user_message": "Assume I need to hit 196 by 06/ 22- create a plan for me",
+      "bot_text": "[new_miya] Assume I need to hit 196 by 06/ 22- create a plan for me\nactive_goal: 196 lbs by Sep 1\nrecalibration: Within tolerance\nworkout: 5 rounds: 10 thrusters, 10 burpees",
+      "delegation_path": "orchestrate",
+      "routing_model": "gemini-2.5-pro",
+      "routing_reason": "hard-prompt-patterns-matched",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 173,
+      "tools_used": [
+        "kobe_active_goal",
+        "kobe_recalibration",
+        "fraser_design_session",
+        "kobe_charter_check"
+      ]
+    },
+    {
+      "user_message": "On which day per my plan",
+      "bot_text": "[new_miya] On which day per my plan\nactive_goal: 196 lbs by Sep 1\nrecalibration: Within tolerance",
+      "delegation_path": "orchestrate",
+      "routing_model": "gemini-2.5-flash",
+      "routing_reason": "default-flash",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 97,
+      "tools_used": [
+        "kobe_active_goal",
+        "kobe_recalibration",
+        "kobe_charter_check"
+      ]
+    },
+    {
+      "user_message": "When should I weigh myself",
+      "bot_text": "[new_miya] When should I weigh myself\nactive_goal: 196 lbs by Sep 1\nrecalibration: Within tolerance",
+      "delegation_path": "orchestrate",
+      "routing_model": "gemini-2.5-pro",
+      "routing_reason": "hard-prompt-patterns-matched",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 99,
+      "tools_used": [
+        "kobe_active_goal",
+        "kobe_recalibration",
+        "kobe_charter_check"
+      ]
+    },
+    {
+      "user_message": "What was Saturdays WOD",
+      "bot_text": "[new_miya] What was Saturdays WOD\nworkout: : you are behind pace by 500 kcal this week.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 87,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "Should I be working out tomorrow",
+      "bot_text": "[new_miya] Should I be working out tomorrow",
+      "delegation_path": "orchestrate",
+      "routing_model": "gemini-2.5-pro",
+      "routing_reason": "hard-prompt-patterns-matched",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 43,
+      "tools_used": [
+        "kobe_charter_check"
+      ]
+    },
+    {
+      "user_message": "What is the pal. For the week",
+      "bot_text": "[new_miya] What is the pal. For the week\nactive_goal: 196 lbs by Sep 1\nrecalibration: Within tolerance",
+      "delegation_path": "orchestrate",
+      "routing_model": "gemini-2.5-pro",
+      "routing_reason": "hard-prompt-patterns-matched",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 102,
+      "tools_used": [
+        "kobe_active_goal",
+        "kobe_recalibration",
+        "kobe_charter_check"
+      ]
+    },
+    {
+      "user_message": "What is tommorows WOD",
+      "bot_text": "[new_miya] What is tommorows WOD\nworkout: WOD: 5 rounds for time of 10 deadlifts @ 60% / 200m run.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 98,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "What is the plan for tommorow",
+      "bot_text": "[new_miya] What is the plan for tommorow\nactive_goal: 196 lbs by Sep 1\nrecalibration: Within tolerance",
+      "delegation_path": "orchestrate",
+      "routing_model": "gemini-2.5-pro",
+      "routing_reason": "hard-prompt-patterns-matched",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 102,
+      "tools_used": [
+        "kobe_active_goal",
+        "kobe_recalibration",
+        "kobe_charter_check"
+      ]
+    },
+    {
+      "user_message": "/week",
+      "bot_text": "[new_miya] /week\nworkout: You're on pace. Keep going.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 53,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "What is my weight target",
+      "bot_text": "[new_miya] What is my weight target\nactive_goal: 196 lbs by Sep 1\nrecalibration: Within tolerance",
+      "delegation_path": "orchestrate",
+      "routing_model": "gemini-2.5-flash",
+      "routing_reason": "default-flash",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 97,
+      "tools_used": [
+        "kobe_active_goal",
+        "kobe_recalibration",
+        "kobe_charter_check"
+      ]
+    },
+    {
+      "user_message": "What was the WOD last Friday ?",
+      "bot_text": "[new_miya] What was the WOD last Friday ?\nworkout: Your goal of 196 lbs is realistic by Sep 1 at this rate.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 107,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "What was the workout for last Friday ?",
+      "bot_text": "[new_miya] What was the workout for last Friday ?\nworkout: Active rest today. Mon: Active rest \u2192 ideal 0 kcal.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [
+        "rest_target"
+      ],
+      "text_len": 110,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "What is tommorows WOD ?",
+      "bot_text": "[new_miya] What is tommorows WOD ?\nworkout: WOD: 5 rounds for time of 10 deadlifts @ 60% / 200m run.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 100,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "How many calories did I burn this week ?",
+      "bot_text": "[new_miya] How many calories did I burn this week ?\nworkout: You're on pace. Keep going.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 88,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "/fix fri 599",
+      "bot_text": "[new_miya] /fix fri 599\nworkout: Your goal of 196 lbs is realistic by Sep 1 at this rate.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 89,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "/today",
+      "bot_text": "[new_miya] /today\nworkout: : Today's WOD is 5 rounds of 10 thrusters.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 69,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "/fix Thu 1000",
+      "bot_text": "[new_miya] /fix Thu 1000\nworkout: WOD: 5 rounds for time of 10 deadlifts @ 60% / 200m run.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 90,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "/fix wed 1097",
+      "bot_text": "[new_miya] /fix wed 1097\nworkout: You're on pace. Keep going.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 61,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "/fix Mon 429",
+      "bot_text": "[new_miya] /fix Mon 429\nworkout: Your goal of 196 lbs is realistic by Sep 1 at this rate.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 89,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "/fix",
+      "bot_text": "[new_miya] /fix\nworkout: : you are behind pace by 500 kcal this week.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 69,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "/fix tue 1045",
+      "bot_text": "[new_miya] /fix tue 1045\nworkout: WOD: 5 rounds for time of 10 deadlifts @ 60% / 200m run.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 90,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "What weights should I use for tommorows WOD ?",
+      "bot_text": "[new_miya] What weights should I use for tommorows WOD ?\nworkout: You're on pace. Keep going.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 93,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "How many calories should I burn in a week to get there",
+      "bot_text": "[new_miya] How many calories should I burn in a week to get there\nworkout: Your goal of 196 lbs is realistic by Sep 1 at this rate.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 131,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "What\u2019s my target weight",
+      "bot_text": "[new_miya] What\u2019s my target weight\nactive_goal: 196 lbs by Sep 1\nrecalibration: Within tolerance",
+      "delegation_path": "orchestrate",
+      "routing_model": "gemini-2.5-flash",
+      "routing_reason": "default-flash",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 96,
+      "tools_used": [
+        "kobe_active_goal",
+        "kobe_recalibration",
+        "kobe_charter_check"
+      ]
+    },
+    {
+      "user_message": "What is my current weight",
+      "bot_text": "[new_miya] What is my current weight\nworkout: Active rest today. Mon: Active rest \u2192 ideal 0 kcal.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [
+        "rest_target"
+      ],
+      "text_len": 97,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "What is tommorws WOD",
+      "bot_text": "[new_miya] What is tommorws WOD\nworkout: WOD: 5 rounds for time of 10 deadlifts @ 60% / 200m run.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 97,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "What is tommorows wod",
+      "bot_text": "[new_miya] What is tommorows wod\nworkout: You're on pace. Keep going.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 69,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "/recaliberate",
+      "bot_text": "[new_miya] /recaliberate\nworkout: Your goal of 196 lbs is realistic by Sep 1 at this rate.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 90,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "Thu for CrossFit",
+      "bot_text": "[new_miya] Thu for CrossFit\nworkout: : Today's WOD is 5 rounds of 10 thrusters.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 79,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "Tuesday for CrossFit",
+      "bot_text": "[new_miya] Tuesday for CrossFit\nworkout: WOD: 5 rounds for time of 10 deadlifts @ 60% / 200m run.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 97,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "Friday for rest",
+      "bot_text": "[new_miya] Friday for rest\nworkout: You're on pace. Keep going.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 63,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "Wed for CrossFit",
+      "bot_text": "[new_miya] Wed for CrossFit\nworkout: Your goal of 196 lbs is realistic by Sep 1 at this rate.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 93,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "We\u2019d for CrossFit",
+      "bot_text": "[new_miya] We\u2019d for CrossFit\nworkout: : you are behind pace by 500 kcal this week.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 82,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "Rest on Monday",
+      "bot_text": "[new_miya] Rest on Monday\nworkout: WOD: 5 rounds for time of 10 deadlifts @ 60% / 200m run.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 91,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "/replan rest Monday , CrossFit on Tuesday, Wednesday and Thursday. Zone 2 run on Saturday",
+      "bot_text": "[new_miya] /replan rest Monday , CrossFit on Tuesday, Wednesday and Thursday. Zone 2 run on Saturday\nworkout: You're on pace. Keep going.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 137,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "What\u2019s the workout for tommorow",
+      "bot_text": "[new_miya] What\u2019s the workout for tommorow\nworkout: Your goal of 196 lbs is realistic by Sep 1 at this rate.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 108,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "/fix sun 1550",
+      "bot_text": "[new_miya] /fix sun 1550\nworkout: Active rest today. Mon: Active rest \u2192 ideal 0 kcal.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [
+        "rest_target"
+      ],
+      "text_len": 85,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "/fix sun 1500",
+      "bot_text": "[new_miya] /fix sun 1500\nworkout: WOD: 5 rounds for time of 10 deadlifts @ 60% / 200m run.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 90,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "/fix sun 1367",
+      "bot_text": "[new_miya] /fix sun 1367\nworkout: You're on pace. Keep going.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 61,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "/fix sun 1312",
+      "bot_text": "[new_miya] /fix sun 1312\nworkout: Your goal of 196 lbs is realistic by Sep 1 at this rate.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 90,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "/fix Thu 598",
+      "bot_text": "[new_miya] /fix Thu 598\nworkout: : Today's WOD is 5 rounds of 10 thrusters.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 75,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "/fix fri 1042",
+      "bot_text": "[new_miya] /fix fri 1042\nworkout: WOD: 5 rounds for time of 10 deadlifts @ 60% / 200m run.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 90,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "/fix sat 528",
+      "bot_text": "[new_miya] /fix sat 528\nworkout: You're on pace. Keep going.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 60,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "/fix sun 1151",
+      "bot_text": "[new_miya] /fix sun 1151\nworkout: Your goal of 196 lbs is realistic by Sep 1 at this rate.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 90,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "/fix sun 950",
+      "bot_text": "[new_miya] /fix sun 950\nworkout: : you are behind pace by 500 kcal this week.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 77,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "What were my average calories per week over last 4 weeks",
+      "bot_text": "[new_miya] What were my average calories per week over last 4 weeks\nactive_goal: 196 lbs by Sep 1\nrecalibration: Within tolerance",
+      "delegation_path": "orchestrate",
+      "routing_model": "gemini-2.5-pro",
+      "routing_reason": "hard-prompt-patterns-matched",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 129,
+      "tools_used": [
+        "kobe_active_goal",
+        "kobe_recalibration",
+        "kobe_charter_check"
+      ]
+    },
+    {
+      "user_message": "What\u2019s my current weight ?",
+      "bot_text": "[new_miya] What\u2019s my current weight ?\nworkout: WOD: 5 rounds for time of 10 deadlifts @ 60% / 200m run.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 103,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "Outline a quick dynamic warm up routine for the run tommorow",
+      "bot_text": "[new_miya] Outline a quick dynamic warm up routine for the run tommorow",
+      "delegation_path": "orchestrate",
+      "routing_model": "gemini-2.5-flash",
+      "routing_reason": "default-flash",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 71,
+      "tools_used": [
+        "kobe_charter_check"
+      ]
+    },
+    {
+      "user_message": "Should I warmup before my 10K run tommorow to avoid headaches",
+      "bot_text": "[new_miya] Should I warmup before my 10K run tommorow to avoid headaches",
+      "delegation_path": "orchestrate",
+      "routing_model": "gemini-2.5-pro",
+      "routing_reason": "hard-prompt-patterns-matched",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 72,
+      "tools_used": [
+        "kobe_charter_check"
+      ]
+    },
+    {
+      "user_message": "/fix Mon 879",
+      "bot_text": "[new_miya] /fix Mon 879\nworkout: You're on pace. Keep going.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 60,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "/fix tue 1078",
+      "bot_text": "[new_miya] /fix tue 1078\nworkout: Your goal of 196 lbs is realistic by Sep 1 at this rate.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 90,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "/fix wed 622",
+      "bot_text": "[new_miya] /fix wed 622\nworkout: Active rest today. Mon: Active rest \u2192 ideal 0 kcal.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [
+        "rest_target"
+      ],
+      "text_len": 84,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "/pace",
+      "bot_text": "[new_miya] /pace\nworkout: WOD: 5 rounds for time of 10 deadlifts @ 60% / 200m run.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 82,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "/fix Saturday 375",
+      "bot_text": "[new_miya] /fix Saturday 375\nworkout: You're on pace. Keep going.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 65,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "Yes make the swap",
+      "bot_text": "[new_miya] Yes make the swap\nworkout: 5 rounds: 10 thrusters, 10 burpees",
+      "delegation_path": "orchestrate",
+      "routing_model": "gemini-2.5-flash",
+      "routing_reason": "default-flash",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 72,
+      "tools_used": [
+        "fraser_design_session",
+        "kobe_charter_check"
+      ]
+    },
+    {
+      "user_message": "/replan rest today , Zone 2 run tommorow",
+      "bot_text": "[new_miya] /replan rest today , Zone 2 run tommorow\nworkout: Your goal of 196 lbs is realistic by Sep 1 at this rate.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 117,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "/fix fri 900",
+      "bot_text": "[new_miya] /fix fri 900\nworkout: : Today's WOD is 5 rounds of 10 thrusters.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 75,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "How many calories did I burn from last Sunday till now?",
+      "bot_text": "[new_miya] How many calories did I burn from last Sunday till now?\nworkout: WOD: 5 rounds for time of 10 deadlifts @ 60% / 200m run.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 132,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "/fix fri 600",
+      "bot_text": "[new_miya] /fix fri 600\nworkout: You're on pace. Keep going.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 60,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "/fix Thu 1121",
+      "bot_text": "[new_miya] /fix Thu 1121\nworkout: Your goal of 196 lbs is realistic by Sep 1 at this rate.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 90,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "/fix wed 608",
+      "bot_text": "[new_miya] /fix wed 608\nworkout: : you are behind pace by 500 kcal this week.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 77,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "/fix tue 1142",
+      "bot_text": "[new_miya] /fix tue 1142\nworkout: WOD: 5 rounds for time of 10 deadlifts @ 60% / 200m run.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 90,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "/fix Mon 530",
+      "bot_text": "[new_miya] /fix Mon 530\nworkout: You're on pace. Keep going.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 60,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "deadlifts instea di rows and kbs instead of burpees",
+      "bot_text": "[new_miya] deadlifts instea di rows and kbs instead of burpees",
+      "delegation_path": "orchestrate",
+      "routing_model": "gemini-2.5-flash",
+      "routing_reason": "default-flash",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 62,
+      "tools_used": [
+        "kobe_charter_check"
+      ]
+    },
+    {
+      "user_message": "I want a 75 min WOD , Bench press strength and 2 metcons- one 10 min Amrap and one 3 or 4 rft .burn 750 calories. Not too may movements in the Metcon",
+      "bot_text": "[new_miya] I want a 75 min WOD , Bench press strength and 2 metcons- one 10 min Amrap and one 3 or 4 rft .burn 750 calories. Not too may movements in the Metcon\nactive_goal: 196 lbs by Sep 1\nrecalibration: Within tolerance",
+      "delegation_path": "orchestrate",
+      "routing_model": "gemini-2.5-flash",
+      "routing_reason": "default-flash",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 222,
+      "tools_used": [
+        "kobe_active_goal",
+        "kobe_recalibration",
+        "kobe_charter_check"
+      ]
+    },
+    {
+      "user_message": "reduce the Metcon to 25 minutes",
+      "bot_text": "[new_miya] reduce the Metcon to 25 minutes",
+      "delegation_path": "orchestrate",
+      "routing_model": "gemini-2.5-flash",
+      "routing_reason": "default-flash",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 42,
+      "tools_used": [
+        "kobe_charter_check"
+      ]
+    },
+    {
+      "user_message": "too many movements in the Metcon",
+      "bot_text": "[new_miya] too many movements in the Metcon",
+      "delegation_path": "orchestrate",
+      "routing_model": "gemini-2.5-flash",
+      "routing_reason": "default-flash",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 43,
+      "tools_used": [
+        "kobe_charter_check"
+      ]
+    },
+    {
+      "user_message": "it\u2019s too intense , the Metcon, too many movements",
+      "bot_text": "[new_miya] it\u2019s too intense , the Metcon, too many movements",
+      "delegation_path": "orchestrate",
+      "routing_model": "gemini-2.5-flash",
+      "routing_reason": "default-flash",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 60,
+      "tools_used": [
+        "kobe_charter_check"
+      ]
+    },
+    {
+      "user_message": "I want a 75 min WOD , Bench press strength and 2 metcons- one 10 min Amrap and one 3 or 4 rft .burn 750 calories",
+      "bot_text": "[new_miya] I want a 75 min WOD , Bench press strength and 2 metcons- one 10 min Amrap and one 3 or 4 rft .burn 750 calories\nactive_goal: 196 lbs by Sep 1\nrecalibration: Within tolerance",
+      "delegation_path": "orchestrate",
+      "routing_model": "gemini-2.5-flash",
+      "routing_reason": "default-flash",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 185,
+      "tools_used": [
+        "kobe_active_goal",
+        "kobe_recalibration",
+        "kobe_charter_check"
+      ]
+    },
+    {
+      "user_message": "I want a 75 min session , Bench press strength and 2 metcons- one 10 min Amrap and one 3 or 4 rft .burn 750 calories",
+      "bot_text": "[new_miya] I want a 75 min session , Bench press strength and 2 metcons- one 10 min Amrap and one 3 or 4 rft .burn 750 calories\nactive_goal: 196 lbs by Sep 1\nrecalibration: Within tolerance",
+      "delegation_path": "orchestrate",
+      "routing_model": "gemini-2.5-flash",
+      "routing_reason": "default-flash",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 189,
+      "tools_used": [
+        "kobe_active_goal",
+        "kobe_recalibration",
+        "kobe_charter_check"
+      ]
+    },
+    {
+      "user_message": "Bench press for strength, 10 min Amrap and 3 rft \u2014 all PRVN style",
+      "bot_text": "[new_miya] Bench press for strength, 10 min Amrap and 3 rft \u2014 all PRVN style",
+      "delegation_path": "orchestrate",
+      "routing_model": "gemini-2.5-flash",
+      "routing_reason": "default-flash",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 76,
+      "tools_used": [
+        "kobe_charter_check"
+      ]
+    },
+    {
+      "user_message": "No barbell rows, and two smaller wods instead of 35 min Amrap",
+      "bot_text": "[new_miya] No barbell rows, and two smaller wods instead of 35 min Amrap",
+      "delegation_path": "orchestrate",
+      "routing_model": "gemini-2.5-flash",
+      "routing_reason": "default-flash",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 72,
+      "tools_used": [
+        "kobe_charter_check"
+      ]
+    },
+    {
+      "user_message": "I don\u2019t like barbell rows, and 35 min is long for an AMRAP, break it with nice movements into two 2 smaller wods",
+      "bot_text": "[new_miya] I don\u2019t like barbell rows, and 35 min is long for an AMRAP, break it with nice movements into two 2 smaller wods",
+      "delegation_path": "orchestrate",
+      "routing_model": "gemini-2.5-flash",
+      "routing_reason": "default-flash",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 123,
+      "tools_used": [
+        "kobe_charter_check"
+      ]
+    },
+    {
+      "user_message": "I don\u2019t like barbell rows, and 35 min is long for an AMRAP, break it with nice movements into two 2 smaller wids",
+      "bot_text": "[new_miya] I don\u2019t like barbell rows, and 35 min is long for an AMRAP, break it with nice movements into two 2 smaller wids",
+      "delegation_path": "orchestrate",
+      "routing_model": "gemini-2.5-flash",
+      "routing_reason": "default-flash",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 123,
+      "tools_used": [
+        "kobe_charter_check"
+      ]
+    },
+    {
+      "user_message": "I went to the gym today and on Tuesday. I won\u2019t do the gym WOD tomorrow, given wods for Tuesday and Thursday that I did , give me a PRVN style WOD for tommorow to burn 750 calories in 75 minutes",
+      "bot_text": "today WOD:\nWOD for today: 5x5 squats; metcon 12 min AMRAP",
+      "delegation_path": "verbatim_wod",
+      "routing_model": "verbatim-wod-bypass",
+      "routing_reason": "P0-1: gym_wod present, synth bypassed",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 57,
+      "tools_used": [
+        "kobe_active_goal",
+        "kobe_recalibration",
+        "kobe_gym_wod_on",
+        "kobe_charter_check"
+      ]
+    },
+    {
+      "user_message": "What is Thursdays WOD",
+      "bot_text": "[new_miya] What is Thursdays WOD\nworkout: Your goal of 196 lbs is realistic by Sep 1 at this rate.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 98,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "What is today\u2019s WOD",
+      "bot_text": "[new_miya] What is today\u2019s WOD\nworkout: Active rest today. Mon: Active rest \u2192 ideal 0 kcal.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [
+        "rest_target"
+      ],
+      "text_len": 91,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "What is today\u2019s WOD?",
+      "bot_text": "[new_miya] What is today\u2019s WOD?\nworkout: WOD: 5 rounds for time of 10 deadlifts @ 60% / 200m run.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 97,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "What\u2019s today\u2019s WOD",
+      "bot_text": "[new_miya] What\u2019s today\u2019s WOD\nworkout: You're on pace. Keep going.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 66,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "/fix Tue 1142",
+      "bot_text": "[new_miya] /fix Tue 1142\nworkout: Your goal of 196 lbs is realistic by Sep 1 at this rate.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 90,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "Feels great, let\u2019s target that",
+      "bot_text": "[new_miya] Feels great, let\u2019s target that\nactive_goal: 196 lbs by Sep 1\nrecalibration: Within tolerance",
+      "delegation_path": "orchestrate",
+      "routing_model": "gemini-2.5-flash",
+      "routing_reason": "default-flash",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 103,
+      "tools_used": [
+        "kobe_active_goal",
+        "kobe_recalibration",
+        "kobe_charter_check"
+      ]
+    },
+    {
+      "user_message": "if I eat 2250 cal a day and burn 6000 a well , when will I hit 196 ?",
+      "bot_text": "[new_miya] if I eat 2250 cal a day and burn 6000 a well , when will I hit 196 ?\nactive_goal: 196 lbs by Sep 1\nrecalibration: Within tolerance",
+      "delegation_path": "orchestrate",
+      "routing_model": "gemini-2.5-flash",
+      "routing_reason": "default-flash",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 141,
+      "tools_used": [
+        "kobe_active_goal",
+        "kobe_recalibration",
+        "kobe_charter_check"
+      ]
+    },
+    {
+      "user_message": "what is today\u2019s WOD",
+      "bot_text": "[new_miya] what is today\u2019s WOD\nworkout: : Today's WOD is 5 rounds of 10 thrusters.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 82,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "What is today\u2019s workout?",
+      "bot_text": "[new_miya] What is today\u2019s workout?\nworkout: WOD: 5 rounds for time of 10 deadlifts @ 60% / 200m run.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 101,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "What is the WOD for Wednesday?",
+      "bot_text": "[new_miya] What is the WOD for Wednesday?\nworkout: You're on pace. Keep going.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 78,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "Replan calories target based on 196 lbs by 06/06 assuming I can only burn 6000 calories a week",
+      "bot_text": "[new_miya] Replan calories target based on 196 lbs by 06/06 assuming I can only burn 6000 calories a week\nworkout: Your goal of 196 lbs is realistic by Sep 1 at this rate.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 171,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "I can only burn 6000 calories per week",
+      "bot_text": "[new_miya] I can only burn 6000 calories per week\nactive_goal: 196 lbs by Sep 1\nrecalibration: Within tolerance",
+      "delegation_path": "orchestrate",
+      "routing_model": "gemini-2.5-pro",
+      "routing_reason": "hard-prompt-patterns-matched",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 111,
+      "tools_used": [
+        "kobe_active_goal",
+        "kobe_recalibration",
+        "kobe_charter_check"
+      ]
+    },
+    {
+      "user_message": "Replan calories target based on 196 lbs by 06/06",
+      "bot_text": "[new_miya] Replan calories target based on 196 lbs by 06/06\nworkout: : you are behind pace by 500 kcal this week.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 113,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "How many calories should I burn per week to get there ?",
+      "bot_text": "[new_miya] How many calories should I burn per week to get there ?\nworkout: WOD: 5 rounds for time of 10 deadlifts @ 60% / 200m run.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 132,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "When will I get to 196?",
+      "bot_text": "[new_miya] When will I get to 196?\nactive_goal: 196 lbs by Sep 1\nrecalibration: Within tolerance",
+      "delegation_path": "orchestrate",
+      "routing_model": "gemini-2.5-flash",
+      "routing_reason": "default-flash",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 96,
+      "tools_used": [
+        "kobe_active_goal",
+        "kobe_recalibration",
+        "kobe_charter_check"
+      ]
+    },
+    {
+      "user_message": "Ok, I need to get to 196 by 06/06",
+      "bot_text": "[new_miya] Ok, I need to get to 196 by 06/06",
+      "delegation_path": "orchestrate",
+      "routing_model": "gemini-2.5-flash",
+      "routing_reason": "default-flash",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 44,
+      "tools_used": [
+        "kobe_charter_check"
+      ]
+    },
+    {
+      "user_message": "Assuming I can burn 6000 active calories a week and can eat 2250 calories a day, when can I get to 197 pounds?",
+      "bot_text": "[new_miya] Assuming I can burn 6000 active calories a week and can eat 2250 calories a day, when can I get to 197 pounds?\nactive_goal: 196 lbs by Sep 1\nrecalibration: Within tolerance",
+      "delegation_path": "orchestrate",
+      "routing_model": "gemini-2.5-pro",
+      "routing_reason": "hard-prompt-patterns-matched",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 183,
+      "tools_used": [
+        "kobe_active_goal",
+        "kobe_recalibration",
+        "kobe_charter_check"
+      ]
+    },
+    {
+      "user_message": "What\u2019s my current weight",
+      "bot_text": "[new_miya] What\u2019s my current weight\nworkout: You're on pace. Keep going.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 72,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "I\u2019ll do CrossFit on Monday, Tuesday and Thursday. Run on Saturday",
+      "bot_text": "[new_miya] I\u2019ll do CrossFit on Monday, Tuesday and Thursday. Run on Saturday",
+      "delegation_path": "orchestrate",
+      "routing_model": "gemini-2.5-flash",
+      "routing_reason": "default-flash",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 76,
+      "tools_used": [
+        "kobe_charter_check"
+      ]
+    },
+    {
+      "user_message": "/fix sun 1290",
+      "bot_text": "[new_miya] /fix sun 1290\nworkout: Your goal of 196 lbs is realistic by Sep 1 at this rate.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 90,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "/fix sun 1190",
+      "bot_text": "[new_miya] /fix sun 1190\nworkout: Active rest today. Mon: Active rest \u2192 ideal 0 kcal.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [
+        "rest_target"
+      ],
+      "text_len": 85,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "I couldn\u2019t do this in the morning after the run, I am cooling down now. So give the cooldown accordingly",
+      "bot_text": "[new_miya] I couldn\u2019t do this in the morning after the run, I am cooling down now. So give the cooldown accordingly",
+      "delegation_path": "orchestrate",
+      "routing_model": "gemini-2.5-flash",
+      "routing_reason": "default-flash",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 115,
+      "tools_used": [
+        "kobe_charter_check"
+      ]
+    },
+    {
+      "user_message": "Give me the cool down after the zone2 10k today",
+      "bot_text": "[new_miya] Give me the cool down after the zone2 10k today",
+      "delegation_path": "orchestrate",
+      "routing_model": "gemini-2.5-flash",
+      "routing_reason": "default-flash",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 58,
+      "tools_used": [
+        "kobe_charter_check"
+      ]
+    },
+    {
+      "user_message": "/fix sun 1130",
+      "bot_text": "[new_miya] /fix sun 1130\nworkout: WOD: 5 rounds for time of 10 deadlifts @ 60% / 200m run.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 90,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "Nice! One adjustment, can\u2019t go deadlifts and barbell rows, i had a back day on Friday, did something else",
+      "bot_text": "[new_miya] Nice! One adjustment, can\u2019t go deadlifts and barbell rows, i had a back day on Friday, did something else",
+      "delegation_path": "orchestrate",
+      "routing_model": "gemini-2.5-flash",
+      "routing_reason": "default-flash",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 116,
+      "tools_used": [
+        "kobe_charter_check"
+      ]
+    },
+    {
+      "user_message": "That\u2019s not what I meant , I can workout for 75 min, give me an EMOM and 3 RFT for metrcon,",
+      "bot_text": "today WOD:\nWOD for today: 5x5 squats; metcon 12 min AMRAP",
+      "delegation_path": "verbatim_wod",
+      "routing_model": "verbatim-wod-bypass",
+      "routing_reason": "P0-1: gym_wod present, synth bypassed",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 57,
+      "tools_used": [
+        "kobe_active_goal",
+        "kobe_recalibration",
+        "kobe_gym_wod_on",
+        "kobe_charter_check"
+      ]
+    },
+    {
+      "user_message": "30 min is a lot of for EMOM , break it up into one EMOM and one RFT , have running in cash in cash out format",
+      "bot_text": "[new_miya] 30 min is a lot of for EMOM , break it up into one EMOM and one RFT , have running in cash in cash out format",
+      "delegation_path": "orchestrate",
+      "routing_model": "gemini-2.5-flash",
+      "routing_reason": "default-flash",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 120,
+      "tools_used": [
+        "kobe_charter_check"
+      ]
+    },
+    {
+      "user_message": "Ok , I need a bench press strength WOD and a crossfit session PRVN style tommorow. I want to burn 800 calories in 75  min",
+      "bot_text": "[new_miya] Ok , I need a bench press strength WOD and a crossfit session PRVN style tommorow. I want to burn 800 calories in 75  min\nactive_goal: 196 lbs by Sep 1\nrecalibration: Within tolerance",
+      "delegation_path": "orchestrate",
+      "routing_model": "gemini-2.5-flash",
+      "routing_reason": "default-flash",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 194,
+      "tools_used": [
+        "kobe_active_goal",
+        "kobe_recalibration",
+        "kobe_charter_check"
+      ]
+    },
+    {
+      "user_message": "How should I scale this workout?",
+      "bot_text": "[new_miya] How should I scale this workout?\nactive_goal: 196 lbs by Sep 1\nrecalibration: Within tolerance\nworkout: 5 rounds: 10 thrusters, 10 burpees",
+      "delegation_path": "orchestrate",
+      "routing_model": "gemini-2.5-pro",
+      "routing_reason": "hard-prompt-patterns-matched",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 149,
+      "tools_used": [
+        "kobe_active_goal",
+        "kobe_recalibration",
+        "fraser_design_session",
+        "kobe_charter_check"
+      ]
+    },
+    {
+      "user_message": "What\u2019s the workout for Tuesday",
+      "bot_text": "[new_miya] What\u2019s the workout for Tuesday\nworkout: You're on pace. Keep going.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 78,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "What\u2019s the plan for next week",
+      "bot_text": "[new_miya] What\u2019s the plan for next week\nactive_goal: 196 lbs by Sep 1\nrecalibration: Within tolerance",
+      "delegation_path": "orchestrate",
+      "routing_model": "gemini-2.5-pro",
+      "routing_reason": "hard-prompt-patterns-matched",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 102,
+      "tools_used": [
+        "kobe_active_goal",
+        "kobe_recalibration",
+        "kobe_charter_check"
+      ]
+    },
+    {
+      "user_message": "what weights should i use for the clean complex ?",
+      "bot_text": "[new_miya] what weights should i use for the clean complex ?",
+      "delegation_path": "orchestrate",
+      "routing_model": "gemini-2.5-pro",
+      "routing_reason": "hard-prompt-patterns-matched",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 60,
+      "tools_used": [
+        "kobe_charter_check"
+      ]
+    },
+    {
+      "user_message": "How should I scale the tuesday's session ?",
+      "bot_text": "[new_miya] How should I scale the tuesday's session ?\nworkout: 5 rounds: 10 thrusters, 10 burpees",
+      "delegation_path": "orchestrate",
+      "routing_model": "gemini-2.5-pro",
+      "routing_reason": "hard-prompt-patterns-matched",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 97,
+      "tools_used": [
+        "fraser_design_session",
+        "kobe_charter_check"
+      ]
+    },
+    {
+      "user_message": "How should scale this?",
+      "bot_text": "[new_miya] How should scale this?\nworkout: 5 rounds: 10 thrusters, 10 burpees",
+      "delegation_path": "orchestrate",
+      "routing_model": "gemini-2.5-flash",
+      "routing_reason": "default-flash",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 77,
+      "tools_used": [
+        "fraser_design_session",
+        "kobe_charter_check"
+      ]
+    },
+    {
+      "user_message": "Replan , I am running tomorrow , I rested today",
+      "bot_text": "[new_miya] Replan , I am running tomorrow , I rested today\nworkout: Your goal of 196 lbs is realistic by Sep 1 at this rate.",
+      "delegation_path": "kobe_route",
+      "routing_model": "deterministic-kobe-route",
+      "routing_reason": "delegation",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 124,
+      "tools_used": [
+        "kobe_route"
+      ]
+    },
+    {
+      "user_message": "Can you reduce the power clean WOD for under 30 minutes ?",
+      "bot_text": "[new_miya] Can you reduce the power clean WOD for under 30 minutes ?\nactive_goal: 196 lbs by Sep 1\nrecalibration: Within tolerance",
+      "delegation_path": "orchestrate",
+      "routing_model": "gemini-2.5-flash",
+      "routing_reason": "default-flash",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 130,
+      "tools_used": [
+        "kobe_active_goal",
+        "kobe_recalibration",
+        "kobe_charter_check"
+      ]
+    },
+    {
+      "user_message": "I need power clean WOD",
+      "bot_text": "[new_miya] I need power clean WOD\nactive_goal: 196 lbs by Sep 1\nrecalibration: Within tolerance",
+      "delegation_path": "orchestrate",
+      "routing_model": "gemini-2.5-flash",
+      "routing_reason": "default-flash",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 95,
+      "tools_used": [
+        "kobe_active_goal",
+        "kobe_recalibration",
+        "kobe_charter_check"
+      ]
+    },
+    {
+      "user_message": "Design a clean based strength PRVN WOD for today",
+      "bot_text": "[new_miya] Design a clean based strength PRVN WOD for today\nactive_goal: 196 lbs by Sep 1\nrecalibration: Within tolerance\nworkout: 5 rounds: 10 thrusters, 10 burpees",
+      "delegation_path": "orchestrate",
+      "routing_model": "gemini-2.5-flash",
+      "routing_reason": "default-flash",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 165,
+      "tools_used": [
+        "kobe_active_goal",
+        "kobe_recalibration",
+        "fraser_design_session",
+        "kobe_charter_check"
+      ]
+    },
+    {
+      "user_message": "Give me a good PRVN style cleans based strength WOD for tomorrow",
+      "bot_text": "tomorrow WOD:\nWOD for tomorrow: 5x5 squats; metcon 12 min AMRAP",
+      "delegation_path": "verbatim_wod",
+      "routing_model": "verbatim-wod-bypass",
+      "routing_reason": "P0-1: gym_wod present, synth bypassed",
+      "voice_leaks": [],
+      "validation_issues": [],
+      "text_len": 63,
+      "tools_used": [
+        "kobe_active_goal",
+        "kobe_recalibration",
+        "kobe_gym_wod_on",
+        "kobe_charter_check"
+      ]
+    }
+  ]
+}

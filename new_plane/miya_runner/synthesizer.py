@@ -61,6 +61,14 @@ Rules:
     you only describe what a change would imply.
   • Do not fabricate. If a tool returned an error or empty result, say
     so — never invent numbers, dates, or plan entries.
+  • 1RMs, mobility limits, current weight, goal targets, and active
+    plan days come ONLY from the USER PROFILE block. If you need a
+    number that is not in the profile, say "I don't have that on file —
+    can you confirm?". Never quote a 1RM from training-data priors.
+  • Every workout you describe — warmup, working sets, cooldown —
+    must respect the user's mobility limits as listed in USER PROFILE.
+    A generic textbook warmup is wrong. Reference at least one
+    limitation when prescribing the warmup or cooldown.
   • Synced WOD is the source of truth. If a `gym_wod` field is present,
     that IS the workout — read it back verbatim. Only design when the
     user explicitly requests design.
@@ -147,7 +155,8 @@ def _build_prompt(*, user_message: str, facts: dict[str, Any],
                   fraser_text: str | None,
                   recent_signals: list[dict] | None,
                   chat_memory_block: str | None = None,
-                  intent: str | None = None) -> str:
+                  intent: str | None = None,
+                  user_profile_block: str | None = None) -> str:
     """Build the Gemini prompt.
 
     PF-2026-06-10-001: `intent` (when set) restricts which facts appear
@@ -156,8 +165,17 @@ def _build_prompt(*, user_message: str, facts: dict[str, Any],
     SUPERSEDED rather than handed over verbatim.
     PF-2026-06-10-005: recent_signals should be pre-filtered by the
     orchestrator before reaching here (intent-scoped).
+    Phase-2 (2026-06-13): `user_profile_block` is the canonical USER
+    PROFILE rendered by core.user_profile.to_facts_block() — 1RMs,
+    mobility, current state, goal hierarchy. Injected so the LLM never
+    hallucinates 1RMs or generic warmup/cooldown.
     """
     parts: list[str] = [SYSTEM_PROMPT, f'User said: "{user_message}"']
+
+    # USER PROFILE — canonical facts come BEFORE FACTS FROM SPECIALISTS
+    # so the LLM grounds against them when interpreting transient signals.
+    if user_profile_block:
+        parts.append(user_profile_block)
 
     if chat_memory_block:
         parts.append(
@@ -249,18 +267,36 @@ def synthesize(*, user_message: str, facts: dict[str, Any],
                recent_signals: list[dict] | None = None,
                chat_memory_block: str | None = None,
                intent: str | None = None,
+               user_profile_block: str | None = None,
                model: str = "gemini-2.5-flash",
                trace_id: str = "") -> SynthesisResult:
     """Run synthesis. Falls back gracefully if Gemini unavailable.
 
     `intent` (when set) scopes which facts reach the prompt (PF-001).
+    `user_profile_block` (when set) is the canonical USER PROFILE
+    rendered by core.user_profile.to_facts_block(); the orchestrator
+    fills it in on every call so the LLM never has to guess at 1RMs,
+    mobility limits, or goal targets.
 
     Returns the text + usage so callers can log token + cost telemetry.
     """
+    # Default: if caller didn't pass a profile, load + render it here so
+    # synthesize() is always fact-grounded. Catch any loader failure and
+    # degrade silently rather than break a live reply.
+    if user_profile_block is None:
+        try:
+            from core import user_profile as _up
+            user_profile_block = _up.to_facts_block(_up.load())
+        except Exception as e:
+            logger.warning("user_profile load failed: %s: %s",
+                           type(e).__name__, e)
+            user_profile_block = None
+
     prompt = _build_prompt(
         user_message=user_message, facts=facts, arbitration=arbitration,
         fraser_text=fraser_text, recent_signals=recent_signals,
         chat_memory_block=chat_memory_block, intent=intent,
+        user_profile_block=user_profile_block,
     )
 
     client = _client()

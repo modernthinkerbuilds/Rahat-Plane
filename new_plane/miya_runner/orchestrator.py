@@ -35,7 +35,7 @@ if os.getenv("NEW_MIYA_USE_HTTP_CLIENT", "0") == "1":
 else:
     from new_plane.miya_runner import native_client as adapter
 
-from new_plane.miya_runner import cost_router, synthesizer
+from new_plane.miya_runner import cost_router, synthesizer, validator
 from new_plane.miya_runner.delegate_classifier import classify_delegation
 from new_plane.miya_sim.orchestrator import (
     classify_intent,
@@ -67,6 +67,141 @@ class Response:
     routing: dict[str, Any] = field(default_factory=dict)
     synthesis_meta: dict[str, Any] = field(default_factory=dict)
     transport_errors: list[str] = field(default_factory=list)
+
+
+# ─── Cross-validation hook (Phase 2.3) ─────────────────────────────────
+# Runs validator on the final outbound text. If contradictions found
+# against profile/arbitration, surgically rewrites or prepends a
+# correction so the user never sees a wrong 1RM or a pace flip.
+
+def _validation_enabled() -> bool:
+    return os.getenv("NEW_MIYA_VALIDATE", "1") == "1"
+
+
+def _validate_outbound(text: str, *,
+                       arbitration: dict[str, str] | None) -> tuple[str, list[Any]]:
+    """Run cross-validation. Never raises. Returns (text, issues)."""
+    if not _validation_enabled():
+        return text, []
+    try:
+        from core import user_profile as _up
+        profile = _up.load()
+    except Exception:
+        profile = None
+    try:
+        corrected, issues = validator.validate_and_enforce(
+            text, arbitration=arbitration, profile=profile,
+        )
+        if issues:
+            logger.info("validator caught %d contradiction(s): %s",
+                        len(issues),
+                        [(i.kind, i.detail) for i in issues])
+        return corrected, issues
+    except Exception as e:
+        logger.warning("validator failed: %s: %s", type(e).__name__, e)
+        return text, []
+
+
+# ─── Single voice sink: re-voice delegated output through synth ────────
+# Phase 2 of arch-gap-closure 2026-06-13. When NEW_MIYA_REVOICE=1 (or
+# unset and the default below flips on after burn-in), kobe_route and
+# fraser_route output is treated as a FACT FROM SPECIALIST and re-voiced
+# through synthesizer.synthesize() so Miya owns the voice on every reply.
+# This closes the structural gap that caused "fraser says: Venkat..."
+# and generic warmups to ship despite the SYSTEM_PROMPT rewrite.
+
+def _revoice_enabled() -> bool:
+    return os.getenv("NEW_MIYA_REVOICE", "1") == "1"
+
+
+def _best_effort_arbitration_for_delegated(chat_id: str | None) -> dict[str, str] | None:
+    """Sniff for a recent recalibration signal in the signal store and
+    convert to an arbitration verdict.
+
+    For kobe_route / fraser_route we don't run the full fact-fetch
+    pipeline. But if recent signals show the user is behind_pace, we
+    can still pass that verdict to the re-voice synth so the prompt's
+    arbitration rules apply.
+
+    Returns None on any failure (degrades to no arbitration).
+    """
+    try:
+        from new_plane.signals import store as _store
+        # PF-006 contract: signals are scoped per chat_id.
+        signals = _store.recent(limit=20, chat_id=chat_id) if chat_id else _store.recent(limit=20)
+        for s in signals:
+            t = s.get("type") or s.get("type_") or ""
+            payload = s.get("payload") or {}
+            if isinstance(payload, str):
+                import json as _j
+                try:
+                    payload = _j.loads(payload)
+                except Exception:
+                    continue
+            if "recalibration" in t.lower() or "recalibrat" in str(payload).lower():
+                # Look for behind_pace in the payload
+                result = payload.get("result") if isinstance(payload, dict) else None
+                if isinstance(result, dict) and result.get("behind_pace") is True:
+                    return {
+                        "rule": "behind_pace",
+                        "guidance": "User is behind pace — do not say "
+                                    "'ahead of pace' or 'comfortable buffer'."
+                    }
+                if isinstance(payload, dict) and payload.get("behind_pace") is True:
+                    return {
+                        "rule": "behind_pace",
+                        "guidance": "User is behind pace.",
+                    }
+    except Exception as e:
+        logger.debug("best-effort arbitration sniff failed: %s", e)
+    return None
+
+
+def _revoice_through_synth(*, raw_text: str, user_message: str,
+                            delegation_path: str, trace_id: str,
+                            chat_id: str | None) -> tuple[str, dict[str, Any]]:
+    """Re-voice an agent passthrough response through Miya's synth layer.
+
+    Returns (revoiced_text, synth_meta). On any failure, returns the
+    original raw_text + an error meta so the user still gets a reply.
+
+    The agent's text is injected as a SPECIALIST RETURNED block — the
+    synth prompt treats it as the source of truth for facts, but is free
+    to rewrite voice, length, and structure.
+    """
+    if not raw_text or not raw_text.strip():
+        return raw_text, {"revoice": "skipped-empty"}
+    try:
+        # The agent's text is treated as a "specialist transcript" that
+        # synth must re-voice. We inject it via the fraser_text slot
+        # (which the prompt already calls "WORKOUT DRAFT (internal,
+        # re-voice as Miya)") because that's exactly the contract we
+        # want: take this raw text and re-render in Miya's voice.
+        # Port arbitration (Phase 3.2): even on the passthrough path,
+        # sniff for a recent behind_pace signal so synth honors it.
+        best_effort_arb = _best_effort_arbitration_for_delegated(chat_id)
+        synth_result = synthesizer.synthesize(
+            user_message=user_message,
+            facts={},
+            arbitration=best_effort_arb,
+            fraser_text=raw_text,  # re-voice contract
+            recent_signals=None,
+            chat_memory_block=_maybe_load_chat_memory_block(chat_id or ""),
+            trace_id=trace_id,
+        )
+        return synth_result.text, {
+            "revoice": "ok",
+            "revoice_model": synth_result.model,
+            "revoice_fallback": synth_result.fallback,
+            "revoice_path": delegation_path,
+        }
+    except Exception as e:
+        logger.warning(
+            "revoice failed on %s: %s: %s — falling back to scrubbed text",
+            delegation_path, type(e).__name__, e,
+        )
+        return raw_text, {"revoice": "error",
+                          "revoice_error": f"{type(e).__name__}: {e}"}
 
 
 # ─── Voice-leak scrubber (2026-06-13 / -14) ────────────────────────────
@@ -354,13 +489,30 @@ def handle(turn: Turn) -> Response:
         text = (r.result or {}).get("text", "") if r.ok else (
             r.error or r.transport_error or "(no response)"
         )
-        # Voice-leak defense-in-depth: Kobe's mesh delegation prefixes
-        # responses with "fraser says:" / "kobe says:" etc. The synth-side
-        # prompt fix doesn't apply here because we bypass synth. Scrub
-        # before sending to the user.
+        # Voice-leak defense-in-depth: scrub raw output of agent prefixes
+        # ("fraser says:" / "kobe says:" / etc.) before either re-voicing
+        # or shipping. Scrubber result is the floor; revoice is the wall.
         text, _leaks = _scrub_voice_leak(text)
         if _leaks:
             logger.info("voice-leak scrubbed on kobe_route: %s", _leaks)
+        # Phase-2 (2026-06-13): re-voice through Miya synth so kobe_route
+        # doesn't ship raw specialist output (closes the arch gap that
+        # caused generic warmups and hallucinated 1RMs to leak through).
+        revoice_meta: dict[str, Any] = {"revoice": "disabled"}
+        if _revoice_enabled():
+            text, revoice_meta = _revoice_through_synth(
+                raw_text=text,
+                user_message=turn.user_message,
+                delegation_path="kobe_route",
+                trace_id=trace_id,
+                chat_id=turn.chat_id,
+            )
+        # Cross-validation against profile — catches wrong 1RMs,
+        # goal_target mismatches, pace flips before sending.
+        text, _validation_issues = _validate_outbound(
+            text,
+            arbitration=_best_effort_arbitration_for_delegated(turn.chat_id),
+        )
         # Publish a signal even for delegated turns (cross-agent log).
         sid_list: list[int] = []
         try:
@@ -371,6 +523,7 @@ def handle(turn: Turn) -> Response:
                     "chat_id": turn.chat_id,
                     "delegation_path": "kobe_route",
                     "voice_leaks_scrubbed": _leaks,
+                    "revoice_meta": revoice_meta,
                     "stripped_message": stripped_msg,
                     "response_len": len(text),
                 },
@@ -423,6 +576,20 @@ def handle(turn: Turn) -> Response:
         text, _leaks = _scrub_voice_leak(text)
         if _leaks:
             logger.info("voice-leak scrubbed on fraser_route: %s", _leaks)
+        # Phase-2 re-voice (same rationale as kobe_route above).
+        revoice_meta_f: dict[str, Any] = {"revoice": "disabled"}
+        if _revoice_enabled():
+            text, revoice_meta_f = _revoice_through_synth(
+                raw_text=text,
+                user_message=turn.user_message,
+                delegation_path="fraser_route",
+                trace_id=trace_id,
+                chat_id=turn.chat_id,
+            )
+        text, _validation_issues_f = _validate_outbound(
+            text,
+            arbitration=_best_effort_arbitration_for_delegated(turn.chat_id),
+        )
         sid_list = []
         try:
             sid = publish_signal(
@@ -432,6 +599,7 @@ def handle(turn: Turn) -> Response:
                     "chat_id": turn.chat_id,
                     "delegation_path": "fraser_route",
                     "voice_leaks_scrubbed": _leaks,
+                    "revoice_meta": revoice_meta_f,
                     "stripped_message": stripped_msg,
                     "response_len": len(text),
                 },
@@ -771,6 +939,13 @@ def handle(turn: Turn) -> Response:
             veto_reason=veto_reason,
             decision=decision,
             synth_meta=synth_meta,
+        )
+
+    # Cross-validation on the synthesized text — final guard against
+    # wrong 1RMs / pace flips / goal mismatches before sending.
+    if charter_ok and text:
+        text, _orch_validation_issues = _validate_outbound(
+            text, arbitration=verdict if verdict else None,
         )
 
     # Record bot reply to chat_memory (if enabled). Done here at the end
