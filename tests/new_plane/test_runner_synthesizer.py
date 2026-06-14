@@ -22,7 +22,10 @@ def test_build_prompt_includes_system_and_user():
     p = _build_prompt(user_message="hi", facts={}, arbitration=None,
                       fraser_text=None, recent_signals=None)
     assert "Miya" in p
-    assert "single coherent voice" in p
+    # Voice-leak fix 2026-06-13: prompt's leading rule is "ONE voice"
+    # (replaces the old "single coherent voice over a team of
+    # specialists" phrasing which named the specialists).
+    assert "ONE voice" in p or "one voice" in p.lower()
     assert 'User said: "hi"' in p
 
 
@@ -58,12 +61,17 @@ def test_build_prompt_includes_facts_without_summary():
     assert "active" in p
 
 
-def test_build_prompt_includes_fraser_draft():
+def test_build_prompt_includes_workout_draft():
+    """Voice-leak fix 2026-06-13: label is now 'WORKOUT DRAFT' not
+    'FRASER'S DRAFT' so Gemini can't parrot the specialist name."""
     p = _build_prompt(user_message="design me a wod",
                       facts={}, arbitration=None,
                       fraser_text="5 rounds for time",
                       recent_signals=None)
-    assert "FRASER'S DRAFT:" in p
+    assert "WORKOUT DRAFT" in p
+    assert "FRASER'S DRAFT" not in p, (
+        "label leaked 'FRASER' — Gemini will parrot 'Fraser's design...'"
+    )
     assert "5 rounds for time" in p
 
 

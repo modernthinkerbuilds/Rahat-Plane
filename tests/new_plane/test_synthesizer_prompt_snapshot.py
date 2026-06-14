@@ -43,9 +43,14 @@ SCENARIOS = [
         "facts": {"gym_wod": {"result": {"text": "Bench Press 5x5; 3 RFT"},
                   "day": "wed"}},
         "arbitration": None,
+        # Updated 2026-06-13: system prompt was tightened to remove
+        # specialist names; the "do not paraphrase it into something
+        # else" phrasing moved into the per-fact label
+        # ("do not invent"). The SOURCE OF TRUTH label is in _build_prompt
+        # itself, not the system prompt, so it survives the rewrite.
         "expected": ["SOURCE OF TRUTH", "Bench Press 5x5; 3 RFT",
                      "do not invent",
-                     "paraphrase it into something else"],
+                     "read it back verbatim"],
         "forbidden": ["feel free to paraphrase", "hasn't been synced",
                       "you may invent"],
     },
@@ -82,15 +87,18 @@ SCENARIOS = [
                      "they are confirming a question YOU asked"],
         "forbidden": [],
     },
-    # ── Fraser draft is labelled ──────────────────────────────────────
+    # ── Workout draft is labelled neutrally (voice-leak fix 2026-06-13) ──
     {
         "id": "fraser_draft_labelled",
         "user_message": "design me a metcon",
         "facts": {},
         "arbitration": None,
         "fraser_text": "21-15-9 thrusters + pull-ups",
-        "expected": ["FRASER'S DRAFT:", "21-15-9 thrusters + pull-ups"],
-        "forbidden": [],
+        "expected": ["WORKOUT DRAFT", "21-15-9 thrusters + pull-ups"],
+        # Voice-leak guard: the label must NOT name internal specialists
+        # (the live bot at 21:08 said "Fraser has designed..." because
+        # we used to label the section "FRASER'S DRAFT:").
+        "forbidden": ["FRASER'S DRAFT"],
     },
     # ── recent cross-agent signals are flagged as maybe-irrelevant ────
     {
