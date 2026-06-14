@@ -216,6 +216,24 @@ def cmd_serve(_args: list[str]) -> int:
     # means the 6 AM briefing keeps firing automatically. Set
     # NEW_MIYA_NUDGES_ENABLED=0 to suppress (emergency disable while
     # old Kobe is still running, to avoid double-send).
+        # Register old-plane agents so Kobe's mesh delegation can find Fraser.
+    # The old bot did this implicitly via its main module; the new runner
+    # uses agents.the_scientist.handler.route() directly which bypasses
+    # the registration step. Without this, Kobe's _should_delegate
+    # finds an empty registry and emits "I do not know an agent named 'fraser'".
+    try:
+        from core import miya as _miya_registry
+        from agents.the_scientist.agent import KobeAgent
+        from agents.fraser.agent import FraserAgent
+        _miya_registry.clear_registry()
+        _miya_registry.register(KobeAgent())
+        _miya_registry.register(FraserAgent())
+        logger.info("agents registered: %s",
+                    [a.name for a in _miya_registry.registered()])
+    except Exception as _e:
+        logger.warning("agent registration failed: %s: %s",
+                       type(_e).__name__, _e)
+
     nudges_enabled = os.getenv("NEW_MIYA_NUDGES_ENABLED", "1") == "1"
     if nudges_enabled:
         logger.info("proactive nudges ENABLED (default). new Miya owns "
