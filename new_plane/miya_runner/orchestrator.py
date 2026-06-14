@@ -69,6 +69,77 @@ class Response:
     transport_errors: list[str] = field(default_factory=list)
 
 
+# ─── Voice-leak scrubber (2026-06-13 / -14) ────────────────────────────
+# kobe_route and fraser_route are passthroughs — they return the agent's
+# raw text directly to the user without going through synth. That means
+# any internal-voice artifacts (Kobe's mesh-delegation prefix
+# "fraser says:", Fraser's own response prefix, etc.) leak verbatim.
+# The synth-side fix in synthesizer.SYSTEM_PROMPT is irrelevant on this
+# path. We scrub here as defense-in-depth.
+#
+# This is a regex strip, not LLM re-voicing — we only catch the obvious
+# prefix patterns. Anything more invasive needs a real re-voice layer.
+import re as _re
+
+_VOICE_LEAK_PREFIX_RE = _re.compile(
+    r"^\s*("
+    r"fraser|kobe|huberman|sci|scientist|bajrangi|bali|miya|coach|"
+    r"the\s+(?:sports\s+)?scientist|the\s+crossfit\s+coach"
+    r")\s*(?:says|>>|->|:)\s*",
+    flags=_re.IGNORECASE | _re.MULTILINE,
+)
+
+_VOICE_LEAK_STANDALONE_RE = _re.compile(
+    r"^\s*(?:as|per|according\s+to)\s+"
+    r"(fraser|kobe|huberman|sci|scientist|bajrangi|bali|the\s+sports\s+scientist|the\s+crossfit\s+coach)"
+    r"[\s,]+",
+    flags=_re.IGNORECASE | _re.MULTILINE,
+)
+
+
+def _scrub_voice_leak(text: str) -> tuple[str, list[str]]:
+    """Strip internal-specialist voice prefixes from agent-passthrough text.
+
+    Returns (cleaned_text, list_of_leaks_found). The caller can log
+    which prefixes were scrubbed so we can audit how often kobe_route
+    and fraser_route emit leaky output.
+
+    Patterns caught:
+      - "fraser says: ..." / "fraser: ..." / "fraser>> ..." / "fraser-> ..."
+      - "Kobe says ..." / "Kobe: ..." (with any casing)
+      - "The sports scientist says ..."
+      - "As Fraser would design ..." / "Per Kobe's analysis ..." / "According to Huberman ..."
+      - "the crossfit coach: ..."
+
+    Patterns NOT caught (would need LLM re-voicing):
+      - Embedded mid-sentence references ("Fraser thinks you should ...")
+      - Implicit voicing ("My design for today is ...")
+    """
+    if not text:
+        return text, []
+
+    leaks: list[str] = []
+
+    def _capture_prefix(m: _re.Match) -> str:
+        leaks.append(m.group(1).strip().lower())
+        return ""
+
+    def _capture_standalone(m: _re.Match) -> str:
+        leaks.append(f"<{m.group(1).strip().lower()}>")
+        return ""
+
+    cleaned = _VOICE_LEAK_PREFIX_RE.sub(_capture_prefix, text)
+    cleaned = _VOICE_LEAK_STANDALONE_RE.sub(_capture_standalone, cleaned)
+
+    # Collapse the empty leading lines we created.
+    cleaned = _re.sub(r"^\s*\n+", "", cleaned)
+    # Capitalize first character if we trimmed a prefix mid-line.
+    if leaks and cleaned and cleaned[0].islower():
+        cleaned = cleaned[0].upper() + cleaned[1:]
+
+    return cleaned, leaks
+
+
 def _maybe_record_chat_memory(chat_id: str, role: str, text: str) -> None:
     """Append a turn to core.chat_memory if RAHAT_XAGENT_MEMORY=1.
 
@@ -283,6 +354,13 @@ def handle(turn: Turn) -> Response:
         text = (r.result or {}).get("text", "") if r.ok else (
             r.error or r.transport_error or "(no response)"
         )
+        # Voice-leak defense-in-depth: Kobe's mesh delegation prefixes
+        # responses with "fraser says:" / "kobe says:" etc. The synth-side
+        # prompt fix doesn't apply here because we bypass synth. Scrub
+        # before sending to the user.
+        text, _leaks = _scrub_voice_leak(text)
+        if _leaks:
+            logger.info("voice-leak scrubbed on kobe_route: %s", _leaks)
         # Publish a signal even for delegated turns (cross-agent log).
         sid_list: list[int] = []
         try:
@@ -292,6 +370,7 @@ def handle(turn: Turn) -> Response:
                     "user_message": turn.user_message,
                     "chat_id": turn.chat_id,
                     "delegation_path": "kobe_route",
+                    "voice_leaks_scrubbed": _leaks,
                     "stripped_message": stripped_msg,
                     "response_len": len(text),
                 },
@@ -340,6 +419,10 @@ def handle(turn: Turn) -> Response:
         text = (r.result or {}).get("text", "") if r.ok else (
             r.error or r.transport_error or "(no response)"
         )
+        # Voice-leak scrub (same rationale as kobe_route above).
+        text, _leaks = _scrub_voice_leak(text)
+        if _leaks:
+            logger.info("voice-leak scrubbed on fraser_route: %s", _leaks)
         sid_list = []
         try:
             sid = publish_signal(
@@ -348,6 +431,7 @@ def handle(turn: Turn) -> Response:
                     "user_message": turn.user_message,
                     "chat_id": turn.chat_id,
                     "delegation_path": "fraser_route",
+                    "voice_leaks_scrubbed": _leaks,
                     "stripped_message": stripped_msg,
                     "response_len": len(text),
                 },
