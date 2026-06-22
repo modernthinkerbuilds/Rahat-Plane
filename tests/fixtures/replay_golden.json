@@ -1,0 +1,130 @@
+[
+  {
+    "id": "today-bare",
+    "input": "today",
+    "must_contain": [
+      "Today ("
+    ],
+    "must_not": [
+      "API_KEY",
+      "GEMINI_API_KEY",
+      "vault/rahat.db"
+    ]
+  },
+  {
+    "id": "yesterday-bare",
+    "input": "yesterday",
+    "must_contain": [
+      "Yesterday"
+    ],
+    "must_not": [
+      "API_KEY"
+    ]
+  },
+  {
+    "id": "weekly-summary",
+    "input": "calories this week",
+    "must_contain": [
+      "Week so far"
+    ],
+    "must_not": []
+  },
+  {
+    "id": "remaining-burn",
+    "input": "how much do I have left for the week",
+    "must_contain": [
+      "Remaining"
+    ],
+    "must_not": []
+  },
+  {
+    "id": "weight-log",
+    "input": "wt: 195.8",
+    "must_contain": [
+      "Weight logged",
+      "195.8"
+    ],
+    "must_not": []
+  },
+  {
+    "id": "weight-timeline",
+    "input": "when will I get to my target weight",
+    "must_contain": [
+      "Weight timeline"
+    ],
+    "must_not": []
+  },
+  {
+    "id": "aggressive-target-refused",
+    "input": "I want 176 lbs by July 1",
+    "must_contain": [
+      "above your sustainable"
+    ],
+    "must_not": []
+  },
+  {
+    "id": "hrv-red",
+    "input": "hrv 25",
+    "must_contain": [
+      "RED"
+    ],
+    "must_not": []
+  },
+  {
+    "id": "hrv-green",
+    "input": "hrv 50",
+    "must_contain": [
+      "GREEN"
+    ],
+    "must_not": []
+  },
+  {
+    "id": "skip-day",
+    "input": "I can't make Wednesday",
+    "must_contain": [
+      "Marked Wed"
+    ],
+    "must_not": []
+  },
+  {
+    "id": "swap-day",
+    "input": "swap Sunday for Monday",
+    "must_contain": [
+      "Swapped"
+    ],
+    "must_not": []
+  },
+  {
+    "id": "z2-vs-cf",
+    "input": "should I run or do crossfit",
+    "must_contain": [
+      "fat loss"
+    ],
+    "must_not": []
+  },
+  {
+    "id": "tier-survival",
+    "input": "tier survival",
+    "must_contain": [
+      "Tier set"
+    ],
+    "must_not": []
+  },
+  {
+    "id": "log-walk",
+    "input": "walk 250",
+    "must_contain": [
+      "Logged"
+    ],
+    "must_not": []
+  },
+  {
+    "id": "robust-mixed-case",
+    "input": "AM I WORKING OUT TODAY",
+    "must_contain": [
+      "today"
+    ],
+    "must_not": [],
+    "case_insensitive": true
+  }
+]

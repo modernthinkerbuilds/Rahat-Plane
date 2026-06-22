@@ -1,0 +1,86 @@
+name: tests
+
+# Run the full five-layer hermetic test suite on every push to main and
+# on every pull request targeting main. No Gemini, no Telegram, no live
+# DB — the hermetic guards in tests/conftest.py make this safe to run in
+# any environment.
+#
+# Failure here means a regression landed (or is about to land). Look at
+# the uploaded `test-report` artifact for the markdown summary; CI logs
+# show the full pytest output.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  # Allow manual runs from the Actions tab.
+  workflow_dispatch:
+
+# Cancel any in-flight run for the same ref when a new push comes in.
+# Saves CI minutes; nobody cares about results for a superseded commit.
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      # Hermetic flags — conftest.py also sets these, but pinning them
+      # at the workflow level prevents any pre-conftest import from
+      # accidentally hitting the wire or the live DB.
+      RAHAT_TEST_MODE: '1'
+      RAHAT_VOICE: neutral
+      RAHAT_LEGACY_DISPATCH: '1'
+      # Explicitly unset Gemini so a leaked secret in some future repo
+      # config can't enable the LLM-as-judge path on CI.
+      GEMINI_API_KEY: ''
+      RAHAT_RUN_JUDGE: '0'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install dev dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Run the five-layer suite
+        # tests/run_all.py shells out per layer and writes the report.
+        # Exit code is 0 only if every layer passed.
+        run: |
+          python -m tests.run_all \
+            --report tests/last_run_report.md \
+            --json   tests/last_run.json
+
+      - name: Show the report inline
+        if: always()
+        run: cat tests/last_run_report.md
+
+      - name: Upload report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report
+          path: |
+            tests/last_run_report.md
+            tests/last_run.json
+          retention-days: 14
+
+      - name: Add report to PR summary
+        if: always() && github.event_name == 'pull_request'
+        run: |
+          {
+            echo "## Test report"
+            cat tests/last_run_report.md
+          } >> "$GITHUB_STEP_SUMMARY"

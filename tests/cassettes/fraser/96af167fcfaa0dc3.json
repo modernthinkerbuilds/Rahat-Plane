@@ -1,0 +1,8 @@
+{
+  "text": "Your HRV of 55 indicates you are recovered and ready for training. This zone 2 session is designed to build aerobic capacity without overtaxing your central nervous system, serving as an optional alternative to a full day off. Prioritize steady, low-intensity movement to maintain consistency while respecting your structural recovery needs.",
+  "model": "models/gemini-flash-lite-latest",
+  "tokens_in": 182,
+  "tokens_out": 64,
+  "cost_usd": 0.00021459999999999998,
+  "error": null
+}

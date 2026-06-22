@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+    Launchd manifest TEMPLATE for the daily hygiene job.
+    Runs at 00:30 — after the regression + greenstreak pair has settled.
+
+    Touches the filesystem only — never the commit graph.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.rahat.hygiene</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>{{RAHAT_HOME}}/scripts/jobs/hygiene.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>{{RAHAT_HOME}}</string>
+
+    <!-- 00:30 daily -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key><integer>0</integer>
+        <key>Minute</key><integer>30</integer>
+    </dict>
+
+    <key>RunAtLoad</key><false/>
+    <key>KeepAlive</key><false/>
+
+    <key>StandardOutPath</key>
+    <string>{{RAHAT_HOME}}/vault/jobs/hygiene.launchd.log</string>
+    <key>StandardErrorPath</key>
+    <string>{{RAHAT_HOME}}/vault/jobs/hygiene.launchd.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>

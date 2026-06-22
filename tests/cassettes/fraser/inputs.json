@@ -1,0 +1,20 @@
+{
+  "_schema_doc": "Inputs for scripts/record_fraser_cassettes.py. Each entry drives ONE LLM call on the real API; the response is saved to tests/cassettes/fraser/<case_id>.json keyed by sha256(model:prompt)[:16] in the same shape core.llm._save_fixture writes. Re-record by re-running the script with RAHAT_FIXTURE_RECORD=1; replay is automatic when LLM_FIXTURE_DIR is set to this directory.",
+  "cases": [
+    {
+      "case_id": "fraser_001_hrv33_overhead_swap",
+      "model": null,
+      "prompt": "[Workout Card NOTES enrichment] Write a 2-3 sentence coaching note explaining why this adapted workout matches the user's state today. Voice: direct, technical, prescriptive. No fluff. Quote the structural rationale's key facts in plainer English.\n\nContext:\n```json\n{\n  \"source_title\": \"\\\"Pikachu's Thunderbolt\\\"\",\n  \"structural_why\": \"Adapted from gym programming 'Pikachu's Thunderbolt'. HRV=33, recovery=red, tier=zone2, active injuries=0.\",\n  \"substitutions\": [\"power_snatch \\u2192 floor_press (HRV-red overhead swap)\"],\n  \"hrv\": 33,\n  \"recovery_color\": \"red\",\n  \"tier\": \"zone2\",\n  \"injuries\": []\n}\n```\n\nRespond with the coaching note ONLY — no preamble, no JSON, no markdown headings."
+    },
+    {
+      "case_id": "fraser_007_rest_day_active_recovery",
+      "model": null,
+      "prompt": "[Workout Card NOTES enrichment] Write a 2-3 sentence coaching note explaining why this adapted workout matches the user's state today. Voice: direct, technical, prescriptive. No fluff. Quote the structural rationale's key facts in plainer English.\n\nContext:\n```json\n{\n  \"source_title\": \"Rest Day\",\n  \"structural_why\": \"Rest day per your gym programming. Active-recovery flow below is Fraser's suggestion, not gym-prescribed — skip if you'd rather take a full off day.\",\n  \"substitutions\": [],\n  \"hrv\": 55,\n  \"recovery_color\": \"green\",\n  \"tier\": \"zone2\",\n  \"injuries\": []\n}\n```\n\nRespond with the coaching note ONLY — no preamble, no JSON, no markdown headings."
+    },
+    {
+      "case_id": "fraser_demo_thu_lava_plume",
+      "model": null,
+      "prompt": "[Workout Card NOTES enrichment] Write a 2-3 sentence coaching note for today's adapted workout (Lava Plume — 6 rounds of 400m run + farmers carry + wall sit). User is HRV-green, no injuries, zone-2 tier. Voice: direct, technical."
+    }
+  ]
+}

@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+# pre-merge — the gate that runs before any merge to main.
+#
+# Run locally with:  bash scripts/hooks/pre-merge
+# Or via:            make pre-merge
+# Also runs in CI on pull_request to main.
+#
+# Goal: under 5 minutes, ALL 6 layers green:
+#   1. unit            (target <10s)
+#   2. contract        (target <30s)
+#   3. eval            (target <60s)
+#   4. adversarial     (target <60s)  — needs corpus from prod DB
+#   5. regression      (target <10s)
+#   6. silent-failure  (target <15s)
+#   7. production-parity (target <120s)  — TZ matrix
+#
+# If any layer is red, the merge is blocked.
+
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+if [[ -x "venv/bin/python" ]]; then
+    PY="venv/bin/python"
+elif [[ -x ".venv/bin/python" ]]; then
+    PY=".venv/bin/python"
+else
+    PY="$(command -v python3)"
+fi
+
+echo "════════════════════════════════════════════════════════════════════"
+echo "  pre-merge gate — $(date '+%H:%M:%S')"
+echo "  Target: under 5 minutes, all 7 layers green"
+echo "════════════════════════════════════════════════════════════════════"
+
+export RAHAT_TEST_MODE=1
+export RAHAT_VOICE=neutral
+unset GEMINI_API_KEY
+export PYTHONDONTWRITEBYTECODE=1
+
+FAILED=()
+START_TIME=$(date +%s)
+
+step() {
+    local name="$1"; shift
+    local t0=$(date +%s)
+    echo ""
+    echo "── $name ──"
+    if "$@"; then
+        echo "✓ $name ($(($(date +%s) - t0))s)"
+    else
+        echo "✗ $name FAILED ($(($(date +%s) - t0))s)"
+        FAILED+=("$name")
+    fi
+}
+
+# 1. The bug-to-test policy.
+step "bug-to-test policy" \
+    "$PY" scripts/check_bug_has_regression_test.py --gate=pre-merge || true
+
+# 2. Regression registry — the floor.
+step "regression registry" \
+    "$PY" -m pytest tests/regression_registry -q --no-header
+
+# 3. Silent-failure layer.
+step "silent-failure guard" \
+    "$PY" -m pytest tests/silent_failure -q --no-header
+
+# 4. The full 5-layer run_all.
+if [[ -f tests/run_all.py ]]; then
+    step "full 5-layer run_all" "$PY" -m tests.run_all
+fi
+
+# 5. Production-parity layer (TZ matrix).
+if [[ -d tests/production_parity ]]; then
+    step "production-parity (TZ matrix)" \
+        "$PY" -m pytest tests/production_parity -q --no-header
+fi
+
+# 6. Adversarial phrasings.
+if [[ -d tests/adversarial ]]; then
+    step "adversarial phrasings" \
+        "$PY" -m pytest tests/adversarial -q --no-header
+fi
+
+# 7. Coverage gate — only fail if we have coverage installed.
+if "$PY" -c "import coverage" 2>/dev/null; then
+    step "coverage ≥ 85%" \
+        "$PY" -m coverage report --fail-under=85 \
+            --include="core/*,agents/*" || true
+fi
+
+TOTAL_ELAPSED=$(($(date +%s) - START_TIME))
+echo ""
+echo "════════════════════════════════════════════════════════════════════"
+if [[ ${#FAILED[@]} -eq 0 ]]; then
+    echo "  ✓ pre-merge GREEN (${TOTAL_ELAPSED}s) — merge allowed"
+    echo "════════════════════════════════════════════════════════════════════"
+    exit 0
+else
+    echo "  ✗ pre-merge RED (${TOTAL_ELAPSED}s) — merge BLOCKED"
+    echo ""
+    echo "  Failed gates:"
+    for f in "${FAILED[@]}"; do
+        echo "    - $f"
+    done
+    echo "════════════════════════════════════════════════════════════════════"
+    exit 1
+fi

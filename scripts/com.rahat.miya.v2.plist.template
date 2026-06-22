@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+    Launchd manifest TEMPLATE for new Miya v2 (parallel plane).
+
+    THIS IS A SEPARATE SERVICE from com.rahat.miya — never swap one for
+    the other while the 8-week stop-or-go gate is in flight. Both must
+    coexist. They use different bot tokens, different log files, and
+    different chat-state (the new plane has its own signal DB).
+
+    {{RAHAT_HOME}}  — substitute with absolute repo path (e.g. /Users/you/developer/agency/rahat)
+    {{PYTHON_BIN}}  — substitute with absolute venv python (e.g. /Users/you/developer/agency/rahat/.venv/bin/python)
+
+    To install:
+        # 1) Render this template — quick sed will do
+        sed -e "s|{{RAHAT_HOME}}|$HOME/developer/agency/rahat|g" \
+            -e "s|{{PYTHON_BIN}}|$HOME/developer/agency/rahat/.venv/bin/python|g" \
+            scripts/com.rahat.miya.v2.plist.template \
+            > ~/Library/LaunchAgents/com.rahat.miya.v2.plist
+
+        # 2) Load it
+        launchctl load ~/Library/LaunchAgents/com.rahat.miya.v2.plist
+
+        # 3) Verify
+        launchctl list | grep com.rahat.miya
+        # Should show BOTH com.rahat.miya AND com.rahat.miya.v2
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.rahat.miya.v2</string>
+
+    <!-- caffeinate keeps the Mac awake while v2 is polling, mirroring
+         the live bot's pattern. Drop -d for headless Mac Mini.
+         Uses the venv's Python explicitly (system 3.9 lacks deps). -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/caffeinate</string>
+        <string>-imd</string>
+        <string>{{PYTHON_BIN}}</string>
+        <string>-u</string>
+        <string>-m</string>
+        <string>new_plane.miya_runner</string>
+        <string>serve</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>{{RAHAT_HOME}}</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Restart on any exit. Pair with `launchctl kickstart -k` for
+         clean code reloads after pulling new commits. -->
+    <key>KeepAlive</key>
+    <true/>
+
+    <!-- 10s between retries — don't hot-loop on fast-failing imports. -->
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <!-- Logs land in vault/ so nightly hygiene can rotate them with
+         the rest. v2 keeps its own file so we can grep for new-plane
+         events without slogging through live bot output. -->
+    <key>StandardOutPath</key>
+    <string>{{RAHAT_HOME}}/vault/miya_v2.log</string>
+    <key>StandardErrorPath</key>
+    <string>{{RAHAT_HOME}}/vault/miya_v2.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <!-- Hardening: never share token with live bot. The runner
+             ALSO checks this at boot, but the env separation here is
+             belt-and-suspenders. Set NEW_MIYA_BOT_TOKEN in .env;
+             dotenv loading inside the runner picks it up. -->
+    </dict>
+</dict>
+</plist>

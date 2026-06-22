@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+    Launchd manifest TEMPLATE for the daily regression job.
+    {{RAHAT_HOME}} is substituted by bootstrap.sh with the absolute path
+    of the repo root on this machine. The rendered file (without
+    .template suffix) is gitignored — never check rendered plists in.
+
+    Schedule: 23:00 every night.
+
+    To install:
+        bash bootstrap.sh                                    # renders templates
+        cp scripts/jobs/com.rahat.regression.plist ~/Library/LaunchAgents/
+        launchctl load ~/Library/LaunchAgents/com.rahat.regression.plist
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.rahat.regression</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>{{RAHAT_HOME}}/scripts/jobs/regression.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>{{RAHAT_HOME}}</string>
+
+    <!-- 23:00 daily -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key><integer>23</integer>
+        <key>Minute</key><integer>0</integer>
+    </dict>
+
+    <!-- One-shot. We never want this restarting in a loop. -->
+    <key>RunAtLoad</key><false/>
+    <key>KeepAlive</key><false/>
+
+    <key>StandardOutPath</key>
+    <string>{{RAHAT_HOME}}/vault/jobs/regression.launchd.log</string>
+    <key>StandardErrorPath</key>
+    <string>{{RAHAT_HOME}}/vault/jobs/regression.launchd.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>

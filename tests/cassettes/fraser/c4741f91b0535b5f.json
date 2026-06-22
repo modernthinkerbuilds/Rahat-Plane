@@ -1,0 +1,8 @@
+{
+  "text": "Your HRV of 33 and red recovery status indicate significant physiological strain, necessitating a shift from high-impact explosive movements to steady-state Zone 2 work. We have replaced the power snatch with the floor press to eliminate vertical load and overhead stability demands while keeping your central nervous system stress within sustainable limits.",
+  "model": "models/gemini-flash-lite-latest",
+  "tokens_in": 203,
+  "tokens_out": 62,
+  "cost_usd": 0.0002159,
+  "error": null
+}

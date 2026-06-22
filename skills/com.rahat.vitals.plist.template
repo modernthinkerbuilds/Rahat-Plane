@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+    Launchd manifest TEMPLATE for the vitals listener.
+
+    Owns the iPhone Shortcut ingest endpoint at POST :5000/vitals — Apple
+    Watch writes weight + active_calories into raw_vitals via this Flask
+    app. Prior to 2026-05-11 it ran as a free-floating `python3
+    vitals_listener.py &` invocation that died on every Mac reboot; the
+    plist supervises it so the data pipe never silently goes dark.
+
+    {{RAHAT_HOME}} is substituted by bootstrap.sh with the absolute repo
+    root. The rendered file (without .template suffix) is gitignored —
+    never commit rendered plists.
+
+    To install:
+        bash bootstrap.sh                                       # renders templates
+        cp skills/com.rahat.vitals.plist ~/Library/LaunchAgents/
+        launchctl load ~/Library/LaunchAgents/com.rahat.vitals.plist
+
+    To inspect:
+        launchctl list | grep com.rahat.vitals
+        tail -f vault/vitals.log
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.rahat.vitals</string>
+
+    <!-- Uses the repo venv's Python so Flask (installed via
+         requirements.txt) is available. macOS's system /usr/bin/python3
+         is 3.9 and has no Flask, so falling back to it would break boot. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>{{RAHAT_HOME}}/venv/bin/python</string>
+        <string>{{RAHAT_HOME}}/skills/vitals_listener.py</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>{{RAHAT_HOME}}</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Restart on any exit — the Flask process should be up 24/7. -->
+    <key>KeepAlive</key>
+    <true/>
+
+    <!-- 10s between retries — don't hot-loop on a fast-failing import. -->
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>StandardOutPath</key>
+    <string>{{RAHAT_HOME}}/vault/vitals.log</string>
+    <key>StandardErrorPath</key>
+    <string>{{RAHAT_HOME}}/vault/vitals.log</string>
+
+    <!-- RAHAT_DB_PATH would override the default vault/rahat.db target.
+         Leave it unset so the listener writes to the canonical DB the
+         rest of the system reads. -->
+</dict>
+</plist>

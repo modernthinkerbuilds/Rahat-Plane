@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+    Launchd manifest TEMPLATE for the SugarWOD vitality bridge.
+    {{RAHAT_HOME}} is substituted by bootstrap.sh. The rendered file
+    (without .template suffix) is gitignored.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.rahat.sugar.bridge</string>
+
+    <!-- Uses the repo venv's Python so FastAPI / uvicorn / pydantic
+         (installed via requirements.txt) are available. Falling back to
+         /usr/bin/python3 would fail because macOS's system Python is
+         3.9 and has none of those deps. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>{{RAHAT_HOME}}/venv/bin/python</string>
+        <string>{{RAHAT_HOME}}/bridges/sugarwod/server.py</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>{{RAHAT_HOME}}</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>StandardOutPath</key>
+    <string>{{RAHAT_HOME}}/vault/sugar-bridge.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>{{RAHAT_HOME}}/vault/sugar-bridge.log</string>
+</dict>
+</plist>

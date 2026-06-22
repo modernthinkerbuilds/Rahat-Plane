@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 1200 820" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="t4 d4">
+  <title id="t4">Rahat memory architecture — four-tier hierarchy with universal substrate, agent adapters, sleep-time consolidation</title>
+  <desc id="d4">Working/recall/archival/procedural memory layers, agent-specific adapters over a shared SQLite substrate, with a nightly consolidation worker.</desc>
+
+  <style>
+    .bg { fill: #ffffff; }
+    .panel { fill: #f7f6f2; stroke: #e6e3da; stroke-width: 1; }
+    .panel-accent { fill: #fdf6f0; stroke: #d97757; stroke-width: 1.5; }
+    .accent { fill: #d97757; }
+    .ink { fill: #1a1a1a; font-family: ui-sans-serif, system-ui, sans-serif; }
+    .muted { fill: #6b6b6b; font-family: ui-sans-serif, system-ui, sans-serif; }
+    .title { font-weight: 600; font-size: 14px; }
+    .h1 { font-weight: 600; font-size: 16px; }
+    .h2 { font-weight: 600; font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; }
+    .lbl { font-size: 11px; }
+    .small { font-size: 10px; }
+    .tiny { font-size: 9px; }
+    .box { fill: #ffffff; stroke: #e6e3da; stroke-width: 1; }
+    .box-accent { fill: #ffffff; stroke: #d97757; stroke-width: 1.5; }
+    .box-blue { fill: #f0f5fa; stroke: #6b88a8; stroke-width: 1; }
+    .box-green { fill: #f1f6f0; stroke: #7a9270; stroke-width: 1; }
+    .arrow { stroke: #b8b3a6; stroke-width: 1.2; fill: none; }
+    .arrow-accent { stroke: #d97757; stroke-width: 1.4; fill: none; }
+    .arrow-blue { stroke: #6b88a8; stroke-width: 1.2; fill: none; }
+    .dashed { stroke-dasharray: 4 3; }
+  </style>
+
+  <defs>
+    <marker id="arr4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#b8b3a6"/>
+    </marker>
+    <marker id="arra4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#d97757"/>
+    </marker>
+    <marker id="arrb4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#6b88a8"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" width="1200" height="820"/>
+
+  <text class="ink h1" x="40" y="34">Memory architecture — four tiers, agent-shared substrate, sleep-time consolidation</text>
+  <text class="muted small" x="40" y="52">Letta-style memory hierarchy + GraphRAG-lite entity graph + per-agent adapters. SOTA-AGENT-ARCHITECTURE-REVIEW §7.</text>
+
+  <!-- Layer 0: User / agent inbound -->
+  <rect class="box" x="40" y="76" width="280" height="48" rx="6"/>
+  <text class="ink lbl" x="180" y="96" text-anchor="middle">Inbound message → Reasoner</text>
+  <text class="muted small" x="180" y="112" text-anchor="middle">user msg, scheduled tick, sensor event</text>
+
+  <!-- Context Assembler -->
+  <rect class="box-accent" x="360" y="76" width="280" height="48" rx="6"/>
+  <text class="ink lbl" x="500" y="96" text-anchor="middle">Context Assembler (per-agent)</text>
+  <text class="muted small" x="500" y="112" text-anchor="middle">builds [Active goal] [Commits] [Plan] [Prefs] [Thread]</text>
+
+  <rect class="box-accent" x="680" y="76" width="280" height="48" rx="6"/>
+  <text class="ink lbl" x="820" y="96" text-anchor="middle">State Extractor (per-agent)</text>
+  <text class="muted small" x="820" y="112" text-anchor="middle">post-reply: parse turn → write entities/prefs</text>
+
+  <path class="arrow-accent" d="M 320 100 L 358 100" marker-end="url(#arra4)"/>
+  <path class="arrow-accent" d="M 640 100 L 678 100" marker-end="url(#arra4)"/>
+
+  <!-- ─── Universal substrate (Layer 1) ─── -->
+  <rect class="panel-accent" x="40" y="156" width="1120" height="180" rx="8"/>
+  <text class="ink h2" x="60" y="180">Layer 1 — Universal memory substrate (core/memory.py + core/archival.py)</text>
+  <text class="muted small" x="60" y="196">agent-agnostic primitives, single SQLite namespace, auto-migrating, observable via decisions ledger</text>
+
+  <rect class="box-blue" x="60" y="216" width="170" height="100" rx="6"/>
+  <text class="ink lbl" x="145" y="234" text-anchor="middle" font-weight="600">events</text>
+  <text class="muted small" x="145" y="252" text-anchor="middle">append-only firehose</text>
+  <text class="muted tiny" x="145" y="266" text-anchor="middle">msg.in / msg.out / tool.call /</text>
+  <text class="muted tiny" x="145" y="278" text-anchor="middle">commitment.made / vital.hrv</text>
+  <text class="accent tiny" x="145" y="298" text-anchor="middle">RECALL MEMORY</text>
+
+  <rect class="box-blue" x="240" y="216" width="170" height="100" rx="6"/>
+  <text class="ink lbl" x="325" y="234" text-anchor="middle" font-weight="600">entities</text>
+  <text class="muted small" x="325" y="252" text-anchor="middle">first-class objects</text>
+  <text class="muted tiny" x="325" y="266" text-anchor="middle">type + payload + status +</text>
+  <text class="muted tiny" x="325" y="278" text-anchor="middle">valid_until + supersession</text>
+  <text class="accent tiny" x="325" y="298" text-anchor="middle">CORE MEMORY</text>
+
+  <rect class="box-blue" x="420" y="216" width="170" height="100" rx="6"/>
+  <text class="ink lbl" x="505" y="234" text-anchor="middle" font-weight="600">threads</text>
+  <text class="muted small" x="505" y="252" text-anchor="middle">topic + summary +</text>
+  <text class="muted tiny" x="505" y="266" text-anchor="middle">open_questions + decisions</text>
+  <text class="muted tiny" x="505" y="278" text-anchor="middle">scoped per (agent, topic)</text>
+  <text class="accent tiny" x="505" y="298" text-anchor="middle">EPISODIC MEMORY</text>
+
+  <rect class="box-blue" x="600" y="216" width="170" height="100" rx="6"/>
+  <text class="ink lbl" x="685" y="234" text-anchor="middle" font-weight="600">preferences</text>
+  <text class="muted small" x="685" y="252" text-anchor="middle">sticky k/v per agent</text>
+  <text class="muted tiny" x="685" y="266" text-anchor="middle">confidence decay over time</text>
+  <text class="muted tiny" x="685" y="278" text-anchor="middle">"preferred_lunch=paneer"</text>
+  <text class="accent tiny" x="685" y="298" text-anchor="middle">SEMANTIC MEMORY</text>
+
+  <rect class="box-blue" x="780" y="216" width="170" height="100" rx="6"/>
+  <text class="ink lbl" x="865" y="234" text-anchor="middle" font-weight="600">archival</text>
+  <text class="muted small" x="865" y="252" text-anchor="middle">long-term facts</text>
+  <text class="muted tiny" x="865" y="266" text-anchor="middle">text + embedding (768d)</text>
+  <text class="muted tiny" x="865" y="278" text-anchor="middle">cosine search · Gemini-emb</text>
+  <text class="accent tiny" x="865" y="298" text-anchor="middle">ARCHIVAL MEMORY</text>
+
+  <rect class="box-blue" x="960" y="216" width="180" height="100" rx="6"/>
+  <text class="ink lbl" x="1050" y="234" text-anchor="middle" font-weight="600">relationships</text>
+  <text class="muted small" x="1050" y="252" text-anchor="middle">entity-to-entity links</text>
+  <text class="muted tiny" x="1050" y="266" text-anchor="middle">references · caused_by ·</text>
+  <text class="muted tiny" x="1050" y="278" text-anchor="middle">supersedes · about</text>
+  <text class="accent tiny" x="1050" y="298" text-anchor="middle">ENTITY GRAPH</text>
+
+  <!-- ─── Layer 2 — adapters ─── -->
+  <rect class="panel" x="40" y="356" width="1120" height="200" rx="8"/>
+  <text class="ink h2" x="60" y="380">Layer 2 — Per-agent adapters (Kobe + Huberman today; +N tomorrow)</text>
+  <text class="muted small" x="60" y="396">each agent declares its entity types + assembler + extractor; substrate doesn't impose schema</text>
+
+  <rect class="box-accent" x="60" y="416" width="320" height="120" rx="6"/>
+  <text class="ink lbl" x="220" y="434" text-anchor="middle" font-weight="600">Kobe adapter</text>
+  <text class="muted small" x="220" y="450" text-anchor="middle">agents/the_scientist/memory.py</text>
+  <text class="ink small" x="76" y="470">Entity types:</text>
+  <text class="muted small" x="76" y="484">  goal · plan · commitment · tier_change</text>
+  <text class="ink small" x="76" y="502">Assembler builds:</text>
+  <text class="muted small" x="76" y="516">  [Active goal: 198 lbs by 5/22 — intake 1957…]</text>
+  <text class="muted small" x="76" y="528">  [Commitments: hammer week until 5/22]</text>
+
+  <rect class="box" x="400" y="416" width="320" height="120" rx="6"/>
+  <text class="ink lbl" x="560" y="434" text-anchor="middle" font-weight="600">Huberman adapter (stub)</text>
+  <text class="muted small" x="560" y="450" text-anchor="middle">agents/bajrangi/memory.py</text>
+  <text class="ink small" x="416" y="470">Entity types:</text>
+  <text class="muted small" x="416" y="484">  recovery_protocol · sleep_concern · hrv_window</text>
+  <text class="ink small" x="416" y="502">Assembler builds:</text>
+  <text class="muted small" x="416" y="516">  [HRV trend: 38ms avg — yellow band]</text>
+  <text class="muted small" x="416" y="528">  [Active protocol: Light week — Skip CF]</text>
+
+  <rect class="box dashed" x="740" y="416" width="200" height="120" rx="6" stroke-dasharray="4 3"/>
+  <text class="ink lbl" x="840" y="434" text-anchor="middle" font-weight="600">Curriculum (Later)</text>
+  <text class="muted small" x="840" y="450" text-anchor="middle">agents/curriculum/memory.py</text>
+  <text class="ink small" x="756" y="470">Entity types:</text>
+  <text class="muted small" x="756" y="484">  lesson · milestone</text>
+  <text class="muted small" x="756" y="498">  behavior_log</text>
+  <text class="accent tiny" x="840" y="524" text-anchor="middle">~1 day to onboard</text>
+
+  <rect class="box dashed" x="960" y="416" width="180" height="120" rx="6" stroke-dasharray="4 3"/>
+  <text class="ink lbl" x="1050" y="434" text-anchor="middle" font-weight="600">Foodie (Later)</text>
+  <text class="muted small" x="1050" y="450" text-anchor="middle">agents/foodie/memory.py</text>
+  <text class="ink small" x="976" y="470">Entity types:</text>
+  <text class="muted small" x="976" y="484">  cuisine_focus</text>
+  <text class="muted small" x="976" y="498">  meal_log · dietary_phase</text>
+  <text class="accent tiny" x="1050" y="524" text-anchor="middle">~1 day to onboard</text>
+
+  <!-- ─── Layer 3 — sleep-time consolidation ─── -->
+  <rect class="panel" x="40" y="576" width="540" height="200" rx="8"/>
+  <text class="ink h2" x="60" y="600">Layer 3 — Sleep-time consolidation (cron 03:00)</text>
+  <text class="muted small" x="60" y="616">scripts/memory_consolidate.py — keeps memory dense, not bloated</text>
+
+  <rect class="box" x="60" y="636" width="240" height="34" rx="6"/>
+  <text class="ink small" x="76" y="657">summarize threads inactive &gt; 24h</text>
+  <rect class="box" x="60" y="676" width="240" height="34" rx="6"/>
+  <text class="ink small" x="76" y="697">decay preferences (factor 0.95/wk)</text>
+  <rect class="box" x="60" y="716" width="240" height="34" rx="6"/>
+  <text class="ink small" x="76" y="737">archive expired entities</text>
+
+  <rect class="box" x="320" y="636" width="240" height="34" rx="6"/>
+  <text class="ink small" x="336" y="657">resolve threads inactive &gt; 7 days</text>
+  <rect class="box" x="320" y="676" width="240" height="34" rx="6"/>
+  <text class="ink small" x="336" y="697">GC events older than 365 days</text>
+  <rect class="box" x="320" y="716" width="240" height="34" rx="6"/>
+  <text class="ink small" x="336" y="737">purge unused archival entries</text>
+
+  <!-- ─── Layer 4 — Miya supervisor / cross-agent ─── -->
+  <rect class="panel-accent" x="600" y="576" width="560" height="200" rx="8"/>
+  <text class="ink h2" x="620" y="600">Layer 4 — Miya supervisor (cross-agent broker)</text>
+  <text class="muted small" x="620" y="616">core/miya.py — declared capabilities + cross-agent reads</text>
+
+  <rect class="box" x="620" y="636" width="240" height="48" rx="6"/>
+  <text class="ink small" x="640" y="657">list_capabilities()</text>
+  <text class="muted tiny" x="640" y="671">manifest of every registered agent</text>
+  <rect class="box-accent" x="620" y="694" width="240" height="48" rx="6"/>
+  <text class="ink small" x="640" y="715">cross_agent_query(type)</text>
+  <text class="muted tiny" x="640" y="729">e.g. "all hrv_window entities mesh-wide"</text>
+
+  <rect class="box" x="880" y="636" width="260" height="48" rx="6"/>
+  <text class="ink small" x="900" y="657">cross_agent_recent_events(kinds)</text>
+  <text class="muted tiny" x="900" y="671">e.g. "Huberman vital readings last 24h"</text>
+  <rect class="box-accent" x="880" y="694" width="260" height="48" rx="6"/>
+  <text class="ink small" x="900" y="715">use cases:</text>
+  <text class="muted tiny" x="900" y="729">"User mentioned a Japan trip to Foodie last month"</text>
+
+  <text class="accent small" x="60" y="800">Locked by 22 hermetic eval cases (eval_memory.py M1–M6); 33 PDF use cases (eval_gemini_pdf_usecases.py).</text>
+
+</svg>
