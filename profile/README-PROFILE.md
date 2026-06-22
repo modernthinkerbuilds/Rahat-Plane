@@ -1,73 +1,65 @@
-# Alex Rivera
+# Venkat Sadras
 
-> **I build the habitat AI agents live in — the control plane, the shared memory, the runtime, the orchestration. Personal scale today; the patterns the enterprise is converging on.**
+> **Bay Area PM at a large tech company. I build and run Rahat — an operating system for a household of personal AI agents: one shared memory, one rulebook, one orchestrator, and a record of every decision it makes. Live in my own life, daily, for months.**
 
-I don't build individual agents — I build **Rahat**, the *habitat* they all live in: one shared memory, one rulebook, one runtime, one orchestrator. A **control plane for the agent era**, run daily at human scale in my own life. I write about what building the whole environment — not the apps on top of it — teaches for personal *and* enterprise AI.
-
-My bet, in one line: **AI gets genuinely useful when the environment around the model remembers your life and coordinates — not when the model alone gets smarter.** The habitat is the product; the model is a component. Same lesson whether it's one household or a company running a fleet of agents.
-
-→ **[See the architecture: Rahat →](https://github.com/modernthinkerbuilds/Rahat-Plane)**
+My bet, in one line: AI gets useful when the environment around the model remembers what *mattered*, coordinates across agents, and is measured against whether my life actually got better — not only when the model gets smarter. In platform terms, that environment is a *control plane* for agents, built at human scale.
 
 ---
 
-## What it actually does (a real example)
+## Read the machine, not the subject
 
-I talk to it in plain English on Telegram. One request, end to end:
+The examples below happen to involve training and recovery. **Ignore the subject — watch the machine.** I run Rahat against my own life because it's the most unforgiving test I have: a domain where I notice a wrong answer the same day. The agents on top coach training today; Rahat is the operating system underneath, and it doesn't care what they're about. The tell is that the hard problems it solves have nothing to do with the subject — they're the problems *anyone* running a fleet of agents hits.
 
-> *"can I train hard tomorrow morning?"* → the orchestrator routes it to the right agent → the agent pulls my recent recovery signal from shared memory and drafts a session → the rulebook checks it against my rules *first* (quiet hours? a red recovery flag?) → I get the plan, or an honest *"not tomorrow — here's why."* Every step is logged.
-
-Swap that for *"what's for dinner?"* or *"plan the weekend"* and the machinery is identical — that's what makes it a platform, not an app.
-
-**What works today:**
-
-- Plain-English chat on Telegram; one orchestrator routes to the right agent — you never pick
-- Structured memory shared across agents: typed facts, commitments, and preferences that decay if unused
-- One policy layer every action passes through — quiet hours, vetoes, an audit log
-- A deterministic core: the model proposes, tested code executes, nothing is hallucinated
-- A full decision trace per turn; adding an agent is a prompt + a tool list, not a rebuild
-
-**The bug that forced the architecture:** my first agent kept forgetting commitments — I'd say *"I'm committing to this for the week,"* and an hour later it ignored it. Ten patches in, the real problem was obvious: it had no memory, just a transcript. So I built a typed memory layer where a commitment is a first-class object with a lifespan. That's the line between a chatbot and a system you can trust to act.
+**One quick map before the scenes.** I talk to a single assistant — **Miya**, the orchestrator. Behind him sit specialists, each named for someone whose life embodies its job (Genie plans the family weekend; others handle dinner, gifts, training). The **Charter** is the one rulebook every action clears before it runs. That's the whole cast below.
 
 ---
 
-## How I think about agents
+## The rewrite that mattered
 
-Not a manifesto — the questions I work on concretely in Rahat, and where the field stands in 2026. Positions I can defend with a running system, not just opinions.
+A few weeks in, Miya told me — cheerfully, in a flawless voice — a fact about me that was simply false: a number from my own profile it had never been given, stated with total confidence.
 
-**1. "Agent control plane" became the category — and that's the tell.** The 2026 enterprise fight isn't about one clever agent; it's the control plane — orchestration, governance, observability, identity ("Kubernetes for agents"). The striking part: a one-household system and a thousand-seat platform converge on the *same* primitives — memory, governance, orchestration, evaluation. When the small case and the huge case agree, personal-scale work transfers straight to the enterprise problem.
+That is the real problem with agents right now. Not that they can't talk — that they're **fluent and wrong at the same time, and you can't tell.**
 
-**2. Memory went from a feature to a category — and "typed" beat "retrieval."** "Agent memory" used to mean a vector store bolted onto a chat log; by 2026 the field moved to typed, structured memory the agent updates deliberately. The live problems now: multi-scope memory (per-user / per-agent / per-run) and *restraint* — not letting an agent keep every passing fact forever.
+So I stopped adding features and rewrote the core. Now every reply is grounded against what's actually true about me and fact-checked — and rewritten — *before* it sends. Every specialist's output is re-voiced into one voice instead of leaking its own. Every decision is logged with its reasons. I tested the rewrite by replaying 126 real messages from my own history. The invented facts got caught and corrected; the internal-voice leaks went to zero.
 
-**3. The standards settled faster than the patterns.** MCP (model-to-tool) is effectively default now; A2A is consolidating the agent-to-agent half. I built Rahat's tool layer *before* the standards landed — so my real question is concrete: what migrates to the open protocols, and what stays bespoke?
-
-**4. Governance, not capability, is the gate.** What decides whether an agent ships to production isn't model quality or cost — it's whether you can state and enforce what an agent may do on its own. Rahat has had one policy layer every action passes through from day one. Least glamorous primitive; the one that matters most.
-
-**5. The runtime is becoming the product.** Providers now package permissions, checkpointing, and memory into the runtime — 2026's "agent harness." That's Rahat's next milestone too, and it turns on one question: *what makes adding agent #11 as cheap as agent #1?*
-
-**6. Local and cloud, not local versus cloud.** Frontier reasoning in the cloud; personal state and policy on the device. Rahat routes the hard thinking out and keeps memory and vetoes local — the same split enterprise platforms are landing on, for the same reasons: cost, latency, privacy.
+None of that is a feature of any one domain. It's what makes an agent trustworthy — and it's the thing most multi-agent demos quietly skip.
 
 ---
 
-## Rahat — under the hood
+## Two more things a chatbot can't do
 
-> *Rahat (Urdu: رہات) — relief, ease, the lifting of a burden.* It runs locally on a Mac Mini, daily, through my own life.
+**Resolve a conflict instead of handing me two.** Fraser, the specialist that designs my sessions, has a hard one queued for tomorrow. Kobe, the one watching recovery, sees my numbers in the red and says hold. Two specialists, opposite calls. A switchboard forwards both and lets me referee. Miya weighs them and comes back with *one* answer — *not tomorrow; here's the lighter version* — in a single voice. That's the line between routing and orchestration, and it's the thing a switchboard structurally can't do. *(Today it's best-effort; making it airtight is part of the build.)*
 
-**The governing principle:** *deterministic shell, LLM core.* The model proposes; tested, deterministic code does the math, enforces the rules, and executes. The model never invents a number, because numbers come from tools — it just decides which tools to call. Every agent is defined the same way: `name + description + system_prompt + tools`.
+**Tell me why it did what it did.** Ask Rahat to act at the wrong moment and the Charter — the single rulebook every action passes through — stops it before any agent moves, and logs why. Every decision lands as one row: which agent, which rule, how long, what it cost. When an answer surprises me, I replay it instead of guessing. It all runs on a Mac Mini at home — my data never leaves the machine — and the model underneath is swappable without moving any of it.
 
-**Honest status.** Three agents work today, plus the orchestrator and the policy layer; the memory and evaluation infrastructure are live. The first agents coach training and recovery — not because this is a fitness project, but because my own life was the most unforgiving test domain I had. The roadmap is an *everyday* mesh — weekend planning, gifts, dinner, travel — each new agent built on the same shared contract. **It's a personal-scale build, not enterprise software; the claim is that the problems are the same class, and solving them small is a real way to understand them.**
+---
 
-**Engineering discipline:** a five-layer hermetic test suite gates every change; every bug fix ships with a regression test; a pre-push gate blocks anything that breaks the suite. The repo is the proof, not a plan.
+## Where it goes — same machine, new face
 
-→ **[Read the architecture →](https://github.com/modernthinkerbuilds/Rahat-Plane)**
+Swap the question to *"what should we do this weekend?"* and the same machinery runs under **Genie**: he checks the baby skipped his nap, that Saturday's the open day, that last weekend's crowded museum was a miss — and hands back one plan, not three browser tabs. Same memory, same rulebook, same decision log; a different lens on top. That's the whole point of building the operating system and not the bot: the next agent is a prompt and a tool list, not a rebuild.
+
+---
+
+## The bet I'm actually making
+
+None of the above is the finish line. The system is built toward three things it doesn't do yet — and they're the reason it exists. I name them as the bet, not the brochure, because the fastest way to lose trust here is to claim the vision as shipped.
+
+- **Outcomes, not answers.** A loop that closes on whether my life got *better* — and proves a cheaper model didn't cost me the result.
+- **Memory that keeps what *mattered*.** Shared, typed memory is table stakes now (Letta, Mem0). The bet is recall conditioned on what actually changed an outcome, not on what was recent.
+- **A receipt for every fact.** Each thing the system knows tagged with where it came from, how fresh it is, and my right to delete it.
+
+---
+
+## Honest scope
+
+Rahat is personal-scale, not enterprise software. But a fluent agent that's confidently wrong, agents that disagree, a decision you can't prove, memory that keeps the wrong things — those are exactly the problems a company hits the day it runs a fleet. Solving them in a house, where I feel every failure the same day, is an honest way to learn them.
 
 ---
 
 ## About me
 
-Bay Area product manager. Hyderabad roots. Husband, and father of two — including a newborn who supervised most of the early build during parental leave. I care about building the kind of agents I'd actually want pointed at my own life: ones that remember, coordinate, and know when *not* to act.
+A Bay Area PM at a large tech company, hands-on with multi-agent systems. Hyderabad roots. Husband, and father of two — including a newborn who supervised most of the early build during parental leave. I care about building the kind of agents I'd actually point at my own life: ones that remember, coordinate, and know when *not* to act.
 
-I'm writing about agents, the control-plane idea, and what building Rahat teaches — in plain language, for people who want to understand where this is going without the jargon.
+The repo is private while I scrub personal data out of its history — happy to walk through the architecture on request.
 
----
-
-<sub>Local-first · Apple Silicon · SQLite · frontier LLM + structured tool calling · Telegram. Runtime-agnostic; an [OpenClaw](https://openclaw.ai) adapter is one integration target, not a foundation. Opinions my own.</sub>
+<sub>Views my own, not my employer's. Drafted with Claude, edited and verified by me.</sub>
