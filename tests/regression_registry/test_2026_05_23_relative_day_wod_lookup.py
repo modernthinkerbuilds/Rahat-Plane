@@ -71,23 +71,27 @@ class TestRelativeDayRouting:
 
 
 class TestRelativeDayOffsetMath:
-    def _capture_idx(self, monkeypatch, msg):
+    # 2026-06-21: relative-day lookup is now DATE-aware (was weekday-only,
+    # which crossed week boundaries wrong — returned 'Mon 15' when tomorrow
+    # was Mon the 22nd). It resolves to the actual target DATE and calls
+    # handle_gym_wod_on_date.
+    def _capture_date(self, monkeypatch, msg):
         captured = {}
         from agents.the_scientist import handler as kobe
 
-        def _fake(idx):
-            captured["idx"] = idx
+        def _fake(target):
+            captured["target"] = target
             return "OK"
 
-        monkeypatch.setattr(kobe, "handle_gym_wod_on", _fake)
+        monkeypatch.setattr(kobe, "handle_gym_wod_on_date", _fake)
         result = dispatcher.dispatch(msg)
         assert result == "OK"
-        return captured["idx"]
+        return captured["target"]
 
-    def test_tomorrow_resolves_to_next_weekday(self, monkeypatch):
-        idx = self._capture_idx(monkeypatch, "what's the wod tomorrow")
-        assert idx == (datetime.now() + timedelta(days=1)).weekday()
+    def test_tomorrow_resolves_to_next_date(self, monkeypatch):
+        d = self._capture_date(monkeypatch, "what's the wod tomorrow")
+        assert d.date() == (datetime.now() + timedelta(days=1)).date()
 
-    def test_yesterday_resolves_to_prior_weekday(self, monkeypatch):
-        idx = self._capture_idx(monkeypatch, "gym wod yesterday")
-        assert idx == (datetime.now() - timedelta(days=1)).weekday()
+    def test_yesterday_resolves_to_prior_date(self, monkeypatch):
+        d = self._capture_date(monkeypatch, "gym wod yesterday")
+        assert d.date() == (datetime.now() - timedelta(days=1)).date()

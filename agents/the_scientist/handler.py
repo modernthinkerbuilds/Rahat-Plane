@@ -156,7 +156,7 @@ def eligible_cf_days(days=None):
     return _proto_eligible_cf_days(days)
 
 
-__all__ = ['API_KEY', 'FIX_BURN_RE', 'HOME', 'MODEL_ID', 'PLAN_PATH', 'SLASH_COMMANDS', '_active_model', '_extract_wod_summary', '_internal_safety_downgrade', '_is_workout_on_day_query', '_legacy_route', '_n', '_parse_date', '_prorated_day_target', '_prorated_week_target', '_slash_help', '_split_for_telegram', '_try_slash_command', '_which_monday', 'client', 'daily_target', 'eligible_cf_days', 'handle_breathing', 'handle_clear_prefs', 'handle_current_weight', 'handle_daily_burn', 'handle_daily_burn_breakdown', 'handle_decision_run_or_wod', 'handle_dislike_movement', 'handle_drop_dislike', 'handle_filter', 'handle_fix_burn', 'handle_gym_wod_on', 'handle_hrv', 'handle_last_week', 'handle_list_dislikes', 'handle_manual_burn', 'handle_next_week_target', 'handle_next_workout', 'handle_pace', 'handle_pick_days', 'handle_post_recovery', 'handle_pre_fuel', 'handle_recalibrate', 'handle_replan', 'handle_scheduling_help', 'handle_set_tier', 'handle_show_plan', 'handle_split_target', 'handle_swap', 'handle_today_target', 'handle_tolerate', 'handle_unavailable', 'handle_weekly_remaining', 'handle_weighin_when', 'handle_weight', 'handle_weight_timeline', 'handle_workout_on', 'handle_workout_today', 'latest_hrv', 'llm_coach', 'maybe_morning_briefing', 'maybe_recovery_nudge', 'maybe_walk_nudge', 'maybe_weekly_reset', 'parse_gym_plan', 'route', 'send', 'start']
+__all__ = ['API_KEY', 'FIX_BURN_RE', 'HOME', 'MODEL_ID', 'PLAN_PATH', 'SLASH_COMMANDS', '_active_model', '_extract_wod_summary', '_internal_safety_downgrade', '_is_workout_on_day_query', '_legacy_route', '_n', '_parse_date', '_prorated_day_target', '_prorated_week_target', '_slash_help', '_split_for_telegram', '_try_slash_command', '_which_monday', 'client', 'daily_target', 'eligible_cf_days', 'handle_breathing', 'handle_clear_prefs', 'handle_current_weight', 'handle_daily_burn', 'handle_daily_burn_breakdown', 'handle_decision_run_or_wod', 'handle_dislike_movement', 'handle_drop_dislike', 'handle_filter', 'handle_fix_burn', 'handle_gym_wod_on', 'handle_gym_wod_on_date', 'handle_hrv', 'handle_last_week', 'handle_list_dislikes', 'handle_manual_burn', 'handle_next_week_target', 'handle_next_workout', 'handle_pace', 'handle_pick_days', 'handle_post_recovery', 'handle_pre_fuel', 'handle_recalibrate', 'handle_replan', 'handle_scheduling_help', 'handle_set_tier', 'handle_show_plan', 'handle_split_target', 'handle_swap', 'handle_today_target', 'handle_tolerate', 'handle_unavailable', 'handle_weekly_remaining', 'handle_weighin_when', 'handle_weight', 'handle_weight_timeline', 'handle_workout_on', 'handle_workout_today', 'latest_hrv', 'llm_coach', 'maybe_morning_briefing', 'maybe_recovery_nudge', 'maybe_walk_nudge', 'maybe_weekly_reset', 'parse_gym_plan', 'route', 'send', 'start']
 
 
 def handle_recalibrate() -> str:
@@ -1796,6 +1796,12 @@ def handle_gym_wod_on(weekday_idx: int) -> str:
                 "either the gym hasn't posted yet or the day is off "
                 "the schedule. Try the bookmarklet again._")
 
+    return _render_gym_day(match, name)
+
+
+def _render_gym_day(match, name: str) -> str:
+    """Render a matched GymDay to Telegram text. Shared by the weekday and
+    date-aware lookups so both produce identical output."""
     body_summary = _extract_wod_summary(match.body) or \
         "_(WOD details not available — check SugarWOD app)_"
     scaled = _scale_wod_for_profile(match.body)
@@ -1810,6 +1816,31 @@ def handle_gym_wod_on(weekday_idx: int) -> str:
 
     return (f"*{name}: {match.label}*\n\n"
             f"{body_summary}{scaled}")
+
+
+def handle_gym_wod_on_date(target: datetime) -> str:
+    """Date-aware gym WOD lookup. Matches the synced GymDay whose header
+    day-of-month equals ``target.day`` — so 'tomorrow' resolves to the RIGHT
+    week's WOD instead of the first matching weekday in the blob.
+
+    Bug 2026-06-21: 'what's tomorrow's WOD' returned 'Mon 15' (last Monday)
+    when tomorrow was Mon the 22nd, because handle_gym_wod_on matched only the
+    weekday name and the blob's first Monday won. SugarWOD headers carry the
+    date ('Mon 15' → day-of-month 15), so we match on that. If the date isn't
+    in the synced blob we say so — never show a different day's WOD."""
+    name = WEEKDAY_NAME[target.weekday()]
+    gym_days = parse_gym_plan()
+    match = None
+    for d in gym_days:
+        parts = (d.label or "").split()
+        if len(parts) >= 2 and parts[1].isdigit() and int(parts[1]) == target.day:
+            match = d
+            break
+    if match is None:
+        return (f"*{name} {target.strftime('%b %-d')}* — no WOD synced for "
+                f"that date yet.\n_The gym hasn't posted it, or re-sync via "
+                f"the SugarWOD bookmarklet._")
+    return _render_gym_day(match, name)
 
 
 def handle_workout_today(when: str = "today") -> str:

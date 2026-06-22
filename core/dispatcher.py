@@ -179,8 +179,11 @@ def _h_gym_wod_relative(msg: str, match: re.Match) -> str:
         offset = -1
     else:
         offset = 0
-    idx = (datetime.now() + timedelta(days=offset)).weekday()
-    return _kobe.handle_gym_wod_on(idx)
+    # DATE-aware: a relative day has an unambiguous date, so resolve to the
+    # gym WOD for that DATE (not just the weekday — which returns the first
+    # matching day in the synced blob and crosses week boundaries wrong).
+    target = datetime.now() + timedelta(days=offset)
+    return _kobe.handle_gym_wod_on_date(target)
 
 
 def _h_plan_mutation(msg: str, match: re.Match):
