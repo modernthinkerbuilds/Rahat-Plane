@@ -159,6 +159,8 @@ def test_existing_routes_still_match_after_agent_field(monkeypatch):
         "current_weight": "what's my weight",
         "list_dislikes": "list my dislikes",
         "weekly_remaining": "how much burn remaining this week",
+        "daily_breakdown": "calories by the day",
+        "rel_day_workout": "what is tomorrow's WOD",
         "last_week": "last week how was my burn summary",
         "breathing_box": "box breathing",
         "breathing_715": "7/15 breathing",

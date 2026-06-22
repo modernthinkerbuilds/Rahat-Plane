@@ -326,7 +326,30 @@ def _build_profile(db_path: str | None = None) -> AthleteProfile:
     overrides = _load_1rm_overrides(db_path=db_path)
     if overrides:
         p.one_rms.update(overrides)
+    # Overlay the REAL display name from the gitignored vault profile so every
+    # agent (Fraser included) calls the user by their real name. The committed
+    # default is the generic "Alex Rivera" for the public repo. Skipped under
+    # RAHAT_TEST_MODE so committed-default tests stay deterministic.
+    p.name = _vault_display_name() or p.name
     return p
+
+
+def _vault_display_name() -> str | None:
+    import os
+    if os.getenv("RAHAT_TEST_MODE"):
+        return None
+    try:
+        import json
+        from pathlib import Path
+        pj = os.getenv("RAHAT_USER_PROFILE_JSON") or "vault/user_profile.json"
+        path = Path(pj)
+        if path.exists():
+            nm = json.loads(path.read_text()).get("name")
+            if isinstance(nm, str) and nm.strip():
+                return nm.strip()
+    except Exception:
+        pass
+    return None
 
 
 def _load_1rm_overrides(db_path: str | None = None) -> dict[str, float]:

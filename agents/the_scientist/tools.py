@@ -282,7 +282,7 @@ def get_weight_timeline() -> dict:
 
 def get_eligible_cf_days(week_offset: int = 0) -> list[dict]:
     """Tool: which weekdays this week have a gym programming clean of
-    Alex's blacklisted movements (or with toleration this week).
+    the user's blacklisted movements (or with toleration this week).
     Returns list of {weekday, weekday_name, label, blockers}."""
     sci = _sci()
     days = sci.parse_gym_plan()
@@ -1047,9 +1047,9 @@ def compute_goal_plan(target_lbs: float | None = None,
     push activity harder, hybrid) — and ALSO return a "sustainable
     alternative" alongside as informational. The model presents both
     and lets the user decide. This mirrors the reference Gemini coaching
-    thread's behavior: when Alex said "get to 83 kg by Thanksgiving,"
+    thread's behavior: when the user said "get to 83 kg by Thanksgiving,"
     Gemini computed the aggressive plan and warned about aggressiveness;
-    when Alex said "I can only do 5,500/wk," Gemini recomputed with
+    when the user said "I can only do 5,500/wk," Gemini recomputed with
     that constraint. Never refused to compute. Never silently swapped
     the user's date for a "safer" one.
 
@@ -1883,7 +1883,7 @@ SCHEMAS: list[dict] = [
         "name": "get_eligible_cf_days",
         "description": (
             "Days this week eligible for CrossFit — gym programming clean of "
-            "Alex's blacklisted movements (handstand, OHS, snatch in "
+            "the user's blacklisted movements (handstand, OHS, snatch in "
             "strength, partner WOD, muscle-up). Returns each weekday with its "
             "label, blockers list, and an is_clean boolean. Use when the user "
             "asks which days are doable, or before proposing a replan."

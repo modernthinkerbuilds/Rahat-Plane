@@ -267,6 +267,14 @@ def _h_last_week(msg: str, match: re.Match) -> str:
     return _kobe.handle_last_week()
 
 
+def _h_daily_breakdown(msg: str, match: re.Match) -> str:
+    """'calories by the day' → deterministic per-day burn breakdown.
+    Bug 2026-06-21: this fell to the reasoner, which has only the weekly
+    total and (correctly) refused to invent a per-day split."""
+    from agents.the_scientist import handler as _kobe
+    return _kobe.handle_daily_burn_breakdown()
+
+
 def _h_one_rm_set(msg: str, match: re.Match):
     """Natural-language 1RM set → the tested ``/profile set`` persist path.
 
@@ -344,6 +352,17 @@ _GYM_WOD_RELATIVE_RE = re.compile(
     r"|what'?s?\s+at\s+the\s+gym"
     r")"
     r"(?:\s+(?:for|on))?\s+(?P<rel>tomorrow|tmrw|tmr|yesterday)\b",
+    re.I,
+)
+# Companion for the OTHER word order: "tomorrow's WOD", "what is tomorrow's
+# workout", "tomorrows session" — relative day (possessive) BEFORE the gym
+# noun. Bug 2026-06-21: "what is tomorrow's WOD" matched no deterministic
+# route and fell to the reasoner, which answered inconsistently ("no WOD
+# synced" / "Monday is a rest day"). Same handler as the relative route.
+# "today"/"tonight" stay OUT (Fraser's daily-driver design intent).
+_REL_DAY_WORKOUT_RE = re.compile(
+    r"\b(?P<rel>tomorrow|tmrw|tmr|yesterday)(?:'?s)?\s+"
+    r"(?:wod|workout|session|gym|programming)\b",
     re.I,
 )
 
@@ -470,6 +489,19 @@ _LAST_WEEK_RE = re.compile(
     r"\blast\s+week\b.*\b(?:burn|kcal|cal|workout|stat|summary|how)\b",
     re.I,
 )
+# Per-day burn breakdown — "calories by the day", "burn each day", "daily
+# breakdown", "day by day". Requires the by-day phrasing (NOT a bare "per
+# day", which is the weekly-remaining "≈ 206 kcal/day" sense). Bug
+# 2026-06-21: this had no route and fell to the reasoner.
+_DAILY_BREAKDOWN_RE = re.compile(
+    r"\b(?:cal(?:orie)?s?|burn|kcal)\b.{0,25}\b(?:by\s+(?:the\s+)?day|"
+    r"each\s+day|day[\s-]by[\s-]day)\b"
+    r"|\b(?:by\s+(?:the\s+)?day|each\s+day|day[\s-]by[\s-]day)\b.{0,25}"
+    r"\b(?:cal(?:orie)?s?|burn|kcal)\b"
+    r"|\bdaily\s+(?:burn|calorie|kcal)?\s*breakdown\b"
+    r"|\bbreakdown\b.{0,25}\bby\s+day\b",
+    re.I,
+)
 
 # Plan EDITS (mutations). Coarse gate — the precise per-intent routing +
 # weekday/question gating happens in handler._try_plan_mutation, which
@@ -506,6 +538,7 @@ ROUTES: list[Route] = [
     Route("gym_wod_on_day", _GYM_WOD_DAY_RE, _h_gym_wod_on_day),
     Route("show_day_workout", _SHOW_DAY_WORKOUT_RE, _h_gym_wod_on_day),
     Route("gym_wod_relative", _GYM_WOD_RELATIVE_RE, _h_gym_wod_relative),
+    Route("rel_day_workout", _REL_DAY_WORKOUT_RE, _h_gym_wod_relative),
 
     # 3. Numeric mutators — unambiguous.
     Route("weight_log", _WEIGHT_LOG_RE, _h_weight_log),
@@ -527,6 +560,8 @@ ROUTES: list[Route] = [
     Route("pace", _PACE_RE, _h_pace),
     Route("current_weight", _CURRENT_WEIGHT_RE, _h_current_weight),
     Route("list_dislikes", _LIST_DISLIKES_RE, _h_list_dislikes),
+    # Per-day breakdown must beat weekly_remaining (both mention burn/cal).
+    Route("daily_breakdown", _DAILY_BREAKDOWN_RE, _h_daily_breakdown),
     Route("weekly_remaining", _WEEKLY_REMAIN_RE, _h_weekly_remaining),
     Route("last_week", _LAST_WEEK_RE, _h_last_week),
 

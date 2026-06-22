@@ -156,7 +156,7 @@ def eligible_cf_days(days=None):
     return _proto_eligible_cf_days(days)
 
 
-__all__ = ['API_KEY', 'FIX_BURN_RE', 'HOME', 'MODEL_ID', 'PLAN_PATH', 'SLASH_COMMANDS', '_active_model', '_extract_wod_summary', '_internal_safety_downgrade', '_is_workout_on_day_query', '_legacy_route', '_n', '_parse_date', '_prorated_day_target', '_prorated_week_target', '_slash_help', '_split_for_telegram', '_try_slash_command', '_which_monday', 'client', 'daily_target', 'eligible_cf_days', 'handle_breathing', 'handle_clear_prefs', 'handle_current_weight', 'handle_daily_burn', 'handle_decision_run_or_wod', 'handle_dislike_movement', 'handle_drop_dislike', 'handle_filter', 'handle_fix_burn', 'handle_gym_wod_on', 'handle_hrv', 'handle_last_week', 'handle_list_dislikes', 'handle_manual_burn', 'handle_next_week_target', 'handle_next_workout', 'handle_pace', 'handle_pick_days', 'handle_post_recovery', 'handle_pre_fuel', 'handle_recalibrate', 'handle_replan', 'handle_scheduling_help', 'handle_set_tier', 'handle_show_plan', 'handle_split_target', 'handle_swap', 'handle_today_target', 'handle_tolerate', 'handle_unavailable', 'handle_weekly_remaining', 'handle_weighin_when', 'handle_weight', 'handle_weight_timeline', 'handle_workout_on', 'handle_workout_today', 'latest_hrv', 'llm_coach', 'maybe_morning_briefing', 'maybe_recovery_nudge', 'maybe_walk_nudge', 'maybe_weekly_reset', 'parse_gym_plan', 'route', 'send', 'start']
+__all__ = ['API_KEY', 'FIX_BURN_RE', 'HOME', 'MODEL_ID', 'PLAN_PATH', 'SLASH_COMMANDS', '_active_model', '_extract_wod_summary', '_internal_safety_downgrade', '_is_workout_on_day_query', '_legacy_route', '_n', '_parse_date', '_prorated_day_target', '_prorated_week_target', '_slash_help', '_split_for_telegram', '_try_slash_command', '_which_monday', 'client', 'daily_target', 'eligible_cf_days', 'handle_breathing', 'handle_clear_prefs', 'handle_current_weight', 'handle_daily_burn', 'handle_daily_burn_breakdown', 'handle_decision_run_or_wod', 'handle_dislike_movement', 'handle_drop_dislike', 'handle_filter', 'handle_fix_burn', 'handle_gym_wod_on', 'handle_hrv', 'handle_last_week', 'handle_list_dislikes', 'handle_manual_burn', 'handle_next_week_target', 'handle_next_workout', 'handle_pace', 'handle_pick_days', 'handle_post_recovery', 'handle_pre_fuel', 'handle_recalibrate', 'handle_replan', 'handle_scheduling_help', 'handle_set_tier', 'handle_show_plan', 'handle_split_target', 'handle_swap', 'handle_today_target', 'handle_tolerate', 'handle_unavailable', 'handle_weekly_remaining', 'handle_weighin_when', 'handle_weight', 'handle_weight_timeline', 'handle_workout_on', 'handle_workout_today', 'latest_hrv', 'llm_coach', 'maybe_morning_briefing', 'maybe_recovery_nudge', 'maybe_walk_nudge', 'maybe_weekly_reset', 'parse_gym_plan', 'route', 'send', 'start']
 
 
 def handle_recalibrate() -> str:
@@ -214,6 +214,37 @@ def handle_daily_burn(when: datetime) -> str:
     if when.date() == (datetime.now() - timedelta(days=1)).date():
         return f"Yesterday ({label}): *{fmt_kcal(kcal)}*."
     return f"{label}: *{fmt_kcal(kcal)}*."
+
+
+def handle_daily_burn_breakdown() -> str:
+    """Per-day ACTUAL burn vs the day's ideal for the current week —
+    answers 'give me calories by the day'. Deterministic (reads
+    burn_for_date per day + the locked plan), so it never falls to the
+    reasoner, which only has the weekly total and (correctly) refuses to
+    invent a per-day split."""
+    monday, _ = week_bounds()
+    plan = current_plan(monday)
+    plan_by_wd = {r["weekday"]: r for r in plan}
+    today = datetime.now().date()
+    lines = [f"*Burn by day — week of {monday.strftime('%b %-d')}:*"]
+    total_actual = 0.0
+    total_ideal = 0.0
+    for wd in range(7):
+        d = monday + timedelta(days=wd)
+        row = plan_by_wd.get(wd, {})
+        ideal = float(row.get("target_kcal", 0) or 0)
+        total_ideal += ideal
+        name = WEEKDAY_NAME[wd]
+        marker = "▶" if d.date() == today else " "
+        if d.date() > today:
+            lines.append(f"{marker} {name}: — / {fmt_kcal(ideal)} (upcoming)")
+            continue
+        actual = burn_for_date(d)
+        total_actual += actual
+        lines.append(f"{marker} {name}: *{fmt_kcal(actual)}* / {fmt_kcal(ideal)}")
+    lines.append(f"\nSo far: *{fmt_kcal(total_actual)}* burned / "
+                 f"{fmt_kcal(total_ideal)} planned.")
+    return "\n".join(lines)
 
 
 def handle_weekly_remaining() -> str:
@@ -2994,8 +3025,9 @@ def llm_coach(msg: str) -> str:
     tier = state_get("recovery_tier", DEFAULT_TIER)
     elig = ", ".join(d.label for d in eligible_cf_days()) or "none"
 
+    from core import athlete_profile as _ap
     prompt = (
-        f"Athlete: Alex (6'1\"). Weight {weight:.1f} lbs.\n"
+        f"Athlete: {_ap.get().name} (6'1\"). Weight {weight:.1f} lbs.\n"
         f"Targets: 84 kg ({INTENT_INTERMEDIATE_LBS:.1f} lbs) intermediate, "
         f"80 kg ({INTENT_TARGET_LBS:.1f} lbs) final.\n"
         f"LOCKED rate: {LOCKED_LOSS_LB_PER_WEEK} lb/wk → daily intake "
