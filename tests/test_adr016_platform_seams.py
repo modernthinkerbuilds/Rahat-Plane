@@ -86,12 +86,16 @@ def test_subject_type_exists_with_id_and_role():
     assert s.name == "Alex"
 
 
-def test_load_default_is_unchanged_behavior():
-    """load() with no args must behave exactly as before: name 'Alex',
-    the single-subject sentinel stamped on the profile."""
+def test_load_default_is_unchanged_behavior(monkeypatch, tmp_path):
+    """load() with NO vault overlay must behave exactly as before: name
+    'Alex' (the committed default), the single-subject sentinel stamped.
+    Point the overlay at a missing file so the test is hermetic — it must
+    not depend on the developer's real vault/user_profile.json (which now
+    carries the real display name)."""
+    monkeypatch.setenv("RAHAT_USER_PROFILE_JSON", str(tmp_path / "missing.json"))
     from core import user_profile as up
     p = up.load()
-    assert p.name == "Alex"            # identity unchanged
+    assert p.name == "Alex"            # committed default, no vault overlay
     assert p.subject_id == up.DEFAULT_SUBJECT_ID
     assert p.sources.get("subject_id") == up.DEFAULT_SUBJECT_ID
 

@@ -172,7 +172,13 @@ def _h_gym_wod_relative(msg: str, match: re.Match) -> str:
     from datetime import datetime, timedelta
     from agents.the_scientist import handler as _kobe
     rel = match.group("rel").lower()
-    offset = {"tmrw": 1, "tmr": 1, "tomorrow": 1, "yesterday": -1}.get(rel, 0)
+    # Typo-tolerant: tomorrow / tommorow / tomorow / tmrw / tmr → +1.
+    if rel.startswith("tom") or rel in ("tmrw", "tmr"):
+        offset = 1
+    elif rel.startswith("yester"):
+        offset = -1
+    else:
+        offset = 0
     idx = (datetime.now() + timedelta(days=offset)).weekday()
     return _kobe.handle_gym_wod_on(idx)
 
@@ -351,7 +357,7 @@ _GYM_WOD_RELATIVE_RE = re.compile(
     r"|gym\s+(?:workout|wod|session)"
     r"|what'?s?\s+at\s+the\s+gym"
     r")"
-    r"(?:\s+(?:for|on))?\s+(?P<rel>tomorrow|tmrw|tmr|yesterday)\b",
+    r"(?:\s+(?:for|on))?\s+(?P<rel>tom+or+ow|tmrw|tmr|yesterday)\b",
     re.I,
 )
 # Companion for the OTHER word order: "tomorrow's WOD", "what is tomorrow's
@@ -361,7 +367,7 @@ _GYM_WOD_RELATIVE_RE = re.compile(
 # synced" / "Monday is a rest day"). Same handler as the relative route.
 # "today"/"tonight" stay OUT (Fraser's daily-driver design intent).
 _REL_DAY_WORKOUT_RE = re.compile(
-    r"\b(?P<rel>tomorrow|tmrw|tmr|yesterday)(?:'?s)?\s+"
+    r"\b(?P<rel>tom+or+ow|tmrw|tmr|yesterday)(?:'?s)?\s+"
     r"(?:wod|workout|session|gym|programming)\b",
     re.I,
 )

@@ -373,9 +373,17 @@ def load(subject_id: str = DEFAULT_SUBJECT_ID) -> UserProfile:
     if state:
         p.sources["recovery_tier"] = "user_state"
 
-    # 5. Overlay (1RMs, limitations, training context)
+    # 5. Overlay (display name, 1RMs, limitations, training context)
     overlay = _load_overlay()
     if overlay:
+        # Real display NAME comes from the gitignored vault overlay (the
+        # committed default is the generic "Alex"). Without this the facts
+        # block said "Name: Alex" and the bot quoted that for "what's my
+        # name" — even though the persona was already correct. Bug 2026-06-21.
+        nm = overlay.get("name")
+        if isinstance(nm, str) and nm.strip():
+            p.name = nm.strip()
+            p.sources["name"] = overlay.get("_overlay_source", "overlay")
         p.one_rep_maxes_kg = overlay.get("one_rep_maxes_kg", {}) or {}
         p.limitations = overlay.get("limitations", []) or []
         p.training_context = overlay.get("training_context", {}) or {}
