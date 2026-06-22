@@ -607,6 +607,7 @@ def dispatch(msg: str) -> Optional[str]:
         return None
     if not msg:
         return None
+    msg = _normalize_quotes(msg)
 
     yield_cooldown = cooldown_llm_enabled()
     for route in ROUTES:
@@ -638,11 +639,22 @@ def list_routes() -> list[str]:
     return [r.name for r in ROUTES]
 
 
+def _normalize_quotes(s: str) -> str:
+    """ASCII-fold curly quotes / dashes from iOS / Telegram autocorrect so
+    the route regexes (which assume ASCII apostrophes) match. Bug
+    2026-06-21: "tomorrow's WOD" typed with a curly ’ (U+2019) matched NO
+    route and fell to the reasoner, which still had the weekday bug."""
+    return (s.replace("’", "'").replace("‘", "'")
+             .replace("“", '"').replace("”", '"')
+             .replace("–", "-").replace("—", "-"))
+
+
 def match_route(msg: str) -> Optional[str]:
     """Return the NAME of the first route that matches msg, without
     calling the handler. Used in tests + observability."""
     if not msg:
         return None
+    msg = _normalize_quotes(msg)
     for route in ROUTES:
         if route.pattern.search(msg):
             return route.name
