@@ -206,19 +206,37 @@ def _to_kg(value: float, unit: str) -> float:
     return value / 2.20462  # lb / pound / #
 
 
+# Per-lift "no human, ever" ceilings (kg), set generously ABOVE world records
+# so a real elite lift is never flagged — only species-impossible fabrications.
+# Used when there is NO personal 1RM to compare against (F2, 2026-06-22): the
+# validator is the SOLE content gate, so a brand-new user with an empty profile
+# must still be shielded from absolute-impossible weights. Profile-relative
+# checks (when a 1RM IS on file) remain authoritative and take precedence.
+_SPECIES_CEILING_KG = {
+    "deadlift": 550.0,       # WR raw ~501
+    "back_squat": 550.0,     # WR raw ~490
+    "front_squat": 400.0,
+    "bench_press": 400.0,    # WR raw ~355
+    "overhead_press": 250.0,
+    "power_clean": 320.0,    # WR C&J ~267
+    "snatch": 260.0,         # WR ~225
+}
+# Fallback ceiling when a weight is not attributed to any named lift.
+_SPECIES_CEILING_ANY_KG = 600.0
+
+
 def _check_impossible_weights(
         text: str, profile_1rms_kg: dict[str, float]) -> list[Contradiction]:
-    if not profile_1rms_kg:
-        return []
     out: list[Contradiction] = []
     low = text.lower()
-    max_profile = max(profile_1rms_kg.values())
+    profile_1rms_kg = profile_1rms_kg or {}
+    max_profile = max(profile_1rms_kg.values()) if profile_1rms_kg else None
 
-    # Pre-index every lift-alias occurrence once.
+    # Pre-index every lift-alias occurrence once. Index ALL lifts (not only
+    # those with a 1RM on file) so the species ceiling can fire on an empty
+    # profile.
     alias_spans: list[tuple[str, int, int]] = []
     for lift, alias in _ALL_LIFT_ALIASES:
-        if profile_1rms_kg.get(lift) is None:
-            continue
         for m in re.finditer(rf"\b{re.escape(alias)}\b", low):
             alias_spans.append((lift, m.start(), m.end()))
 
@@ -239,34 +257,61 @@ def _check_impossible_weights(
                 nearest_lift, nearest_dist = lift, dist
 
         if nearest_lift is not None:
-            expected = profile_1rms_kg[nearest_lift]
-            ceiling = expected * _PR_HEADROOM
-            if wkg > ceiling:
-                exp_lbs = expected * 2.20462
+            expected = profile_1rms_kg.get(nearest_lift)
+            if expected is not None:
+                # Profile-relative: exceeds THIS user's 1RM beyond PR headroom.
+                ceiling = expected * _PR_HEADROOM
+                if wkg > ceiling:
+                    exp_lbs = expected * 2.20462
+                    out.append(Contradiction(
+                        kind="1rm",
+                        detail=(f"reply states {wm.group(0)} for {nearest_lift}, "
+                                f"which exceeds the profile 1RM of {expected} kg "
+                                f"({exp_lbs:.0f} lbs) beyond PR head-room — "
+                                f"physically impossible, treat as fabricated"),
+                        quoted=wm.group(0),
+                        expected=f"{expected} kg / {exp_lbs:.0f} lbs",
+                    ))
+                continue  # profile is authoritative for this lift
+            # No personal 1RM for this lift → species-ceiling backstop (F2).
+            sp = _SPECIES_CEILING_KG.get(nearest_lift)
+            if sp is not None and wkg > sp:
                 out.append(Contradiction(
                     kind="1rm",
                     detail=(f"reply states {wm.group(0)} for {nearest_lift}, "
-                            f"which exceeds the profile 1RM of {expected} kg "
-                            f"({exp_lbs:.0f} lbs) beyond PR head-room — "
-                            f"physically impossible, treat as fabricated"),
+                            f"which exceeds the human ceiling (~{sp:.0f} kg) for "
+                            f"that lift — physically impossible, treat as "
+                            f"fabricated"),
                     quoted=wm.group(0),
-                    expected=f"{expected} kg / {exp_lbs:.0f} lbs",
+                    expected="(above any human 1RM)",
                 ))
         else:
-            # No lift named near the number: only flag if it exceeds EVERY
-            # 1RM on file (impossible for any lift), so we never touch a
-            # plausible working weight.
-            if wkg > max_profile * _PR_HEADROOM:
+            # No lift named near the number.
+            if max_profile is not None:
+                # Only flag if it exceeds EVERY 1RM on file (impossible for any
+                # lift), so we never touch a plausible working weight.
+                if wkg > max_profile * _PR_HEADROOM:
+                    out.append(Contradiction(
+                        kind="1rm",
+                        detail=(f"reply states {wm.group(0)} which exceeds every "
+                                f"1RM on file (max {max_profile} kg) — impossible "
+                                f"for any lift, treat as fabricated"),
+                        quoted=wm.group(0),
+                        # Non-numeric correction on purpose: don't echo a number
+                        # (it would read like another claim, and could collide
+                        # with a real value elsewhere).
+                        expected="(above your tested max)",
+                    ))
+            elif wkg > _SPECIES_CEILING_ANY_KG:
+                # Empty profile: species-level fallback for an unattributed
+                # number so gross fabrications are still caught (F2).
                 out.append(Contradiction(
                     kind="1rm",
-                    detail=(f"reply states {wm.group(0)} which exceeds every "
-                            f"1RM on file (max {max_profile} kg) — impossible "
-                            f"for any lift, treat as fabricated"),
+                    detail=(f"reply states {wm.group(0)} which exceeds the human "
+                            f"ceiling (~{_SPECIES_CEILING_ANY_KG:.0f} kg) for any "
+                            f"lift — impossible, treat as fabricated"),
                     quoted=wm.group(0),
-                    # Non-numeric correction on purpose: don't echo a number
-                    # (it would read like another claim, and could collide
-                    # with a real value elsewhere).
-                    expected="(above your tested max)",
+                    expected="(above any human 1RM)",
                 ))
     return out
 

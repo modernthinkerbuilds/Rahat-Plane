@@ -356,11 +356,14 @@ _SHOW_DAY_WORKOUT_RE = re.compile(
 # may be preceded by an optional "for"/"on".
 _GYM_WOD_RELATIVE_RE = re.compile(
     r"\b(?:"
-    r"what(?:'s|\s+is)\s+(?:the\s+|my\s+|today'?s\s+)?wod"
+    # F4 (2026-06-22): apostrophe-less "whats" and the "workout/session/
+    # programming" nouns (not just "wod") — "whats my wod tomorrow",
+    # "whats the workout tomorrow" were falling to the reasoner.
+    r"what(?:'?s|\s+is)\s+(?:the\s+|my\s+)?(?:wod|workout|session|programming)"
     r"|gym\s+(?:workout|wod|session)"
     r"|what'?s?\s+at\s+the\s+gym"
     r")"
-    r"(?:\s+(?:for|on))?\s+(?P<rel>tom+or+ow|tmrw|tmr|yesterday)\b",
+    r"(?:\s+(?:for|on))?\s+(?P<rel>tom+o?r+o?w?|tmrw|tmr|yesterday)(?:'?s)?\b",
     re.I,
 )
 # Companion for the OTHER word order: "tomorrow's WOD", "what is tomorrow's
@@ -370,8 +373,38 @@ _GYM_WOD_RELATIVE_RE = re.compile(
 # synced" / "Monday is a rest day"). Same handler as the relative route.
 # "today"/"tonight" stay OUT (Fraser's daily-driver design intent).
 _REL_DAY_WORKOUT_RE = re.compile(
-    r"\b(?P<rel>tom+or+ow|tmrw|tmr|yesterday)(?:'?s)?\s+"
+    r"\b(?P<rel>tom+o?r+o?w?|tmrw|tmr|yesterday)(?:'?s)?\s+"
     r"(?:wod|workout|session|gym|programming)\b",
+    re.I,
+)
+
+# F4 (2026-06-22): bare-noun WOD lookups ("wod tomorrow", "wod for monday",
+# "mondays wod") were falling to the reasoner. These have no question anchor,
+# so the only thing separating a LOOKUP from a DESIGN request ("design me a
+# wod for tomorrow") is the verb — hence a leading negative-lookahead guard
+# rejects design/build/etc. before matching. "today" stays excluded (it isn't
+# in the relative-day alternation; today's WOD is Fraser's daily driver).
+_WOD_LOOKUP_NOT_DESIGN = (
+    r"\A(?!.*\b(?:design|build|make|create|program(?:me)?|write|generate|"
+    r"give\s+me|plan\s+me|build\s+me)\b)"
+)
+_WOD_NOUN = r"(?:wod|workout|session|programming)"
+# noun → relative day:  "wod tomorrow", "wod for tomorrow"
+_BARE_WOD_REL_RE = re.compile(
+    _WOD_LOOKUP_NOT_DESIGN + r".*?\b" + _WOD_NOUN +
+    r"\s+(?:for\s+|on\s+)?(?P<rel>tom+o?r+o?w?|tmrw|tmr|yesterday)(?:'?s)?\b",
+    re.I,
+)
+# noun → weekday:  "wod monday", "workout for friday"
+_BARE_WOD_DAY_AFTER_RE = re.compile(
+    _WOD_LOOKUP_NOT_DESIGN + r".*?\b" + _WOD_NOUN +
+    r"\s+(?:for\s+|on\s+)?(?P<weekday>" + _WEEKDAY_ALT + r")\b",
+    re.I,
+)
+# weekday-possessive → noun:  "mondays wod", "monday's workout"
+_BARE_WOD_DAY_BEFORE_RE = re.compile(
+    _WOD_LOOKUP_NOT_DESIGN + r".*?\b(?P<weekday>" + _WEEKDAY_ALT +
+    r")(?:'?s)\s+" + _WOD_NOUN + r"\b",
     re.I,
 )
 
@@ -548,6 +581,12 @@ ROUTES: list[Route] = [
     Route("show_day_workout", _SHOW_DAY_WORKOUT_RE, _h_gym_wod_on_day),
     Route("gym_wod_relative", _GYM_WOD_RELATIVE_RE, _h_gym_wod_relative),
     Route("rel_day_workout", _REL_DAY_WORKOUT_RE, _h_gym_wod_relative),
+    # F4: bare-noun lookups ("wod tomorrow", "mondays wod") — broader, so they
+    # come AFTER the anchored routes above. Relative → date-aware handler;
+    # weekday → named-day handler. Each is design-verb-guarded.
+    Route("bare_wod_rel", _BARE_WOD_REL_RE, _h_gym_wod_relative),
+    Route("bare_wod_day_after", _BARE_WOD_DAY_AFTER_RE, _h_gym_wod_on_day),
+    Route("bare_wod_day_before", _BARE_WOD_DAY_BEFORE_RE, _h_gym_wod_on_day),
 
     # 3. Numeric mutators — unambiguous.
     Route("weight_log", _WEIGHT_LOG_RE, _h_weight_log),

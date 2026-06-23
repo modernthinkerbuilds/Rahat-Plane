@@ -54,11 +54,21 @@ class Test1RMDetection:
         issues = validate(text, profile=p)
         assert any(i.kind == "1rm" for i in issues)
 
-    def test_no_1rms_in_profile_no_flag(self):
+    def test_no_1rms_still_flags_superhuman(self):
+        # F2 (2026-06-22): an empty profile must NOT mean zero protection. A
+        # species-impossible weight (9999 lbs ≈ 4535 kg) is caught by the
+        # profile-independent ceiling — the validator is the sole content gate.
         from new_plane.miya_runner.validator import validate
         p = _FakeProfile(one_rep_maxes_kg={})
-        text = "Your deadlift is 9999 lbs."
-        issues = validate(text, profile=p)
+        issues = validate("Your deadlift is 9999 lbs.", profile=p)
+        assert issues, "empty-profile user left unprotected from a 4535 kg lift"
+
+    def test_no_1rms_does_not_flag_human_weight(self):
+        # …but a humanly-possible weight with no 1RM on file is NOT flagged
+        # (we can't know it's wrong, and must not false-positive a real lift).
+        from new_plane.miya_runner.validator import validate
+        p = _FakeProfile(one_rep_maxes_kg={})
+        issues = validate("Your deadlift is 180 kg.", profile=p)
         assert not issues
 
 

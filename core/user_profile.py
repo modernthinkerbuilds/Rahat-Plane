@@ -301,10 +301,19 @@ def _load_user_state(db: Path) -> dict[str, Any]:
 
 
 def _load_overlay() -> dict[str, Any]:
-    """Read vault/user_profile.json. If absent, use the in-module default."""
-    overlay_path = Path(
-        os.getenv("RAHAT_USER_PROFILE_JSON", "vault/user_profile.json")
-    ).resolve()
+    """Read vault/user_profile.json. If absent, use the in-module default.
+
+    Hermeticity (F1, 2026-06-22): under RAHAT_TEST_MODE the loader must NOT
+    read the owner's private vault — otherwise load().name leaks the real name
+    and tests pass only on the owner's machine (the public clone goes red).
+    This now matches core.athlete_profile._vault_display_name, which already
+    test-mode-gates. An EXPLICIT RAHAT_USER_PROFILE_JSON still wins so tests
+    can inject fixture profiles deterministically.
+    """
+    explicit = os.getenv("RAHAT_USER_PROFILE_JSON")
+    if os.getenv("RAHAT_TEST_MODE") == "1" and not explicit:
+        return dict(_DEFAULT_OVERLAY)
+    overlay_path = Path(explicit or "vault/user_profile.json").resolve()
     if not overlay_path.exists():
         logger.info("user_profile.json missing; using built-in defaults")
         return dict(_DEFAULT_OVERLAY)

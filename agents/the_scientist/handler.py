@@ -857,11 +857,29 @@ def handle_show_plan(next_week: bool = False) -> str:
     # remains in force); we map via the canonical Title-Case 3-letter
     # WEEKDAY_INDEX. `gym_days_for_warn` was already populated above,
     # so we reuse it.
+    # DATE-aware (bug 2026-06-21): map each rendered-week weekday to the
+    # GymDay whose SugarWOD header date ('MON 22' → 22) equals that day's
+    # actual date. Weekday-only keying showed THIS week's WODs relabeled as
+    # next week (and vice-versa once two weeks are synced). Falls back to a
+    # weekday match only for dateless labels (test fixtures).
     wd_to_gym: dict[int, "GymDay"] = {}
-    for d in gym_days_for_warn:
-        wd_idx = WEEKDAY_INDEX.get((d.weekday or "")[:3].capitalize())
-        if wd_idx is not None:
-            wd_to_gym[wd_idx] = d
+    for wd in range(7):
+        d_date = monday + timedelta(days=wd)
+        chosen = None
+        for d in gym_days_for_warn:
+            if WEEKDAY_INDEX.get((d.weekday or "")[:3].capitalize()) != wd:
+                continue
+            parts = (d.label or "").split()
+            dated = len(parts) >= 2 and parts[1].isdigit()
+            if dated:
+                if int(parts[1]) == d_date.day:
+                    chosen = d
+                    break                 # exact date → this rendered week
+                # dated but a different date → not this week; keep looking
+            elif chosen is None:
+                chosen = d                # dateless fallback (test fixtures)
+        if chosen is not None:
+            wd_to_gym[wd] = chosen
 
     # 2026-06-18 (owner output slice): an explicit "train these days &
     # why" summary above the grid. Restores the capability that dropped
@@ -1827,13 +1845,23 @@ def handle_gym_wod_on_date(target: datetime) -> str:
     when tomorrow was Mon the 22nd, because handle_gym_wod_on matched only the
     weekday name and the blob's first Monday won. SugarWOD headers carry the
     date ('Mon 15' → day-of-month 15), so we match on that. If the date isn't
-    in the synced blob we say so — never show a different day's WOD."""
+    in the synced blob we say so — never show a different day's WOD.
+
+    F5 (2026-06-22): the day-of-month alone is NOT unique across a month
+    boundary — a stale 'Mon 1' (Jun 1) would answer a Jul 1 query. SugarWOD
+    headers also carry the weekday name, so we require BOTH to match: the
+    header's weekday must equal the target date's weekday, killing the
+    cross-month (and cross-week) day-of-month collision."""
     name = WEEKDAY_NAME[target.weekday()]
+    target_wd = target.strftime("%a").lower()  # 'mon', 'wed', …
     gym_days = parse_gym_plan()
     match = None
     for d in gym_days:
         parts = (d.label or "").split()
         if len(parts) >= 2 and parts[1].isdigit() and int(parts[1]) == target.day:
+            wd_tok = (d.weekday or (parts[0] if parts else "")).strip()[:3].lower()
+            if wd_tok and wd_tok != target_wd:
+                continue  # same day-number, different weekday → stale blob
             match = d
             break
     if match is None:

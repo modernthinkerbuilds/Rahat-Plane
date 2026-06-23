@@ -11,12 +11,21 @@ from __future__ import annotations
 
 import ast
 import inspect
+from pathlib import Path
 
 import pytest
 
 from new_plane.miya_runner import orchestrator as orch
 from new_plane.miya_runner.orchestrator import _validate_outbound
 from core import intent_layer as il
+
+# Vault-independent 1RM fixture (F1, 2026-06-22): the validator reads
+# core.user_profile.load(), which now test-mode-gates the private vault. To pin
+# the anchored-fabrication catches on ANY machine (incl. the public clone), we
+# inject an explicit fixture profile via RAHAT_USER_PROFILE_JSON.
+_PROFILE_FIXTURE = (
+    Path(__file__).resolve().parents[1] / "fixtures" / "profile_with_1rms.json"
+)
 
 
 # ── _finalize sink invariant (structural) ─────────────────────────────
@@ -56,7 +65,10 @@ def test_every_delegation_branch_returns_through_finalize():
     "Back squat 5x5 at 500 lbs.",
     "Your bench is 200 kg now.",
 ])
-def test_validator_still_catches_anchored_fabrication(text):
+def test_validator_still_catches_anchored_fabrication(text, monkeypatch):
+    # Inject a known-1RM profile so the realistic-but-wrong claims (500 lb
+    # squat, 200 kg bench) are caught regardless of the ambient vault.
+    monkeypatch.setenv("RAHAT_USER_PROFILE_JSON", str(_PROFILE_FIXTURE))
     out, _ = _validate_outbound(text, arbitration=None)
     assert not any(n in out for n in ("999", "500 lbs", "200 kg")), (
         f"the SOLE content gate stopped catching {text!r} — fabrication ships"

@@ -45,19 +45,36 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 
 def _write_synced_plan(plan_path: Path) -> None:
     """Mon = clean (becomes rest in default cadence), Thu has the
-    snatch blocker, Sun omitted to pin the no-sub-line case."""
-    blocks = [
-        ("Mon 18", "Back squat 5x5 @ 75% 1RM",
+    snatch blocker, Sun omitted to pin the no-sub-line case.
+
+    Day-of-month labels are derived from the SAME week the renderer
+    shows (week_bounds()'s Monday), not hardcoded. The /plan render is
+    now date-aware (2026-06-21): it maps each rendered weekday to the
+    GymDay whose 'MON 22'-style header date matches that day. A static
+    'Mon 18' fixture would only line up during the week of the 18th, so
+    we generate the labels from the rendered week to keep the test's
+    intent — a synced week aligned to the plan — stable over time.
+    """
+    from agents.the_scientist.protocols import week_bounds
+    monday, _ = week_bounds()
+    days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+    strengths_wods = [
+        ("Back squat 5x5 @ 75% 1RM",
          "5 rounds for time: 400m run, 21 deadlifts, 12 bench press"),
-        ("Tue 19", "Bench press 3x5", "AMRAP 12 minutes Furiosa"),
-        ("Wed 20", "Front squat 5x3", "21-15-9 thrusters, pullups"),
-        ("Thu 21", "Snatch in strength 5x2 @ 70%",
+        ("Bench press 3x5", "AMRAP 12 minutes Furiosa"),
+        ("Front squat 5x3", "21-15-9 thrusters, pullups"),
+        ("Snatch in strength 5x2 @ 70%",
          "5 rounds: 10 burpees, 200m run"),
-        ("Fri 22", "Deadlift 5x5 @ 80%",
+        ("Deadlift 5x5 @ 80%",
          "For time: 50-40-30-20-10 wall balls"),
-        ("Sat 23", "Hero WOD: MURPH",
+        ("Hero WOD: MURPH",
          "1 mile run, 100 pullups, 200 pushups, 300 squats, 1 mile run"),
     ]
+    blocks = []
+    for i, (name, (strength, wod)) in enumerate(zip(days, strengths_wods)):
+        from datetime import timedelta
+        label = f"{name} {(monday + timedelta(days=i)).day}"
+        blocks.append((label, strength, wod))
     out = []
     for label, strength, wod in blocks:
         out.append("\n".join([
@@ -159,16 +176,9 @@ def test_show_plan_surfaces_blockers_in_sub_line(synced_kobe):
 
 
 # ─── 2. Aligned-day collapse — no duplication ────────────────────
-# Surfaced by Day-11 wire-up of regression_registry/ into run_all's
-# contract layer (2026-05-19). The Kobe-side plan-render fix this
-# test pins isn't yet on main — `handle_show_plan` emits a duplicate
-# `⤷ gym today` sub-line on CF-aligned days. Not Fraser territory;
-# xfail-marked here so the gate stays green while the Kobe Architect
-# lands the renderer fix. Drop the mark when Kobe ships it.
-@pytest.mark.xfail(
-    strict=False,
-    reason="Kobe plan-render dup-line fix not yet on main "
-           "(surfaced 2026-05-19 by Day-11 regression_registry wire-up)")
+# F6 (2026-06-22): HARD PIN. The Kobe plan-render dup-line fix has landed
+# (this was a stale xfail that had been XPASSing). On a CF-aligned day the
+# gym_label is already in the main line, so the ⤷ sub-line collapses.
 def test_aligned_cf_day_does_not_get_duplicate_sub_line(
         synced_kobe, monkeypatch):
     """When cadence is CF AND the cadence's gym_label matches the

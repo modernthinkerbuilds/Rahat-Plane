@@ -1,0 +1,16 @@
+{
+  "name": "Alex Rivera",
+  "one_rep_maxes_kg": {
+    "deadlift": 220.0,
+    "back_squat": 180.0,
+    "front_squat": 150.0,
+    "bench_press": 120.0,
+    "overhead_press": 70.0,
+    "power_clean": 110.0,
+    "snatch": 85.0
+  },
+  "limitations": [],
+  "training_context": {},
+  "_overlay_source": "test-fixture-not-real-personal-data",
+  "_overlay_note": "Vault-independent fixture so quality-gate validator tests pin behaviour on any machine (incl. the public clone). NOT the owner's real numbers."
+}
