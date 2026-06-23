@@ -192,17 +192,18 @@ def test_aligned_cf_day_does_not_get_duplicate_sub_line(
     sci = synced_kobe
     sci.handle_pick_days("Mon Tue Fri for crossfit", next_week=False)
     out = sci.handle_show_plan(next_week=False)
-    # Find Monday's stanza.
-    mon_idx = out.find("Mon: CrossFit")
-    assert mon_idx >= 0, f"Monday wasn't picked as CF. Output:\n{out}"
-    # Bound the scan window to the Mon stanza only — the next day's
-    # header is "Tue: " (with the leading two-space indent). The
-    # check is: between Mon's main line and the next day header,
-    # NO ⤷ sub-line should appear.
-    tue_idx = out.find("Tue: ", mon_idx + 1)
+    # Locate Monday's stanza by its day HEADER, not "Mon: CrossFit" — when
+    # Monday is already in the past it renders struck-through as
+    # "Mon: ~~CrossFit~~ ⚠️ missed", which is STILL a CF cadence day and the
+    # sub-line must still collapse. (Date-robust: 2026-06-23.)
+    mon_idx = out.find("Mon:")
+    assert mon_idx >= 0, f"Monday row missing. Output:\n{out}"
+    tue_idx = out.find("Tue:", mon_idx + 1)
     assert tue_idx > mon_idx, (
         f"couldn't find Tue stanza after Mon. Output:\n{out}")
     mon_block = out[mon_idx:tue_idx]
+    assert "CrossFit" in mon_block, (
+        f"Monday wasn't picked as CF. Block:\n{mon_block}")
     assert "⤷ gym today:" not in mon_block, (
         f"aligned CF day rendered a sub-line — CF cadence days "
         f"collapse the sub-line because either the gym_label is "

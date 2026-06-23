@@ -527,8 +527,16 @@ _WEEKLY_REMAIN_RE = re.compile(
     r"\b(?:remain(?:ing)?|left|how\s+(?:much|many))\b.*\b(?:week|kcal|cal|burn)\b",
     re.I,
 )
+# Bug 2026-06-23: "how many calories did I burn last week" mis-routed to
+# weekly_remaining (this week's remaining) because "last week" came AFTER the
+# burn keyword and this regex only matched "last week <keyword>". Now matches
+# "last week" with a burn/calorie/how keyword on EITHER side, and last_week is
+# ordered BEFORE weekly_remaining so any "last week" query wins.
 _LAST_WEEK_RE = re.compile(
-    r"\blast\s+week\b.*\b(?:burn|kcal|cal|workout|stat|summary|how)\b",
+    r"\blast\s+week\b.*\b(?:burn(?:ed)?|kcal|cal|calorie|calories|workout|"
+    r"stat|summary|how|did|total)\b"
+    r"|\b(?:burn(?:ed)?|kcal|cal|calorie|calories|workout|stat|summary|"
+    r"total|how\s+(?:much|many))\b.*\blast\s+week\b",
     re.I,
 )
 # Per-day burn breakdown — "calories by the day", "burn each day", "daily
@@ -610,8 +618,10 @@ ROUTES: list[Route] = [
     Route("list_dislikes", _LIST_DISLIKES_RE, _h_list_dislikes),
     # Per-day breakdown must beat weekly_remaining (both mention burn/cal).
     Route("daily_breakdown", _DAILY_BREAKDOWN_RE, _h_daily_breakdown),
-    Route("weekly_remaining", _WEEKLY_REMAIN_RE, _h_weekly_remaining),
+    # last_week BEFORE weekly_remaining: a "last week" query is about the
+    # COMPLETED week's total, not this week's remaining (bug 2026-06-23).
     Route("last_week", _LAST_WEEK_RE, _h_last_week),
+    Route("weekly_remaining", _WEEKLY_REMAIN_RE, _h_weekly_remaining),
 
     # 7. Coaching protocols — box-breath FIRST, more specific than 7/15.
     Route("breathing_box", _BREATH_BOX_RE, _h_breathing_box),

@@ -142,6 +142,17 @@ class TestBurnMath:
         out = _route(sci_module, "how much do I have left for the week")
         assert "Remaining" in out
 
+    def test_last_week_lookup_returns_completed_week(self, sci_module):
+        """Bug 2026-06-23: 'how many calories did I burn last week' returned
+        THIS week's 'Remaining' block instead of the completed week's total.
+        The answer must be the Last-week summary, never the current-week
+        remaining block."""
+        out = _route(sci_module, "how many calories did I burn last week")
+        assert "Last week (" in out, (
+            f"expected the completed-week summary, got: {out[:200]}")
+        assert "Remaining" not in out, (
+            "a 'last week' query must not answer with this week's remaining")
+
     def test_split_target_when_workouts_remain(self, sci_module):
         """Quoted from the thread: `I have 3 workouts left this week`.
         Must return a per-workout-day burn target, not refuse."""
