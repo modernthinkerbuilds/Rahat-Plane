@@ -93,3 +93,4 @@ specs/test_lead/
 
 # superseded internal archive — keep local
 specs/archive/
+.coverage
