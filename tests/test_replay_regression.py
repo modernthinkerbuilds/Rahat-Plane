@@ -88,8 +88,15 @@ _DEFAULT_FIXTURE = [
         "must_not": [],
     },
     {
+        # `freeze` pins the router clock for this record (ISO date).
+        # "July 1" is year-less: the parser resolves it to the NEXT
+        # future July 1, so without a frozen clock the required rate —
+        # and whether the aggressive-rate guardrail fires at all —
+        # depends on the day the suite runs (it silently stopped firing
+        # on 2026-07-02; caught 2026-08-01).
         "id": "aggressive-target-refused",
         "input": "I want 176 lbs by July 1",
+        "freeze": "2026-05-25",
         "must_contain": ["above your sustainable"],
         "must_not": [],
     },
@@ -203,9 +210,20 @@ def sci_module(tmp_path_factory):
 @pytest.mark.parametrize("record",
                          _ensure_fixture(),
                          ids=lambda r: r.get("id", r.get("input", "?")))
-def test_replay_matches_fixture(sci_module, record):
+def test_replay_matches_fixture(sci_module, record, monkeypatch):
     """Replay one fixture record through the live router and check
-    every assertion in `must_contain` / `must_not`."""
+    every assertion in `must_contain` / `must_not`.
+
+    Records may carry a `freeze` key (ISO date): the router clock is
+    frozen to that date for the replay, so records whose inputs contain
+    absolute or year-less dates stay deterministic across the calendar
+    (see tests/datefreeze.py — 2026-08-01 rollover incident).
+    """
+    if record.get("freeze"):
+        from datetime import date as _date
+        from tests.datefreeze import freeze
+        freeze(monkeypatch, _date.fromisoformat(record["freeze"]),
+               extra_modules=(sci_module,))
     out = sci_module.route(record["input"]) or ""
     haystack = out.lower() if record.get("case_insensitive") else out
     for needle in record.get("must_contain", []):

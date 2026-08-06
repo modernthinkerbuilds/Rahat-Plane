@@ -60,7 +60,8 @@
     "must_contain": [
       "above your sustainable"
     ],
-    "must_not": []
+    "must_not": [],
+    "freeze": "2026-05-25"
   },
   {
     "id": "hrv-red",

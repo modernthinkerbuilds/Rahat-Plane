@@ -33,7 +33,14 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent.parent
-FUTURE_DATE = "2026-08-01"   # comfortably future relative to the test clock
+
+# The test clock is FROZEN to this date (see `env` fixture): the goal
+# math divides by weeks-to-target, so an absolute target date + a wall
+# clock meant this file went red the day the calendar caught up
+# (2026-08-01 rollover incident — the old comment here said
+# "comfortably future relative to the test clock"; it wasn't).
+FROZEN_TODAY = "2026-05-25"
+FUTURE_DATE = "2026-08-01"   # ~10 weeks out from the FROZEN clock — stable
 
 
 def _schema(con: sqlite3.Connection) -> None:
@@ -62,7 +69,11 @@ def _schema(con: sqlite3.Connection) -> None:
 
 
 @pytest.fixture
-def env(tmp_path):
+def env(tmp_path, monkeypatch):
+    from datetime import date
+    from tests.datefreeze import freeze
+    freeze(monkeypatch, date.fromisoformat(FROZEN_TODAY))
+
     from core import io as cio
     db_path = tmp_path / "rahat.db"
     plan_path = tmp_path / "weekly_plan.txt"
@@ -83,6 +94,10 @@ def env(tmp_path):
     mod = importlib.util.module_from_spec(spec)
     sys.modules["sci"] = mod
     spec.loader.exec_module(mod)
+    # exec_module re-binds a REAL `datetime` name inside the fresh sci
+    # module — re-freeze it (module objects, not import paths).
+    freeze(monkeypatch, date.fromisoformat(FROZEN_TODAY),
+           modules=(), extra_modules=(mod,))
     mod.PLAN_PATH = plan_path
     from agents.the_scientist import handler as h
     h.PLAN_PATH = plan_path

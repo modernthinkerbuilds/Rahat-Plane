@@ -177,9 +177,16 @@ class TestWeightTimeline:
         out = _route(sci_module, "when will I get to my target weight")
         assert "Weight timeline" in out
 
-    def test_aggressive_target_refused(self, sci_module):
+    def test_aggressive_target_refused(self, sci_module, monkeypatch):
         """The user repeatedly tried '176 by July 1' (faster than safe).
-        The Scientist's job is to refuse gracefully, not silently agree."""
+        The Scientist's job is to refuse gracefully, not silently agree.
+
+        Clock frozen: "July 1" is year-less and resolves against now(),
+        so whether the rate is aggressive depends on the run date
+        (2026-08-01 rollover incident — see tests/datefreeze.py)."""
+        from datetime import date
+        from tests.datefreeze import freeze
+        freeze(monkeypatch, date(2026, 5, 25), extra_modules=(sci_module,))
         out = _route(sci_module, "I want 176 lbs by July 1")
         assert "above your sustainable" in out, (
             "an unsafe deadline must be flagged with 'above your "
@@ -447,8 +454,13 @@ class TestLLMJudge:
 class TestKobeRefGoalTrajectory:
     """KC-7 / KC-2 / KC-4 — goal-trajectory refusal with math + proration."""
 
-    def test_KC7_aggressive_deadline_flagged_with_safety_phrase(self, sci_module):
-        """An unsafe by-date target is flagged, not silently accepted."""
+    def test_KC7_aggressive_deadline_flagged_with_safety_phrase(
+            self, sci_module, monkeypatch):
+        """An unsafe by-date target is flagged, not silently accepted.
+        Clock frozen — year-less "July 1" (see tests/datefreeze.py)."""
+        from datetime import date
+        from tests.datefreeze import freeze
+        freeze(monkeypatch, date(2026, 5, 25), extra_modules=(sci_module,))
         out = _route(sci_module, "I want 176 lbs by July 1")
         assert "above your sustainable" in out, (
             f"KC-7: unsafe deadline must be flagged; got {out[:200]}"

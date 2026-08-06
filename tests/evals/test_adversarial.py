@@ -242,10 +242,15 @@ class TestNoFakeMath:
             "block — never an invented free-form number"
         )
 
-    def test_aggressive_target_not_silently_agreed(self, sci_module):
+    def test_aggressive_target_not_silently_agreed(self, sci_module,
+                                                   monkeypatch):
         """Same as the conversation eval, but framed as a regression
         guard: a future model that just says 'sure, you got it' to
-        '176 by July 1' is a P0."""
+        '176 by July 1' is a P0.
+        Clock frozen — year-less "July 1" (see tests/datefreeze.py)."""
+        from datetime import date
+        from tests.datefreeze import freeze
+        freeze(monkeypatch, date(2026, 5, 25), extra_modules=(sci_module,))
         out = _route(sci_module, "I want 176 lbs by July 1")
         assert "above your sustainable" in out
 
