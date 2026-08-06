@@ -35,8 +35,24 @@ MODEL_FLASH = os.getenv("NEW_MIYA_MODEL_FLASH", "gemini-2.5-flash")
 MODEL_PRO = os.getenv("NEW_MIYA_MODEL_PRO", "gemini-2.5-pro")
 
 # Where to log routing decisions. Set to empty string to disable logging.
-COST_LOG_PATH = os.getenv("OPENCLAW_COST_LOG",
-                          os.path.expanduser("~/.rahat/cost_router.log"))
+#
+# expandvars + expanduser (2026-08-01): launchd plists do NOT shell-expand
+# env values — a literal "$HOME/.rahat/…" from the installed plist used to
+# become a relative path and created a literal `$HOME/` dir inside the repo
+# (WorkingDirectory). Expand here; if a `$` survives (undefined var), fall
+# back to the default rather than logging into a '$…' directory.
+def _resolve_cost_log_path() -> str:
+    default = os.path.expanduser("~/.rahat/cost_router.log")
+    raw = os.getenv("OPENCLAW_COST_LOG")
+    if raw is None:
+        return default
+    if raw == "":          # explicit opt-out of logging
+        return ""
+    expanded = os.path.expanduser(os.path.expandvars(raw))
+    return expanded if "$" not in expanded else default
+
+
+COST_LOG_PATH = _resolve_cost_log_path()
 
 # Heuristic thresholds — can tune via env without code changes.
 PRO_THRESHOLD_CHARS = int(os.getenv("NEW_MIYA_PRO_THRESHOLD_CHARS", "200"))

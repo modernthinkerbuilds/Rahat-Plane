@@ -40,9 +40,22 @@ _LOCK = threading.Lock()
 # ─── Path resolution ───────────────────────────────────────────────────────
 def _default_path() -> Path:
     # Explicit override always wins (tests set this to a tmp path).
+    #
+    # expandvars + expanduser (2026-08-01): launchd plists do NOT
+    # shell-expand env values, so a plist that sets this var to a
+    # literal "$HOME/.rahat/…" used to land as a RELATIVE path — the
+    # runner (WorkingDirectory = repo) then created a literal `$HOME/`
+    # directory inside the repo and split the signal store across two
+    # files. Expand `$VARS` and `~` here; if anything unexpandable
+    # remains, fall back to the default path rather than writing to a
+    # `$`-named directory.
     p = os.environ.get("OPENCLAW_SIGNALS_DB", "").strip()
     if p:
-        return Path(p)
+        expanded = os.path.expanduser(os.path.expandvars(p))
+        if "$" not in expanded:
+            return Path(expanded)
+        # Unexpandable var (e.g. undefined $RAHAT_X) — fall through to
+        # the safe defaults below instead of creating a '$…' dir.
     # Test-mode sandbox guard (mirrors core.io): when RAHAT_TEST_MODE=1 and no
     # explicit path is set, never touch the real signals DB — use a pid-scoped
     # temp file. Closes the same class of risk as the 2026-05-08 live-DB
