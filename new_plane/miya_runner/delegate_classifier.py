@@ -38,11 +38,35 @@ _SLASH_RE = re.compile(r"^\s*/\s*[a-z]", re.I)
 
 
 # ─── Explicit @-address routing ───────────────────────────────────────
-# Matches "@kobe" or "@fraser" or "@huberman" (with optional whitespace).
-# The orchestrator strips the prefix before delegating.
+# Matches "@kobe" / "@fraser" / "@huberman" / "@genie" (with optional
+# whitespace). The orchestrator strips the prefix before delegating.
 _ADDRESS_RE = re.compile(
-    r"^\s*@(kobe|fraser|huberman|miya)\b\s*(.*)$",
+    r"^\s*@(kobe|fraser|huberman|genie|miya)\b\s*(.*)$",
     re.I | re.DOTALL,
+)
+
+
+# ─── Genie-owned surface (agent #4, 2026-08-06) ───────────────────────
+# Genie's three slash commands are carved out BEFORE the generic
+# slash→Kobe rule — otherwise "/genie" would go full-route to Kobe,
+# whose slash table doesn't know it, and fall through Kobe's pipeline
+# (the exact silent-fallthrough class the 06-23 sink contract exists
+# to prevent). Same whitespace tolerance as _SLASH_RE.
+_GENIE_SLASH_RE = re.compile(
+    r"^\s*/\s*(genie|weekend_plan|family_log)\b", re.I)
+
+# NL weekend/household-planning intent. Deliberately narrow: it must
+# never steal Kobe's plan/schedule queries ("plan for the week" — note
+# \bweek\b does not match inside "weekend") or Fraser's design intent.
+# Mirrors genie.handler's own keyword routing so classifier and handler
+# agree on ownership.
+_GENIE_NL_RE = re.compile(
+    r"\b(weekend|saturday|sunday)\b.*\bplan\b"
+    r"|\bplan\b.*\bweekend\b"
+    r"|\bfamily[\s-]friendly\b"
+    r"|\bfamily\s*log\b"
+    r"|\blog\s+(?:that\s+)?(?:for\s+)?(?:the\s+)?(?:toddler|newborn|spouse)\b",
+    re.I,
 )
 
 
@@ -251,12 +275,16 @@ def classify_delegation(msg: str) -> tuple[str, str]:
     """Determine which delegation path (if any) to take.
 
     Returns (path, stripped_msg) where:
-      - path is "kobe_route", "fraser_route", "huberman_route", or "orchestrate"
+      - path is "kobe_route", "fraser_route", "huberman_route",
+        "genie_route", or "orchestrate"
       - stripped_msg has any @-address prefix removed (otherwise == msg)
 
     The orchestrator should:
       - "kobe_route" → call native_client.kobe_route(stripped_msg) and return as-is
       - "fraser_route" → call native_client.fraser_route(stripped_msg) and return as-is
+      - "genie_route" → call native_client.genie_route(stripped_msg) and
+        return as-is (agent #4, 2026-08-06 — household/weekend planning;
+        fully deterministic in this phase)
       - "huberman_route" → PARKED agent. The route is live and auditable
         (native_client.huberman_route logs path="huberman_route"), but the
         Huberman agent itself is a stub (agents/huberman/ is empty) — the
@@ -290,10 +318,19 @@ def classify_delegation(msg: str) -> tuple[str, str]:
             # wraps Kobe's mesh delegation but logs the path as
             # huberman_route so analytics + replays are clear.
             return ("huberman_route", body)
+        if agent == "genie":
+            # Agent #4 (2026-08-06): explicit @genie address.
+            return ("genie_route", body)
         if agent == "miya":
             # Explicit @miya means "I want Miya's synthesis." Skip
             # delegation and use the orchestrator's full flow.
             return ("orchestrate", body)
+
+    # 2a. Genie's own slash commands (/genie, /weekend_plan, /family_log)
+    #     — MUST precede the generic slash→Kobe rule, or they'd full-route
+    #     to Kobe whose slash table doesn't know them (silent fallthrough).
+    if _GENIE_SLASH_RE.match(text):
+        return ("genie_route", text)
 
     # 2. Slash commands always go to Kobe.
     if _SLASH_RE.match(text):
@@ -330,6 +367,21 @@ def classify_delegation(msg: str) -> tuple[str, str]:
     #    must still orchestrate so Fraser can author).
     if _WOD_LOOKUP_RE.search(text) and not _WOD_DESIGN_GUARD_RE.search(text):
         return ("kobe_route", text)
+
+    # 8a-genie. NL weekend/household planning → Genie (agent #4,
+    #     2026-08-06). Sits AFTER every Kobe-owned pattern so it can only
+    #     claim a message no explicit Kobe rule owns ("plan my weekend",
+    #     "what should we do Saturday" — note \bweek\b never matches
+    #     inside "weekend", so Kobe's plan-query patterns are unaffected).
+    #     Design-guarded ONLY when a workout noun is present: "design me a
+    #     weekend workout" still orchestrates so Fraser can author, but
+    #     "give me a family-friendly weekend" (the guard's "give me a"
+    #     verb with no workout noun) is Genie's to keep.
+    if _GENIE_NL_RE.search(text) and not (
+            _WOD_DESIGN_GUARD_RE.search(text)
+            and re.search(r"\b(workout|wod|session|metcon|program\w*)\b",
+                          text, re.I)):
+        return ("genie_route", text)
 
     # 8b. NL intent layer (ADR-017). A PARAPHRASE of one of Kobe's READ
     #     intents that none of the exact patterns above caught — e.g.

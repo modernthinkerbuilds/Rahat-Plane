@@ -9,9 +9,14 @@ from __future__ import annotations
 
 from agents.the_scientist.agent import KobeAgent
 from agents.fraser.agent import FraserAgent
+from agents.genie.agent import GenieAgent
 
-# Production agents Miya registers, in order. The 4th agent goes here.
-PRODUCTION_AGENT_CLASSES = [KobeAgent, FraserAgent]
+# Production agents Miya registers, in order.
+# Genie (2026-08-06) is agent #4 — the first NON-grandfathered agent, so
+# it is the first to arm the structured-output tripwire
+# (test_2026_06_17_structured_output_contract.py) and the first real
+# exercise of the 06-23 delegation-sink scaling contracts.
+PRODUCTION_AGENT_CLASSES = [KobeAgent, FraserAgent, GenieAgent]
 
 # Agents that predate the structured-output contract (PF-2026-06-17-002) and
 # rely on the outbound validator as their content gate. New agents are NOT

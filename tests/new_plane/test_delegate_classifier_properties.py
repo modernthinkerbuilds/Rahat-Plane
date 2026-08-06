@@ -7,8 +7,11 @@ falling through to the synth path) actually lives.
 
 Contract observed in `new_plane/miya_runner/delegate_classifier.py`:
   classify_delegation(msg) -> (path, stripped)
-  path ∈ {"kobe_route", "fraser_route", "orchestrate"}
-  ("huberman" funnels to kobe_route; "@miya"/empty/whitespace → orchestrate)
+  path ∈ {"kobe_route", "fraser_route", "huberman_route", "genie_route",
+          "orchestrate"}
+  ("@miya"/empty/whitespace → orchestrate; genie added 2026-08-06 as
+  agent #4 — it owns /genie /weekend_plan /family_log + @genie + NL
+  weekend-planning intent)
 
 Run:
   RAHAT_TEST_MODE=1 python -m pytest \
@@ -27,7 +30,8 @@ from hypothesis import given, assume, settings, strategies as st, HealthCheck
 
 from new_plane.miya_runner.delegate_classifier import classify_delegation
 
-VALID_PATHS = {"kobe_route", "fraser_route", "orchestrate"}
+VALID_PATHS = {"kobe_route", "fraser_route", "huberman_route",
+               "genie_route", "orchestrate"}
 
 # Hypothesis defaults are fine; disable the deadline because the first
 # call JIT-compiles the regexes and can trip the per-example timer.
@@ -62,7 +66,12 @@ def test_path_is_valid(msg):
     assert path in VALID_PATHS, f"{msg!r} → invalid path {path!r}"
 
 
-# ── Property 3: a slash-prefixed alpha command always routes to Kobe ───
+# ── Property 3: a slash-prefixed alpha command routes to Kobe ──────────
+# (…unless it is one of Genie's three carved-out commands — agent #4,
+# 2026-08-06: /genie /weekend_plan /family_log route to genie_route.)
+_GENIE_SLASH_PREFIXES = ("genie", "weekend_plan", "family_log")
+
+
 @_S
 @given(suffix=st.text(min_size=1, max_size=200))
 def test_slash_alpha_always_kobe(suffix):
@@ -72,8 +81,33 @@ def test_slash_alpha_always_kobe(suffix):
     # through to orchestrate. By-design (no unicode slash commands), not
     # a bug — noted in PROGRESS.md Hour 3.
     assume(suffix[0] in string.ascii_letters)
+    low = suffix.lower()
+    assume(not any(low.startswith(p) for p in _GENIE_SLASH_PREFIXES))
     path, _ = classify_delegation("/" + suffix)
     assert path == "kobe_route"
+
+
+# ── Property 3b: Genie's slash commands always route to Genie ──────────
+@_S
+@given(cmd=st.sampled_from(_GENIE_SLASH_PREFIXES),
+       tail=st.text(alphabet=st.characters(blacklist_characters="\n\r",
+                                           blacklist_categories=("Cs",)),
+                    max_size=100))
+def test_genie_slash_always_genie(cmd, tail):
+    # Word boundary after the command name, so "/geniexyz" is NOT a
+    # Genie command (falls to the generic slash→Kobe rule).
+    path, _ = classify_delegation(f"/{cmd} {tail}".rstrip())
+    assert path == "genie_route", f"/{cmd} fell through to {path!r}"
+
+
+# ── Property 3c: "@genie <body>" → genie_route, prefix stripped ────────
+@_S
+@given(body=_BODY)
+def test_at_genie_strips_and_routes(body):
+    assume(body.strip())
+    path, stripped = classify_delegation("@genie " + body)
+    assert path == "genie_route"
+    assert stripped == body.strip()
 
 
 # ── Property 4: "@fraser <body>" → fraser_route, prefix stripped ───────

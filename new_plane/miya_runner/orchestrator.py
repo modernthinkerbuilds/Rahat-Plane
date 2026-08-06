@@ -548,16 +548,21 @@ def _finalize_delegated(*, raw_text: str, path: str, turn: "Turn",
     #    (a /profile confirmation etc. is exact + already in Miya's voice;
     #    revoicing would let the synth reword + hallucinate over it).
     revoice_meta: dict[str, Any] = {"revoice": "disabled"}
-    deterministic = False
+    # genie_route (2026-08-06): Genie's whole reply path is deterministic
+    # in this phase (slash → keyword → greeting; no LLM), so revoicing
+    # would only let the synth paraphrase an exact family plan — the
+    # same class as the /profile case above. Scrub/validate/never-empty/
+    # charter below still run on it like every other path.
+    deterministic = (path == "genie_route")
     try:
         from core import dispatcher as _disp
         _route = _disp.match_route(stripped_msg)
-        deterministic = _route is not None
+        deterministic = deterministic or _route is not None
         if (deterministic and _disp.cooldown_llm_enabled()
                 and _route in ("post_recovery", "pre_fuel")):
-            deterministic = False
+            deterministic = (path == "genie_route")
     except Exception:
-        deterministic = False
+        deterministic = (path == "genie_route")
     if _revoice_enabled() and not deterministic:
         text, revoice_meta = _revoice_through_synth(
             raw_text=text, user_message=turn.user_message,
@@ -718,6 +723,25 @@ def handle(turn: Turn) -> Response:
         # 1RMs leaked). It now goes through the SAME sink as kobe/fraser.
         return _finalize_delegated(
             raw_text=text, path="huberman_route", turn=turn,
+            stripped_msg=stripped_msg, trace_id=trace_id,
+            used=used, transport_errors=transport_errors)
+
+    # Agent #4 (2026-08-06): Genie's slash commands, @genie addresses,
+    # and NL weekend/household intents full-route to Genie's own
+    # deterministic pipeline — through the SAME finalize sink as every
+    # other delegation path (06-23 scaling contract).
+    if delegation_path == "genie_route":
+        r = adapter.genie_route(stripped_msg,
+                                chat_id=turn.chat_id or None,
+                                trace_id=trace_id)
+        used.append("genie_route")
+        if r.transport_error:
+            transport_errors.append(f"genie_route: {r.transport_error}")
+        text = (r.result or {}).get("text", "") if r.ok else (
+            r.error or r.transport_error or "(no response)"
+        )
+        return _finalize_delegated(
+            raw_text=text, path="genie_route", turn=turn,
             stripped_msg=stripped_msg, trace_id=trace_id,
             used=used, transport_errors=transport_errors)
 

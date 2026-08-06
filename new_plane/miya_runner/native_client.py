@@ -245,6 +245,25 @@ def fraser_route(message: str, chat_id: str | None = None,
         return _err(tid, e, where="fraser_route")
 
 
+def genie_route(message: str, chat_id: str | None = None,
+                trace_id: str | None = None) -> AdapterResult:
+    """Call agents.genie.handler.route() directly (agent #4, 2026-08-06).
+
+    Use when the message is a Genie slash command (/genie,
+    /weekend_plan, /family_log), an explicit @genie address, or an NL
+    weekend/household-planning intent. Genie's route() is fully
+    deterministic in this phase (slash → keyword → greeting; no LLM)
+    and always returns non-empty text.
+    """
+    tid = _trace(trace_id)
+    try:
+        from agents.genie import handler as genie_handler
+        text = genie_handler.route(message, chat_id=chat_id)
+        return _ok(tid, {"text": text})
+    except Exception as e:
+        return _err(tid, e, where="genie_route")
+
+
 # ─── Signals ───────────────────────────────────────────────────────────
 # These go through the new_plane signal store directly (not via HTTP).
 # Same semantics, same DB path, just no round-trip.
