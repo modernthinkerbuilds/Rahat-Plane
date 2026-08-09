@@ -53,6 +53,7 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "family_profile_path",
     "household_store_path",
+    "household_location",
     "load_family_subjects",
     "append_family_log",
     "read_family_log",
@@ -117,6 +118,27 @@ def household_store_path() -> Path:
     if override:
         return Path(override).resolve()
     return _vault_dir() / "genie_household.json"
+
+
+def household_location() -> str | None:
+    """The household's home area for live discovery ("City, ST" is
+    enough). Sovereign-by-default (PRD NFR-Privacy): read from the
+    RAHAT_GENIE_LOCATION env (set in .env, gitignored) or from a
+    "location" key in vault/family_profile.json (gitignored). NEVER
+    committed to the repo; returns None when unset — the caller falls
+    back to the offline plan and tells the user how to set it."""
+    env = (os.getenv("RAHAT_GENIE_LOCATION") or "").strip()
+    if env:
+        return env
+    path = family_profile_path()
+    if path.exists():
+        try:
+            with path.open() as f:
+                loc = str(json.load(f).get("location") or "").strip()
+            return loc or None
+        except Exception:
+            return None
+    return None
 
 
 # ─────────────────────────── Family Subjects (read) ───────────────────

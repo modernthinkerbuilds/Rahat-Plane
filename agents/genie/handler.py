@@ -48,6 +48,7 @@ from agents.genie.state import (  # noqa: E402
     load_family_subjects,
     commit_weekend_plan,
     append_family_log,
+    household_location,
 )
 
 __all__ = [
@@ -120,39 +121,129 @@ _SUNDAY_BY_ENERGY: dict[str, list[str]] = {
 }
 
 
+_VALID_ENERGY = ("low", "medium", "high")
+
+
+def _live_plan_enabled() -> bool:
+    """RAHAT_GENIE_LIVE_PLAN gates live discovery (default ON — the
+    whole point of the 2026-08-09 upgrade; set 0 to force offline)."""
+    import os
+    return os.getenv("RAHAT_GENIE_LIVE_PLAN", "1") not in ("0", "false", "no")
+
+
+def _hermetic() -> bool:
+    import os
+    return os.getenv("RAHAT_TEST_MODE") == "1"
+
+
 def handle_weekend_plan(*, now: datetime | None = None,
-                        commit: bool = True) -> str:
-    """Propose a household weekend plan sized to the household energy
-    budget, FOR the family Subjects on file (multi-subject hookup).
+                        commit: bool = True,
+                        energy_override: str | None = None,
+                        llm=None) -> str:
+    """Propose a household weekend plan FOR the family Subjects on file.
+
+    2026-08-09 (PRD Phase-0): when a household location is configured,
+    the plan is built from LIVE discovery — the LLM's only job is
+    grounded Google-Search research returned as typed candidates
+    (live_plan.discover_options); a DETERMINISTIC sequencer then sizes
+    the day (energy caps, nap-window protection) and surfaces what it
+    ruled out (glass-box). The LLM never schedules in its head — the
+    PRD's non-negotiable. On ANY live failure (no location, no key,
+    budget cap, bad JSON) the static offline menus ship instead, so the
+    command can never go silent.
+
+    `energy_override` ("low"/"medium"/"high") lets the user overrule the
+    profile-derived budget for one plan ("/weekend_plan high" — live ask
+    2026-08-08). `llm` is the test seam passed through to discovery;
+    under RAHAT_TEST_MODE the wire is never touched unless a seam is
+    injected.
 
     When `commit` is True (default) the plan is persisted via
     state.commit_weekend_plan — which is charter-gated. A veto is
     surfaced to the user rather than silently dropped.
     """
     subjects = load_family_subjects()
-    energy = energy_for_subjects(subjects)
+    profile_energy = energy_for_subjects(subjects)
+    override = (energy_override or "").strip().lower() or None
+    if override not in _VALID_ENERGY:
+        override = None
+    energy = override or profile_energy
     saturday = _next_saturday(now)
+    sunday = saturday + timedelta(days=1)
     roles = [s.role for s in subjects]
+
+    # ─── live discovery (LLM proposes) + deterministic sequencing ───
+    live_sat: list[str] | None = None
+    live_sun: list[str] | None = None
+    ruled_out: list[str] = []
+    weather_line = ""
+    location = household_location()
+    live_ok = (_live_plan_enabled() and location
+               and (llm is not None or not _hermetic()))
+    if live_ok:
+        from agents.genie import live_plan as lp
+        constraints = [c for s in subjects for c in s.constraints]
+        disc = lp.discover_options(
+            location=location,
+            sat_iso=saturday.strftime("%Y-%m-%d"),
+            sun_iso=sunday.strftime("%Y-%m-%d"),
+            energy=energy, roles=roles, constraints=constraints,
+            llm=llm)
+        if disc is not None:
+            protect_nap = any(r in ("toddler", "newborn") for r in roles)
+            live_sat, ro_sat = lp.sequence_day(
+                disc.saturday, energy=energy, protect_nap=protect_nap)
+            live_sun, ro_sun = lp.sequence_day(
+                disc.sunday, energy=energy, protect_nap=protect_nap)
+            ruled_out = ro_sat + ro_sun
+            if disc.weather_sat or disc.weather_sun:
+                weather_line = (f"Weather: Sat — {disc.weather_sat or '?'}; "
+                                f"Sun — {disc.weather_sun or '?'}")
+
+    live = live_sat is not None or live_sun is not None
+    note_bits = [f"Sized to {energy} household energy"]
+    if override:
+        note_bits.append(f"(your override — profile says {profile_energy})")
+    else:
+        note_bits.append(
+            "— set by "
+            + (", ".join(s.display for s in subjects if s.is_constraint_setter)
+               or "the household"))
+    if live:
+        note_bits.append("· live options via grounded search")
+    plan_notes = " ".join(note_bits) + "."
+
+    def _static(day_menu: dict) -> list[str]:
+        return list(day_menu.get(energy, day_menu["medium"]))
 
     plan = WeekendPlan(
         weekend_of=saturday.strftime("%Y-%m-%d"),
-        saturday=list(_SATURDAY_BY_ENERGY.get(energy, _SATURDAY_BY_ENERGY["medium"])),
-        sunday=list(_SUNDAY_BY_ENERGY.get(energy, _SUNDAY_BY_ENERGY["medium"])),
+        saturday=([ln.strip("• ").strip() for ln in live_sat] if live_sat
+                  else _static(_SATURDAY_BY_ENERGY)),
+        sunday=([ln.strip("• ").strip() for ln in live_sun] if live_sun
+                else _static(_SUNDAY_BY_ENERGY)),
         subjects=roles,
         energy=energy,
-        notes=(f"Sized to {energy} household energy — set by "
-               f"{', '.join(s.display for s in subjects if s.is_constraint_setter) or 'the household'}."),
+        notes=plan_notes,
     )
 
-    lines = [
-        f"*Weekend plan — week of {plan.weekend_of}*",
-        f"For: {family_context_line(subjects)} (energy: {energy}).",
-        "",
-        "*Saturday*",
-    ]
-    lines += [f"  • {a}" for a in plan.saturday]
+    header = f"*Weekend plan — week of {plan.weekend_of}*"
+    if live:
+        header += f" · live options for {location}"
+    lines = [header,
+             f"For: {family_context_line(subjects)} (energy: {energy})."]
+    if weather_line:
+        lines.append(weather_line)
+    lines += ["", "*Saturday*"]
+    lines += (live_sat if live_sat else [f"  • {a}" for a in plan.saturday])
     lines += ["", "*Sunday*"]
-    lines += [f"  • {a}" for a in plan.sunday]
+    lines += (live_sun if live_sun else [f"  • {a}" for a in plan.sunday])
+    if ruled_out:
+        lines += ["", "*Ruled out* (glass-box)"]
+        lines += [f"  • {r}" for r in ruled_out]
+    if not live and _live_plan_enabled() and not location and not _hermetic():
+        lines += ["", "_Offline plan — set RAHAT_GENIE_LOCATION in .env "
+                      "(e.g. \"San Jose, CA\") to get real local options._"]
     lines += ["", f"_{plan.notes}_"]
 
     if commit:
@@ -216,6 +307,16 @@ _FAMILY_LOG_USAGE = ("To log a household note, use "
                      "(roles: primary, spouse, toddler, newborn).")
 
 
+# Energy override in command args ("/weekend_plan high" — live ask
+# 2026-08-08: "I have high household energy"). One word, validated.
+_ENERGY_ARG_RE = re.compile(r"\b(high|medium|low)\b(?:\s+energy)?", re.I)
+
+
+def _energy_arg(text: str) -> str | None:
+    m = _ENERGY_ARG_RE.search(text or "")
+    return m.group(1).lower() if m else None
+
+
 def _genie_subcommand(rest: str) -> str | None:
     """Resolve `/genie <rest>` to a known subcommand, or None to fall
     back to the greeting. Deterministic, tolerant of the command-name
@@ -223,7 +324,7 @@ def _genie_subcommand(rest: str) -> str | None:
     if not rest:
         return None
     if _WEEKEND_PLAN_TOKEN_RE.search(rest):
-        return handle_weekend_plan()
+        return handle_weekend_plan(energy_override=_energy_arg(rest))
     if _FAMILY_LOG_TOKEN_RE.search(rest):
         return _FAMILY_LOG_USAGE
     return None
@@ -261,9 +362,10 @@ def _try_slash_command(msg: str) -> str | None:
             return sub
         return handle_genie(rest)
 
-    # /weekend_plan — zero-arg.
+    # /weekend_plan [high|medium|low] — optional energy override.
     if low.startswith("/weekend_plan"):
-        return handle_weekend_plan()
+        rest = norm[len("/weekend_plan"):].strip()
+        return handle_weekend_plan(energy_override=_energy_arg(rest))
 
     return None
 
@@ -290,11 +392,12 @@ def route(msg: str, *, chat_id: str | int | None = None) -> str:
     low = msg.lower()
     # Bare command-name token first ("Weekend_plan" — the underscore
     # defeats \b word boundaries in the phrase patterns below; live
-    # incident 2026-08-08).
+    # incident 2026-08-08). NL energy override honored ("high household
+    # energy ... weekend plan" — live ask 2026-08-08).
     if _WEEKEND_PLAN_TOKEN_RE.search(low):
-        return handle_weekend_plan()
+        return handle_weekend_plan(energy_override=_energy_arg(low))
     if re.search(r"\b(weekend|saturday|sunday)\b.*\bplan\b|\bplan\b.*\bweekend\b", low):
-        return handle_weekend_plan()
+        return handle_weekend_plan(energy_override=_energy_arg(low))
     if (_FAMILY_LOG_TOKEN_RE.search(low)
             or re.search(r"\blog\s+(?:for\s+)?(?:the\s+)?(?:toddler|newborn|spouse)\b", low)):
         return _FAMILY_LOG_USAGE

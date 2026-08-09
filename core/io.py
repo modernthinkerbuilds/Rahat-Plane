@@ -201,17 +201,31 @@ def llm_generate(prompt: str, *, model: str | None = None) -> str:
 
 
 def llm_generate_with_usage(prompt: str, *,
-                            model: str | None = None) -> "GeminiUsage":
+                            model: str | None = None,
+                            search: bool = False) -> "GeminiUsage":
     """Like `llm_generate` but returns a `GeminiUsage` carrying token
     counts and the dollar cost, so callers can write a single
     `decisions.span` exit with full telemetry.
+
+    search=True (2026-08-09, Genie live discovery): attach the Google
+    Search grounding tool so the model can answer from live web results
+    (weather, local events). Grounded calls return .text like any other;
+    failures (old SDK, tool rejected) surface via .error and callers
+    fall back. Default False — existing callers are byte-identical.
     """
     model_id = model or llm_pick_flash_model()
     c = llm_client()
     if not c:
         return GeminiUsage(text="", model=model_id, error="gemini-not-configured")
     try:
-        resp = c.models.generate_content(model=model_id, contents=prompt)
+        if search:
+            from google.genai import types as _gtypes
+            cfg = _gtypes.GenerateContentConfig(
+                tools=[_gtypes.Tool(google_search=_gtypes.GoogleSearch())])
+            resp = c.models.generate_content(model=model_id, contents=prompt,
+                                             config=cfg)
+        else:
+            resp = c.models.generate_content(model=model_id, contents=prompt)
     except Exception as e:
         return GeminiUsage(text="", model=model_id,
                            error=f"{type(e).__name__}: {e}")

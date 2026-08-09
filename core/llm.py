@@ -253,6 +253,7 @@ def generate(actor: str, kind: str,
              *,
              prompt: str,
              model: str | None = None,
+             search: bool = False,
              trace_id: str | None = None,
              db_path: str | None = None) -> "GeminiUsage":
     """Single chokepoint for LLM spend.
@@ -304,14 +305,26 @@ def generate(actor: str, kind: str,
     # runs without --record will replay.
     # Playback mode (default): try cassette first; fall through to the
     # wire call if no fixture matches.
+    # search=True calls carry a "search\x00" prefix in the fixture key space
+    # so a grounded and a non-grounded call with identical prompt text never
+    # share a cassette. The kwarg is only passed when True — existing stubs
+    # and monkeypatches of llm_generate_with_usage keep the old signature.
+    fixture_prompt = f"search\x00{prompt}" if search else prompt
+
+    def _wire():
+        if search:
+            return _cio.llm_generate_with_usage(prompt, model=model,
+                                                search=True)
+        return _cio.llm_generate_with_usage(prompt, model=model)
+
     if _is_recording():
-        usage = _cio.llm_generate_with_usage(prompt, model=model)
+        usage = _wire()
         if not usage.error:
-            _save_fixture(prompt, model, usage)
+            _save_fixture(fixture_prompt, model, usage)
     else:
-        usage = _load_fixture(prompt, model)
+        usage = _load_fixture(fixture_prompt, model)
         if usage is None:
-            usage = _cio.llm_generate_with_usage(prompt, model=model)
+            usage = _wire()
 
     # Only record spend on successful wire calls. The `GeminiUsage`
     # carries `.error=None` on success and a string on failure (e.g.,
