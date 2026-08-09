@@ -100,6 +100,7 @@ def cmd_serve() -> int:
     last_id = 0
     consecutive_errors = 0
     conflict_errors = 0
+    last_nudge_check = -1
     while _RUNNING:
         try:
             updates = tg.get_updates(offset=last_id + 1)
@@ -113,6 +114,32 @@ def cmd_serve() -> int:
                 reply = process_message(tu.chat_id, tu.text)
                 tg.send_message(tu.chat_id, reply)
                 logger.info("[out] chat=%s len=%d", tu.chat_id, len(reply))
+
+            # ── Friday planning nudge (PRD §6.6) — flag-gated, default
+            # OFF. Propose-never-auto-act: one line, once per week, only
+            # when GENIE_NUDGE_ENABLED=1. Earn proactivity; a dismissal
+            # is a timing signal, not a preference rejection.
+            if os.getenv("GENIE_NUDGE_ENABLED", "0") == "1":
+                import datetime as _dt
+                _now = _dt.datetime.now()
+                if _now.minute != last_nudge_check:
+                    last_nudge_check = _now.minute
+                    if _now.weekday() == 4 and _now.hour == 10 \
+                            and _now.minute == 0:
+                        from agents.genie import state as _gs
+                        marker = _now.strftime("%Y-%m-%d")
+                        data = _gs._read_store()
+                        if data.get("last_nudge") != marker:
+                            data["last_nudge"] = marker
+                            _gs._write_store(data)
+                            for cid in _gs.list_household_chats():
+                                tg.send_message(
+                                    cid,
+                                    "Weekend's coming — want a plan? "
+                                    "`/weekend_plan` (or `/weekend_plan "
+                                    "options` for an A/B choice).")
+                            logger.info("Friday nudge sent")
+
             consecutive_errors = 0
             conflict_errors = 0
             time.sleep(0.5)

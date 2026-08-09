@@ -41,7 +41,7 @@ if _REPO_ROOT not in sys.path:
 
 from agents.genie.protocols import (  # noqa: E402
     WeekendPlan, FamilyLogEntry, FamilySubject,
-    FAMILY_ROLES,
+    FAMILY_ROLES, MINOR_ROLES,
     energy_for_subjects, family_context_line,
 )
 from agents.genie.state import (  # noqa: E402
@@ -52,6 +52,12 @@ from agents.genie.state import (  # noqa: E402
     latest_weekend_plan,
     remember_alternates,
     last_alternates,
+    last_violations,
+    remember_pending_options,
+    pending_options,
+    clear_pending_options,
+    set_household_location,
+    household_role_for,
 )
 
 __all__ = [
@@ -89,9 +95,11 @@ def handle_genie(text: str = "") -> str:
         f"{ONLINE_MESSAGE}.\n"
         f"Household in scope: {context} "
         f"(energy budget: {energy}).\n"
-        f"Try `/weekend_plan` for a plan, `/whatson` for the raw list, "
-        f"`swap in <name>` to adjust the plan, or "
-        f"`/family_log <role>: <note>` to log a household observation."
+        f"Try `/weekend_plan` (add `options` for an A/B choice, or "
+        f"`just us tonight` for a date night), `/whatson` for the raw "
+        f"list, `swap in <name>` / `why not <name>` to iterate, "
+        f"`/replan_day` when the day slips, `/family` for the "
+        f"profile, or `/family_log <role>: <note>` to log."
     )
 
 
@@ -140,41 +148,64 @@ def _hermetic() -> bool:
     return os.getenv("RAHAT_TEST_MODE") == "1"
 
 
+def _childcare_block(subjects: list[FamilySubject],
+                     attending_roles: list[str]) -> list[str]:
+    """J2 guard: NEVER propose an outing that silently assumes childcare.
+    If any minor Subject is NOT attending, the prerequisite is stated as
+    an explicit checklist item — Genie checks the assumption, the humans
+    resolve it."""
+    home_minors = [s.display for s in subjects
+                   if s.role in MINOR_ROLES and s.role not in attending_roles]
+    if not home_minors:
+        return []
+    who = " + ".join(home_minors)
+    return ["", "*Before this works* (childcare guard)",
+            f"  ☐ Childcare for {who} — is that sorted, or should I "
+            "flag it as open?"]
+
+
 def handle_weekend_plan(*, now: datetime | None = None,
                         commit: bool = True,
                         energy_override: str | None = None,
+                        audience_text: str = "",
+                        want_options: bool = False,
                         llm=None) -> str:
-    """Propose a household weekend plan FOR the family Subjects on file.
+    """Propose a household weekend plan.
 
-    2026-08-09 (PRD Phase-0): when a household location is configured,
-    the plan is built from LIVE discovery — the LLM's only job is
-    grounded Google-Search research returned as typed candidates
-    (live_plan.discover_options); a DETERMINISTIC sequencer then sizes
-    the day (energy caps, nap-window protection) and surfaces what it
-    ruled out (glass-box). The LLM never schedules in its head — the
-    PRD's non-negotiable. On ANY live failure (no location, no key,
-    budget cap, bad JSON) the static offline menus ship instead, so the
-    command can never go silent.
+    PRD-shaped inputs (J1/J2):
+      * `audience_text` — free text carrying "who is this outing for?"
+        (required J1 input): "just us tonight" → couple mode (adults
+        only, evening discovery, CHILDCARE GUARD engages); "without the
+        newborn" → subset; default → everyone on file. Attendees — not
+        the whole household — drive energy, nap protection and
+        discovery constraints.
+      * `want_options` — J1's deliberation shape: build TWO distinct
+        sequenced candidates (A: closest fit; B: change of pace from
+        the remaining pool), commit NEITHER, and wait for `go with A/B`
+        (the human decision stays human — core loop step 3).
 
-    `energy_override` ("low"/"medium"/"high") lets the user overrule the
-    profile-derived budget for one plan ("/weekend_plan high" — live ask
-    2026-08-08). `llm` is the test seam passed through to discovery;
-    under RAHAT_TEST_MODE the wire is never touched unless a seam is
-    injected.
-
-    When `commit` is True (default) the plan is persisted via
-    state.commit_weekend_plan — which is charter-gated. A veto is
-    surfaced to the user rather than silently dropped.
+    Architecture unchanged (PRD non-negotiable): the LLM only DISCOVERS
+    (grounded, typed); the deterministic sequencer sizes the day
+    (energy caps, nap-window protection, concrete time windows) and
+    surfaces what it ruled out. Offline fallback on any live failure.
+    Commits are charter-gated.
     """
     subjects = load_family_subjects()
-    profile_energy = energy_for_subjects(subjects)
+    household_roles = [s.role for s in subjects]
+    attending_roles, couple_only = parse_attendees(audience_text,
+                                                   household_roles)
+    attending = [s for s in subjects if s.role in attending_roles]
+    evening_mode = couple_only and bool(
+        _EVENING_HINT_RE.search(audience_text or ""))
+
+    profile_energy = energy_for_subjects(attending or subjects)
     override = (energy_override or "").strip().lower() or None
     if override not in _VALID_ENERGY:
         override = None
     energy = override or profile_energy
     saturday = _next_saturday(now)
     sunday = saturday + timedelta(days=1)
-    roles = [s.role for s in subjects]
+    roles = [s.role for s in (attending or subjects)]
 
     # ─── live discovery (LLM proposes) + deterministic sequencing ───
     live_sat: list[str] | None = None
@@ -183,20 +214,23 @@ def handle_weekend_plan(*, now: datetime | None = None,
     typed_alternates: list[dict] = []
     violations: list[str] = []
     weather_line = ""
+    option_b: dict | None = None
     location = household_location()
     live_ok = (_live_plan_enabled() and location
                and (llm is not None or not _hermetic()))
+    protect_nap = any(r in ("toddler", "newborn") for r in roles)
     if live_ok:
         from agents.genie import live_plan as lp
-        constraints = [c for s in subjects for c in s.constraints]
+        constraints = [c for s in (attending or subjects)
+                       for c in s.constraints]
         disc = lp.discover_options(
             location=location,
             sat_iso=saturday.strftime("%Y-%m-%d"),
             sun_iso=sunday.strftime("%Y-%m-%d"),
             energy=energy, roles=roles, constraints=constraints,
-            llm=llm)
+            llm=llm,
+            mode="couple_evening" if evening_mode else "family")
         if disc is not None:
-            protect_nap = any(r in ("toddler", "newborn") for r in roles)
             live_sat, alt_sat, vio_sat = lp.sequence_day(
                 disc.saturday, energy=energy, protect_nap=protect_nap)
             live_sun, alt_sun, vio_sun = lp.sequence_day(
@@ -214,11 +248,22 @@ def handle_weekend_plan(*, now: datetime | None = None,
             if disc.weather_sat or disc.weather_sun:
                 weather_line = (f"Weather: Sat — {disc.weather_sat or '?'}; "
                                 f"Sun — {disc.weather_sun or '?'}")
+            # J1 option sets: build B from the pool A didn't use —
+            # a genuinely different weekend, not a variant of A.
+            if want_options and (alt_sat or alt_sun):
+                b_sat, _, bv_sat = lp.sequence_day(
+                    alt_sat, energy=energy, protect_nap=protect_nap)
+                b_sun, _, bv_sun = lp.sequence_day(
+                    alt_sun, energy=energy, protect_nap=protect_nap)
+                option_b = {"saturday": b_sat, "sunday": b_sun,
+                            "violations": bv_sat + bv_sun}
 
     live = live_sat is not None or live_sun is not None
-    note_bits = [f"Sized to {energy} household energy"]
+    note_bits = [f"Sized to {energy} energy"]
     if override:
         note_bits.append(f"(your override — profile says {profile_energy})")
+    elif attending and len(attending) < len(subjects):
+        note_bits.append(f"(for: {', '.join(s.display for s in attending)})")
     else:
         note_bits.append(
             "— set by "
@@ -231,28 +276,82 @@ def handle_weekend_plan(*, now: datetime | None = None,
     def _static(day_menu: dict) -> list[str]:
         return list(day_menu.get(energy, day_menu["medium"]))
 
+    def _day_items(live_lines: list[str] | None,
+                   static_items: list[str]) -> list[str]:
+        if live_lines:
+            return [ln.strip("• ").strip() for ln in live_lines]
+        if live_lines is not None:      # live ran, found nothing that day
+            return ["Open day"]
+        return static_items
+
     plan = WeekendPlan(
         weekend_of=saturday.strftime("%Y-%m-%d"),
-        saturday=([ln.strip("• ").strip() for ln in live_sat] if live_sat
-                  else _static(_SATURDAY_BY_ENERGY)),
-        sunday=([ln.strip("• ").strip() for ln in live_sun] if live_sun
-                else _static(_SUNDAY_BY_ENERGY)),
+        saturday=_day_items(live_sat, _static(_SATURDAY_BY_ENERGY)),
+        sunday=_day_items(live_sun, _static(_SUNDAY_BY_ENERGY)),
         subjects=roles,
         energy=energy,
         notes=plan_notes,
     )
 
+    scope = (f"For: {', '.join(s.display for s in attending)} "
+             f"(energy: {energy})." if attending and
+             len(attending) < len(subjects)
+             else f"For: {family_context_line(subjects)} (energy: {energy}).")
     header = f"*Weekend plan — week of {plan.weekend_of}*"
+    if evening_mode:
+        header = f"*Date night — weekend of {plan.weekend_of}*"
     if live:
         header += f" · live options for {location}"
-    lines = [header,
-             f"For: {family_context_line(subjects)} (energy: {energy})."]
+    lines = [header, scope]
     if weather_line:
         lines.append(weather_line)
+
+    # ── J1 option sets: two distinct candidates, human decides ──
+    if want_options and option_b and live:
+        lines += ["", "*Option A — closest fit*", "*Saturday*"]
+        lines += live_sat or ["  • (home day)"]
+        lines += ["*Sunday*"]
+        lines += live_sun or ["  • (home day)"]
+        lines += ["", "*Option B — change of pace*", "*Saturday*"]
+        lines += option_b["saturday"] or ["  • (home day)"]
+        lines += ["*Sunday*"]
+        lines += option_b["sunday"] or ["  • (home day)"]
+        lines += _childcare_block(subjects, attending_roles)
+        lines += ["", "Reply `go with A` or `go with B` to save one."]
+        plan_a = plan.to_dict()
+        plan_b = dict(plan_a)
+        plan_b["saturday"] = [ln.strip("• ").strip()
+                              for ln in option_b["saturday"]]
+        plan_b["sunday"] = [ln.strip("• ").strip()
+                            for ln in option_b["sunday"]]
+        try:
+            remember_pending_options(plan.weekend_of, {
+                "A": {"plan": plan_a, "alternates": typed_alternates,
+                      "violations": violations},
+                "B": {"plan": plan_b, "alternates": [],
+                      "violations": option_b["violations"]},
+            })
+        except Exception:  # noqa: BLE001 — cache only
+            pass
+        return "\n".join(lines)
+
+    def _day_render(live_lines: list[str] | None,
+                    static_items: list[str]) -> list[str]:
+        # A live day that found NOTHING must not fall back to the static
+        # family menu (a family "Brunch out" inside a date-night card —
+        # observed 2026-08-10). Live-but-empty renders as an open day.
+        if live_lines:
+            return live_lines
+        if live_lines is not None:      # live ran, day came back empty
+            return ["  • Open — nothing solid found; `/whatson` for the "
+                    "full list, or leave it free"]
+        return [f"  • {a}" for a in static_items]
+
     lines += ["", "*Saturday*"]
-    lines += (live_sat if live_sat else [f"  • {a}" for a in plan.saturday])
+    lines += _day_render(live_sat, plan.saturday)
     lines += ["", "*Sunday*"]
-    lines += (live_sun if live_sun else [f"  • {a}" for a in plan.sunday])
+    lines += _day_render(live_sun, plan.sunday)
+    lines += _childcare_block(subjects, attending_roles)
     if alternates:
         shown = alternates[:4]
         lines += ["", "*Also good this weekend* — swap any in:"]
@@ -277,13 +376,186 @@ def handle_weekend_plan(*, now: datetime | None = None,
             lines.append("")
             lines.append("✅ Plan saved.")
             if live:
-                # Remember the choices so "swap in <name>" can iterate
-                # the saved plan without a fresh discovery call.
+                # Remember choices + rule-outs so "swap in <name>" and
+                # "why not <name>" answer from the ACTUAL decision.
                 try:
-                    remember_alternates(plan.weekend_of, typed_alternates)
+                    remember_alternates(plan.weekend_of, typed_alternates,
+                                        violations)
                 except Exception:  # noqa: BLE001 — cache only, never fatal
                     pass
     return "\n".join(lines)
+
+
+def handle_go_with(choice: str) -> str:
+    """Commit one of the pending J1 option sets — the human decision
+    (core loop step 3) landing back in Genie (step 5). Charter-gated."""
+    choice = (choice or "").strip().upper()
+    pending = pending_options()
+    if pending is None:
+        return ("No option sets waiting — say `/weekend_plan options` "
+                "to get an A/B choice first.")
+    weekend_of, options = pending
+    picked = options.get(choice)
+    if not picked:
+        return f"I only have options {', '.join(sorted(options))} pending."
+    p = picked.get("plan") or {}
+    plan = WeekendPlan(
+        weekend_of=p.get("weekend_of", weekend_of),
+        saturday=list(p.get("saturday") or []),
+        sunday=list(p.get("sunday") or []),
+        subjects=list(p.get("subjects") or []),
+        energy=p.get("energy", "medium"),
+        notes=(p.get("notes", "") .rstrip(".") +
+               f" · option {choice} chosen."),
+    )
+    written, verdict = commit_weekend_plan(plan)
+    if not written:
+        return f"⚠️ Not saved — charter veto: {verdict.reason}"
+    try:
+        remember_alternates(plan.weekend_of,
+                            list(picked.get("alternates") or []),
+                            list(picked.get("violations") or []))
+        clear_pending_options()
+    except Exception:  # noqa: BLE001
+        pass
+    out = [f"✅ Option {choice} saved — here's the weekend:", ""]
+    out += ["*Saturday*"] + [f"  • {ln}" for ln in plan.saturday]
+    out += ["*Sunday*"] + [f"  • {ln}" for ln in plan.sunday]
+    out += ["", "`swap in <name>` still works if you change your mind."]
+    return "\n".join(out)
+
+
+def handle_why_not(query: str) -> str:
+    """Glass-box drill-down (§6.4): answer "why not X" from the ACTUAL
+    sequencing decision — stored rule-out reasons and alternates —
+    never a post-hoc rationalization."""
+    q = (query or "").strip().strip(".!?").casefold()
+    if not q:
+        return "Ask me like: `why not the zoo`."
+    plan = latest_weekend_plan()
+    if plan is None:
+        return "No saved plan yet — say `/weekend_plan` first."
+    # It might simply BE in the plan (observed 2026-08-10: 'why not
+    # friendship garden' when it was Sunday's outing).
+    for day_name, day_lines in (("Saturday", plan.saturday),
+                                ("Sunday", plan.sunday)):
+        for ln in day_lines:
+            if q in ln.casefold():
+                return (f"Good news — it's IN the plan: {day_name}, "
+                        f"“{ln}”.")
+    for v in last_violations(plan.weekend_of):
+        if q in v.casefold():
+            return f"Ruled out: {v}."
+    for a in last_alternates(plan.weekend_of):
+        name = str(a.get("activity", ""))
+        if q in name.casefold():
+            return (f"{name} wasn't ruled out — it's an alternate that "
+                    f"didn't fit the {plan.energy}-energy budget. "
+                    f"Say `swap in {name}` to use it.")
+    return (f"“{query}” didn't come up in this weekend's discovery — "
+            "it wasn't considered, so there's no ruling to explain. "
+            "`/whatson` shows everything that was found.")
+
+
+def handle_replan_today(*, now: datetime | None = None) -> str:
+    """J4-lite: day-of re-plan. The objective flips from "maximize fun"
+    to "cut losses gracefully" — drop what the clock has passed, keep
+    what still fits, protect the still-binding constraints (the nap
+    block never moves)."""
+    from agents.genie.live_plan import SLOT_WINDOWS
+    now = now or datetime.now()
+    plan = latest_weekend_plan()
+    if plan is None:
+        return "No saved plan to replan — say `/weekend_plan` first."
+    today = now.strftime("%Y-%m-%d")
+    sat = plan.weekend_of
+    try:
+        sun = (datetime.strptime(sat, "%Y-%m-%d")
+               + timedelta(days=1)).strftime("%Y-%m-%d")
+    except ValueError:
+        sun = ""
+    if today == sat:
+        day_name, day_lines = "Saturday", list(plan.saturday)
+    elif today == sun:
+        day_name, day_lines = "Sunday", list(plan.sunday)
+    else:
+        return (f"The saved plan is for the weekend of {sat} — today "
+                "isn't in it. `/weekend_plan` builds the next one.")
+
+    # Current slot from the wall clock.
+    h = now.hour
+    current = ("morning" if h < 12 else
+               "midday" if h < 15 else
+               "afternoon" if h < 18 else "evening")
+    rank = {"morning": 0, "midday": 1, "afternoon": 2, "evening": 3}
+
+    kept, cut = [], []
+    for ln in day_lines:
+        slot = ln.split(" ", 1)[0].split(":", 1)[0].strip().casefold()
+        slot = slot if slot in rank else "morning"
+        # The nap block is a still-binding constraint — never cut it
+        # while it's ahead or in progress.
+        if rank[slot] >= rank[current] or ("naps protected" in ln
+                                           and rank[slot] >= rank[current] - 1):
+            kept.append(ln)
+        else:
+            cut.append(ln)
+
+    out = [f"🕐 Day-of replan — {day_name}, cutting losses gracefully:", ""]
+    if kept:
+        out += ["*Rest of the day*"] + [f"  • {ln}" for ln in kept]
+    else:
+        out += ["Nothing left on the plan for today — wind down, "
+                "you've earned it."]
+    if cut:
+        out += ["", "*Cut* (the clock got there first)"]
+        out += [f"  • {ln}" for ln in cut]
+    out += ["", f"_Now ≈ {current} ({SLOT_WINDOWS.get(current, '')}). "
+                "`swap in <name>` can fill a remaining slot._"]
+    return "\n".join(out)
+
+
+def handle_family_show() -> str:
+    """J6 surface: the living household profile — subjects, constraints,
+    location, plan history — with the "last reviewed" nudge."""
+    import os
+    from agents.genie.state import family_profile_path
+    subjects = load_family_subjects()
+    location = household_location()
+    lines = ["*Household profile*"]
+    for s in subjects:
+        cons = f" — {', '.join(s.constraints)}" if s.constraints else ""
+        lines.append(f"  • {s.display} ({s.role}){cons}")
+    loc_label = location or "not set — `/family set location <City, ST>`"
+    lines.append(f"  • Home area: {loc_label}")
+    plan = latest_weekend_plan()
+    if plan:
+        lines.append(f"  • Last plan: weekend of {plan.weekend_of} "
+                     f"({plan.energy} energy)")
+    path = family_profile_path()
+    if path.exists():
+        try:
+            age_days = int((datetime.now().timestamp()
+                            - os.path.getmtime(path)) // 86400)
+            if age_days >= 42:
+                lines.append(f"  ⚠ Profile last touched ~{age_days} days "
+                             "ago — still right?")
+        except OSError:
+            pass
+    else:
+        lines.append("  ⚠ Using the default profile — edit "
+                     "vault/family_profile.json to make it yours.")
+    return "\n".join(lines)
+
+
+def handle_set_location(value: str, *, by_role: str = "") -> str:
+    """J6 edit: set the home area — charter-gated profile write."""
+    ok, result = set_household_location(value, by_role=by_role)
+    if not ok:
+        return (f"Couldn't set that ({result}). "
+                "Try `/family set location San Jose, CA`.")
+    return (f"✅ Home area set to *{result}*. Live discovery will use it "
+            "(env RAHAT_GENIE_LOCATION still wins if set).")
 
 
 # ─────────────────────────── /whatson (PRD J5) ────────────────────────
@@ -432,14 +704,17 @@ def handle_swap(query: str) -> str:
 # "/family_log spouse - wants a quieter Saturday"
 _FAMILY_LOG_RE = re.compile(
     r"^/family_log\s+"
-    r"(primary|spouse|toddler|newborn)\s*[:\-]\s*"
+    r"(primary|spouse|toddler|newborn|senior)\s*[:\-]\s*"
     r"(.+)$",
     re.I | re.DOTALL)
 
 
-def handle_family_log(subject_role: str, text: str) -> str:
+def handle_family_log(subject_role: str, text: str, *,
+                      logged_by: str = "") -> str:
     """Append a household observation against a Subject role —
-    charter-gated via state.append_family_log."""
+    charter-gated via state.append_family_log. `logged_by` is the
+    household ROLE of whoever wrote it (both adults write now that the
+    Genie bot exists) — attribution, never a name."""
     role = subject_role.strip().lower()
     if role not in FAMILY_ROLES:
         return (f"❌ Unknown role `{subject_role}`. "
@@ -447,14 +722,16 @@ def handle_family_log(subject_role: str, text: str) -> str:
     note = text.strip()
     if not note:
         return "❌ Nothing to log. Try `/family_log toddler: loved the park`."
-    entry = FamilyLogEntry(subject_role=role, text=note)
+    entry = FamilyLogEntry(subject_role=role, text=note,
+                           logged_by=(logged_by or "").strip().lower())
     written, verdict = append_family_log(entry)
     if not written:
         return f"⚠️ Not logged — charter veto: {verdict.reason}"
     # Find the display label without leaking a name (it's role-derived).
     subjects = load_family_subjects()
     display = next((s.display for s in subjects if s.role == role), role.capitalize())
-    return f"✅ Logged for {display}: \"{note}\""
+    by = f" (by {entry.logged_by.capitalize()})" if entry.logged_by else ""
+    return f"✅ Logged for {display}{by}: \"{note}\""
 
 
 # ─────────────────────────── Slash dispatch ───────────────────────────
@@ -480,6 +757,13 @@ from agents.genie.intents import (  # noqa: E402
     SWAP_RE as _SWAP_RE,
     WEEKEND_NL_RE as _WEEKEND_NL_RE,
     FAMILY_NL_RE as _FAMILY_NL_RE,
+    WHY_NOT_RE as _WHY_NOT_RE,
+    REPLAN_TODAY_RE as _REPLAN_TODAY_RE,
+    GO_WITH_RE as _GO_WITH_RE,
+    OPTIONS_ARG_RE as _OPTIONS_ARG_RE,
+    COUPLE_ONLY_RE as _COUPLE_ONLY_RE,
+    EVENING_HINT_RE as _EVENING_HINT_RE,
+    parse_attendees,
 )
 
 _FAMILY_LOG_USAGE = ("To log a household note, use "
@@ -510,12 +794,14 @@ def _genie_subcommand(rest: str) -> str | None:
     return None
 
 
-def _try_slash_command(msg: str) -> str | None:
+def _try_slash_command(msg: str,
+                       chat_id: str | int | None = None) -> str | None:
     """If `msg` is a recognized Genie slash command, run it and return
     the response. Otherwise None so route() can fall through.
 
     Args-bearing commands (/genie <text>, /family_log <role>: <text>)
-    are peeled off before the zero-arg table lookup.
+    are peeled off before the zero-arg table lookup. `chat_id` resolves
+    the writer's household role for family-log attribution.
     """
     if not msg:
         return None
@@ -524,11 +810,13 @@ def _try_slash_command(msg: str) -> str | None:
         return None
     low = norm.lower()
 
-    # /family_log — args-bearing.
+    # /family_log — args-bearing; attributed to the writer's role.
     if low.startswith("/family_log"):
         m = _FAMILY_LOG_RE.match(norm)
         if m:
-            return handle_family_log(m.group(1), m.group(2))
+            by = household_role_for(chat_id) if chat_id is not None else ""
+            return handle_family_log(m.group(1), m.group(2),
+                                     logged_by=by or "")
         return ("❌ `/family_log` needs a role and a note, e.g. "
                 "`/family_log toddler: loved the park`.")
 
@@ -542,10 +830,13 @@ def _try_slash_command(msg: str) -> str | None:
             return sub
         return handle_genie(rest)
 
-    # /weekend_plan [high|medium|low] — optional energy override.
+    # /weekend_plan [high|medium|low] [options] [audience words].
     if low.startswith("/weekend_plan"):
         rest = norm[len("/weekend_plan"):].strip()
-        return handle_weekend_plan(energy_override=_energy_arg(rest))
+        return handle_weekend_plan(
+            energy_override=_energy_arg(rest),
+            audience_text=rest,
+            want_options=bool(_OPTIONS_ARG_RE.search(rest)))
 
     # /whatson — J5 raw list.
     if _WHATS_ON_RE.match(norm):
@@ -556,6 +847,23 @@ def _try_slash_command(msg: str) -> str | None:
     if m:
         return handle_swap(next(g for g in m.groups() if g))
 
+    # /why [not] <name> — glass-box drill-down.
+    m = _WHY_NOT_RE.match(norm)
+    if m:
+        return handle_why_not(next(g for g in m.groups() if g))
+
+    # /replan_day — J4-lite day-of replan.
+    if _REPLAN_TODAY_RE.match(norm):
+        return handle_replan_today()
+
+    # /family [set location <x>] — J6 profile surface.
+    if low.startswith("/family") and not low.startswith("/family_log"):
+        rest = norm[len("/family"):].strip()
+        m = re.match(r"set\s+location\s+(.+)$", rest, re.I)
+        if m:
+            return handle_set_location(m.group(1))
+        return handle_family_show()
+
     return None
 
 
@@ -565,36 +873,52 @@ def route(msg: str, *, chat_id: str | int | None = None) -> str:
 
     Order:
       1. Slash commands → deterministic handler.
-      2. Keyword routing (weekend-plan / family-log intents in NL).
-      3. Default → the /genie greeting (with family context).
+      2. Precise NL intents (go-with, swap, why-not, replan, what's-on).
+      3. Weekend-plan intents (audience + energy + options parsed from
+         the message itself — PRD J1's "who is this outing for?").
+      4. Default → the /genie greeting (with family context).
 
-    The deterministic surface always returns a non-empty reply; the LLM
-    overlay (richer plan voice) lands in a later phase.
+    `chat_id` resolves the writer's household ROLE for attribution
+    (family-log `logged_by`). The deterministic surface always returns
+    a non-empty reply.
     """
     if not msg or not msg.strip():
         return handle_genie("")
 
-    slash = _try_slash_command(msg)
+    slash = _try_slash_command(msg, chat_id)
     if slash is not None:
         return slash
 
     low = msg.lower()
-    # Swap first — "swap in the farmers market" contains no other intent
-    # words but a swap of a plan item could mention "weekend"/"plan".
-    m = _SWAP_RE.match(msg.strip())
+    stripped = msg.strip()
+    # go-with first: it's the pending-decision hand-back (J1 step 4).
+    m = _GO_WITH_RE.match(stripped)
+    if m:
+        return handle_go_with(m.group(1))
+    # Swap — "swap in the farmers market" could mention "weekend"/"plan".
+    m = _SWAP_RE.match(stripped)
     if m:
         return handle_swap(next(g for g in m.groups() if g))
+    # Glass-box drill-down ("why not the zoo").
+    m = _WHY_NOT_RE.match(stripped)
+    if m:
+        return handle_why_not(next(g for g in m.groups() if g))
+    # J4-lite ("we're running late", "venue closed").
+    if _REPLAN_TODAY_RE.search(low):
+        return handle_replan_today()
     # J5 raw list ("what's on this weekend").
     if _WHATS_ON_RE.search(low):
         return handle_whats_on()
-    # Bare command-name token ("Weekend_plan" — the underscore defeats
-    # \b word boundaries in the phrase patterns below; live incident
-    # 2026-08-08). NL energy override honored ("high household energy
-    # ... weekend plan" — live ask 2026-08-08).
-    if _WEEKEND_PLAN_TOKEN_RE.search(low):
-        return handle_weekend_plan(energy_override=_energy_arg(low))
-    if _WEEKEND_NL_RE.search(low):
-        return handle_weekend_plan(energy_override=_energy_arg(low))
+    # Weekend plan — bare token ("Weekend_plan", live incident
+    # 2026-08-08), NL phrases, and couple-only asks ("date night
+    # Saturday", "plan something just us tonight" — J2). The message
+    # itself carries audience + energy + options.
+    if (_WEEKEND_PLAN_TOKEN_RE.search(low) or _WEEKEND_NL_RE.search(low)
+            or _COUPLE_ONLY_RE.search(low)):
+        return handle_weekend_plan(
+            energy_override=_energy_arg(low),
+            audience_text=msg,
+            want_options=bool(_OPTIONS_ARG_RE.search(low)))
     if _FAMILY_LOG_TOKEN_RE.search(low) or _FAMILY_NL_RE.search(low):
         return _FAMILY_LOG_USAGE
 

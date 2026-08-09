@@ -28,10 +28,16 @@ logger = logging.getLogger(__name__)
 
 _HELP = (
     "Here's what I can do:\n"
-    "  • `/weekend_plan` — a sequenced family weekend plan "
-    "(add `high`/`medium`/`low` to override energy)\n"
+    "  • `/weekend_plan` — a sequenced family weekend plan\n"
+    "      add `options` → an A/B choice (reply `go with A`)\n"
+    "      add `high`/`medium`/`low` → energy override\n"
+    "      add `just us tonight` → date night (childcare guard on)\n"
+    "      add `without the newborn` → subset outing\n"
     "  • `/whatson` — the raw list of what's on near you this weekend\n"
     "  • `swap in <name>` — swap a listed alternate into the saved plan\n"
+    "  • `why not <name>` — why something was ruled out\n"
+    "  • `/replan_day` — running late? re-plan the rest of today\n"
+    "  • `/family` — household profile · `/family set location <City, ST>`\n"
     "  • `/family_log <role>: <note>` — log a household observation\n"
     "  • `/household` — who's in this household\n"
     "  • `/genie` — say hi"

@@ -49,13 +49,25 @@ ROLE_PRIMARY = "primary"      # the account owner
 ROLE_SPOUSE = "spouse"
 ROLE_TODDLER = "toddler"
 ROLE_NEWBORN = "newborn"
+# PRD (2026-06-18) household is multi-GENERATIONAL: seniors are
+# first-class Subjects (mobility / pacing / heat constraints flow into
+# discovery + sequencing). Not in the default profile — only present
+# when the real vault profile declares them (J3 groundwork).
+ROLE_SENIOR = "senior"
 
 FAMILY_ROLES: tuple[str, ...] = (
     ROLE_PRIMARY,
     ROLE_SPOUSE,
     ROLE_TODDLER,
     ROLE_NEWBORN,
+    ROLE_SENIOR,
 )
+
+# The adults who deliberate and decide (PRD core loop step 3).
+ADULT_ROLES: tuple[str, ...] = (ROLE_PRIMARY, ROLE_SPOUSE)
+# Minor roles that require childcare when NOT attending an outing the
+# adults take (J2 guard).
+MINOR_ROLES: tuple[str, ...] = (ROLE_TODDLER, ROLE_NEWBORN)
 
 # Roles whose energy/constraints dominate weekend planning. Genie's
 # thesis (§3c): "Saturday-morning energy is the household's constraint."
@@ -77,12 +89,17 @@ KIND_FAMILY_LOG_APPEND = "genie.family_log.append"
 # charter-gated, always in the governance log.
 KIND_HOUSEHOLD_CHAT_ADD = "genie.household.chat_add"
 KIND_HOUSEHOLD_CHAT_REMOVE = "genie.household.chat_remove"
+# Profile edits (J6): the household profile is living data — location
+# and (later) per-Subject fields. Writes are charter-gated like every
+# other Genie state mutation.
+KIND_PROFILE_UPDATE = "genie.profile.update"
 
 ALL_CHARTER_KINDS: tuple[str, ...] = (
     KIND_WEEKEND_PLAN_COMMIT,
     KIND_FAMILY_LOG_APPEND,
     KIND_HOUSEHOLD_CHAT_ADD,
     KIND_HOUSEHOLD_CHAT_REMOVE,
+    KIND_PROFILE_UPDATE,
 )
 
 
@@ -169,18 +186,24 @@ class FamilyLogEntry:
     text: str
     ts: str = ""
     tags: list[str] = field(default_factory=list)
+    # Who logged it (household ROLE, not a name — 2026-08-10, now that
+    # two adults write through the Genie bot). Empty when unknown.
+    logged_by: str = ""
 
     def __post_init__(self) -> None:
         if not self.ts:
             self.ts = datetime.now().isoformat(timespec="seconds")
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        d = {
             "subject_role": self.subject_role,
             "text": self.text,
             "ts": self.ts,
             "tags": list(self.tags),
         }
+        if self.logged_by:
+            d["logged_by"] = self.logged_by
+        return d
 
 
 # ─────────────────────────── Pure helpers ─────────────────────────────

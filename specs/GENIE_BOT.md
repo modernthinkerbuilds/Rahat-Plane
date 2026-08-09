@@ -42,12 +42,24 @@ One household: **two adult chats** (`primary`, `spouse`) and optionally
 
 | Command | What |
 |---|---|
-| `/weekend_plan [high\|medium\|low]` | sequenced live plan (J1), energy override |
+| `/weekend_plan [high\|medium\|low]` | time-sequenced live plan (J1), energy override |
+| `/weekend_plan options` | TWO distinct candidates (A/B); commits neither |
+| `go with A` / `go with B` | commit the chosen option (charter-gated) |
+| "…just us tonight", "date night" | J2 couple mode: evening discovery + CHILDCARE GUARD (never silently assumes a sitter) |
+| "…without the newborn" | attendee subset — energy/nap-guard follow the attendees |
 | `/whatson` or "what's on this weekend" | J5 raw de-duplicated list, scope stated |
 | `swap in <name>` / `/swap <name>` | swap a listed alternate into the saved plan (J1 step 5); displaced item returns to the pool |
-| `/family_log <role>: <note>` | charter-gated household log (J6 surface) |
+| `why not <name>` / `/why <name>` | glass-box drill-down (§6.4) from the actual sequencing decision |
+| `/replan_day`, "we're running late" | J4-lite day-of replan — cut-losses mode, passed slots cut and shown |
+| `/family` | J6 living profile view (+ "last reviewed" nudge) |
+| `/family set location <City, ST>` | charter-gated home-area edit |
+| `/family_log <role>: <note>` | charter-gated household log, attributed to the writer's role (roles now include `senior`) |
 | `/household` | membership list / remove (bot only) |
 | `/start`, `/help`, `/genie` | greeting + command help |
+
+Proactivity (§6.6): a Friday-10:00 "want a plan?" nudge exists but is
+OFF by default — set `GENIE_NUDGE_ENABLED=1` in `.env` to opt in.
+Propose-never-auto-act; once per week; household chats only.
 
 ## Install (owner, ~3 min)
 

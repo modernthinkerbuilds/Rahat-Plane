@@ -44,6 +44,16 @@ logger = logging.getLogger(__name__)
 _SLOTS = ("morning", "midday", "afternoon", "evening")
 _SLOT_ORDER = {s: i for i, s in enumerate(_SLOTS)}
 
+# Concrete time windows per slot (J1: a TIME-SEQUENCED plan, not vibes).
+# Deterministic household-rhythm defaults; a future profile field can
+# override. Rendered into every plan line.
+SLOT_WINDOWS = {
+    "morning": "9:00–11:30",
+    "midday": "12:30–3:00",
+    "afternoon": "3:30–5:30",
+    "evening": "6:00–9:00",
+}
+
 # Energy budget → max outings per day (the deterministic cap the PRD's
 # solver will eventually replace; conservative on purpose).
 _ENERGY_CAP = {"low": 1, "medium": 2, "high": 3}
@@ -69,14 +79,19 @@ class LiveOption:
     why: str = ""
     source: str = ""
 
-    def render(self) -> str:
+    def body(self) -> str:
+        """The line without the time prefix — shared by render() and the
+        window-stamped plan lines."""
         head = self.activity if not self.place else f"{self.activity} at {self.place}"
-        bits = [f"{self.time.capitalize()}: {head}"]
+        bits = [head]
         if self.why:
             bits.append(f"— {self.why}")
         if self.source:
             bits.append(f"({self.source})")
         return " ".join(bits)
+
+    def render(self) -> str:
+        return f"{self.time.capitalize()}: {self.body()}"
 
 
 @dataclass
@@ -90,26 +105,34 @@ class LiveDiscovery:
 # ─────────────────────────── LLM discovery ───────────────────────────
 def _discovery_prompt(*, location: str, sat_iso: str, sun_iso: str,
                       energy: str, roles: list[str],
-                      constraints: list[str]) -> str:
+                      constraints: list[str],
+                      mode: str = "family") -> str:
     role_line = ", ".join(roles) or "family"
     cons_line = "; ".join(constraints) or "none listed"
-    return f"""You research REAL, current weekend options for one household. Use web search.
-
-Location: {location}
-Dates: Saturday {sat_iso} and Sunday {sun_iso}
-Household: {role_line} (energy budget: {energy})
-Constraints: {cons_line}
-
-Find, from live sources:
-1. The weather forecast for each day — ONE short phrase, max 8 words,
-   no trailing period (e.g. "mostly sunny, low 80s").
-2. Up to {_MAX_CANDIDATES} real family-appropriate options PER DAY near the
+    if mode == "couple_evening":
+        ask = f"""2. Up to {_MAX_CANDIDATES} real ADULTS-ONLY evening options PER DAY near
+   the location — dinner spots worth booking, wine bars, live music,
+   evening events. This is a couple's night out (no kids attending).
+   Prefer "evening" time slots. ORDER each day's list best-fit first."""
+    else:
+        ask = f"""2. Up to {_MAX_CANDIDATES} real family-appropriate options PER DAY near the
    location — actual events (farmers' markets, library story times,
    festivals, park programs) and evergreen spots (trails, playgrounds),
    suited to the energy budget and constraints. Prefer free/cheap,
    stroller-friendly options when a toddler or newborn is listed.
    ORDER each day's list best-fit first — the first item is the one
-   that gets planned.
+   that gets planned."""
+    return f"""You research REAL, current weekend options for one household. Use web search.
+
+Location: {location}
+Dates: Saturday {sat_iso} and Sunday {sun_iso}
+Household attending: {role_line} (energy budget: {energy})
+Constraints: {cons_line}
+
+Find, from live sources:
+1. The weather forecast for each day — ONE short phrase, max 8 words,
+   no trailing period (e.g. "mostly sunny, low 80s").
+{ask}
 
 Field rules (hard):
 - "activity": the thing you do, max 6 words.
@@ -179,17 +202,20 @@ def discover_options(*, location: str, sat_iso: str, sun_iso: str,
                      energy: str, roles: list[str],
                      constraints: list[str],
                      llm: Callable[[str], str] | None = None,
+                     mode: str = "family",
                      ) -> LiveDiscovery | None:
     """Run grounded discovery. `llm` is the injectable seam: a callable
     prompt→text. Default (None) goes through core.llm.generate — the
     budget-gated spend chokepoint — with search grounding ON.
+    `mode`: "family" (default) or "couple_evening" (J2 date-night).
 
     Returns None on ANY failure so the caller falls back to the static
     offline plan. Never raises.
     """
     prompt = _discovery_prompt(location=location, sat_iso=sat_iso,
                                sun_iso=sun_iso, energy=energy,
-                               roles=roles, constraints=constraints)
+                               roles=roles, constraints=constraints,
+                               mode=mode)
     try:
         if llm is not None:
             text = llm(prompt) or ""
@@ -282,14 +308,17 @@ def sequence_day(options: list[LiveOption], *, energy: str,
         kept.append(o)
 
     kept.sort(key=lambda o: _SLOT_ORDER.get(o.time, 0))
-    lines = [f"  • {o.render()}" for o in kept]
+    lines = [f"  • {o.time.capitalize()} ({SLOT_WINDOWS.get(o.time, '')}): "
+             f"{o.body()}" for o in kept]
 
     if protect_nap:
         # Insert the nap line after the last morning item (or first).
         idx = sum(1 for o in kept if _SLOT_ORDER.get(o.time, 0) == 0)
-        lines.insert(idx, f"  • {_NAP_LINE}")
+        lines.insert(idx, f"  • Midday ({SLOT_WINDOWS['midday']}): "
+                          "naps protected at home (toddler/newborn)")
 
     if energy == "low":
-        lines.append("  • Afternoon: home — quiet play, early wind-down")
+        lines.append(f"  • Afternoon ({SLOT_WINDOWS['afternoon']}): "
+                     "home — quiet play, early wind-down")
 
     return lines, alternates, violations

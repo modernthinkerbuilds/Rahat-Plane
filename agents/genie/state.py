@@ -45,6 +45,7 @@ from agents.genie.protocols import (
     KIND_FAMILY_LOG_APPEND,
     KIND_HOUSEHOLD_CHAT_ADD,
     KIND_HOUSEHOLD_CHAT_REMOVE,
+    KIND_PROFILE_UPDATE,
     FamilySubject,
     WeekendPlan,
     FamilyLogEntry,
@@ -63,6 +64,11 @@ __all__ = [
     "latest_weekend_plan",
     "remember_alternates",
     "last_alternates",
+    "last_violations",
+    "remember_pending_options",
+    "pending_options",
+    "clear_pending_options",
+    "set_household_location",
     "list_household_chats",
     "household_role_for",
     "add_household_chat",
@@ -272,6 +278,7 @@ def read_family_log(*, subject_role: str | None = None,
             text=r.get("text", ""),
             ts=r.get("ts", ""),
             tags=list(r.get("tags") or []),
+            logged_by=r.get("logged_by", ""),
         ))
         if len(out) >= limit:
             break
@@ -317,15 +324,18 @@ def latest_weekend_plan() -> WeekendPlan | None:
 
 
 # ───────────────────── Swap support: last alternates ──────────────────
-def remember_alternates(weekend_of: str, alternates: list[dict]) -> None:
-    """Persist the over-cap discovery candidates for the most recent
-    plan so a follow-up "swap in <name>" can re-sequence without a new
-    discovery call (PRD J1 step 5 — generate-then-iterate). Derived
-    cache, overwritten on every plan; piggybacks the store file. Each
-    entry: {day, time, activity, place, why, source}."""
+def remember_alternates(weekend_of: str, alternates: list[dict],
+                        violations: list[str] | None = None) -> None:
+    """Persist the over-cap discovery candidates + rule-out reasons for
+    the most recent plan, so "swap in <name>" can re-sequence and
+    "why not <name>" can answer from the ACTUAL sequencing decision
+    (glass-box §6.4 — model-intrinsic, not post-hoc). Derived cache,
+    overwritten on every plan. Alternate entries:
+    {day, time, activity, place, why, source}."""
     data = _read_store()
     data["last_alternates"] = {"weekend_of": weekend_of,
-                               "options": list(alternates)}
+                               "options": list(alternates),
+                               "violations": list(violations or [])}
     _write_store(data)
 
 
@@ -425,3 +435,75 @@ def remove_household_chat(chat_id: str | int, *,
     data.get("household_chats", {}).pop(cid, None)
     _write_store(data)
     return True, "removed"
+
+
+def last_violations(weekend_of: str | None = None) -> list[str]:
+    """Rule-out reasons remembered for the latest plan (glass-box)."""
+    data = _read_store()
+    blob = data.get("last_alternates") or {}
+    if not isinstance(blob, dict):
+        return []
+    if weekend_of and blob.get("weekend_of") != weekend_of:
+        return []
+    v = blob.get("violations")
+    return list(v) if isinstance(v, list) else []
+
+
+# ───────────────── Pending option sets (J1 deliberation) ──────────────
+def remember_pending_options(weekend_of: str, options: dict) -> None:
+    """Cache the A/B candidate plans awaiting the humans' choice (PRD
+    core loop steps 2→3: Genie plays out scenarios, the couple decides).
+    Derived cache — the CHOSEN plan is what gets charter-gated on
+    commit via `go with A/B`."""
+    data = _read_store()
+    data["pending_options"] = {"weekend_of": weekend_of,
+                               "options": dict(options)}
+    _write_store(data)
+
+
+def pending_options() -> tuple[str, dict] | None:
+    data = _read_store()
+    blob = data.get("pending_options") or {}
+    if not isinstance(blob, dict) or not blob.get("options"):
+        return None
+    return str(blob.get("weekend_of", "")), dict(blob["options"])
+
+
+def clear_pending_options() -> None:
+    data = _read_store()
+    data.pop("pending_options", None)
+    _write_store(data)
+
+
+# ───────────────── Profile updates (J6, charter-gated) ────────────────
+def set_household_location(location: str, *,
+                           by_role: str = "",
+                           trace_id: str | None = None,
+                           db_path: str | None = None) -> tuple[bool, str]:
+    """Set the household home area in vault/family_profile.json —
+    CHARTER-GATED (KIND_PROFILE_UPDATE). Creates the profile from the
+    PII-free default if absent. Env RAHAT_GENIE_LOCATION still wins at
+    read time (explicit pin beats profile)."""
+    loc = (location or "").strip().strip('"')
+    if not loc or len(loc) > 80:
+        return False, "bad-location"
+    verdict = _charter_gate(KIND_PROFILE_UPDATE,
+                            {"field": "location", "by_role": by_role},
+                            trace_id=trace_id, db_path=db_path)
+    if not verdict.approved:
+        return False, f"charter:{verdict.reason}"
+    path = family_profile_path()
+    raw: dict
+    if path.exists():
+        try:
+            with path.open() as f:
+                raw = json.load(f)
+        except Exception:
+            raw = dict(DEFAULT_FAMILY_PROFILE)
+    else:
+        raw = dict(DEFAULT_FAMILY_PROFILE)
+    raw["location"] = loc
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w") as f:
+        json.dump(raw, f, indent=2)
+    return True, loc

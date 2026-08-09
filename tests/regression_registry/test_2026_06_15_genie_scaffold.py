@@ -95,7 +95,13 @@ def test_family_profile_loads_role_based_subjects(genie_handler):
     subjects = state.load_family_subjects()
     assert subjects, "expected the PII-free default profile to load"
     roles = {s.role for s in subjects}
-    assert roles == set(FAMILY_ROLES)
+    # 2026-08-10: FAMILY_ROLES grew "senior" (PRD multi-generational
+    # household) as an OPT-IN role — the default profile still ships the
+    # four core roles; seniors appear only when the vault profile
+    # declares them. The contract is: defaults ⊆ vocabulary, core four
+    # present.
+    assert roles == {"primary", "spouse", "toddler", "newborn"}
+    assert roles <= set(FAMILY_ROLES)
     for s in subjects:
         assert isinstance(s, FamilySubject)
         assert s.role in FAMILY_ROLES
