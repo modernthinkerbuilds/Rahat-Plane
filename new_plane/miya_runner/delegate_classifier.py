@@ -61,10 +61,15 @@ _GENIE_SLASH_RE = re.compile(
 # Mirrors genie.handler's own keyword routing so classifier and handler
 # agree on ownership.
 _GENIE_NL_RE = re.compile(
-    r"\b(weekend|saturday|sunday)\b.*\bplan\b"
+    # Bare command-name tokens (live incident 2026-08-08: "Weekend_plan"
+    # typed without the slash — the underscore defeats \b boundaries in
+    # the phrase patterns, so it fell through to the synth and got a
+    # FITNESS answer). [\s_-]* tolerates the spellings users type.
+    r"\bweekend[\s_-]*plan\b"
+    r"|\bfamily[\s_-]*log\b"
+    r"|\b(weekend|saturday|sunday)\b.*\bplan\b"
     r"|\bplan\b.*\bweekend\b"
     r"|\bfamily[\s-]friendly\b"
-    r"|\bfamily\s*log\b"
     r"|\blog\s+(?:that\s+)?(?:for\s+)?(?:the\s+)?(?:toddler|newborn|spouse)\b",
     re.I,
 )

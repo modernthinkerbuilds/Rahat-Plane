@@ -202,6 +202,32 @@ SLASH_COMMANDS: dict[str, Any] = {
     "/genie": lambda: handle_genie(""),
 }
 
+# Live-incident 2026-08-08 (Telegram): users type the command NAME
+# without the slash ("Weekend_plan" — iOS capitalizes it) and as a
+# /genie subcommand ("/genie weekend_plan"). Both fell through to the
+# greeting / the synth. The token regex tolerates space / underscore /
+# hyphen between the words, so "weekend_plan", "weekend plan",
+# "Weekend-Plan" and "weekendplan" all resolve to the plan handler.
+_WEEKEND_PLAN_TOKEN_RE = re.compile(r"\bweekend[\s_-]*plan\b", re.I)
+_FAMILY_LOG_TOKEN_RE = re.compile(r"\bfamily[\s_-]*log\b", re.I)
+
+_FAMILY_LOG_USAGE = ("To log a household note, use "
+                     "`/family_log <role>: <note>` "
+                     "(roles: primary, spouse, toddler, newborn).")
+
+
+def _genie_subcommand(rest: str) -> str | None:
+    """Resolve `/genie <rest>` to a known subcommand, or None to fall
+    back to the greeting. Deterministic, tolerant of the command-name
+    spellings users actually type."""
+    if not rest:
+        return None
+    if _WEEKEND_PLAN_TOKEN_RE.search(rest):
+        return handle_weekend_plan()
+    if _FAMILY_LOG_TOKEN_RE.search(rest):
+        return _FAMILY_LOG_USAGE
+    return None
+
 
 def _try_slash_command(msg: str) -> str | None:
     """If `msg` is a recognized Genie slash command, run it and return
@@ -225,9 +251,14 @@ def _try_slash_command(msg: str) -> str | None:
         return ("❌ `/family_log` needs a role and a note, e.g. "
                 "`/family_log toddler: loved the park`.")
 
-    # /genie [text] — args-bearing greeting.
+    # /genie [text] — subcommand dispatch first ("/genie weekend_plan"
+    # must return the PLAN, not the greeting — live incident 2026-08-08),
+    # then the greeting catch-all.
     if low.startswith("/genie"):
         rest = norm[len("/genie"):].strip()
+        sub = _genie_subcommand(rest)
+        if sub is not None:
+            return sub
         return handle_genie(rest)
 
     # /weekend_plan — zero-arg.
@@ -257,12 +288,16 @@ def route(msg: str, *, chat_id: str | int | None = None) -> str:
         return slash
 
     low = msg.lower()
+    # Bare command-name token first ("Weekend_plan" — the underscore
+    # defeats \b word boundaries in the phrase patterns below; live
+    # incident 2026-08-08).
+    if _WEEKEND_PLAN_TOKEN_RE.search(low):
+        return handle_weekend_plan()
     if re.search(r"\b(weekend|saturday|sunday)\b.*\bplan\b|\bplan\b.*\bweekend\b", low):
         return handle_weekend_plan()
-    if re.search(r"\b(family\s*log|log\s+(?:for\s+)?(?:the\s+)?(?:toddler|newborn|spouse))\b", low):
-        return ("To log a household note, use "
-                "`/family_log <role>: <note>` "
-                "(roles: primary, spouse, toddler, newborn).")
+    if (_FAMILY_LOG_TOKEN_RE.search(low)
+            or re.search(r"\blog\s+(?:for\s+)?(?:the\s+)?(?:toddler|newborn|spouse)\b", low)):
+        return _FAMILY_LOG_USAGE
 
     return handle_genie(msg)
 
