@@ -70,7 +70,15 @@ _GENIE_NL_RE = re.compile(
     r"|\b(weekend|saturday|sunday)\b.*\bplan\b"
     r"|\bplan\b.*\bweekend\b"
     r"|\bfamily[\s-]friendly\b"
-    r"|\blog\s+(?:that\s+)?(?:for\s+)?(?:the\s+)?(?:toddler|newborn|spouse)\b",
+    r"|\blog\s+(?:that\s+)?(?:for\s+)?(?:the\s+)?(?:toddler|newborn|spouse)\b"
+    # J5 raw list + swap iteration (2026-08-10). "what's on this
+    # weekend" / "events this weekend" are household discovery asks;
+    # "swap in <x>" iterates Genie's saved plan. Kobe's "swap Mon with
+    # Tue" plan mutation is claimed by _PLAN_MUTATION_RE well before
+    # this rule runs, so there is no overlap.
+    r"|\bwhat'?s\s+on\b.*\b(week|weekend|saturday|sunday)\b"
+    r"|\bevents?\b.*\b(week|weekend)\b"
+    r"|^\s*swap\s+in\s+\S+",
     re.I,
 )
 

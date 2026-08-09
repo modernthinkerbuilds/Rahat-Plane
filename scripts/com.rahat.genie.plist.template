@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+    Launchd manifest TEMPLATE for the standalone Genie Telegram bot
+    (2026-08-10). A SEPARATE SERVICE from com.rahat.miya.v2 — separate
+    bot token (GENIE_TELEGRAM_TOKEN), separate log (vault/genie_bot.log),
+    same repo + venv. The runner refuses to boot if the token matches
+    any other bot's token (single-poller resource).
+
+    Install with scripts/install_genie_bot.sh (renders + loads), or by
+    hand:
+        sed -e "s|{{RAHAT_HOME}}|$HOME/developer/agency/rahat|g" \
+            -e "s|{{PYTHON_BIN}}|$HOME/developer/agency/rahat/.venv/bin/python|g" \
+            scripts/com.rahat.genie.plist.template \
+            > ~/Library/LaunchAgents/com.rahat.genie.plist
+        launchctl load ~/Library/LaunchAgents/com.rahat.genie.plist
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.rahat.genie</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/caffeinate</string>
+        <string>-imd</string>
+        <string>{{PYTHON_BIN}}</string>
+        <string>-u</string>
+        <string>-m</string>
+        <string>new_plane.genie_runner</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>{{RAHAT_HOME}}</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>StandardOutPath</key>
+    <string>{{RAHAT_HOME}}/vault/genie_bot.log</string>
+    <key>StandardErrorPath</key>
+    <string>{{RAHAT_HOME}}/vault/genie_bot.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <!-- Secrets & household config live in .env (gitignored) —
+             the runner loads dotenv itself. NEVER put a literal $VAR
+             here: launchd does not shell-expand (the 2026-08-01
+             literal-$HOME incident). -->
+    </dict>
+</dict>
+</plist>

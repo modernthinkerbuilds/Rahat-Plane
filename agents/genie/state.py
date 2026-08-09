@@ -43,6 +43,8 @@ from agents.genie.protocols import (
     ROLE_NEWBORN,
     KIND_WEEKEND_PLAN_COMMIT,
     KIND_FAMILY_LOG_APPEND,
+    KIND_HOUSEHOLD_CHAT_ADD,
+    KIND_HOUSEHOLD_CHAT_REMOVE,
     FamilySubject,
     WeekendPlan,
     FamilyLogEntry,
@@ -59,6 +61,13 @@ __all__ = [
     "read_family_log",
     "commit_weekend_plan",
     "latest_weekend_plan",
+    "remember_alternates",
+    "last_alternates",
+    "list_household_chats",
+    "household_role_for",
+    "add_household_chat",
+    "remove_household_chat",
+    "HOUSEHOLD_ROLES",
     "_charter_gate",
     "DEFAULT_FAMILY_PROFILE",
 ]
@@ -305,3 +314,114 @@ def latest_weekend_plan() -> WeekendPlan | None:
         energy=p.get("energy", "medium"),
         notes=p.get("notes", ""),
     )
+
+
+# ───────────────────── Swap support: last alternates ──────────────────
+def remember_alternates(weekend_of: str, alternates: list[dict]) -> None:
+    """Persist the over-cap discovery candidates for the most recent
+    plan so a follow-up "swap in <name>" can re-sequence without a new
+    discovery call (PRD J1 step 5 — generate-then-iterate). Derived
+    cache, overwritten on every plan; piggybacks the store file. Each
+    entry: {day, time, activity, place, why, source}."""
+    data = _read_store()
+    data["last_alternates"] = {"weekend_of": weekend_of,
+                               "options": list(alternates)}
+    _write_store(data)
+
+
+def last_alternates(weekend_of: str | None = None) -> list[dict]:
+    """Alternates remembered for `weekend_of` (or the latest plan when
+    None). Empty list when absent or for a different weekend."""
+    data = _read_store()
+    blob = data.get("last_alternates") or {}
+    if not isinstance(blob, dict):
+        return []
+    if weekend_of and blob.get("weekend_of") != weekend_of:
+        return []
+    opts = blob.get("options")
+    return list(opts) if isinstance(opts, list) else []
+
+
+# ───────────────── Household chat registry (Genie bot) ────────────────
+# The Genie Telegram bot is household-scoped: ONE household, TWO adult
+# chats (primary + spouse) and optionally ONE shared group chat — the
+# PRD's bounded multi-user reading (§6.5 / §8), enforced here so the
+# bot cannot quietly become multi-tenant. Every add/remove is
+# charter-gated (access to family data is the most consequential grant
+# Genie makes) and lands in governance_log.
+HOUSEHOLD_ROLES = ("primary", "spouse", "group")
+_MAX_PERSON_CHATS = 2
+_MAX_GROUP_CHATS = 1
+
+
+def list_household_chats() -> dict[str, dict]:
+    """{chat_id: {"role": ..., "added": iso}} — read-only."""
+    data = _read_store()
+    chats = data.get("household_chats")
+    return dict(chats) if isinstance(chats, dict) else {}
+
+
+def household_role_for(chat_id: str | int) -> str | None:
+    """The household role for a chat id, or None if not allowlisted."""
+    return (list_household_chats().get(str(chat_id)) or {}).get("role")
+
+
+def add_household_chat(chat_id: str | int, role: str, *,
+                       trace_id: str | None = None,
+                       db_path: str | None = None,
+                       ) -> tuple[bool, str]:
+    """Add a chat to the household allowlist — CHARTER-GATED + capped.
+
+    Returns (added, reason). reason explains a refusal ("full",
+    "bad-role", "charter: ...") or echoes the role on success.
+    """
+    from datetime import datetime as _dt
+    role = (role or "").strip().lower()
+    cid = str(chat_id)
+    if role not in HOUSEHOLD_ROLES:
+        return False, f"bad-role:{role}"
+    chats = list_household_chats()
+    if cid in chats:
+        return True, chats[cid]["role"]          # idempotent re-join
+    person_count = sum(1 for c in chats.values()
+                       if c.get("role") in ("primary", "spouse"))
+    group_count = sum(1 for c in chats.values() if c.get("role") == "group")
+    if role in ("primary", "spouse") and person_count >= _MAX_PERSON_CHATS:
+        return False, "full"
+    if role == "group" and group_count >= _MAX_GROUP_CHATS:
+        return False, "full"
+    if role == "primary" and any(c.get("role") == "primary"
+                                 for c in chats.values()):
+        return False, "primary-exists"
+    verdict = _charter_gate(KIND_HOUSEHOLD_CHAT_ADD,
+                            {"chat_id": cid, "role": role},
+                            trace_id=trace_id, db_path=db_path)
+    if not verdict.approved:
+        return False, f"charter:{verdict.reason}"
+    data = _read_store()
+    hh = data.get("household_chats")
+    if not isinstance(hh, dict):
+        hh = {}
+    hh[cid] = {"role": role, "added": _dt.now().isoformat(timespec="seconds")}
+    data["household_chats"] = hh
+    _write_store(data)
+    return True, role
+
+
+def remove_household_chat(chat_id: str | int, *,
+                          trace_id: str | None = None,
+                          db_path: str | None = None) -> tuple[bool, str]:
+    """Remove a chat from the allowlist — CHARTER-GATED."""
+    cid = str(chat_id)
+    chats = list_household_chats()
+    if cid not in chats:
+        return False, "not-found"
+    verdict = _charter_gate(KIND_HOUSEHOLD_CHAT_REMOVE,
+                            {"chat_id": cid, "role": chats[cid].get("role")},
+                            trace_id=trace_id, db_path=db_path)
+    if not verdict.approved:
+        return False, f"charter:{verdict.reason}"
+    data = _read_store()
+    data.get("household_chats", {}).pop(cid, None)
+    _write_store(data)
+    return True, "removed"

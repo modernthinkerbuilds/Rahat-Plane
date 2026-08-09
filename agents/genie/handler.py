@@ -49,6 +49,9 @@ from agents.genie.state import (  # noqa: E402
     commit_weekend_plan,
     append_family_log,
     household_location,
+    latest_weekend_plan,
+    remember_alternates,
+    last_alternates,
 )
 
 __all__ = [
@@ -86,7 +89,8 @@ def handle_genie(text: str = "") -> str:
         f"{ONLINE_MESSAGE}.\n"
         f"Household in scope: {context} "
         f"(energy budget: {energy}).\n"
-        f"Try `/weekend_plan` for a plan, or "
+        f"Try `/weekend_plan` for a plan, `/whatson` for the raw list, "
+        f"`swap in <name>` to adjust the plan, or "
         f"`/family_log <role>: <note>` to log a household observation."
     )
 
@@ -176,6 +180,7 @@ def handle_weekend_plan(*, now: datetime | None = None,
     live_sat: list[str] | None = None
     live_sun: list[str] | None = None
     alternates: list[str] = []
+    typed_alternates: list[dict] = []
     violations: list[str] = []
     weather_line = ""
     location = household_location()
@@ -203,6 +208,9 @@ def handle_weekend_plan(*, now: datetime | None = None,
                 for o in alts:
                     label = o.activity + (f" ({o.source})" if o.source else "")
                     alternates.append(f"{day}: {label}")
+                    typed_alternates.append({
+                        "day": day, "time": o.time, "activity": o.activity,
+                        "place": o.place, "why": o.why, "source": o.source})
             if disc.weather_sat or disc.weather_sun:
                 weather_line = (f"Weather: Sat — {disc.weather_sat or '?'}; "
                                 f"Sun — {disc.weather_sun or '?'}")
@@ -268,7 +276,155 @@ def handle_weekend_plan(*, now: datetime | None = None,
         else:
             lines.append("")
             lines.append("✅ Plan saved.")
+            if live:
+                # Remember the choices so "swap in <name>" can iterate
+                # the saved plan without a fresh discovery call.
+                try:
+                    remember_alternates(plan.weekend_of, typed_alternates)
+                except Exception:  # noqa: BLE001 — cache only, never fatal
+                    pass
     return "\n".join(lines)
+
+
+# ─────────────────────────── /whatson (PRD J5) ────────────────────────
+def handle_whats_on(*, now: datetime | None = None, llm=None) -> str:
+    """J5 — "just give me the raw list": the discovery inventory exposed
+    directly. A clean, de-duplicated flat list of what's actually on
+    next weekend near the household — NOT a plan (no sequencing, no
+    energy cap). Scoping is stated up front so it's adjustable (PRD J5
+    success criterion). Falls back with a how-to when live discovery is
+    unavailable.
+    """
+    location = household_location()
+    if not (_live_plan_enabled() and location
+            and (llm is not None or not _hermetic())):
+        return ("I need a home area to look things up — set "
+                "RAHAT_GENIE_LOCATION in .env (e.g. \"San Jose, CA\"), "
+                "then ask me again. `/weekend_plan` works offline.")
+
+    from agents.genie import live_plan as lp
+    subjects = load_family_subjects()
+    saturday = _next_saturday(now)
+    sunday = saturday + timedelta(days=1)
+    disc = lp.discover_options(
+        location=location,
+        sat_iso=saturday.strftime("%Y-%m-%d"),
+        sun_iso=sunday.strftime("%Y-%m-%d"),
+        energy="high",                      # raw list: don't pre-filter
+        roles=[s.role for s in subjects],
+        constraints=[c for s in subjects for c in s.constraints],
+        llm=llm)
+    if disc is None:
+        return ("Couldn't reach live listings just now — try again in a "
+                "bit, or `/weekend_plan` for the offline plan.")
+
+    seen: set[str] = set()
+    lines = [f"*What's on — weekend of {saturday.strftime('%Y-%m-%d')}* "
+             f"· near {location}"]
+    for day_name, opts in (("Saturday", disc.saturday),
+                           ("Sunday", disc.sunday)):
+        day_lines = []
+        for o in opts:
+            key = o.activity.casefold()
+            if key in seen:
+                continue                     # de-dup across days/sources
+            seen.add(key)
+            day_lines.append(f"  • {o.render()}")
+        if day_lines:
+            lines += ["", f"*{day_name}*"] + day_lines
+    if len(seen) == 0:
+        return ("Nothing solid found for next weekend — try again later, "
+                "or `/weekend_plan` for the offline plan.")
+    lines += ["", "_Scope: next weekend, family-friendly, near "
+                  f"{location}. Say `/weekend_plan` for a sequenced plan._"]
+    return "\n".join(lines)
+
+
+# ───────────────────── swap (PRD J1 step 5: iterate) ──────────────────
+def handle_swap(query: str) -> str:
+    """Swap a remembered alternate into the latest saved plan —
+    deterministic, charter-gated re-commit. The generate-then-iterate
+    loop's step 5: the humans pick, Genie refines.
+
+    Match: case-insensitive substring of the alternate's activity name.
+    The displaced outing goes BACK into the alternates pool, so swaps
+    are reversible.
+    """
+    query = (query or "").strip().strip(".!?")
+    if not query:
+        return "Tell me what to swap in, e.g. `swap in Happy Hollow`."
+    plan = latest_weekend_plan()
+    if plan is None:
+        return "No saved plan yet — say `/weekend_plan` first."
+    alts = last_alternates(plan.weekend_of)
+    if not alts:
+        return ("No alternates remembered for the current plan — say "
+                "`/weekend_plan` to build a fresh one with options.")
+
+    q = query.casefold()
+    match = next((a for a in alts
+                  if q in str(a.get("activity", "")).casefold()), None)
+    if match is None:
+        names = ", ".join(str(a.get("activity")) for a in alts[:6])
+        return (f"Couldn't find “{query}” among the alternates. "
+                f"I have: {names}.")
+
+    from agents.genie.live_plan import LiveOption
+    incoming = LiveOption(
+        time=str(match.get("time") or "morning"),
+        activity=str(match.get("activity") or ""),
+        place=str(match.get("place") or ""),
+        why=str(match.get("why") or ""),
+        source=str(match.get("source") or ""))
+    day_attr = "saturday" if match.get("day") == "Sat" else "sunday"
+    day_lines = list(getattr(plan, day_attr))
+
+    # Replace the first real outing line of that day (not the nap block,
+    # not the wind-down). If none, insert at the front.
+    def _is_home_block(s: str) -> bool:
+        return "naps protected" in s or "wind-down" in s
+
+    displaced: str | None = None
+    for i, ln in enumerate(day_lines):
+        if not _is_home_block(ln):
+            displaced = ln
+            day_lines[i] = incoming.render()
+            break
+    else:
+        day_lines.insert(0, incoming.render())
+
+    # Re-sort by slot so an afternoon swap-in doesn't render before the
+    # nap block (each line leads with "Morning:/Midday:/Afternoon:/…").
+    _slot_rank = {"morning": 0, "midday": 1, "afternoon": 2, "evening": 3}
+
+    def _rank(s: str) -> int:
+        head = s.split(":", 1)[0].strip().casefold()
+        return _slot_rank.get(head, 0)
+
+    day_lines.sort(key=_rank)
+    setattr(plan, day_attr, day_lines)
+    plan.notes = (plan.notes.rstrip(".") +
+                  f" · swapped in: {incoming.activity}.")
+
+    written, verdict = commit_weekend_plan(plan)
+    if not written:
+        return f"⚠️ Swap not saved — charter veto: {verdict.reason}"
+
+    # Keep the pool honest: consume the used alternate, return the
+    # displaced outing to the pool (reversible swaps).
+    remaining = [a for a in alts if a is not match]
+    if displaced:
+        remaining.append({"day": match.get("day"), "time": incoming.time,
+                          "activity": displaced.split(" — ")[0]
+                          .split(": ", 1)[-1].split(" at ")[0],
+                          "place": "", "why": "", "source": ""})
+    remember_alternates(plan.weekend_of, remaining)
+
+    day_title = "Saturday" if day_attr == "saturday" else "Sunday"
+    out = [f"🔁 Swapped in *{incoming.activity}* — updated {day_title}:", ""]
+    out += [f"  • {ln}" for ln in day_lines]
+    out += ["", "✅ Plan saved."]
+    return "\n".join(out)
 
 
 # ─────────────────────────── /family_log ──────────────────────────────
@@ -315,6 +471,28 @@ SLASH_COMMANDS: dict[str, Any] = {
 # "Weekend-Plan" and "weekendplan" all resolve to the plan handler.
 _WEEKEND_PLAN_TOKEN_RE = re.compile(r"\bweekend[\s_-]*plan\b", re.I)
 _FAMILY_LOG_TOKEN_RE = re.compile(r"\bfamily[\s_-]*log\b", re.I)
+
+# J5 raw-list intent (2026-08-10): "/whatson", "what's on this weekend",
+# "any events this week". Token-tolerant like the others.
+_WHATS_ON_RE = re.compile(
+    r"^\s*/\s*what[\s_-]*s?[\s_-]*on\b"
+    r"|\bwhat'?s\s+on\b"
+    r"|\bwhat\s+is\s+on\b"
+    r"|\bevents?\b.*\b(week|weekend|today|saturday|sunday)\b"
+    r"|\b(week|weekend)\b.*\bevents?\b",
+    re.I,
+)
+
+# Swap intent (2026-08-10, PRD J1 step 5): "swap in Happy Hollow",
+# "/swap Happy Hollow", "swap the zoo in". Deliberately requires the
+# word "in" OR the slash form so Kobe's "swap Mon with Tue" plan
+# mutation (which never reaches Genie anyway) can't be confused.
+_SWAP_RE = re.compile(
+    r"^\s*/\s*swap\s+(?:in\s+)?(.+)$"
+    r"|^\s*swap\s+in\s+(.+)$"
+    r"|^\s*swap\s+(.+?)\s+in\s*$",
+    re.I,
+)
 
 _FAMILY_LOG_USAGE = ("To log a household note, use "
                      "`/family_log <role>: <note>` "
@@ -381,6 +559,15 @@ def _try_slash_command(msg: str) -> str | None:
         rest = norm[len("/weekend_plan"):].strip()
         return handle_weekend_plan(energy_override=_energy_arg(rest))
 
+    # /whatson — J5 raw list.
+    if _WHATS_ON_RE.match(norm):
+        return handle_whats_on()
+
+    # /swap <name> — iterate the saved plan.
+    m = _SWAP_RE.match(norm)
+    if m:
+        return handle_swap(next(g for g in m.groups() if g))
+
     return None
 
 
@@ -404,10 +591,18 @@ def route(msg: str, *, chat_id: str | int | None = None) -> str:
         return slash
 
     low = msg.lower()
-    # Bare command-name token first ("Weekend_plan" — the underscore
-    # defeats \b word boundaries in the phrase patterns below; live
-    # incident 2026-08-08). NL energy override honored ("high household
-    # energy ... weekend plan" — live ask 2026-08-08).
+    # Swap first — "swap in the farmers market" contains no other intent
+    # words but a swap of a plan item could mention "weekend"/"plan".
+    m = _SWAP_RE.match(msg.strip())
+    if m:
+        return handle_swap(next(g for g in m.groups() if g))
+    # J5 raw list ("what's on this weekend").
+    if _WHATS_ON_RE.search(low):
+        return handle_whats_on()
+    # Bare command-name token ("Weekend_plan" — the underscore defeats
+    # \b word boundaries in the phrase patterns below; live incident
+    # 2026-08-08). NL energy override honored ("high household energy
+    # ... weekend plan" — live ask 2026-08-08).
     if _WEEKEND_PLAN_TOKEN_RE.search(low):
         return handle_weekend_plan(energy_override=_energy_arg(low))
     if re.search(r"\b(weekend|saturday|sunday)\b.*\bplan\b|\bplan\b.*\bweekend\b", low):

@@ -71,10 +71,18 @@ CONSTRAINT_ROLES: tuple[str, ...] = (ROLE_NEWBORN, ROLE_TODDLER)
 # log (governance_log.subject) carries a stable vocabulary.
 KIND_WEEKEND_PLAN_COMMIT = "genie.weekend_plan.commit"
 KIND_FAMILY_LOG_APPEND = "genie.family_log.append"
+# Household access control (2026-08-10, Genie bot): adding/removing a
+# Telegram chat to the household allowlist is the most consequential
+# write Genie makes — it grants a person access to family data. Always
+# charter-gated, always in the governance log.
+KIND_HOUSEHOLD_CHAT_ADD = "genie.household.chat_add"
+KIND_HOUSEHOLD_CHAT_REMOVE = "genie.household.chat_remove"
 
 ALL_CHARTER_KINDS: tuple[str, ...] = (
     KIND_WEEKEND_PLAN_COMMIT,
     KIND_FAMILY_LOG_APPEND,
+    KIND_HOUSEHOLD_CHAT_ADD,
+    KIND_HOUSEHOLD_CHAT_REMOVE,
 )
 
 
