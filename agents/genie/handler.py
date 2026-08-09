@@ -469,29 +469,17 @@ SLASH_COMMANDS: dict[str, Any] = {
 # greeting / the synth. The token regex tolerates space / underscore /
 # hyphen between the words, so "weekend_plan", "weekend plan",
 # "Weekend-Plan" and "weekendplan" all resolve to the plan handler.
-_WEEKEND_PLAN_TOKEN_RE = re.compile(r"\bweekend[\s_-]*plan\b", re.I)
-_FAMILY_LOG_TOKEN_RE = re.compile(r"\bfamily[\s_-]*log\b", re.I)
-
-# J5 raw-list intent (2026-08-10): "/whatson", "what's on this weekend",
-# "any events this week". Token-tolerant like the others.
-_WHATS_ON_RE = re.compile(
-    r"^\s*/\s*what[\s_-]*s?[\s_-]*on\b"
-    r"|\bwhat'?s\s+on\b"
-    r"|\bwhat\s+is\s+on\b"
-    r"|\bevents?\b.*\b(week|weekend|today|saturday|sunday)\b"
-    r"|\b(week|weekend)\b.*\bevents?\b",
-    re.I,
-)
-
-# Swap intent (2026-08-10, PRD J1 step 5): "swap in Happy Hollow",
-# "/swap Happy Hollow", "swap the zoo in". Deliberately requires the
-# word "in" OR the slash form so Kobe's "swap Mon with Tue" plan
-# mutation (which never reaches Genie anyway) can't be confused.
-_SWAP_RE = re.compile(
-    r"^\s*/\s*swap\s+(?:in\s+)?(.+)$"
-    r"|^\s*swap\s+in\s+(.+)$"
-    r"|^\s*swap\s+(.+?)\s+in\s*$",
-    re.I,
+# Intent patterns: SINGLE source of truth in agents/genie/intents.py —
+# Miya's classifier imports the same objects (2026-08-10 single-brain
+# refactor: two channels, one codebase; the regression test asserts
+# object identity so a re-fork fails CI).
+from agents.genie.intents import (  # noqa: E402
+    WEEKEND_PLAN_TOKEN_RE as _WEEKEND_PLAN_TOKEN_RE,
+    FAMILY_LOG_TOKEN_RE as _FAMILY_LOG_TOKEN_RE,
+    WHATS_ON_RE as _WHATS_ON_RE,
+    SWAP_RE as _SWAP_RE,
+    WEEKEND_NL_RE as _WEEKEND_NL_RE,
+    FAMILY_NL_RE as _FAMILY_NL_RE,
 )
 
 _FAMILY_LOG_USAGE = ("To log a household note, use "
@@ -605,10 +593,9 @@ def route(msg: str, *, chat_id: str | int | None = None) -> str:
     # ... weekend plan" — live ask 2026-08-08).
     if _WEEKEND_PLAN_TOKEN_RE.search(low):
         return handle_weekend_plan(energy_override=_energy_arg(low))
-    if re.search(r"\b(weekend|saturday|sunday)\b.*\bplan\b|\bplan\b.*\bweekend\b", low):
+    if _WEEKEND_NL_RE.search(low):
         return handle_weekend_plan(energy_override=_energy_arg(low))
-    if (_FAMILY_LOG_TOKEN_RE.search(low)
-            or re.search(r"\blog\s+(?:for\s+)?(?:the\s+)?(?:toddler|newborn|spouse)\b", low)):
+    if _FAMILY_LOG_TOKEN_RE.search(low) or _FAMILY_NL_RE.search(low):
         return _FAMILY_LOG_USAGE
 
     return handle_genie(msg)

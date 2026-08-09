@@ -67,9 +67,10 @@ def test_path_is_valid(msg):
 
 
 # ── Property 3: a slash-prefixed alpha command routes to Kobe ──────────
-# (…unless it is one of Genie's three carved-out commands — agent #4,
-# 2026-08-06: /genie /weekend_plan /family_log route to genie_route.)
-_GENIE_SLASH_PREFIXES = ("genie", "weekend_plan", "family_log")
+# (…unless it is one of Genie's carved-out commands — agent #4; the
+# authoritative list lives in agents/genie/intents.py GENIE_SLASH_RE.)
+_GENIE_SLASH_PREFIXES = ("genie", "weekend_plan", "family_log",
+                         "whatson", "swap")
 
 
 @_S

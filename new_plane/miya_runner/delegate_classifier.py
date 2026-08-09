@@ -47,39 +47,18 @@ _ADDRESS_RE = re.compile(
 
 
 # ─── Genie-owned surface (agent #4, 2026-08-06) ───────────────────────
-# Genie's three slash commands are carved out BEFORE the generic
-# slash→Kobe rule — otherwise "/genie" would go full-route to Kobe,
-# whose slash table doesn't know it, and fall through Kobe's pipeline
-# (the exact silent-fallthrough class the 06-23 sink contract exists
-# to prevent). Same whitespace tolerance as _SLASH_RE.
-_GENIE_SLASH_RE = re.compile(
-    r"^\s*/\s*(genie|weekend_plan|family_log)\b", re.I)
-
-# NL weekend/household-planning intent. Deliberately narrow: it must
-# never steal Kobe's plan/schedule queries ("plan for the week" — note
-# \bweek\b does not match inside "weekend") or Fraser's design intent.
-# Mirrors genie.handler's own keyword routing so classifier and handler
-# agree on ownership.
-_GENIE_NL_RE = re.compile(
-    # Bare command-name tokens (live incident 2026-08-08: "Weekend_plan"
-    # typed without the slash — the underscore defeats \b boundaries in
-    # the phrase patterns, so it fell through to the synth and got a
-    # FITNESS answer). [\s_-]* tolerates the spellings users type.
-    r"\bweekend[\s_-]*plan\b"
-    r"|\bfamily[\s_-]*log\b"
-    r"|\b(weekend|saturday|sunday)\b.*\bplan\b"
-    r"|\bplan\b.*\bweekend\b"
-    r"|\bfamily[\s-]friendly\b"
-    r"|\blog\s+(?:that\s+)?(?:for\s+)?(?:the\s+)?(?:toddler|newborn|spouse)\b"
-    # J5 raw list + swap iteration (2026-08-10). "what's on this
-    # weekend" / "events this weekend" are household discovery asks;
-    # "swap in <x>" iterates Genie's saved plan. Kobe's "swap Mon with
-    # Tue" plan mutation is claimed by _PLAN_MUTATION_RE well before
-    # this rule runs, so there is no overlap.
-    r"|\bwhat'?s\s+on\b.*\b(week|weekend|saturday|sunday)\b"
-    r"|\bevents?\b.*\b(week|weekend)\b"
-    r"|^\s*swap\s+in\s+\S+",
-    re.I,
+# Genie's slash commands are carved out BEFORE the generic slash→Kobe
+# rule — otherwise "/genie" would go full-route to Kobe, whose slash
+# table doesn't know it, and fall through Kobe's pipeline (the exact
+# silent-fallthrough class the 06-23 sink contract exists to prevent).
+#
+# SINGLE SOURCE OF TRUTH (2026-08-10): the patterns live in
+# agents/genie/intents.py and are imported — the handler consults the
+# SAME objects, so ownership (here) and action (handler) can't drift
+# apart. The single-brain regression test pins the identity.
+from agents.genie.intents import (
+    GENIE_SLASH_RE as _GENIE_SLASH_RE,
+    GENIE_NL_RE as _GENIE_NL_RE,
 )
 
 
