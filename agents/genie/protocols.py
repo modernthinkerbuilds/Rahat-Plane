@@ -93,6 +93,10 @@ KIND_HOUSEHOLD_CHAT_REMOVE = "genie.household.chat_remove"
 # and (later) per-Subject fields. Writes are charter-gated like every
 # other Genie state mutation.
 KIND_PROFILE_UPDATE = "genie.profile.update"
+# Idea capture (2026-08-09, live incident): a free-form message with the
+# humans' own plan proposals (PRD core loop step 4) is family data —
+# storing it is a charter-gated write like every other.
+KIND_IDEAS_CAPTURE = "genie.ideas.capture"
 
 ALL_CHARTER_KINDS: tuple[str, ...] = (
     KIND_WEEKEND_PLAN_COMMIT,
@@ -100,6 +104,7 @@ ALL_CHARTER_KINDS: tuple[str, ...] = (
     KIND_HOUSEHOLD_CHAT_ADD,
     KIND_HOUSEHOLD_CHAT_REMOVE,
     KIND_PROFILE_UPDATE,
+    KIND_IDEAS_CAPTURE,
 )
 
 

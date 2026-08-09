@@ -46,6 +46,7 @@ from agents.genie.protocols import (
     KIND_HOUSEHOLD_CHAT_ADD,
     KIND_HOUSEHOLD_CHAT_REMOVE,
     KIND_PROFILE_UPDATE,
+    KIND_IDEAS_CAPTURE,
     FamilySubject,
     WeekendPlan,
     FamilyLogEntry,
@@ -69,6 +70,10 @@ __all__ = [
     "pending_options",
     "clear_pending_options",
     "set_household_location",
+    "save_household_ideas",
+    "household_ideas",
+    "proposal_for_weekend",
+    "date_night_rotation",
     "list_household_chats",
     "household_role_for",
     "add_household_chat",
@@ -519,3 +524,66 @@ def set_household_location(location: str, *,
     with path.open("w") as f:
         json.dump(raw, f, indent=2)
     return True, loc
+
+
+# ───────────────── Household ideas (PRD core-loop step 4) ─────────────
+def save_household_ideas(ideas: dict, *, by_role: str = "",
+                         trace_id: str | None = None,
+                         db_path: str | None = None) -> tuple[bool, str]:
+    """Merge captured proposals into the store — CHARTER-GATED
+    (KIND_IDEAS_CAPTURE). Weekend entries replace an existing entry for
+    the same weekend_of (latest word wins); date-night ideas extend the
+    rotation (case-insensitive dedup); notes append."""
+    verdict = _charter_gate(
+        KIND_IDEAS_CAPTURE,
+        {"weekends": len(ideas.get("weekends") or []),
+         "date_nights": len(ideas.get("date_nights") or []),
+         "by_role": by_role},
+        trace_id=trace_id, db_path=db_path)
+    if not verdict.approved:
+        return False, f"charter:{verdict.reason}"
+    data = _read_store()
+    blob = data.get("household_ideas")
+    if not isinstance(blob, dict):
+        blob = {"weekends": [], "date_nights": [], "notes": []}
+    existing = {w.get("weekend_of"): i
+                for i, w in enumerate(blob.get("weekends", []))
+                if w.get("weekend_of")}
+    for w in ideas.get("weekends") or []:
+        w = dict(w)
+        if by_role:
+            w["by"] = by_role
+        key = w.get("weekend_of")
+        if key and key in existing:
+            blob["weekends"][existing[key]] = w
+        else:
+            blob["weekends"].append(w)
+    have = {d.casefold() for d in blob.get("date_nights", [])}
+    for d in ideas.get("date_nights") or []:
+        if d.casefold() not in have:
+            blob.setdefault("date_nights", []).append(d)
+            have.add(d.casefold())
+    for n in ideas.get("notes") or []:
+        blob.setdefault("notes", []).append(n)
+    data["household_ideas"] = blob
+    _write_store(data)
+    return True, "saved"
+
+
+def household_ideas() -> dict:
+    data = _read_store()
+    blob = data.get("household_ideas")
+    return dict(blob) if isinstance(blob, dict) else {
+        "weekends": [], "date_nights": [], "notes": []}
+
+
+def proposal_for_weekend(weekend_of: str) -> dict | None:
+    """The humans' own proposal for this weekend, if they made one."""
+    for w in household_ideas().get("weekends", []):
+        if w.get("weekend_of") == weekend_of:
+            return dict(w)
+    return None
+
+
+def date_night_rotation() -> list[str]:
+    return list(household_ideas().get("date_nights", []))

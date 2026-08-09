@@ -58,6 +58,9 @@ from agents.genie.state import (  # noqa: E402
     clear_pending_options,
     set_household_location,
     household_role_for,
+    save_household_ideas,
+    proposal_for_weekend,
+    date_night_rotation,
 )
 
 __all__ = [
@@ -317,6 +320,29 @@ def handle_weekend_plan(*, now: datetime | None = None,
     lines = [header, scope]
     if weather_line:
         lines.append(weather_line)
+
+    # ── The humans' own proposal is the spine (core loop step 5:
+    # they hand back a rough idea, Genie refines — never replaces). ──
+    proposal = proposal_for_weekend(plan.weekend_of)
+    if proposal and not evening_mode:
+        by = proposal.get("by", "")
+        who = f" (from {by.capitalize()})" if by else ""
+        lines += ["", f"*Your plan on file{who}* — this weekend's anchor:"]
+        if proposal.get("label") and not proposal.get("items"):
+            lines.append(f"  • {proposal['label']}")
+        for item in proposal.get("items", [])[:6]:
+            lines.append(f"  • {item}")
+        if proposal.get("companions"):
+            lines.append(f"  • With: {proposal['companions']}")
+        lines.append("  _Below is what discovery adds around it._")
+    if evening_mode:
+        rotation = date_night_rotation()
+        if rotation:
+            lines += ["", "*Your date-night rotation* — next up:"]
+            lines += [f"  {i + 1}. {idea}"
+                      for i, idea in enumerate(rotation[:3])]
+            if len(rotation) > 3:
+                lines.append(f"  …plus {len(rotation) - 3} more on the list")
 
     # ── J1 option sets: two distinct candidates, human decides ──
     if want_options and option_b and live:
@@ -717,6 +743,70 @@ def handle_swap(query: str) -> str:
     return "\n".join(out)
 
 
+# ───────────────── idea capture (PRD core loop step 4) ────────────────
+def _is_freeform(msg: str) -> bool:
+    """A long / multi-line non-command message is the humans handing
+    back their OWN plan ('here are some thoughts…'), not a command.
+    Live incident 2026-08-09: keyword intents fired on 'adults only' and
+    'high' buried in a 6-weekend proposal and hijacked it into a wrong
+    date-night plan. Free-form preempts keyword routing."""
+    m = (msg or "").strip()
+    if m.startswith("/"):
+        return False
+    return len(m) > 200 or m.count("\n") >= 2
+
+
+def handle_capture(msg: str, *, chat_id: str | int | None = None,
+                   llm=None) -> str:
+    """Capture the humans' own plan proposals (weekends + date-night
+    rotation). The LLM only ELICITS structure; the save is deterministic
+    and charter-gated; the raw text is NEVER lost (fallback stores it
+    verbatim as a note)."""
+    by = (household_role_for(chat_id) if chat_id is not None else "") or ""
+    today_iso = datetime.now().strftime("%Y-%m-%d")
+
+    ideas = None
+    if _live_plan_enabled():
+        # Wire-vs-hermetic is ideas.elicit's concern (it refuses the
+        # wire under RAHAT_TEST_MODE unless a seam is injected).
+        from agents.genie import ideas as _ideas
+        ideas = _ideas.elicit(msg, today_iso=today_iso, llm=llm)
+
+    if ideas is None:
+        # Honest fallback: keep their words, admit the limitation.
+        ok, reason = save_household_ideas(
+            {"weekends": [], "date_nights": [],
+             "notes": [msg.strip()[:500]]}, by_role=by)
+        if not ok:
+            return f"⚠️ Couldn't save that — {reason}"
+        return ("📥 Saved your notes word-for-word (I couldn't parse them "
+                "into weekends just now). They're in the household ideas — "
+                "I'll use them as context.")
+
+    ok, reason = save_household_ideas(ideas, by_role=by)
+    if not ok:
+        return f"⚠️ Couldn't save that — charter veto: {reason}"
+
+    who = f" (from {by.capitalize()})" if by else ""
+    lines = [f"📥 Captured your plan{who} — nothing booked, just noted:"]
+    for w in ideas.get("weekends", []):
+        when = w.get("weekend_of") or "date TBD"
+        label = w.get("label", "")
+        extra = f" · with {w['companions']}" if w.get("companions") else ""
+        lines.append(f"  • {when}: {label}{extra}")
+        for item in w.get("items", [])[:4]:
+            lines.append(f"      – {item}")
+    dn = ideas.get("date_nights", [])
+    if dn:
+        lines.append(f"  • Friday date-night rotation: {len(dn)} ideas "
+                     f"(first up: {dn[0]})")
+    lines += ["",
+              "These now anchor planning: `/weekend_plan` for a listed "
+              "weekend starts from YOUR pick, and date nights pull from "
+              "the rotation. `/whatson` still shows what else is around."]
+    return "\n".join(lines)
+
+
 # ─────────────────────────── /family_log ──────────────────────────────
 # "/family_log toddler: loved the park, melted down by noon"
 # "/family_log spouse - wants a quieter Saturday"
@@ -906,6 +996,13 @@ def route(msg: str, *, chat_id: str | int | None = None) -> str:
     slash = _try_slash_command(msg, chat_id)
     if slash is not None:
         return slash
+
+    # Free-form preempts ALL keyword intents (live incident 2026-08-09:
+    # 'adults only' + 'high' buried in a six-weekend proposal hijacked
+    # it into a wrong date-night plan). A long message IS the content —
+    # capture it; commands are short.
+    if _is_freeform(msg):
+        return handle_capture(msg, chat_id=chat_id)
 
     low = msg.lower()
     stripped = msg.strip()

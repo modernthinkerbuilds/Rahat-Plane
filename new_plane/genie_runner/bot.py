@@ -40,7 +40,10 @@ _HELP = (
     "  • `/family` — household profile · `/family set location <City, ST>`\n"
     "  • `/family_log <role>: <note>` — log a household observation\n"
     "  • `/household` — who's in this household\n"
-    "  • `/genie` — say hi"
+    "  • `/genie` — say hi\n"
+    "\n"
+    "Or just paste your own plan ideas (multiple weekends, a date-night "
+    "list — any shape). I'll capture them and build around YOUR picks."
 )
 
 _NOT_PAIRED = (
