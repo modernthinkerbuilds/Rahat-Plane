@@ -157,13 +157,22 @@ def household_location() -> str | None:
 
 
 # ─────────────────────────── Family Subjects (read) ───────────────────
-def load_family_subjects() -> list[FamilySubject]:
+def load_family_subjects(on_date=None,
+                         include_departed: bool = False,
+                         ) -> list[FamilySubject]:
     """Read ROLE-based family Subjects from vault/family_profile.json.
 
     Never raises. If the file is absent or unreadable, returns the
     PII-free default profile so Genie always has a household shape to
     plan against. Only known roles (FAMILY_ROLES) are accepted — a
     stray role string is skipped so the multi-subject contract holds.
+
+    Temporary members (2026-08-10): a Subject with `present_until` is
+    dropped once that date has passed, so a visiting-grandparents
+    season expires on its own instead of quietly skewing plans forever.
+    `include_departed=True` returns everyone (the /family view uses it
+    to show "until <date>"). Multiple Subjects may share a role — two
+    seniors are two Subjects with distinct subject_ids.
     """
     path = family_profile_path()
     raw: dict
@@ -184,13 +193,16 @@ def load_family_subjects() -> list[FamilySubject]:
         if role not in FAMILY_ROLES:
             # Unknown role — skip rather than admit an off-contract Subject.
             continue
-        subjects.append(FamilySubject(
+        subj = FamilySubject(
             role=role,
             subject_id=str(entry.get("subject_id") or f"subj_{role}"),
             display=str(entry.get("display") or ""),
             constraints=list(entry.get("constraints") or []),
             preferences=list(entry.get("preferences") or []),
-        ))
+            present_until=str(entry.get("present_until") or ""),
+        )
+        if include_departed or subj.is_present_on(on_date):
+            subjects.append(subj)
     return subjects
 
 

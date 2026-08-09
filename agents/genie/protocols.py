@@ -32,7 +32,7 @@ See also
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 
@@ -122,6 +122,11 @@ class FamilySubject:
     display: str = ""
     constraints: list[str] = field(default_factory=list)
     preferences: list[str] = field(default_factory=list)
+    # Temporary members (2026-08-10): visiting grandparents, a relative
+    # staying for a season. ISO date, INCLUSIVE — the Subject is in
+    # scope through this date and drops out of planning the day after,
+    # with no edit needed. Empty = permanent member.
+    present_until: str = ""
 
     def __post_init__(self) -> None:
         if not self.display:
@@ -133,14 +138,34 @@ class FamilySubject:
         """True for the youngest Subjects whose energy caps the plan."""
         return self.role in CONSTRAINT_ROLES
 
+    @property
+    def is_temporary(self) -> bool:
+        return bool(self.present_until)
+
+    def is_present_on(self, on_date: "date | None" = None) -> bool:
+        """Is this Subject part of the household on `on_date` (today by
+        default)? Permanent members always are. An unparseable
+        `present_until` fails OPEN (still present) — a typo must not
+        silently delete a family member from the plan."""
+        if not self.present_until:
+            return True
+        try:
+            until = date.fromisoformat(self.present_until.strip())
+        except (ValueError, AttributeError):
+            return True
+        return (on_date or datetime.now().date()) <= until
+
     def to_dict(self) -> dict[str, Any]:
-        return {
+        d = {
             "role": self.role,
             "subject_id": self.subject_id,
             "display": self.display,
             "constraints": list(self.constraints),
             "preferences": list(self.preferences),
         }
+        if self.present_until:
+            d["present_until"] = self.present_until
+        return d
 
 
 @dataclass

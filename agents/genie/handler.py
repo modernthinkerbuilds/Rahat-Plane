@@ -153,15 +153,27 @@ def _childcare_block(subjects: list[FamilySubject],
     """J2 guard: NEVER propose an outing that silently assumes childcare.
     If any minor Subject is NOT attending, the prerequisite is stated as
     an explicit checklist item — Genie checks the assumption, the humans
-    resolve it."""
+    resolve it.
+
+    2026-08-10: when other ADULT Subjects are in the household and also
+    not attending (visiting grandparents), name them as candidate cover
+    instead of asking into the void — Genie surfaces the option, the
+    humans still decide (it never books or assumes anyone)."""
     home_minors = [s.display for s in subjects
                    if s.role in MINOR_ROLES and s.role not in attending_roles]
     if not home_minors:
         return []
     who = " + ".join(home_minors)
-    return ["", "*Before this works* (childcare guard)",
-            f"  ☐ Childcare for {who} — is that sorted, or should I "
-            "flag it as open?"]
+    cover = [s.display for s in subjects
+             if s.role not in MINOR_ROLES and s.role not in attending_roles]
+    lines = ["", "*Before this works* (childcare guard)"]
+    if cover:
+        lines.append(f"  ☐ Childcare for {who} — {' and '.join(cover)} "
+                     "are home this weekend; could they cover?")
+    else:
+        lines.append(f"  ☐ Childcare for {who} — is that sorted, or "
+                     "should I flag it as open?")
+    return lines
 
 
 def handle_weekend_plan(*, now: datetime | None = None,
@@ -520,12 +532,18 @@ def handle_family_show() -> str:
     location, plan history — with the "last reviewed" nudge."""
     import os
     from agents.genie.state import family_profile_path
-    subjects = load_family_subjects()
+    subjects = load_family_subjects(include_departed=True)
     location = household_location()
+    today = datetime.now().date()
     lines = ["*Household profile*"]
     for s in subjects:
         cons = f" — {', '.join(s.constraints)}" if s.constraints else ""
-        lines.append(f"  • {s.display} ({s.role}){cons}")
+        stay = ""
+        if s.is_temporary:
+            stay = (f" · here until {s.present_until}"
+                    if s.is_present_on(today)
+                    else f" · departed {s.present_until} (not in plans)")
+        lines.append(f"  • {s.display} ({s.role}){stay}{cons}")
     loc_label = location or "not set — `/family set location <City, ST>`"
     lines.append(f"  • Home area: {loc_label}")
     plan = latest_weekend_plan()
