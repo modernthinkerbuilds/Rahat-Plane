@@ -31,9 +31,13 @@ static offline menus, so /weekend_plan can never go silent.
 from __future__ import annotations
 
 import json
+import logging
+import os
 import re
 from dataclasses import dataclass, field
 from typing import Any, Callable
+
+logger = logging.getLogger(__name__)
 
 # Time-slot ordering for deterministic assembly. Unknown hints sort as
 # "morning" so an unparseable slot can't push an item past the nap block.
@@ -165,16 +169,29 @@ def discover_options(*, location: str, sat_iso: str, sun_iso: str,
             text = llm(prompt) or ""
         else:
             from core import llm as _llm
+            # Model pin (2026-08-09): use the SAME flash id the runner
+            # validated at boot (NEW_MIYA_MODEL_FLASH) rather than the
+            # core picker — the picker's auto-upgrade once selected
+            # `gemini-omni-flash-preview`, which 400s on grounded calls,
+            # and the whole live path silently fell back to offline.
+            model = os.getenv("NEW_MIYA_MODEL_FLASH", "gemini-2.5-flash")
             usage = _llm.generate("genie", "genie.live_plan.discovery",
-                                  prompt=prompt, search=True)
+                                  prompt=prompt, model=model, search=True)
             if usage.error:
+                logger.warning("genie live discovery LLM error "
+                               "(falling back to offline plan): %s",
+                               usage.error)
                 return None
             text = usage.text
-    except Exception:  # noqa: BLE001 — includes BudgetExceeded; fallback path
+    except Exception as e:  # noqa: BLE001 — incl. BudgetExceeded; fallback
+        logger.warning("genie live discovery failed (%s: %s) — offline "
+                       "fallback", type(e).__name__, e)
         return None
 
     obj = _parse_json_block(text)
     if obj is None:
+        logger.warning("genie live discovery returned unparseable output "
+                       "(%d chars) — offline fallback", len(text or ""))
         return None
     weather = obj.get("weather") if isinstance(obj.get("weather"), dict) else {}
     options = obj.get("options") if isinstance(obj.get("options"), dict) else {}

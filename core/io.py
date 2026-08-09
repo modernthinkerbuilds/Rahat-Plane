@@ -17,6 +17,7 @@ NOTE on backwards compatibility:
 from __future__ import annotations
 
 import os
+import re
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
@@ -171,19 +172,42 @@ def llm_client():
     return _LLM_CLIENT
 
 
+# Only STABLE GA flash models qualify for auto-upgrade: "gemini-<ver>-flash"
+# exactly (optional "models/" prefix). Preview / omni / lite / experimental
+# variants are excluded — they may reject generateContent or tool configs.
+_FLASH_STABLE_RE = re.compile(r"^(?:models/)?gemini-(\d+)(?:\.(\d+))?-flash$")
+
+
 def llm_pick_flash_model() -> str:
-    """Return the freshest Flash model available, or the configured
+    """Return the newest STABLE Flash model available, or the configured
     default. Cached after first call to avoid re-listing models on every
     LLM call.
+
+    Bug 2026-08-09 (Genie live-plan 400s): "freshest" was implemented as
+    the ALPHABETICALLY LAST listed name containing "flash" — when Google
+    shipped `gemini-omni-flash-preview` it outsorted `gemini-2.5-flash`
+    and every picker-based call started 400ing. Now: an explicit
+    GEMINI_MODEL env pin is never auto-upgraded, only stable
+    `gemini-<major>.<minor>-flash` names qualify, and "newest" compares
+    the parsed version tuple, not string order.
     """
     global _LLM_MODEL_ID
+    if os.getenv("GEMINI_MODEL"):
+        return _LLM_MODEL_ID          # explicit pin — never auto-upgrade
     c = llm_client()
     if not c:
         return _LLM_MODEL_ID
     try:
-        flash = [m.name for m in c.models.list() if "flash" in m.name.lower()]
-        if flash:
-            _LLM_MODEL_ID = sorted(flash)[-1]
+        best, best_ver = None, (-1, -1)
+        for m in c.models.list():
+            match = _FLASH_STABLE_RE.match(getattr(m, "name", "") or "")
+            if not match:
+                continue
+            ver = (int(match.group(1)), int(match.group(2) or 0))
+            if ver > best_ver:
+                best, best_ver = m.name, ver
+        if best:
+            _LLM_MODEL_ID = best
     except Exception:
         pass
     return _LLM_MODEL_ID
