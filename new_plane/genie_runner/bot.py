@@ -46,7 +46,8 @@ _HELP = (
 _NOT_PAIRED = (
     "Hi — I'm Genie, a private household planner. This bot only talks "
     "to its own household.\n"
-    "If you have the household code, send: `/join <code>`"
+    "If you have the household code, send: `/join <code>`\n"
+    "(Just type it as a message — code included, e.g. `/join abc123`.)"
 )
 
 _FALLBACK = ("Sorry — I couldn't put that together just now. "
@@ -159,6 +160,22 @@ def _process(cid: str, text: str) -> str:
     # Pairing runs BEFORE the allowlist gate — it's how you get in.
     if low.startswith("/join"):
         return _handle_join(cid, text)
+
+    # Deep-link onboarding (2026-08-10): Telegram delivers
+    # t.me/<bot>?start=<payload> as the message "/start <payload>". Treat
+    # the payload as the pair code so a brand-new Telegram user only has
+    # to tap a link and press START — no typing a code into an app they
+    # installed five minutes ago. Payload "<code>-group" claims the
+    # shared group slot (Telegram start payloads allow [A-Za-z0-9_-]).
+    # Same secret, same charter-gated add, same cap as /join.
+    if low.startswith("/start ") and len(text.split(None, 1)) > 1:
+        payload = text.split(None, 1)[1].strip()
+        if payload:
+            code, _, suffix = payload.partition("-")
+            join_cmd = f"/join {code}"
+            if suffix.lower() == "group":
+                join_cmd += " group"
+            return _handle_join(cid, join_cmd)
 
     role = _ensure_primary(cid)
     if role is None:
