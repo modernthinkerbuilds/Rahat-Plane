@@ -175,7 +175,8 @@ def handle_weekend_plan(*, now: datetime | None = None,
     # ─── live discovery (LLM proposes) + deterministic sequencing ───
     live_sat: list[str] | None = None
     live_sun: list[str] | None = None
-    ruled_out: list[str] = []
+    alternates: list[str] = []
+    violations: list[str] = []
     weather_line = ""
     location = household_location()
     live_ok = (_live_plan_enabled() and location
@@ -191,11 +192,17 @@ def handle_weekend_plan(*, now: datetime | None = None,
             llm=llm)
         if disc is not None:
             protect_nap = any(r in ("toddler", "newborn") for r in roles)
-            live_sat, ro_sat = lp.sequence_day(
+            live_sat, alt_sat, vio_sat = lp.sequence_day(
                 disc.saturday, energy=energy, protect_nap=protect_nap)
-            live_sun, ro_sun = lp.sequence_day(
+            live_sun, alt_sun, vio_sun = lp.sequence_day(
                 disc.sunday, energy=energy, protect_nap=protect_nap)
-            ruled_out = ro_sat + ro_sun
+            violations = vio_sat + vio_sun
+            # Alternates: over-cap finds are CHOICES, not failures (PRD
+            # J1 — the humans decide). Compact: name (+source), day-tagged.
+            for day, alts in (("Sat", alt_sat), ("Sun", alt_sun)):
+                for o in alts:
+                    label = o.activity + (f" ({o.source})" if o.source else "")
+                    alternates.append(f"{day}: {label}")
             if disc.weather_sat or disc.weather_sun:
                 weather_line = (f"Weather: Sat — {disc.weather_sat or '?'}; "
                                 f"Sun — {disc.weather_sun or '?'}")
@@ -238,9 +245,16 @@ def handle_weekend_plan(*, now: datetime | None = None,
     lines += (live_sat if live_sat else [f"  • {a}" for a in plan.saturday])
     lines += ["", "*Sunday*"]
     lines += (live_sun if live_sun else [f"  • {a}" for a in plan.sunday])
-    if ruled_out:
-        lines += ["", "*Ruled out* (glass-box)"]
-        lines += [f"  • {r}" for r in ruled_out]
+    if alternates:
+        shown = alternates[:4]
+        lines += ["", "*Also good this weekend* — swap any in:"]
+        lines += [f"  • {a}" for a in shown]
+        extra = len(alternates) - len(shown)
+        if extra > 0:
+            lines.append(f"  • …plus {extra} more found")
+    if violations:
+        lines += ["", "*Ruled out*"]
+        lines += [f"  • {r}" for r in violations]
     if not live and _live_plan_enabled() and not location and not _hermetic():
         lines += ["", "_Offline plan — set RAHAT_GENIE_LOCATION in .env "
                       "(e.g. \"San Jose, CA\") to get real local options._"]

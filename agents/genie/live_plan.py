@@ -50,8 +50,13 @@ _ENERGY_CAP = {"low": 1, "medium": 2, "high": 3}
 
 _NAP_LINE = "Midday: naps protected at home (toddler/newborn)"
 
-_MAX_FIELD = 120          # per-string sanity cap from LLM output
+_MAX_FIELD = 120          # generic per-string sanity cap from LLM output
 _MAX_CANDIDATES = 6       # per-day candidates considered before the cap
+
+# Tighter per-field caps (2026-08-09 render-quality pass): the first live
+# run shipped full street addresses and seasonal trivia inside `place` —
+# hard-trim so a rambling model can't bloat the plan card.
+_FIELD_CAPS = {"activity": 60, "place": 48, "why": 80, "source": 32}
 
 
 @dataclass
@@ -96,19 +101,28 @@ Household: {role_line} (energy budget: {energy})
 Constraints: {cons_line}
 
 Find, from live sources:
-1. The weather forecast for each day (one short phrase per day).
+1. The weather forecast for each day — ONE short phrase, max 8 words,
+   no trailing period (e.g. "mostly sunny, low 80s").
 2. Up to {_MAX_CANDIDATES} real family-appropriate options PER DAY near the
    location — actual events (farmers' markets, library story times,
    festivals, park programs) and evergreen spots (trails, playgrounds),
    suited to the energy budget and constraints. Prefer free/cheap,
    stroller-friendly options when a toddler or newborn is listed.
+   ORDER each day's list best-fit first — the first item is the one
+   that gets planned.
+
+Field rules (hard):
+- "activity": the thing you do, max 6 words.
+- "place": VENUE NAME ONLY — no street address, no city, no parking or
+  seasonal notes.
+- "why": max 8 words, one concrete reason for THIS household.
+- "source": one short site/organization name, max 4 words.
 
 Return STRICT JSON only — no prose, no markdown fences:
 {{"weather": {{"saturday": "...", "sunday": "..."}},
   "options": {{"saturday": [{{"time": "morning|midday|afternoon|evening",
                              "activity": "...", "place": "...",
-                             "why": "one short reason it fits this household",
-                             "source": "site or org name"}}],
+                             "why": "...", "source": "..."}}],
                "sunday": [ ... same shape ... ]}}}}
 Only include options you actually found via search. If you cannot find
 real options, return {{"weather": {{...}}, "options": {{"saturday": [],
@@ -130,23 +144,35 @@ def _parse_json_block(text: str) -> dict | None:
     return obj if isinstance(obj, dict) else None
 
 
-def _clean(s: Any) -> str:
-    return str(s).strip()[:_MAX_FIELD] if isinstance(s, (str, int, float)) else ""
+def _clean(s: Any, cap: int = _MAX_FIELD) -> str:
+    if not isinstance(s, (str, int, float)):
+        return ""
+    out = str(s).strip().rstrip(".")
+    return out[:cap].strip()
 
 
 def _coerce_option(raw: Any) -> LiveOption | None:
     if not isinstance(raw, dict):
         return None
-    activity = _clean(raw.get("activity"))
+    activity = _clean(raw.get("activity"), _FIELD_CAPS["activity"])
     if not activity:
         return None
     time = _clean(raw.get("time")).lower()
     if time not in _SLOT_ORDER:
         time = "morning"
+    # `place`: keep the venue name only — the first live run shipped
+    # "357 E. Taylor Street, San Jose, CA 95112 (behind ...)" inside it.
+    # Take the first comma segment, drop any parenthetical, and if what
+    # remains still looks like a street address (leading house number),
+    # it isn't a venue name at all — drop it.
+    place = _clean(raw.get("place"), _FIELD_CAPS["place"]).split(",")[0]
+    place = re.sub(r"\(.*?\)", "", place).strip()
+    if re.match(r"^\d+\s", place):
+        place = ""
     return LiveOption(time=time, activity=activity,
-                      place=_clean(raw.get("place")),
-                      why=_clean(raw.get("why")),
-                      source=_clean(raw.get("source")))
+                      place=place,
+                      why=_clean(raw.get("why"), _FIELD_CAPS["why"]),
+                      source=_clean(raw.get("source"), _FIELD_CAPS["source"]))
 
 
 def discover_options(*, location: str, sat_iso: str, sun_iso: str,
@@ -219,33 +245,39 @@ def discover_options(*, location: str, sat_iso: str, sun_iso: str,
 
 # ─────────────────────── deterministic sequencing ───────────────────────
 def sequence_day(options: list[LiveOption], *, energy: str,
-                 protect_nap: bool) -> tuple[list[str], list[str]]:
+                 protect_nap: bool,
+                 ) -> tuple[list[str], list[LiveOption], list[str]]:
     """Assemble one day from candidates — deterministically.
 
     Rules (the checker the LLM's proposal must pass through):
       * at most _ENERGY_CAP[energy] outings survive (first-listed wins —
         the LLM was told to lead with the best fit);
       * when a toddler/newborn Subject is in scope, the midday nap block
-        is protected: midday candidates are ruled out and the nap line
-        is inserted between morning and afternoon;
+        is protected: midday candidates are VIOLATIONS (glass-box
+        "ruled out" with the reason) and the nap line is inserted;
+      * candidates beyond the cap are NOT failures — they are
+        ALTERNATES, returned typed so the render can offer them as
+        choices (PRD J1: surface options, the humans decide). First
+        live run (2026-08-09) dumped 10 of them as identical "over the
+        budget" ruled-out lines — clutter, not glass-box;
       * surviving items are ordered morning → evening;
-      * everything dropped is RETURNED as ruled-out lines (glass-box),
-        never silently discarded.
+      * a low-energy day gets a closing home block so the plan reads
+        complete instead of ending at the nap line.
 
-    Returns (plan_lines, ruled_out_lines).
+    Returns (plan_lines, alternates, violation_lines).
     """
     cap = _ENERGY_CAP.get(energy, 1)
     kept: list[LiveOption] = []
-    ruled_out: list[str] = []
+    alternates: list[LiveOption] = []
+    violations: list[str] = []
 
     for o in options:
         if protect_nap and o.time == "midday":
-            ruled_out.append(f"{o.activity} — collides with the protected "
-                             "midday nap window")
+            violations.append(f"{o.activity} — collides with the protected "
+                              "midday nap window")
             continue
         if len(kept) >= cap:
-            ruled_out.append(f"{o.activity} — over the {energy}-energy "
-                             "budget for one day")
+            alternates.append(o)
             continue
         kept.append(o)
 
@@ -257,4 +289,7 @@ def sequence_day(options: list[LiveOption], *, energy: str,
         idx = sum(1 for o in kept if _SLOT_ORDER.get(o.time, 0) == 0)
         lines.insert(idx, f"  • {_NAP_LINE}")
 
-    return lines, ruled_out
+    if energy == "low":
+        lines.append("  • Afternoon: home — quiet play, early wind-down")
+
+    return lines, alternates, violations

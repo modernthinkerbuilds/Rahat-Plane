@@ -104,25 +104,43 @@ def test_discovery_never_raises_on_llm_explosion():
 
 
 # ─────────────── sequencing (deterministic checker) ───────────────
-def test_sequencer_enforces_energy_cap_and_glass_box():
+def test_sequencer_energy_cap_yields_alternates_not_rejects():
+    """First live run (2026-08-09): 10 over-cap finds rendered as ten
+    identical 'over the budget' ruled-out lines — clutter. Over-cap
+    candidates are ALTERNATES (typed, offerable); only real constraint
+    violations are ruled out."""
     from agents.genie import live_plan as lp
     opts = [lp.LiveOption(time="morning", activity=f"A{i}")
             for i in range(4)]
-    lines, ruled_out = lp.sequence_day(opts, energy="low", protect_nap=False)
-    assert len(lines) == 1                        # low → 1 outing
-    assert len(ruled_out) == 3                    # everything else surfaced
-    assert all("over the low-energy budget" in r for r in ruled_out)
+    lines, alternates, violations = lp.sequence_day(
+        opts, energy="low", protect_nap=False)
+    outings = [l for l in lines
+               if any(f": A{i}" in l for i in range(4))]
+    assert len(outings) == 1                      # low → 1 outing
+    assert [o.activity for o in alternates] == ["A1", "A2", "A3"]
+    assert violations == []                       # nothing actually violated
+
+
+def test_sequencer_low_energy_day_reads_complete():
+    """A low-energy day must not end at the nap line — closing home
+    block makes the plan feel finished (quality pass 2026-08-09)."""
+    from agents.genie import live_plan as lp
+    lines, _, _ = lp.sequence_day(
+        [lp.LiveOption(time="morning", activity="Market")],
+        energy="low", protect_nap=True)
+    assert "wind-down" in lines[-1]
 
 
 def test_sequencer_protects_nap_window():
     from agents.genie import live_plan as lp
     opts = [lp.LiveOption(time="midday", activity="Zoo trip"),
             lp.LiveOption(time="morning", activity="Market")]
-    lines, ruled_out = lp.sequence_day(opts, energy="high", protect_nap=True)
+    lines, _, violations = lp.sequence_day(opts, energy="high",
+                                           protect_nap=True)
     joined = "\n".join(lines)
     assert "naps protected" in joined
     assert "Zoo trip" not in joined               # midday collision removed
-    assert any("nap window" in r for r in ruled_out)
+    assert any("nap window" in v for v in violations)
 
 
 def test_sequencer_orders_slots():
@@ -130,10 +148,21 @@ def test_sequencer_orders_slots():
     opts = [lp.LiveOption(time="evening", activity="Dinner"),
             lp.LiveOption(time="morning", activity="Market"),
             lp.LiveOption(time="afternoon", activity="Playground")]
-    lines, _ = lp.sequence_day(opts, energy="high", protect_nap=False)
-    order = [l for l in lines]
-    assert order[0].find("Market") > -1
-    assert order[-1].find("Dinner") > -1
+    lines, _, _ = lp.sequence_day(opts, energy="high", protect_nap=False)
+    assert lines[0].find("Market") > -1
+    assert lines[-1].find("Dinner") > -1
+
+
+def test_place_is_venue_name_only():
+    """First live run shipped '357 E. Taylor Street, San Jose, CA 95112
+    (behind ...)' as the place. Venue name only survives coercion."""
+    from agents.genie import live_plan as lp
+    o = lp._coerce_option({
+        "time": "morning", "activity": "Farmers' market",
+        "place": "357 E. Taylor Street, San Jose, CA 95112 (behind Gordon)",
+        "why": "x", "source": "y"})
+    assert "," not in o.place
+    assert "95112" not in o.place
 
 
 # ─────────────── handler integration (live + fallbacks) ───────────────
@@ -145,7 +174,12 @@ def test_live_plan_renders_with_location_and_seam(genie, monkeypatch):
     assert "Weather: Sat — sunny, 24C" in out
     assert "Farmers' market at Main St" in out
     assert "naps protected" in out                # toddler+newborn default
-    assert "Ruled out" in out                     # glass-box section
+    # Zoo trip is a genuine violation (midday, nap collision) → ruled out;
+    # Library story time is merely over the low cap → offered as a choice.
+    assert "Ruled out" in out
+    assert "Zoo trip — collides" in out
+    assert "Also good this weekend" in out
+    assert "Sat: Library story time" in out
     assert "✅ Plan saved." in out                # charter-gated save intact
 
 
