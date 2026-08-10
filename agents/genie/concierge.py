@@ -104,6 +104,30 @@ def _save_session(chat_id: str, session: dict, now: datetime) -> None:
 
 
 # ─────────────────────────── prompt assembly ───────────────────────────
+def _inventory_context(now: datetime) -> str:
+    """Verified events from the registry inventory (bridges.events) for
+    the next ~10 days — the concierge's FIRST source of truth; live
+    search only fills gaps (PRD §6.3). Empty inventory = empty string;
+    never raises."""
+    try:
+        from datetime import timedelta
+        from bridges.events.store import query_window
+        rows = query_window(now.strftime("%Y-%m-%d"),
+                            (now + timedelta(days=10)).strftime("%Y-%m-%d"),
+                            limit=14)
+    except Exception:  # noqa: BLE001 — inventory is optional context
+        return ""
+    if not rows:
+        return ""
+    lines = [f"{r['start_ts'][:16]} — {r['title']}"
+             + (f" @ {r['venue']}" if r.get("venue") else "")
+             + f" ({r['city']}, via {r['source_id']})"
+             for r in rows]
+    return ("VERIFIED LOCAL EVENTS (from the household's own source "
+            "feeds — prefer these over search results when they fit):\n"
+            + "\n".join(lines))
+
+
 def _household_context(chat_id: str) -> str:
     subjects = load_family_subjects()
     roster = "; ".join(
@@ -270,6 +294,9 @@ def step(chat_id: str | int, msg: str, *,
     session = _load_session(cid, now)
 
     context = _household_context(cid)
+    inventory = _inventory_context(now)
+    if inventory:
+        context = context + "\n\n" + inventory
     convo = _llm_call(
         _conversation_prompt(context, session["turns"], session["slots"],
                              msg, now),

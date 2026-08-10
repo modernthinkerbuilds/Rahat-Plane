@@ -618,16 +618,46 @@ def handle_whats_on(*, now: datetime | None = None, llm=None) -> str:
     unavailable.
     """
     location = household_location()
+    saturday = _next_saturday(now)
+    sunday = saturday + timedelta(days=1)
+
+    # ── Inventory first (PRD §6.3): the registry's verified events for
+    # the weekend, before any live search. Works even offline.
+    inventory_lines: list[str] = []
+    try:
+        from bridges.events.store import query_window
+        rows = query_window(saturday.strftime("%Y-%m-%d"),
+                            sunday.strftime("%Y-%m-%d"), limit=20)
+        seen_inv: set[str] = set()
+        for r in rows:
+            key = r["title"].casefold()
+            if key in seen_inv:
+                continue
+            seen_inv.add(key)
+            when = r["start_ts"][5:16].replace(" ", " · ")
+            line = f"  • {when} — {r['title']}"
+            if r.get("venue"):
+                line += f" @ {r['venue']}"
+            line += f" ({r['city']})"
+            inventory_lines.append(line)
+    except Exception:  # noqa: BLE001 — inventory optional
+        pass
+
     if not (_live_plan_enabled() and location
             and (llm is not None or not _hermetic())):
+        if inventory_lines:
+            return "\n".join(
+                [f"*What's on — weekend of "
+                 f"{saturday.strftime('%Y-%m-%d')}* · from your event feeds"]
+                + inventory_lines
+                + ["", "_Live search is offline — this is the verified "
+                       "feed inventory. `/weekend_plan` for a plan._"])
         return ("I need a home area to look things up — set "
                 "RAHAT_GENIE_LOCATION in .env (e.g. \"San Jose, CA\"), "
                 "then ask me again. `/weekend_plan` works offline.")
 
     from agents.genie import live_plan as lp
     subjects = load_family_subjects()
-    saturday = _next_saturday(now)
-    sunday = saturday + timedelta(days=1)
     disc = lp.discover_options(
         location=location,
         sat_iso=saturday.strftime("%Y-%m-%d"),
@@ -643,6 +673,13 @@ def handle_whats_on(*, now: datetime | None = None, llm=None) -> str:
     seen: set[str] = set()
     lines = [f"*What's on — weekend of {saturday.strftime('%Y-%m-%d')}* "
              f"· near {location}"]
+    if inventory_lines:
+        # Inventory FIRST (verified source feeds), search extras after.
+        lines += ["", "*From your event feeds* (verified)"]
+        for inv in inventory_lines[:10]:
+            lines.append(inv)
+            seen.add(inv.split("— ", 1)[-1].split(" @")[0]
+                     .split(" (")[0].casefold())
     for day_name, opts in (("Saturday", disc.saturday),
                            ("Sunday", disc.sunday)):
         day_lines = []
