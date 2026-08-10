@@ -25,10 +25,11 @@ FAMILY_LOG_TOKEN_RE = re.compile(r"\bfamily[\s_-]*log\b", re.I)
 # ─── Genie-owned slash commands (carved out before slash→Kobe) ────────
 # NOTE /replan_day (not /replan — that's Kobe's replan-the-week) and
 # /family (household profile view) joined 2026-08-10; /digest (the
-# on-demand weekend events summary) the same day.
+# on-demand weekend events summary) and /calendar (the household
+# commitments calendar) the same day.
 GENIE_SLASH_RE = re.compile(
     r"^\s*/\s*(genie|weekend_plan|family_log|whatson|swap|why|family"
-    r"|replan_day|digest)\b", re.I)
+    r"|replan_day|digest|calendar)\b", re.I)
 
 # ─── J5 raw list ("what's on this weekend") ───────────────────────────
 WHATS_ON_RE = re.compile(
@@ -73,6 +74,29 @@ REPLAN_TODAY_RE = re.compile(
     r"|\brunning\s+late\b"
     r"|\breplan\s+(?:the\s+)?(?:day|today|rest of the day)\b"
     r"|\bvenue\s+(?:is\s+)?closed\b",
+    re.I,
+)
+
+# ─── household calendar capture (2026-08-10, owner request) ───────────
+# "We have to go to Navya's home for lunch on Saturday", "temple visit
+# Sunday morning", "add the flea market to the calendar", "we're
+# invited to a get-together Saturday", "I want to attend this event
+# Saturday" (spotted on Instagram etc.). Two anchors keep this from
+# over-claiming: an OBLIGATION/INTENT verb phrase AND a day/date word —
+# or an explicit calendar mention.
+_DAY_WORD = (r"(?:mon|tues|wednes|thurs|fri|satur|sun)day|weekend"
+             r"|tomorrow|tonight|today")
+COMMITMENT_NL_RE = re.compile(
+    r"\b(?:add|put)\b[^.\n]{0,60}\b(?:calendar|schedule)\b"
+    r"|\bcalendar\b[^.\n]{0,40}\b(?:add|put)\b"
+    r"|\bwe\s+(?:have|need|got)\s+to\s+"
+    rf"(?:go|attend|be|visit|drop)\b[^.\n]{{0,80}}\b(?:{_DAY_WORD})\b"
+    r"|\bwe(?:'re|\s+are)\s+(?:going|invited|attending|hosting)\b"
+    rf"[^.\n]{{0,80}}\b(?:{_DAY_WORD})\b"
+    rf"|\b(?:get[\s-]*together|sleepover|potluck|temple\s+visit|"
+    rf"birthday\s+party|play\s*date)\b[^.\n]{{0,60}}\b(?:{_DAY_WORD})\b"
+    rf"|\b(?:want|would\s+(?:love|like))\s+to\s+(?:attend|go\s+to|"
+    rf"check\s+out|see)\b[^.\n]{{0,80}}\b(?:{_DAY_WORD})\b",
     re.I,
 )
 
@@ -127,6 +151,9 @@ GENIE_NL_RE = re.compile(
         FAMILY_LOG_TOKEN_RE.pattern,
         WEEKEND_NL_RE.pattern,
         FAMILY_NL_RE.pattern,
+        # Household calendar commitments/wishlist (2026-08-10): weekend
+        # scheduling is Genie's, whichever channel it arrives on.
+        COMMITMENT_NL_RE.pattern,
         r"\bwhat'?s\s+on\b.*\b(week|weekend|saturday|sunday)\b",
         r"\bevents?\b.*\b(week|weekend)\b",
         r"^\s*swap\s+in\s+\S+",

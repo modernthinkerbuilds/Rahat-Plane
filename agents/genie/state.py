@@ -47,6 +47,8 @@ from agents.genie.protocols import (
     KIND_HOUSEHOLD_CHAT_REMOVE,
     KIND_PROFILE_UPDATE,
     KIND_IDEAS_CAPTURE,
+    KIND_CALENDAR_ADD,
+    KIND_CALENDAR_REMOVE,
     FamilySubject,
     WeekendPlan,
     FamilyLogEntry,
@@ -74,6 +76,9 @@ __all__ = [
     "household_ideas",
     "proposal_for_weekend",
     "date_night_rotation",
+    "add_calendar_entry",
+    "remove_calendar_entry",
+    "calendar_entries",
     "list_household_chats",
     "household_role_for",
     "add_household_chat",
@@ -452,6 +457,100 @@ def remove_household_chat(chat_id: str | int, *,
     data.get("household_chats", {}).pop(cid, None)
     _write_store(data)
     return True, "removed"
+
+
+# ───────────────── household calendar (2026-08-10) ──────────────────
+# THE shared calendar both adults (and Bade Miya's channel) read and
+# write — one store, so it is in sync by construction. Entries are
+# either hard "commitment"s (lunch at a friend's, temple visit,
+# sleepover) or "wishlist" events the humans spotted themselves and
+# want to attend. The discovery surfaces read this to flag conflicts.
+def add_calendar_entry(entry: dict, *, by_role: str = "",
+                       trace_id: str | None = None,
+                       db_path: str | None = None) -> tuple[bool, str]:
+    """Add one calendar entry — CHARTER-GATED (KIND_CALENDAR_ADD).
+
+    entry: {title, date "YYYY-MM-DD", start "HH:MM"|"", end "HH:MM"|"",
+    where, kind "commitment"|"wishlist"}. Returns (ok, reason/id).
+    Idempotent on (title, date): re-adding updates times/where instead
+    of duplicating (both adults often mention the same thing)."""
+    import hashlib
+    from datetime import datetime as _dt
+    title = str(entry.get("title") or "").strip()[:120]
+    date = str(entry.get("date") or "").strip()[:10]
+    if not title or len(date) != 10:
+        return False, "bad-entry"
+    kind = entry.get("kind") if entry.get("kind") in (
+        "commitment", "wishlist") else "commitment"
+    eid = hashlib.sha1(f"{title.casefold()}|{date}".encode()
+                       ).hexdigest()[:12]
+    verdict = _charter_gate(KIND_CALENDAR_ADD,
+                            {"id": eid, "date": date, "kind": kind,
+                             "by_role": by_role},
+                            trace_id=trace_id, db_path=db_path)
+    if not verdict.approved:
+        return False, f"charter:{verdict.reason}"
+    row = {"id": eid, "title": title, "date": date,
+           "start": str(entry.get("start") or "").strip()[:5],
+           "end": str(entry.get("end") or "").strip()[:5],
+           "where": str(entry.get("where") or "").strip()[:120],
+           "kind": kind, "by": by_role,
+           "added": _dt.now().isoformat(timespec="seconds")}
+    data = _read_store()
+    cal = data.get("calendar")
+    if not isinstance(cal, list):
+        cal = []
+    cal = [e for e in cal if e.get("id") != eid]     # idempotent update
+    cal.append(row)
+    cal.sort(key=lambda e: (e.get("date", ""), e.get("start", "")))
+    data["calendar"] = cal
+    _write_store(data)
+    return True, eid
+
+
+def remove_calendar_entry(query: str, *, by_role: str = "",
+                          trace_id: str | None = None,
+                          db_path: str | None = None
+                          ) -> tuple[bool, str, dict | None]:
+    """Remove the first entry whose title contains `query` (case-
+    insensitive) — CHARTER-GATED. Returns (ok, reason, removed_row)."""
+    q = (query or "").strip().casefold()
+    if not q:
+        return False, "empty-query", None
+    data = _read_store()
+    cal = data.get("calendar")
+    if not isinstance(cal, list):
+        return False, "not-found", None
+    hit = next((e for e in cal
+                if q in str(e.get("title", "")).casefold()
+                or q in str(e.get("where", "")).casefold()), None)
+    if hit is None:
+        return False, "not-found", None
+    verdict = _charter_gate(KIND_CALENDAR_REMOVE,
+                            {"id": hit.get("id"), "date": hit.get("date"),
+                             "by_role": by_role},
+                            trace_id=trace_id, db_path=db_path)
+    if not verdict.approved:
+        return False, f"charter:{verdict.reason}", None
+    data["calendar"] = [e for e in cal if e.get("id") != hit.get("id")]
+    _write_store(data)
+    return True, "removed", dict(hit)
+
+
+def calendar_entries(start_date: str | None = None,
+                     end_date: str | None = None) -> list[dict]:
+    """Calendar entries, optionally windowed on ISO dates (inclusive),
+    sorted by (date, start). Read-only, never raises."""
+    data = _read_store()
+    cal = data.get("calendar")
+    if not isinstance(cal, list):
+        return []
+    out = [dict(e) for e in cal
+           if isinstance(e, dict) and e.get("date")
+           and (start_date is None or e["date"] >= start_date)
+           and (end_date is None or e["date"] <= end_date)]
+    out.sort(key=lambda e: (e.get("date", ""), e.get("start", "")))
+    return out
 
 
 def last_violations(weekend_of: str | None = None) -> list[str]:

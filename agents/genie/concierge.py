@@ -45,6 +45,7 @@ from agents.genie.live_plan import _parse_json_block
 from agents.genie.state import (
     _read_store,
     _write_store,
+    calendar_entries,
     commit_weekend_plan,
     household_ideas,
     household_location,
@@ -125,6 +126,38 @@ def _inventory_context(now: datetime) -> str:
              for r in rows]
     return ("VERIFIED LOCAL EVENTS (from the household's own source "
             "feeds — prefer these over search results when they fit):\n"
+            + "\n".join(lines))
+
+
+def _calendar_context(now: datetime) -> str:
+    """The household calendar for the next 14 days — HARD scheduling
+    facts for the concierge (owner request 2026-08-10: point out
+    conflicts; 'this event is available, but you have a temple visit —
+    which one do you want?'). Empty calendar = empty string."""
+    try:
+        from datetime import timedelta
+        rows = calendar_entries(
+            now.strftime("%Y-%m-%d"),
+            (now + timedelta(days=14)).strftime("%Y-%m-%d"))
+    except Exception:  # noqa: BLE001 — calendar is optional context
+        return ""
+    if not rows:
+        return ""
+    lines = []
+    for e in rows:
+        when = e.get("start") or "time TBC"
+        if e.get("start") and e.get("end"):
+            when = f"{e['start']}–{e['end']}"
+        tag = ("COMMITTED" if e.get("kind") != "wishlist"
+               else "wants-to-attend")
+        lines.append(f"{e['date']} {when} [{tag}] {e['title']}"
+                     + (f" @ {e['where']}" if e.get("where") else ""))
+    return ("HOUSEHOLD CALENDAR (COMMITTED entries are hard facts — "
+            "NEVER schedule over one silently. If a good event or plan "
+            "stop conflicts with a commitment, SAY SO plainly and ask "
+            "which they prefer — the humans decide, you never drop a "
+            "commitment yourself. wants-to-attend entries are the "
+            "family's own picks — favor them in plans):\n"
             + "\n".join(lines))
 
 
@@ -294,9 +327,9 @@ def step(chat_id: str | int, msg: str, *,
     session = _load_session(cid, now)
 
     context = _household_context(cid)
-    inventory = _inventory_context(now)
-    if inventory:
-        context = context + "\n\n" + inventory
+    for block in (_calendar_context(now), _inventory_context(now)):
+        if block:
+            context = context + "\n\n" + block
     convo = _llm_call(
         _conversation_prompt(context, session["turns"], session["slots"],
                              msg, now),

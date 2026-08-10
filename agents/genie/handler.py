@@ -223,6 +223,20 @@ def handle_weekend_plan(*, now: datetime | None = None,
     sunday = saturday + timedelta(days=1)
     roles = [s.role for s in (attending or subjects)]
 
+    # ── Household calendar: hard commitments this weekend are
+    # SCHEDULING FACTS — discovery must plan around them and the render
+    # shows them first (owner request 2026-08-10: recommendation engine
+    # → scheduling engine).
+    weekend_commits: list[dict] = []
+    try:
+        from agents.genie.state import calendar_entries as _cal_entries
+        weekend_commits = [
+            c for c in _cal_entries(saturday.strftime("%Y-%m-%d"),
+                                    sunday.strftime("%Y-%m-%d"))
+            if c.get("kind") != "wishlist"]
+    except Exception:  # noqa: BLE001 — calendar optional
+        pass
+
     # ─── live discovery (LLM proposes) + deterministic sequencing ───
     live_sat: list[str] | None = None
     live_sun: list[str] | None = None
@@ -245,6 +259,15 @@ def handle_weekend_plan(*, now: datetime | None = None,
         from agents.genie import live_plan as lp
         constraints = [c for s in (attending or subjects)
                        for c in s.constraints]
+        for c in weekend_commits:
+            day = ("Saturday" if c["date"] == saturday.strftime("%Y-%m-%d")
+                   else "Sunday")
+            when = (f" {c['start']}–{c['end']}" if c.get("start")
+                    and c.get("end") else f" {c['start']}"
+                    if c.get("start") else " (time TBC)")
+            constraints.append(
+                f"HARD COMMITMENT {day}{when}: {c['title']} — the family "
+                f"will be there; do not propose overlapping activities")
         disc = lp.discover_options(
             location=location,
             sat_iso=saturday.strftime("%Y-%m-%d"),
@@ -327,6 +350,21 @@ def handle_weekend_plan(*, now: datetime | None = None,
     lines = [header, scope]
     if weather_line:
         lines.append(weather_line)
+
+    # ── Commitments first: the plan is built AROUND these. ──
+    if weekend_commits and not evening_mode:
+        lines += ["", "*Already committed* — everything below plans "
+                      "around these:"]
+        for c in weekend_commits:
+            day = ("Sat" if c["date"] == saturday.strftime("%Y-%m-%d")
+                   else "Sun")
+            when = c.get("start") or "time TBC"
+            if c.get("start") and c.get("end"):
+                when = f"{c['start']}–{c['end']}"
+            cl = f"  📌 {day} {when} — {c['title']}"
+            if c.get("where"):
+                cl += f" @ {c['where']}"
+            lines.append(cl)
 
     # ── The humans' own proposal is the spine (core loop step 5:
     # they hand back a rough idea, Genie refines — never replaces). ──
@@ -622,6 +660,21 @@ def handle_whats_on(*, now: datetime | None = None, llm=None) -> str:
     saturday = _next_saturday(now)
     sunday = saturday + timedelta(days=1)
 
+    # ── Household calendar: what the family is ALREADY committed to
+    # this weekend — rendered first, and used to ⚠️-flag any suggested
+    # event that clashes (owner request 2026-08-10: "this event is
+    # available, but you have a temple visit — which one?").
+    commitment_lines: list[str] = []
+    weekend_commits: list[dict] = []
+    try:
+        from agents.genie import calendar as _cal
+        from agents.genie.state import calendar_entries as _cal_entries
+        weekend_commits = _cal_entries(saturday.strftime("%Y-%m-%d"),
+                                       sunday.strftime("%Y-%m-%d"))
+        commitment_lines = [_cal.entry_line(c) for c in weekend_commits]
+    except Exception:  # noqa: BLE001 — calendar optional
+        pass
+
     # ── Inventory first (PRD §6.3): the registry's verified events for
     # the weekend, before any live search. Works even offline.
     inventory_lines: list[str] = []
@@ -640,19 +693,34 @@ def handle_whats_on(*, now: datetime | None = None, llm=None) -> str:
             if r.get("venue"):
                 line += f" @ {r['venue']}"
             line += f" ({r['city']})"
+            if weekend_commits:
+                try:
+                    from agents.genie import calendar as _cal
+                    hits = _cal.event_conflicts(r, weekend_commits)
+                    if hits:
+                        line += f"\n      {_cal.conflict_note(hits)}"
+                except Exception:  # noqa: BLE001 — notes are best-effort
+                    pass
             inventory_lines.append(line)
     except Exception:  # noqa: BLE001 — inventory optional
         pass
 
     if not (_live_plan_enabled() and location
             and (llm is not None or not _hermetic())):
-        if inventory_lines:
+        if inventory_lines or commitment_lines:
+            head = [f"*What's on — weekend of "
+                    f"{saturday.strftime('%Y-%m-%d')}* · from your "
+                    f"event feeds"]
+            if commitment_lines:
+                head += ["", "*Already on your calendar*"] \
+                    + commitment_lines
+            if inventory_lines:
+                head += ([""] if commitment_lines else []) \
+                    + inventory_lines
             return "\n".join(
-                [f"*What's on — weekend of "
-                 f"{saturday.strftime('%Y-%m-%d')}* · from your event feeds"]
-                + inventory_lines
-                + ["", "_Live search is offline — this is the verified "
-                       "feed inventory. `/weekend_plan` for a plan._"])
+                head + ["", "_Live search is offline — this is the "
+                            "verified feed inventory. `/weekend_plan` "
+                            "for a plan._"])
         return ("I need a home area to look things up — set "
                 "RAHAT_GENIE_LOCATION in .env (e.g. \"San Jose, CA\"), "
                 "then ask me again. `/weekend_plan` works offline.")
@@ -674,6 +742,8 @@ def handle_whats_on(*, now: datetime | None = None, llm=None) -> str:
     seen: set[str] = set()
     lines = [f"*What's on — weekend of {saturday.strftime('%Y-%m-%d')}* "
              f"· near {location}"]
+    if commitment_lines:
+        lines += ["", "*Already on your calendar*"] + commitment_lines
     if inventory_lines:
         # Inventory FIRST (verified source feeds), search extras after.
         lines += ["", "*From your event feeds* (verified)"]
@@ -692,7 +762,7 @@ def handle_whats_on(*, now: datetime | None = None, llm=None) -> str:
             day_lines.append(f"  • {o.render()}")
         if day_lines:
             lines += ["", f"*{day_name}*"] + day_lines
-    if len(seen) == 0:
+    if len(seen) == 0 and not commitment_lines:
         return ("Nothing solid found for next weekend — try again later, "
                 "or `/weekend_plan` for the offline plan.")
     lines += ["", "_Scope: next weekend, family-friendly, near "
@@ -707,8 +777,10 @@ def handle_digest(now: datetime | None = None) -> str:
     Honest when empty: says so, points at the refresh schedule and the
     live-search alternative instead of inventing events."""
     try:
-        from bridges.events.digest import build_digest
-        text = build_digest(now)
+        from bridges.events.digest import build_digest, weekend_window
+        from agents.genie.state import calendar_entries
+        start, end, _ = weekend_window(now)
+        text = build_digest(now, commitments=calendar_entries(start, end))
     except Exception:  # noqa: BLE001 — surface degrades, never crashes
         text = None
     if text:
@@ -717,6 +789,102 @@ def handle_digest(now: datetime | None = None) -> str:
             "the feeds refresh at 7:00, 12:30 and 18:00. `/whatson` does "
             "a live search right now, or just tell me what you feel like "
             "and I'll dig.")
+
+
+# ───────────────── household calendar (2026-08-10) ──────────────────
+def handle_calendar(rest: str = "", *, chat_id=None,
+                    now: datetime | None = None, llm=None) -> str:
+    """/calendar [add <text> | remove <query>] — view / edit the shared
+    household calendar. One store behind every channel, so what one
+    adult adds, the other (and Bade Miya) sees immediately."""
+    from agents.genie import calendar as cal
+    from agents.genie.state import (calendar_entries,
+                                    remove_calendar_entry)
+    now = now or datetime.now()
+    rest = (rest or "").strip()
+    m = re.match(r"add\s+(.+)$", rest, re.I | re.S)
+    if m:
+        return handle_commitment(m.group(1), chat_id=chat_id, now=now,
+                                 llm=llm)
+    m = re.match(r"remove\s+(.+)$", rest, re.I)
+    if m:
+        by = household_role_for(chat_id) if chat_id is not None else ""
+        ok, reason, row = remove_calendar_entry(m.group(1), by_role=by or "")
+        if ok and row:
+            return (f"🗑 Removed from the calendar: {row['title']} — "
+                    f"{row['date']}.")
+        return (f"Couldn't find \"{m.group(1)}\" on the calendar — "
+                f"`/calendar` shows what's on it."
+                if reason == "not-found"
+                else f"Couldn't remove it: {reason}")
+    horizon = (now + timedelta(days=14)).strftime("%Y-%m-%d")
+    return cal.render(calendar_entries(now.strftime("%Y-%m-%d"), horizon),
+                      now)
+
+
+def handle_commitment(msg: str, *, chat_id=None,
+                      now: datetime | None = None, llm=None) -> str:
+    """Free-text commitment/wishlist capture → charter-gated calendar
+    write, plus an immediate conflict read-back against the saved plan.
+
+    The LLM elicits (dates/times normalized); the deterministic parser
+    is the fallback; the humans' words are never lost — if neither can
+    resolve a DATE, we ask instead of guessing."""
+    from agents.genie import calendar as cal
+    from agents.genie.state import (add_calendar_entry, calendar_entries,
+                                    latest_weekend_plan)
+    now = now or datetime.now()
+    by = (household_role_for(chat_id) if chat_id is not None else "") or ""
+    entries = cal.elicit(msg, today_iso=now.strftime("%Y-%m-%d"), llm=llm)
+    if not entries:
+        fb = cal.fallback_parse(msg, now)
+        entries = [fb] if fb else []
+    if not entries:
+        return ("I want to put that on the household calendar but I "
+                "couldn't pin the date — which day is it? (e.g. \"lunch "
+                "at Navya's this Saturday at noon\")")
+
+    lines = []
+    for e in entries[:6]:
+        ok, reason = add_calendar_entry(e, by_role=by)
+        if not ok:
+            lines.append(f"⚠️ Couldn't save \"{e['title']}\": {reason}")
+            continue
+        d = datetime.strptime(e["date"], "%Y-%m-%d")
+        when = f"{d.strftime('%A')} {d.strftime('%b')} {d.day}"
+        if e.get("start"):
+            when += f", {e['start']}" + (f"–{e['end']}" if e.get("end")
+                                         else "")
+        mark = "📌" if e.get("kind") != "wishlist" else "⭐"
+        head = ("On the household calendar" if e.get("kind") != "wishlist"
+                else "On the want-to-attend list")
+        lines.append(f"{mark} {head}: *{e['title']}* — {when}."
+                     + (f" @ {e['where']}" if e.get("where") else ""))
+        # Conflict read-back #1: against OTHER calendar entries that day.
+        others = [o for o in calendar_entries(e["date"], e["date"])
+                  if o.get("title", "").casefold() != e["title"].casefold()]
+        hits = cal.conflicts_for(e["date"], e.get("start", ""),
+                                 e.get("end", ""), others)
+        if hits:
+            lines.append(f"  {cal.conflict_note(hits)}")
+        # Conflict read-back #2: against the saved weekend plan.
+        plan = latest_weekend_plan()
+        if plan is not None and e.get("kind") != "wishlist":
+            sat = plan.weekend_of
+            sun = (datetime.strptime(sat, "%Y-%m-%d")
+                   + timedelta(days=1)).strftime("%Y-%m-%d")
+            if e["date"] in (sat, sun):
+                day = "Saturday" if e["date"] == sat else "Sunday"
+                items = plan.saturday if e["date"] == sat else plan.sunday
+                if items:
+                    lines.append(
+                        f"  ℹ️ Your saved {day} plan has "
+                        f"{len(items)} thing(s) — I'll work around this "
+                        f"commitment next time we plan; `/weekend_plan` "
+                        f"to rebuild now.")
+    lines.append("_Everyone in the household sees this — `/calendar` "
+                 "for the full view._")
+    return "\n".join(lines)
 
 
 # ───────────────────── swap (PRD J1 step 5: iterate) ──────────────────
@@ -934,6 +1102,7 @@ from agents.genie.intents import (  # noqa: E402
     OPTIONS_ARG_RE as _OPTIONS_ARG_RE,
     COUPLE_ONLY_RE as _COUPLE_ONLY_RE,
     EVENING_HINT_RE as _EVENING_HINT_RE,
+    COMMITMENT_NL_RE as _COMMITMENT_NL_RE,
     parse_attendees,
 )
 
@@ -1032,6 +1201,11 @@ def _try_slash_command(msg: str,
     if low.startswith("/digest"):
         return handle_digest()
 
+    # /calendar [add <text> | remove <query>] — the household calendar.
+    if low.startswith("/calendar"):
+        return handle_calendar(norm[len("/calendar"):].strip(),
+                               chat_id=chat_id)
+
     # /family [set location <x>] — J6 profile surface.
     if low.startswith("/family") and not low.startswith("/family_log"):
         rest = norm[len("/family"):].strip()
@@ -1089,6 +1263,11 @@ def route(msg: str, *, chat_id: str | int | None = None) -> str:
     # J4-lite ("we're running late", "venue closed").
     if _REPLAN_TODAY_RE.search(low):
         return handle_replan_today()
+    # Calendar commitments BEFORE the concierge ("we have to go to
+    # Navya's for lunch on Saturday" is a WRITE the whole household
+    # must see, not a conversation turn — owner request 2026-08-10).
+    if _COMMITMENT_NL_RE.search(msg):
+        return handle_commitment(msg, chat_id=chat_id)
 
     # ── Concierge (2026-08-10, the model-first layer) ──────────────
     # Everything conversational goes to the reasoner: it asks what it

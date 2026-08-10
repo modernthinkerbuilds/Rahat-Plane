@@ -97,6 +97,13 @@ KIND_PROFILE_UPDATE = "genie.profile.update"
 # humans' own plan proposals (PRD core loop step 4) is family data —
 # storing it is a charter-gated write like every other.
 KIND_IDEAS_CAPTURE = "genie.ideas.capture"
+# Household calendar (2026-08-10, owner request): commitments the family
+# takes on through the week ("lunch at Navya's Saturday", "temple visit
+# Sunday") plus wishlist events they spot themselves. The calendar is
+# what turns Genie from a recommendation engine into a scheduling
+# engine — every add/remove is a charter-gated family-data write.
+KIND_CALENDAR_ADD = "genie.calendar.add"
+KIND_CALENDAR_REMOVE = "genie.calendar.remove"
 
 ALL_CHARTER_KINDS: tuple[str, ...] = (
     KIND_WEEKEND_PLAN_COMMIT,
@@ -105,6 +112,8 @@ ALL_CHARTER_KINDS: tuple[str, ...] = (
     KIND_HOUSEHOLD_CHAT_REMOVE,
     KIND_PROFILE_UPDATE,
     KIND_IDEAS_CAPTURE,
+    KIND_CALENDAR_ADD,
+    KIND_CALENDAR_REMOVE,
 )
 
 

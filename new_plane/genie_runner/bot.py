@@ -42,6 +42,9 @@ _HELP = (
     "  • `/whatson` — the raw list of what's on near you this weekend\n"
     "  • `/digest` — the weekend events summary (also arrives daily "
     "at 8am)\n"
+    "  • `/calendar` — the shared household calendar. Just tell me "
+    "commitments (\"we have lunch at Navya's Saturday\") and I'll "
+    "track them and flag conflicts\n"
     "  • `swap in <name>` — swap a listed alternate into the saved plan\n"
     "  • `why not <name>` — why something was ruled out\n"
     "  • `/replan_day` — running late? re-plan the rest of today\n"
@@ -179,8 +182,13 @@ def maybe_send_digest(send, now=None) -> bool:
     data["last_digest"] = marker
     state._write_store(data)
 
-    from bridges.events.digest import build_digest
-    text = build_digest(now)
+    from bridges.events.digest import build_digest, weekend_window
+    try:
+        start, end, _ = weekend_window(now)
+        commitments = state.calendar_entries(start, end)
+    except Exception:  # noqa: BLE001 — calendar optional in the digest
+        commitments = []
+    text = build_digest(now, commitments=commitments)
     if not text:
         logger.info("digest skipped — inventory empty for the weekend "
                     "window (feeds refresh 07:00/12:30/18:00)")
