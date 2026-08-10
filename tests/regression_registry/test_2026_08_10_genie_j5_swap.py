@@ -93,7 +93,9 @@ def test_whats_on_routes_from_nl_and_slash(genie):
 
 # ─────────────────────────── swap iteration ───────────────────────────
 def _make_plan(genie):
-    return genie.handle_weekend_plan(llm=_llm)
+    # Opt into the nap guard: these pins exercise nap-aware ordering.
+    return genie.handle_weekend_plan(llm=_llm,
+                                     audience_text="protect the naps")
 
 
 def test_swap_replaces_and_reorders(genie):

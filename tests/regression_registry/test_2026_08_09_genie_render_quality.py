@@ -76,7 +76,8 @@ _INCIDENT_DISCOVERY = {
 
 def _plan(genie):
     return genie.handle_weekend_plan(
-        llm=lambda p: json.dumps(_INCIDENT_DISCOVERY), commit=False)
+        llm=lambda p: json.dumps(_INCIDENT_DISCOVERY), commit=False,
+        audience_text="protect the naps")
 
 
 def test_over_cap_finds_are_offered_not_rejected(genie):

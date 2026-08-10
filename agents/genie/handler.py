@@ -233,7 +233,13 @@ def handle_weekend_plan(*, now: datetime | None = None,
     location = household_location()
     live_ok = (_live_plan_enabled() and location
                and (llm is not None or not _hermetic()))
-    protect_nap = any(r in ("toddler", "newborn") for r in roles)
+    # Nap guard is OPT-IN (owner directive 2026-08-10: "forget toddler
+    # sleep time, doesn't matter unless I say"). It engages only when
+    # the ask mentions naps, or RAHAT_GENIE_NAP_GUARD=1 pins the old
+    # always-on behavior.
+    import os as _os
+    protect_nap = ("nap" in (audience_text or "").lower()
+                   or _os.getenv("RAHAT_GENIE_NAP_GUARD") == "1")
     if live_ok:
         from agents.genie import live_plan as lp
         constraints = [c for s in (attending or subjects)
@@ -1021,6 +1027,20 @@ def route(msg: str, *, chat_id: str | int | None = None) -> str:
     # J4-lite ("we're running late", "venue closed").
     if _REPLAN_TODAY_RE.search(low):
         return handle_replan_today()
+
+    # ── Concierge (2026-08-10, the model-first layer) ──────────────
+    # Everything conversational goes to the reasoner: it asks what it
+    # needs (who's coming, start / be-back times, preferences), then
+    # builds a grounded, timed plan. Deterministic keyword routes below
+    # become the FALLBACK for when the layer is unavailable (flag off,
+    # hermetic without a seam, LLM down) — same shape as ADR-013's
+    # dispatcher-then-reasoner arc on the Miya plane.
+    from agents.genie import concierge as _concierge
+    if _concierge.enabled():
+        reply = _concierge.step(chat_id if chat_id is not None else "solo",
+                                msg)
+        if reply:
+            return reply
     # J5 raw list ("what's on this weekend").
     if _WHATS_ON_RE.search(low):
         return handle_whats_on()

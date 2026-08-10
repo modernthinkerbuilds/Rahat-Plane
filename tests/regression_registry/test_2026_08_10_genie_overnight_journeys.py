@@ -97,12 +97,21 @@ def test_attendee_subset_drops_nap_guard_and_raises_energy(genie):
 def test_default_audience_is_everyone(genie):
     out = genie.handle_weekend_plan(llm=_llm)
     assert "(energy: low)" in out                          # newborn caps it
-    assert "naps protected" in out
+    # Nap guard is OPT-IN since 2026-08-10 ("forget toddler sleep time
+    # unless I say") — default plans carry no nap block.
+    assert "naps protected" not in out
     assert "Childcare" not in out                          # everyone along
 
 
+def test_nap_guard_is_opt_in(genie):
+    out = genie.handle_weekend_plan(llm=_llm,
+                                    audience_text="protect the naps")
+    assert "naps protected" in out
+
+
 def test_time_windows_render(genie):
-    out = genie.handle_weekend_plan(llm=_llm)
+    out = genie.handle_weekend_plan(llm=_llm,
+                                    audience_text="protect the naps")
     assert "Morning (9:00–11:30):" in out
     assert "Midday (12:30–3:00): naps protected" in out
 
@@ -163,7 +172,10 @@ def test_why_not_answers_from_stored_violation(genie, monkeypatch):
     disc["options"]["saturday"].insert(
         1, {"time": "midday", "activity": "Spray Pad", "place": "Hellyer",
             "why": "cool", "source": "parks"})
-    genie.handle_weekend_plan(llm=lambda p: json.dumps(disc))
+    # Nap guard is opt-in since 2026-08-10 — request it so the
+    # violation this pin inspects actually exists.
+    genie.handle_weekend_plan(llm=lambda p: json.dumps(disc),
+                              audience_text="protect the naps")
     out = genie.route("why not spray pad")
     assert "Ruled out" in out and "nap window" in out
 

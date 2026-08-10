@@ -168,7 +168,8 @@ def test_place_is_venue_name_only():
 # ─────────────── handler integration (live + fallbacks) ───────────────
 def test_live_plan_renders_with_location_and_seam(genie, monkeypatch):
     monkeypatch.setenv("RAHAT_GENIE_LOCATION", "Testville, CA")
-    out = genie.handle_weekend_plan(llm=_fake_llm)
+    out = genie.handle_weekend_plan(llm=_fake_llm,
+                                    audience_text="protect the naps")
     assert "Weekend plan — week of" in out        # header contract kept
     assert "live options for Testville, CA" in out
     assert "Weather: Sat — sunny, 24C" in out
@@ -240,6 +241,7 @@ def test_override_scales_live_cap(genie, monkeypatch):
     """high override → 3-outing cap: with nap-guard removing the midday
     item, both remaining Saturday candidates survive."""
     monkeypatch.setenv("RAHAT_GENIE_LOCATION", "Testville, CA")
-    out = genie.handle_weekend_plan(llm=_fake_llm, energy_override="high")
+    out = genie.handle_weekend_plan(llm=_fake_llm, energy_override="high",
+                                    audience_text="protect the naps")
     assert "Farmers' market" in out
     assert "Library story time" in out

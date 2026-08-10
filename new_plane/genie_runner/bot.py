@@ -27,7 +27,13 @@ import os
 logger = logging.getLogger(__name__)
 
 _HELP = (
-    "Here's what I can do:\n"
+    "Easiest way to use me: just tell me what you're thinking — "
+    "\"plan something for Saturday\", \"we want a hike and a good "
+    "dinner\", \"out at 9, back by 4\". I'll ask what I need (who's "
+    "coming, timing, mood) and build a real plan from what's actually "
+    "happening nearby.\n"
+    "\n"
+    "Shortcuts, if you prefer them:\n"
     "  • `/weekend_plan` — a sequenced family weekend plan\n"
     "      add `options` → an A/B choice (reply `go with A`)\n"
     "      add `high`/`medium`/`low` → energy override\n"
