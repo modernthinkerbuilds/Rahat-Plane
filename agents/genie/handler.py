@@ -100,7 +100,8 @@ def handle_genie(text: str = "") -> str:
         f"(energy budget: {energy}).\n"
         f"Try `/weekend_plan` (add `options` for an A/B choice, or "
         f"`just us tonight` for a date night), `/whatson` for the raw "
-        f"list, `swap in <name>` / `why not <name>` to iterate, "
+        f"list, `/digest` for the weekend events summary, "
+        f"`swap in <name>` / `why not <name>` to iterate, "
         f"`/replan_day` when the day slips, `/family` for the "
         f"profile, or `/family_log <role>: <note>` to log."
     )
@@ -699,6 +700,25 @@ def handle_whats_on(*, now: datetime | None = None, llm=None) -> str:
     return "\n".join(lines)
 
 
+# ─────────────────────────── /digest ──────────────────────────────────
+def handle_digest(now: datetime | None = None) -> str:
+    """On-demand weekend digest — the same message the daily 8am
+    proactive send delivers (bridges.events.digest builds both).
+    Honest when empty: says so, points at the refresh schedule and the
+    live-search alternative instead of inventing events."""
+    try:
+        from bridges.events.digest import build_digest
+        text = build_digest(now)
+    except Exception:  # noqa: BLE001 — surface degrades, never crashes
+        text = None
+    if text:
+        return text
+    return ("Nothing verified in your event feeds for the weekend yet — "
+            "the feeds refresh at 7:00, 12:30 and 18:00. `/whatson` does "
+            "a live search right now, or just tell me what you feel like "
+            "and I'll dig.")
+
+
 # ───────────────────── swap (PRD J1 step 5: iterate) ──────────────────
 def handle_swap(query: str) -> str:
     """Swap a remembered alternate into the latest saved plan —
@@ -1006,6 +1026,11 @@ def _try_slash_command(msg: str,
     # /replan_day — J4-lite day-of replan.
     if _REPLAN_TODAY_RE.match(norm):
         return handle_replan_today()
+
+    # /digest — the weekend events summary, on demand (the same message
+    # the daily 8am proactive send delivers).
+    if low.startswith("/digest"):
+        return handle_digest()
 
     # /family [set location <x>] — J6 profile surface.
     if low.startswith("/family") and not low.startswith("/family_log"):

@@ -24,10 +24,11 @@ FAMILY_LOG_TOKEN_RE = re.compile(r"\bfamily[\s_-]*log\b", re.I)
 
 # ─── Genie-owned slash commands (carved out before slash→Kobe) ────────
 # NOTE /replan_day (not /replan — that's Kobe's replan-the-week) and
-# /family (household profile view) joined 2026-08-10.
+# /family (household profile view) joined 2026-08-10; /digest (the
+# on-demand weekend events summary) the same day.
 GENIE_SLASH_RE = re.compile(
     r"^\s*/\s*(genie|weekend_plan|family_log|whatson|swap|why|family"
-    r"|replan_day)\b", re.I)
+    r"|replan_day|digest)\b", re.I)
 
 # ─── J5 raw list ("what's on this weekend") ───────────────────────────
 WHATS_ON_RE = re.compile(

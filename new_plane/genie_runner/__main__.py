@@ -40,7 +40,9 @@ if os.getenv("RAHAT_TEST_MODE") != "1":
 from new_plane.miya_runner.telegram import (  # noqa: E402
     TelegramClient, TelegramConflictError, parse_update,
 )
-from new_plane.genie_runner.bot import process_message  # noqa: E402
+from new_plane.genie_runner.bot import (  # noqa: E402
+    maybe_send_digest, process_message,
+)
 
 logger = logging.getLogger("genie_bot")
 
@@ -101,6 +103,7 @@ def cmd_serve() -> int:
     consecutive_errors = 0
     conflict_errors = 0
     last_nudge_check = -1
+    last_digest_minute = -1
     while _RUNNING:
         try:
             updates = tg.get_updates(offset=last_id + 1)
@@ -139,6 +142,19 @@ def cmd_serve() -> int:
                                     "`/weekend_plan` (or `/weekend_plan "
                                     "options` for an A/B choice).")
                             logger.info("Friday nudge sent")
+
+            # ── Daily weekend digest (owner request 2026-08-10) —
+            # default ON. All firing logic (flag, hour, once-per-day
+            # marker, household fan-out) lives in bot.maybe_send_digest;
+            # this is just the once-a-minute doorbell.
+            import datetime as _dt2
+            _dnow = _dt2.datetime.now()
+            if _dnow.minute != last_digest_minute:
+                last_digest_minute = _dnow.minute
+                try:
+                    maybe_send_digest(tg.send_message, _dnow)
+                except Exception as e:  # noqa: BLE001 — never kill the loop
+                    logger.warning("digest tick failed: %s", e)
 
             consecutive_errors = 0
             conflict_errors = 0

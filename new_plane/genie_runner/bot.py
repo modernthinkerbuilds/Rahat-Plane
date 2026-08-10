@@ -40,6 +40,8 @@ _HELP = (
     "      add `just us tonight` → date night (childcare guard on)\n"
     "      add `without the newborn` → subset outing\n"
     "  • `/whatson` — the raw list of what's on near you this weekend\n"
+    "  • `/digest` — the weekend events summary (also arrives daily "
+    "at 8am)\n"
     "  • `swap in <name>` — swap a listed alternate into the saved plan\n"
     "  • `why not <name>` — why something was ruled out\n"
     "  • `/replan_day` — running late? re-plan the rest of today\n"
@@ -139,6 +141,61 @@ def _handle_household(chat_id: str, text: str, role: str) -> str:
     if role == "primary":
         lines.append("_Primary can `/household remove <chat_id>`._")
     return "\n".join(lines)
+
+
+def maybe_send_digest(send, now=None) -> bool:
+    """Daily weekend-digest tick (owner-requested proactivity,
+    2026-08-10: "a daily summary both for me and for my wife on the
+    Genie chatbots… this is what's lined up for the weekend").
+
+    Transport-independent so tests drive it with a fake `send(chat_id,
+    text)`. Called once a minute by the poll loop; everything else is
+    decided HERE:
+
+      * flag `GENIE_DIGEST_ENABLED` — default ON (explicit owner
+        request satisfies PRD §6.6 propose-never-auto-act; the flag is
+        the off-switch, not the earn-it gate the Friday nudge has);
+      * fires in the `GENIE_DIGEST_HOUR` hour (default 8 — right after
+        the 07:00 inventory refresh);
+      * store marker `last_digest` dedupes to once per calendar day —
+        also set when the inventory is EMPTY, because an empty 8am
+        inventory won't refill until 12:30 and a "nothing yet" ping
+        every morning is noise, not service;
+      * fan-out: every allowlisted household chat.
+
+    Returns True iff a digest was actually sent.
+    """
+    import datetime as _dt
+    now = now or _dt.datetime.now()
+    if os.getenv("GENIE_DIGEST_ENABLED", "1") != "1":
+        return False
+    if now.hour != int(os.getenv("GENIE_DIGEST_HOUR", "8") or 8):
+        return False
+    from agents.genie import state
+    marker = now.strftime("%Y-%m-%d")
+    data = state._read_store()
+    if data.get("last_digest") == marker:
+        return False
+    data["last_digest"] = marker
+    state._write_store(data)
+
+    from bridges.events.digest import build_digest
+    text = build_digest(now)
+    if not text:
+        logger.info("digest skipped — inventory empty for the weekend "
+                    "window (feeds refresh 07:00/12:30/18:00)")
+        return False
+    chats = state.list_household_chats()
+    if not chats:
+        logger.info("digest built but no household chats enrolled yet")
+        return False
+    for cid in chats:
+        try:
+            send(cid, text)
+        except Exception as e:  # noqa: BLE001 — one bad chat ≠ no digest
+            logger.warning("digest send to %s failed: %s", cid, e)
+    logger.info("weekend digest sent to %d household chat(s)", len(chats))
+    return True
 
 
 def process_message(chat_id: str | int, text: str) -> str:
