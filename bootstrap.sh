@@ -55,13 +55,10 @@ echo "    deps installed (runtime + dev)."
 # ── 4. Render launchd plists from templates ─────────────────────────────
 echo ""
 echo "── 4. rendering launchd plists from templates ──"
-for tmpl in core/com.rahat.miya.plist.template \
+for tmpl in scripts/com.rahat.miya.v2.plist.template \
+            scripts/com.rahat.genie.plist.template \
             bridges/sugarwod/com.rahat.sugar.bridge.plist.template \
-            skills/com.rahat.vitals.plist.template \
-            scripts/jobs/com.rahat.regression.plist.template \
-            scripts/jobs/com.rahat.greenstreak.plist.template \
-            scripts/jobs/com.rahat.hygiene.plist.template \
-            scripts/jobs/com.rahat.evolve.plist.template; do
+            skills/com.rahat.vitals.plist.template; do
   if [ ! -f "$tmpl" ]; then
     echo "    skipped (no template): $tmpl"
     continue
@@ -70,9 +67,6 @@ for tmpl in core/com.rahat.miya.plist.template \
   sed "s|{{RAHAT_HOME}}|${RAHAT_HOME}|g" "$tmpl" > "$out"
   echo "    rendered: $out"
 done
-
-# Make the job scripts executable.
-chmod +x scripts/jobs/*.sh 2>/dev/null || true
 
 # ── 5. .env scaffolding ─────────────────────────────────────────────────
 echo ""
@@ -97,24 +91,18 @@ echo ""
 echo "════════════════════════════════════════════════════════════════════"
 echo "  Bootstrap complete."
 echo ""
-echo "  To install the launchd services on macOS:"
-echo "      cp core/com.rahat.miya.plist             ~/Library/LaunchAgents/"
-echo "      cp bridges/sugarwod/com.rahat.sugar.bridge.plist  ~/Library/LaunchAgents/"
-echo "      cp skills/com.rahat.vitals.plist         ~/Library/LaunchAgents/"
-echo "      for s in miya sugar.bridge vitals; do"
-echo "          launchctl load ~/Library/LaunchAgents/com.rahat.\$s.plist"
-echo "      done"
+echo "  To install the launchd services on macOS (each has an installer"
+echo "  that renders the plist, loads it, and verifies):"
+echo "      bash scripts/install_new_miya.sh        # com.rahat.miya.v2"
+echo "      bash scripts/install_genie_bot.sh       # com.rahat.genie"
+echo "      bash scripts/install_events_ingest.sh   # com.rahat.events"
+echo "      bash scripts/install_vitals_bridge.sh   # com.rahat.vitals.v2"
 echo ""
-echo "  To install the four nightly jobs (tests, greenstreak, hygiene, evolve):"
-echo "      cp scripts/jobs/com.rahat.regression.plist  ~/Library/LaunchAgents/"
-echo "      cp scripts/jobs/com.rahat.greenstreak.plist ~/Library/LaunchAgents/"
-echo "      cp scripts/jobs/com.rahat.hygiene.plist     ~/Library/LaunchAgents/"
-echo "      cp scripts/jobs/com.rahat.evolve.plist      ~/Library/LaunchAgents/"
-echo "      for j in regression greenstreak hygiene evolve; do"
-echo "          launchctl load ~/Library/LaunchAgents/com.rahat.\$j.plist"
-echo "      done"
-echo ""
-echo "  See scripts/jobs/JOBS.md for the full operations guide."
+echo "  Retired 2026-08-11 — do not reinstate without reading the commit:"
+echo "      com.rahat.miya (superseded by miya.v2), and the four nightly"
+echo "      jobs (regression / greenstreak / hygiene / evolve), dead since"
+echo "      2026-05-10. greenstreak auto-committed to main on green — that"
+echo "      is the specific behavior we do NOT want back."
 echo ""
 echo "  To run tests anytime:"
 echo "      RAHAT_TEST_MODE=1 ./venv/bin/python -m tests.run_all"

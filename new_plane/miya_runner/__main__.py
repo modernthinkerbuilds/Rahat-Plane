@@ -49,20 +49,13 @@ LOG_PATH = os.getenv("NEW_MIYA_LOG_PATH",
 
 
 def _configure_logging() -> None:
-    level = os.getenv("NEW_MIYA_LOG_LEVEL", "INFO").upper()
-    handlers: list[logging.Handler] = [logging.StreamHandler(sys.stdout)]
-    if LOG_PATH:
-        try:
-            p = Path(LOG_PATH).expanduser()
-            p.parent.mkdir(parents=True, exist_ok=True)
-            handlers.append(logging.FileHandler(p, encoding="utf-8"))
-        except Exception as e:
-            print(f"[warn] can't write to {LOG_PATH}: {e}", file=sys.stderr)
-    logging.basicConfig(
-        level=getattr(logging, level, logging.INFO),
-        format="%(asctime)s %(levelname)s %(name)s :: %(message)s",
-        handlers=handlers,
-    )
+    # Single source: new_plane.log_setup — it skips the FileHandler when
+    # launchd has already redirected stdout to the same file (the
+    # every-line-twice bug, 2026-08-11).
+    from new_plane.log_setup import configure
+    configure(str(Path(LOG_PATH).expanduser()) if LOG_PATH
+              else "/dev/null",
+              level=os.getenv("NEW_MIYA_LOG_LEVEL", "INFO"))
 
 
 _RUNNING = True

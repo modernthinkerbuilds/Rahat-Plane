@@ -50,17 +50,12 @@ _RUNNING = True
 
 
 def _configure_logging() -> None:
-    log_path = os.getenv("GENIE_LOG_PATH", "vault/genie_bot.log")
-    handlers: list[logging.Handler] = [logging.StreamHandler()]
-    try:
-        Path(log_path).parent.mkdir(parents=True, exist_ok=True)
-        handlers.append(logging.FileHandler(log_path))
-    except Exception:  # noqa: BLE001 — stdout-only is fine
-        pass
-    logging.basicConfig(
-        level=os.getenv("GENIE_LOG_LEVEL", "INFO").upper(),
-        format="%(asctime)s %(levelname)s %(name)s :: %(message)s",
-        handlers=handlers)
+    # Single source: new_plane.log_setup — it skips the FileHandler when
+    # launchd has already redirected stdout to the same file (the
+    # every-line-twice bug, 2026-08-11).
+    from new_plane.log_setup import configure
+    configure(os.getenv("GENIE_LOG_PATH", "vault/genie_bot.log"),
+              level=os.getenv("GENIE_LOG_LEVEL", "INFO"))
 
 
 def _install_signal_handlers() -> None:

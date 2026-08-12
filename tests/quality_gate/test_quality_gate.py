@@ -158,7 +158,14 @@ class TestRoutingFidelity:
 
 
 # ─── G. Classifier fuzz (Hypothesis) ──────────────────────────────────
-_VALID_PATHS = {"kobe_route", "fraser_route", "huberman_route", "orchestrate"}
+# Every sentinel the dispatcher can legitimately return. STALE-PRONE:
+# written before Genie was registered as agent #4 (2026-08-06), and the
+# omission hid until Hypothesis happened to generate "WEEKENDPLAN" on
+# 2026-08-11 — the fuzz is random, so a missing sentinel stays invisible
+# until the RNG finds it. When a new agent gets a route, add it HERE in
+# the same commit.
+_VALID_PATHS = {"kobe_route", "fraser_route", "huberman_route",
+                "genie_route", "orchestrate"}
 
 
 class TestClassifierProperties:
