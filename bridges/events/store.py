@@ -20,11 +20,31 @@ from datetime import datetime
 
 
 def db_path() -> str:
-    return os.getenv(
-        "RAHAT_EVENTS_DB",
-        os.getenv("RAHAT_VITALS_DB",
-                  os.path.expanduser(
-                      "~/developer/agency/rahat/vault/rahat.db")))
+    """Resolve the inventory DB path.
+
+    Order: explicit RAHAT_EVENTS_DB → TEST-MODE SANDBOX → RAHAT_VITALS_DB
+    → the live vault DB.
+
+    The test-mode branch is load-bearing (caught live 2026-08-12): the
+    pre-push gate failed on the owner's Mac because an OLD test called
+    handle_whats_on, which now reads the inventory — and with no
+    explicit override this fell through to the LIVE vault/rahat.db,
+    where that morning's refresh had planted real Santa Cruz rows. A
+    test reading (or worse, WRITING) the live DB is the 2026-05-08
+    corruption incident class; under RAHAT_TEST_MODE=1 every path must
+    resolve inside the sandbox, mirroring genie.state._vault_dir()."""
+    explicit = os.getenv("RAHAT_EVENTS_DB")
+    if explicit:
+        return explicit
+    if os.getenv("RAHAT_TEST_MODE") == "1":
+        import tempfile
+        sandbox = os.getenv("RAHAT_TEST_VAULT_DIR") or os.path.join(
+            tempfile.gettempdir(), f"rahat_test_{os.getpid()}")
+        os.makedirs(sandbox, exist_ok=True)
+        return os.path.join(sandbox, "events_test.db")
+    return os.getenv("RAHAT_VITALS_DB",
+                     os.path.expanduser(
+                         "~/developer/agency/rahat/vault/rahat.db"))
 
 
 def _connect(path: str | None = None) -> sqlite3.Connection:
