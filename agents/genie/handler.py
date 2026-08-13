@@ -1239,6 +1239,24 @@ def route(msg: str, *, chat_id: str | int | None = None) -> str:
     if slash is not None:
         return slash
 
+    # ── An ACTIVE concierge conversation owns the next message (live
+    # incident 2026-08-12): Genie asked "1. cultural lean? 2. toddler
+    # stop? 3. stroller?" and the numbered three-line ANSWER tripped
+    # _is_freeform → capture → "📥 Captured your plan" → conversation
+    # dead, no plan. If Genie just asked, the reply is the answer —
+    # not a proposal, not a keyword command. Slash commands still win
+    # above (an explicit /command is always an exit hatch), and if the
+    # concierge layer is down (returns None) we fall through to the
+    # normal routes.
+    from agents.genie import concierge as _concierge
+    if (_concierge.enabled()
+            and _concierge.has_active_session(
+                chat_id if chat_id is not None else "solo")):
+        reply = _concierge.step(chat_id if chat_id is not None else "solo",
+                                msg)
+        if reply:
+            return reply
+
     # Free-form preempts ALL keyword intents (live incident 2026-08-09:
     # 'adults only' + 'high' buried in a six-weekend proposal hijacked
     # it into a wrong date-night plan). A long message IS the content —

@@ -85,7 +85,64 @@ DEFAULT_SOURCES: list[dict] = [
     {"id": "funcheap-sj", "name": "Funcheap South Bay",
      "kind": "search", "url": "https://sf.funcheap.com/region/san-jose/",
      "city": "Bay Area", "categories": ["free", "festival", "family"],
-     "query_hint": "free and cheap events, kids & families category"},
+     "query_hint": "free and cheap events, kids & families category",
+     "region": "south-bay"},
+    # ══ Region expansion (owner, 2026-08-12): "I want genie to
+    # recommend plans everywhere — northern SF, SF, East Bay, South
+    # Bay, from Marin to Walnut Creek, Moraga to Big Sur." One anchor
+    # source per region; the vault overlay adds more without commits. ══
+    # ── San Francisco ──
+    {"id": "funcheap-sf", "name": "Funcheap San Francisco",
+     "kind": "search", "url": "https://sf.funcheap.com",
+     "city": "San Francisco", "categories": ["free", "festival", "family"],
+     "query_hint": "free and cheap SF events, festivals, street fairs, "
+                   "kids & families", "region": "sf"},
+    {"id": "sf-rec-parks", "name": "SF Recreation & Parks + city events",
+     "kind": "search", "url": "https://sfrecpark.org",
+     "city": "San Francisco", "categories": ["city", "family", "outdoor"],
+     "query_hint": "Golden Gate Park events, playland, family programs, "
+                   "museum free days", "region": "sf"},
+    # ── North Bay / Marin ──
+    {"id": "marin-events", "name": "Marin County events",
+     "kind": "search", "url": "https://marinmommies.com",
+     "city": "Marin", "categories": ["family", "outdoor", "festival"],
+     "query_hint": "Marin County family events: Sausalito, Mill Valley, "
+                   "San Rafael, Point Reyes — festivals, farms, markets",
+     "region": "north-bay"},
+    # ── East Bay (Oakland/Berkeley → Walnut Creek/Moraga) ──
+    {"id": "eastbay-510", "name": "East Bay events (Oakland/Berkeley)",
+     "kind": "search", "url": "https://www.visitoakland.com",
+     "city": "Oakland", "categories": ["family", "festival", "culture"],
+     "query_hint": "Oakland and Berkeley events: First Fridays, Fairyland, "
+                   "Chabot, Lawrence Hall of Science, waterfront festivals",
+     "region": "east-bay"},
+    {"id": "eastbay-diablo", "name": "Walnut Creek / Lamorinda events",
+     "kind": "search", "url": "https://www.walnutcreekdowntown.com",
+     "city": "Walnut Creek", "categories": ["family", "market", "show"],
+     "query_hint": "Walnut Creek, Moraga, Lafayette, Danville events: "
+                   "downtown festivals, Lesher Center shows, farmers "
+                   "markets", "region": "east-bay"},
+    # ── Peninsula ──
+    {"id": "peninsula-events", "name": "Peninsula events (Burlingame–RWC)",
+     "kind": "search", "url": "https://www.redwoodcity.org/events",
+     "city": "Redwood City", "categories": ["city", "family", "music"],
+     "query_hint": "Peninsula events: Redwood City courthouse square "
+                   "concerts, Burlingame, San Mateo, Half Moon Bay",
+     "region": "peninsula"},
+    # ── Santa Cruz ──
+    {"id": "santa-cruz", "name": "Santa Cruz events",
+     "kind": "search", "url": "https://www.santacruz.org/events",
+     "city": "Santa Cruz", "categories": ["family", "outdoor", "beach"],
+     "query_hint": "Santa Cruz events: Boardwalk, wharf, downtown, "
+                   "Capitola — festivals, beach events, family days",
+     "region": "santa-cruz"},
+    # ── Monterey / Carmel / Big Sur ──
+    {"id": "monterey-bigsur", "name": "Monterey · Carmel · Big Sur events",
+     "kind": "search", "url": "https://www.seemonterey.com/events",
+     "city": "Monterey", "categories": ["family", "outdoor", "coastal"],
+     "query_hint": "Monterey Bay, Carmel, Pacific Grove, Big Sur events: "
+                   "aquarium programs, coastal festivals, whale season",
+     "region": "monterey"},
 ]
 
 

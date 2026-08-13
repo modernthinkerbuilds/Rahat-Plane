@@ -91,6 +91,18 @@ def _load_session(chat_id: str, now: datetime) -> dict:
             "slots": dict(s.get("slots") or {})}
 
 
+def has_active_session(chat_id: str | int,
+                       now: datetime | None = None) -> bool:
+    """True when this chat has a live concierge conversation (turns
+    within TTL). route() checks this BEFORE the freeform-capture
+    preempt: if Genie just asked a question, the next message is the
+    ANSWER — live incident 2026-08-12, where a three-line numbered
+    reply ('1 lively market…') tripped the multi-line freeform check
+    and got captured as a proposal, killing the conversation."""
+    now = now or datetime.now()
+    return bool(_load_session(str(chat_id), now)["turns"])
+
+
 def _save_session(chat_id: str, session: dict, now: datetime) -> None:
     data = _read_store()
     sessions = data.get("concierge_sessions")
@@ -218,6 +230,21 @@ Decide ONE of:
   events/venue search.
 - "chat": small talk / a question you can answer directly from context.
 
+DESTINATION — the WHOLE Bay Area and coast is your range: SF, North
+Bay/Marin, East Bay out to Walnut Creek/Moraga, Peninsula, South Bay,
+Santa Cruz, Monterey/Carmel/Big Sur. If they name a place ("something
+in Marin", "day in Santa Cruz"), set slots.destination and plan THERE —
+never silently substitute the home area. Planning a full day with no
+destination known? One of your ask-questions may offer the choice:
+stay local, or a day trip (name 2-3 concrete directions). Carry
+destination into search_brief.
+
+ASK BUDGET — at most 2 "ask" rounds per outing. Count the questions
+you've already asked in the conversation; if you've asked twice, mode
+MUST be "plan": make tasteful assumptions from what you have and note
+them in the plan. NEVER let the conversation end without a question or
+a plan — you are a concierge, not a note-taker.
+
 If both adults' kids stay home for a couple outing, remember to check
 childcare in your reply — ask, never assume.
 
@@ -225,26 +252,42 @@ Return STRICT JSON only, no fences:
 {{"mode": "ask" | "plan" | "chat",
   "reply": "your message to them (used for ask/chat)",
   "slots": {{...merged updated slots: party, start_time, return_time,
-             preferences, date, notes...}},
+             destination, preferences, date, notes...}},
   "search_brief": "only when mode=plan"}}"""
 
 
 def _plan_prompt(context: str, slots: dict, brief: str,
                  now: datetime) -> str:
+    destination = str(slots.get("destination") or "").strip()
+    dest_block = (
+        f"DESTINATION: {destination}. Every stop is AT the destination "
+        f"(or genuinely en route). The FIRST timeline entry is the drive "
+        f"out from the home area with a realistic weekend drive time and "
+        f"a departure time that makes the first stop work; the LAST is "
+        f"the drive home, landing BEFORE their be-back-by time. Long"
+        f"-haul destinations (Big Sur, Monterey) mean fewer, better "
+        f"stops — never pad the day to fill hours."
+        if destination else
+        "No destination named — plan near the home area, but if a "
+        "clearly better fit for their brief is a short drive away (a "
+        "festival in the next city over), take it and say why.")
     return f"""You are Genie, a top-tier family concierge. Today is
 {now.strftime('%A %Y-%m-%d')}. Use web search to find REAL, current
 options — events happening on the requested date, venues open at the
-right hours, latest happenings near the location.
+right hours, latest happenings near where they're going.
 
 {context}
 
 The brief: {brief}
 Slots: {json.dumps(slots)}
+{dest_block}
 
-Build ONE excellent, concrete, TIME-SEQUENCED plan inside their window
+Build ONE excellent, concrete, HOUR-BY-HOUR plan inside their window
 (start to be-back-by), matched to their stated preferences. Real places
-and events only — things you actually found via search. Include drive
-or transition sense between stops. 2-3 backups they can swap in.
+and events only — things you actually found via search. Every timeline
+entry gets a time; include the drives/transitions between stops as
+their own entries with realistic durations. 2-3 backups they can swap
+in (backups at the same destination, not back home).
 
 Return STRICT JSON only, no fences:
 {{"title": "short title with the date",
