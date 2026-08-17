@@ -206,7 +206,11 @@ def test_gate_rules_are_vault_data_with_pair_and_claim_shapes(env,
     rules = {"rules": [
         {"kind": "pair_line", "token": "exampleorg",
          "requires": "(volunteer)", "why": "must carry (Volunteer)"},
-        {"kind": "claim_forbid", "pattern": r"grant[\s-]?making",
+        # Alternation ON PURPOSE: an ungrouped interpolation once made
+        # the first branch match bare (any mention blocked — including
+        # the negated Hewlett move). Caught in launch rehearsal.
+        {"kind": "claim_forbid",
+         "pattern": r"grant[\s-]?making|proposal\s+writing",
          "why": "grantmaking may never be claimed"},
     ]}
     p = tmp_path / "rules.json"
@@ -231,6 +235,19 @@ def test_gate_rules_are_vault_data_with_pair_and_claim_shapes(env,
         "grantmaking side of the table - I have lived the other side.",
         source=src, role_bullets={})
     assert negated.ok, negated.failures     # the Hewlett move must pass
+
+    # Bare mention (no claim verbs) and negated-experience phrasing
+    # both pass; the alternation's second branch still bites.
+    bare = verify_package(
+        resume_text="", letter_text="Grantmaking shapes what programs "
+        "can deliver; I have watched it from the grantee side.",
+        source=src, role_bullets={})
+    assert bare.ok, bare.failures
+    prop = verify_package(
+        resume_text="", letter_text="I have deep experience in "
+        "proposal writing for major funders.", source=src,
+        role_bullets={})
+    assert any("claimed" in f for f in prop.failures)
 
 
 def test_banned_phrase_blocks(env):

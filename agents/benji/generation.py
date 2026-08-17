@@ -187,6 +187,14 @@ def _story_line(source: CandidateSource, name: str) -> str:
 def _letter_for_role(source: CandidateSource, job: dict, story: str, *,
                      llm=None) -> tuple[str, bool]:
     research = (job.get("jd_text") or "")[:2500]
+    # Pre-warn the model with the gate's own rules (vault data → prompt;
+    # nothing personal in code). Learned in rehearsal: a foundation JD's
+    # grantmaking-heavy vocabulary pulls the draft into claim phrasing,
+    # and pre-warning beats retrying.
+    from agents.benji.verification import load_gate_rules
+    rules, _ = load_gate_rules()
+    tripwires = "\n".join(f"- {r.get('why')}" for r in rules
+                          if r.get("why"))
     prompt = f"""Draft a cover letter (350–450 words, 4–5 paragraphs) following
 EXACTLY this four-move model: (1) open on a concrete image, not a claim;
 (2) name a real gap and turn it into the offer; (3) reference something
@@ -200,6 +208,10 @@ the letter: {_story_line(source, story)}. Never write: "I am thrilled to
 apply", "uniquely suited/qualified", "ideal candidate", "passionate
 about", "aligns perfectly with", "at the intersection of". Warm, plain,
 candid; shorter sentences. Return ONLY the letter body.
+
+A MECHANICAL GATE will scan your draft and BLOCK it on any of these —
+phrase around them (naming a gap honestly passes; claiming it fails):
+{tripwires}
 
 CANDIDATE RECORD (the only source of facts about her):
 Narrative: {source.narrative}
@@ -332,7 +344,8 @@ def generate_package(display_id: int, *, llm=None,
                 "refusal": f"vetoed: {verdict.reason}"}
 
     jd_terms = _terms(job.get("jd_text", ""))
-    req_terms = jd_terms  # section-weighted subset upgrade: S4
+    from agents.benji.coverage import required_terms
+    req_terms = required_terms(job.get("jd_text", "")) or jd_terms
     diff_lines: list[str] = []
     flags: list[str] = list(src_warnings)
     if jdless:
@@ -346,9 +359,15 @@ def generate_package(display_id: int, *, llm=None,
     for role in source.roles:
         chosen, note = select_bullets(role, jd_terms, req_terms)
         if "deviated" in note:
-            kept = [role.bullets[i][:60] for i in chosen]
-            diff_lines.append(f"- {role.org or role.title}: {note}: "
-                              + " | ".join(kept))
+            base = role.default_pick[:role.max_bullets] or \
+                list(range(min(len(role.bullets), role.max_bullets)))
+            added = [i for i in chosen if i not in base]
+            dropped = [i for i in base if i not in chosen]
+            diff_lines.append(f"- {role.org or role.title} — {note}:")
+            for i in added:
+                diff_lines.append(f"    + {role.bullets[i][:90]}")
+            for i in dropped:
+                diff_lines.append(f"    - {role.bullets[i][:90]}")
         roles_out.append({"title": role.title, "org": role.org,
                           "dates": role.dates, "location": role.location,
                           "bullets": [role.bullets[i] for i in chosen]})

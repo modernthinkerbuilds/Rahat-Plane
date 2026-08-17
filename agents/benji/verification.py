@@ -144,13 +144,21 @@ def _apply_rule(rule: dict, doc: str, label: str,
             and re.search(rule["pattern"], low):
         return f"{label}: {why}"
     if kind == "claim_forbid":
-        pat = rule["pattern"]
+        # (?:...) wrap is load-bearing: a vault pattern with a top-level
+        # alternation ("a|b") would otherwise contribute a BARE branch
+        # that matches any mention — which blocked the Hewlett letter's
+        # own "never sat on the grantmaking side" move (rehearsal,
+        # 2026-08-17).
+        pat = f"(?:{rule['pattern']})"
         claim = re.compile(_CLAIM_VERBS + r"[^.\n]{0,60}" + pat + "|"
                            + pat + r"[^.\n]{0,30}\b(experience|expertise"
                            r"|background|skills)\b", re.I)
         if is_resume and re.search(pat, low):
             return f"{label}: {why} (any mention, resume)"
-        if claim.search(doc):
+        for m in claim.finditer(doc):
+            pre = doc[max(0, m.start() - 40):m.start()].lower()
+            if re.search(r"\b(never|not|no|without)\b[^.\n]{0,30}$", pre):
+                continue          # negated — naming the gap passes
             return f"{label}: {why} (claimed)"
     if kind == "pair_line":
         tok, req = rule["token"].lower(), rule["requires"].lower()

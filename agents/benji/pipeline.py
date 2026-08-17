@@ -129,7 +129,12 @@ def run_cycle(*, http, now: datetime | None = None,
     sources: list[dict] = []
     for s in cfg.get("sources", []):
         s = dict(s)
-        s["source"] = s.get("org", s.get("token", "?"))
+        # Ledger/liveness identity: firm name for search firms (their
+        # org field is empty — the ORGS are what they list), else org,
+        # else token. Empty-string collisions here would cross-close
+        # two firms' rows via mark_missing_closed.
+        s["source"] = (s.get("firm") or s.get("org")
+                       or s.get("token") or "?")
         sources.append(s)
     if cfg.get("npag_enabled"):
         # dateless: presence on the page is freshness (see
@@ -157,6 +162,10 @@ def run_cycle(*, http, now: datetime | None = None,
         try:
             if src["platform"] == "npag":
                 postings = fetch_npag(http)
+            elif src["platform"] == "searchfirm":
+                from bridges.jobsearch.fetchers import fetch_searchfirm
+                postings = fetch_searchfirm(src["url"], http,
+                                            firm=src.get("firm", name))
             else:
                 fetcher = PLATFORM_FETCHERS[src["platform"]]
                 retries = 1 if src["platform"] == "ashby" else 0

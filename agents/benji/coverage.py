@@ -170,3 +170,14 @@ def coverage(jd_text: str, candidate_text: str, *,
     quality = ("sections" if len(sections) > 1 else "flat")
     return CoverageReport(round(hit / total, 4),
                           sorted(matched), unmatched[:25], quality)
+
+
+def required_terms(jd_text: str) -> set[str]:
+    """Terms from the REQUIRED-qualifications sections only (weight
+    ≥2.5). Bullet selection prefers these over the JD's preferred-quals
+    and boilerplate — Generation Spec §2 rule 1, made literal."""
+    out: set[str] = set()
+    for w, chunk in split_sections(jd_text):
+        if w >= 2.5:
+            out |= _terms(chunk)
+    return out

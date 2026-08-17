@@ -218,7 +218,7 @@ class _NpagParser(HTMLParser):
                     or low in self.SKIP_LINK_TEXT
                     or href.startswith(("#", "mailto:"))):
                 continue
-            out.append({"title": text, "org": last_head or "NPAG search",
+            out.append({"title": text, "org": last_head,
                         "canonical_url": href})
         return out
 
@@ -240,6 +240,7 @@ def fetch_npag(http, *, include_detail: bool = True) -> list[dict]:
         # URL is the application destination, so join against the page
         # base (first-live-run lesson, 2026-08-17).
         e["canonical_url"] = urljoin(NPAG_URL, e["canonical_url"])
+        e["org"] = e.get("org") or "NPAG search"
         e.update({"location": "", "posted_date": None, "jd_text": "",
                   "comp_range": ""})
         # S2 enrichment: the npag.com detail page carries the full
@@ -321,6 +322,51 @@ def fetch_workday(token: str, http) -> list[dict]:
             "_posted_days_ago": int(m.group(1)) if m else None,
         })
     return out
+
+
+_GENERIC_HEADINGS = re.compile(
+    r"^(our searches|active\s*searches|current searches|open searches|"
+    r"quick links|functional specialization|expertise|npag search)$", re.I)
+
+
+def fetch_searchfirm(url: str, http, *, firm: str = "search firm",
+                     min_entries: int = 2) -> list[dict]:
+    """Generic Tier-3 search-firm page: same tolerant card scrape as
+    NPAG (headings = org, links = titles), no detail enrichment (page
+    structures unknown; the jd-less kit flow handles it honestly).
+    Yields ParseFailed → ledger, never a silent zero."""
+    from urllib.parse import urljoin
+
+    page = http("GET", url)
+    if not isinstance(page, str):
+        raise ParseFailed("search-firm page returned non-text")
+    p = _NpagParser()
+    p.feed(page)
+    entries = p.entries()
+    # Titles on these pages must look like ROLES, not nav: require the
+    # noun/level shape the filter also uses (cheap pre-screen).
+    role_like = [e for e in entries
+                 if re.search(r"(director|officer|manager|associate|"
+                              r"lead|president|coordinator|specialist|"
+                              r"advisor|counsel|head)", e["title"], re.I)]
+    if len(role_like) < min_entries:
+        raise ParseFailed(f"parse yielded {len(role_like)} role-like "
+                          f"entries from {len(entries)} links — page "
+                          "structure changed?")
+    for e in role_like:
+        e["canonical_url"] = urljoin(url, e["canonical_url"])
+        # "Title – Org" combined in the link text (Armstrong's shape):
+        # split it; a generic heading ("Our searches") is noise, not an
+        # org — fall back to "<firm> search".
+        m = re.match(r"(.+?)\s+[–—-]\s+(.+)", e["title"])
+        if m and len(m.group(2)) > 3:
+            e["title"], e["org"] = m.group(1).strip(), m.group(2).strip()
+        if not (e.get("org") or "").strip() or _GENERIC_HEADINGS.match(
+                e["org"].strip()):
+            e["org"] = f"{firm} search"
+        e.update({"location": "", "posted_date": None, "jd_text": "",
+                  "comp_range": ""})
+    return role_like
 
 
 PLATFORM_FETCHERS = {
