@@ -71,6 +71,13 @@ def _process_source(src: dict, postings: list[dict], cfg: dict,
         if not any(s.get("org") == p["org"]
                    for s in cfg.get("sources", [])):
             p["_org_type_hint"] = src.get("default_org_type", "")
+        # Workday listings express dates relatively; resolve them here
+        # so the cold-start window works on real dates.
+        if p.get("posted_date") == "TODAY":
+            p["posted_date"] = now.strftime("%Y-%m-%d")
+        elif p.get("_posted_days_ago") is not None:
+            p["posted_date"] = (now - timedelta(
+                days=int(p["_posted_days_ago"]))).strftime("%Y-%m-%d")
 
         outcome = apply_filters(p, cfg)
         p["title_cluster"] = outcome.cluster
@@ -136,6 +143,17 @@ def run_cycle(*, http, now: datetime | None = None,
 
     for src in sources:
         name = src["source"]
+        if src.get("platform") == "manual":
+            # No stable feed (Google careers SPA). The ledger tells the
+            # truth instead of pretending coverage (J5): listed as a
+            # manual check with the link, every digest.
+            store.record_source_run(
+                name, 0, now=now, state="manual",
+                note=f"no stable feed — check {src.get('url', '')}",
+                path=store_path)
+            summary.append({"source": name, "state": "manual",
+                            "count": 0})
+            continue
         try:
             if src["platform"] == "npag":
                 postings = fetch_npag(http)

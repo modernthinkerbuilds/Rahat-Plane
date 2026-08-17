@@ -98,9 +98,12 @@ def _ledger_footer(store_path, warnings: list[str]) -> str:
 
 
 def build_morning(*, now: datetime, store_path: str | None = None,
-                  warnings: list[str] | None = None
+                  warnings: list[str] | None = None,
+                  package_names: list[str] | None = None
                   ) -> tuple[str, str, list[tuple[str, str]]]:
-    """Returns (subject, body, attachments[(filename, text)])."""
+    """Returns (subject, body, attachments[(filename, text)]).
+    `package_names`: names of S2 packages the runner built for the
+    apply band — mentioned in the body; the runner attaches the files."""
     cfg, cfg_w = load_filter_config()
     prefs, pref_w = load_preferences()
     warnings = [*(warnings or []), *cfg_w, *pref_w]
@@ -144,8 +147,13 @@ def build_morning(*, now: datetime, store_path: str | None = None,
         body.append(f"APPLY — {len(bands[BAND_APPLY])} role(s), 75+")
         body += [_fmt_full(r, now, org_types=org_types)
                  for r in bands[BAND_APPLY]]
-        body.append("  (tailored packages attach here once S2 generation "
-                    "ships)")
+        if package_names:
+            body.append(f"  ({len(package_names)} tailored package(s) "
+                        "attached: " + ", ".join(package_names) + ")")
+        else:
+            body.append("  (no packages attached this morning — low "
+                        "match, cap reached, or generation degraded; "
+                        "reply `kit <id>` for any of them)")
         body.append("")
     if bands[BAND_WORTH_A_LOOK]:
         body.append(f"WORTH A LOOK — {len(bands[BAND_WORTH_A_LOOK])} "

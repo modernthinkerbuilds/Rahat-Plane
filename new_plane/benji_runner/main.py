@@ -55,7 +55,32 @@ def cmd_digest(which: str | None, *, preview: bool = False) -> int:
         which = "morning" if now.hour < 12 else "evening"
 
     if which == "morning":
-        subject, body, attachments = dg.build_morning(now=now)
+        # S2: auto-build packages for the apply band before the digest
+        # renders — capped by preferences, coverage floor enforced
+        # inside generate_package (a stretch-low-match role refuses).
+        from agents.benji.generation import generate_package
+        from agents.benji.protocols import COVERAGE_FLOOR, load_preferences
+
+        prefs, _ = load_preferences()
+        cap = int(prefs.get("morning_package_cap", 5))
+        candidates = [r for r in store.queue_rows(only_undigested=True)
+                      if (r.get("score") or 0) >= 75
+                      and (r.get("coverage") or 0) >= COVERAGE_FLOOR
+                      and (r.get("jd_text") or "").strip()]
+        candidates.sort(key=lambda r: -(r.get("score") or 0))
+        pkg_files: list = []
+        pkg_names: list[str] = []
+        for r in candidates[:cap]:
+            result = generate_package(r["id"], now=now)
+            if result.get("ok"):
+                pkg_files += result["files"]
+                pkg_names.append(f"[{r['id']}] {r['org']}")
+            else:
+                logger.warning("package for [%s] not built: %s", r["id"],
+                               result.get("refusal"))
+        subject, body, attachments = dg.build_morning(
+            now=now, package_names=pkg_names or None)
+        attachments = attachments + pkg_files
     else:
         result = dg.build_evening(now=now)
         if result is None:
@@ -81,6 +106,32 @@ def cmd_digest(which: str | None, *, preview: bool = False) -> int:
         return 0
     logger.error("digest NOT sent: %s", reason)
     return 1
+
+
+def cmd_kit(display_id: int, *, preview: bool = False) -> int:
+    """Build + email one package on demand (the `kit N` action, CLI
+    edition until S3's inbound loop ships). Email-only delivery — a
+    package that can't be emailed is not written anywhere (PRD v1.2)."""
+    from agents.benji.generation import generate_package
+    from new_plane.benji_runner.emailer import send_email
+
+    now = datetime.now()
+    result = generate_package(display_id, now=now)
+    if not result.get("ok"):
+        print(f"[{display_id}] no package: {result.get('refusal')}")
+        return 1
+    job = result["job"]
+    if preview:
+        print(result["review_md"])
+        return 0
+    head = (f"[{display_id}] {job.get('title')} — {job.get('org')}\n"
+            f"Apply at: {job.get('canonical_url')}\n\n")
+    sent, reason = send_email(
+        subject=f"Benji · kit [{display_id}] {job.get('org')}",
+        body=head + result["review_md"], attachments=result["files"],
+        now=now)
+    print(f"[{display_id}] {'sent' if sent else 'NOT sent'}: {reason}")
+    return 0 if sent else 1
 
 
 def cmd_mark(display_id: int, status: str, note: str) -> int:
@@ -111,8 +162,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--status", action="store_true")
     ap.add_argument("--mark", nargs="+", metavar=("ID", "STATUS"),
                     help="--mark 87 applied [note…]")
+    ap.add_argument("--kit", type=int, metavar="ID",
+                    help="build + email the package for one role")
     args = ap.parse_args(argv)
 
+    if args.kit is not None:
+        return cmd_kit(args.kit, preview=args.preview)
     if args.mark:
         if len(args.mark) < 2:
             ap.error("--mark needs: ID STATUS [note…]")

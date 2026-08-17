@@ -43,13 +43,23 @@ def _smtp_transport():
     return _send
 
 
-def _chunk_attachments(attachments: list[tuple[str, str]],
-                       max_mb: float) -> list[list[tuple[str, str]]]:
+_MIME = {".docx": ("application", "vnd.openxmlformats-officedocument."
+                                  "wordprocessingml.document"),
+         ".pdf": ("application", "pdf"),
+         ".md": ("text", "markdown")}
+
+
+def _as_bytes(content) -> bytes:
+    return content if isinstance(content, bytes) else str(content).encode()
+
+
+def _chunk_attachments(attachments: list[tuple[str, object]],
+                       max_mb: float) -> list[list[tuple[str, object]]]:
     limit = int(max_mb * 1024 * 1024)
-    chunks: list[list[tuple[str, str]]] = [[]]
+    chunks: list[list[tuple[str, object]]] = [[]]
     size = 0
     for name, content in attachments:
-        b = len(content.encode())
+        b = len(_as_bytes(content))
         if chunks[-1] and size + b > limit:
             chunks.append([])
             size = 0
@@ -59,7 +69,7 @@ def _chunk_attachments(attachments: list[tuple[str, str]],
 
 
 def send_email(*, subject: str, body: str,
-               attachments: list[tuple[str, str]] | None = None,
+               attachments: list[tuple[str, object]] | None = None,
                transport=None, now: datetime | None = None
                ) -> tuple[bool, str]:
     """Charter-gated send to the configured co-owner address.
@@ -73,7 +83,7 @@ def send_email(*, subject: str, body: str,
     verdict = _charter_gate(KIND_EMAIL_SEND, {
         "recipient": recipient.lower(), "subject": subject[:120],
         "n_attachments": len(attachments),
-        "bytes": sum(len(c.encode()) for _, c in attachments),
+        "bytes": sum(len(_as_bytes(c)) for _, c in attachments),
     })
     if not verdict.approved:
         logger.warning("benji email vetoed: %s", verdict.reason)
@@ -93,7 +103,9 @@ def send_email(*, subject: str, body: str,
                         f"(attachment overflow {i}/{total} for: "
                         f"{subject})")
         for name, content in chunk:
-            msg.add_attachment(content.encode(), maintype="text",
-                               subtype="markdown", filename=name)
+            ext = "." + name.rsplit(".", 1)[-1].lower()
+            maintype, subtype = _MIME.get(ext, ("text", "plain"))
+            msg.add_attachment(_as_bytes(content), maintype=maintype,
+                               subtype=subtype, filename=name)
         send(msg)
     return True, f"sent ({total} email(s))"

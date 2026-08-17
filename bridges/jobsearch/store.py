@@ -78,6 +78,8 @@ def _connect(path: str | None = None) -> sqlite3.Connection:
         cold_started INTEGER DEFAULT 0)""")
     con.execute("""CREATE TABLE IF NOT EXISTS digest_log (
         kind TEXT, sent_at TEXT, meta TEXT)""")
+    con.execute("""CREATE TABLE IF NOT EXISTS story_usage (
+        story TEXT, org TEXT, role_id INTEGER, used_at TEXT)""")
     return con
 
 
@@ -335,6 +337,52 @@ def purge_old_rejects(*, now: datetime, days: int = 90,
             (_iso(now - timedelta(days=days)),))
         con.commit()
         return cur.rowcount
+    finally:
+        con.close()
+
+
+def record_story_use(story: str, org: str, role_id: int, *,
+                     now: datetime, path: str | None = None) -> None:
+    """Story-to-org rotation ledger (Tara #7): the same story never goes
+    to one organization twice. Written through benji.story_log.append."""
+    con = _connect(path)
+    try:
+        con.execute("INSERT INTO story_usage (story, org, role_id, "
+                    "used_at) VALUES (?,?,?,?)",
+                    (story, _norm(org), role_id, _iso(now)))
+        con.commit()
+    finally:
+        con.close()
+
+
+def stories_used_for_org(org: str, path: str | None = None) -> set[str]:
+    con = _connect(path)
+    try:
+        return {r["story"] for r in con.execute(
+            "SELECT DISTINCT story FROM story_usage WHERE org=?",
+            (_norm(org),)).fetchall()}
+    finally:
+        con.close()
+
+
+def stories_used_since(days: int, *, now: datetime,
+                       path: str | None = None) -> list[str]:
+    con = _connect(path)
+    try:
+        cutoff = _iso(now - timedelta(days=days))
+        return [r["story"] for r in con.execute(
+            "SELECT story FROM story_usage WHERE used_at >= ? "
+            "ORDER BY used_at", (cutoff,)).fetchall()]
+    finally:
+        con.close()
+
+
+def get_job(display_id: int, path: str | None = None) -> dict | None:
+    con = _connect(path)
+    try:
+        row = con.execute("SELECT * FROM jobs WHERE id=?",
+                          (display_id,)).fetchone()
+        return dict(row) if row else None
     finally:
         con.close()
 

@@ -24,6 +24,7 @@ from agents.benji.protocols import (
     AGENT,
     KIND_INVENTORY_UPSERT,
     KIND_STATUS_SET,
+    KIND_STORY_LOG_APPEND,
     STATUS_APPLIED,
     STATUS_BACKLOG,
     STATUS_NEW,
@@ -85,3 +86,16 @@ def gated_set_status(display_id: int, status: str, *, note: str = "",
     ok = store.set_status(display_id, status, note=note, now=now,
                           path=store_path)
     return ok, "ok" if ok else f"no row with id {display_id}"
+
+
+def gated_story_append(story: str, org: str, role_id: int, *, now,
+                       store_path: str | None = None) -> bool:
+    """Rotation ledger write (Tara #7) — one governance row per story
+    choice, so 'which story went where' is auditable."""
+    verdict = _charter_gate(KIND_STORY_LOG_APPEND, {
+        "story": story[:60], "org": org[:80], "role_id": role_id})
+    if not verdict.approved:
+        logger.warning("benji story log vetoed: %s", verdict.reason)
+        return False
+    store.record_story_use(story, org, role_id, now=now, path=store_path)
+    return True
