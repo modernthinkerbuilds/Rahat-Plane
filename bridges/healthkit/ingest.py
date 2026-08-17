@@ -66,9 +66,30 @@ METRIC_MAP = {
 
 # Legacy write semantics (must match the old vitals_listener exactly).
 SINGLE_RECORD = {"weight"}          # keep ONE row ever
-DAY_OVERRIDE = {"active_calories", "basal_calories", "resting_heart_rate",
-                "vo2_max", "stand_hours", "exercise_minutes",
-                "flights_climbed", "daylight_minutes"}
+
+# ── Daily metrics: exactly ONE row per day holding the day's TOTAL (or
+# reading). Kobe's kcal model runs SUM(value) over a day, so a day must
+# never hold both a total row and its component samples — hence
+# delete-then-insert per day.
+#
+# TWO SHAPES hide in here, and conflating them destroyed real data
+# (live, 2026-08-16): Health Auto Export exports at MINUTE grouping, so
+# active_calories arrives as hundreds of tiny per-minute INCREMENTS
+# (0.2 kcal each) — NOT as the single day total the retired iPhone
+# Shortcut used to send. The old "newest sample wins" rule then kept the
+# final minute of the day (0.0 kcal) and deleted the true 1,152 kcal
+# total. Kobe then answered "0 calories today" — correctly, from wrecked
+# data. Accumulating metrics must be SUMMED across the day; only true
+# once-a-day readings may take newest-wins.
+DAY_SUM = {                          # accumulates through the day → SUM
+    "active_calories", "basal_calories", "stand_hours",
+    "exercise_minutes", "flights_climbed", "daylight_minutes",
+    "mindful_minutes",
+}
+DAY_SNAPSHOT = {                     # one reading per day → newest wins
+    "resting_heart_rate", "vo2_max", "wrist_temperature",
+}
+DAY_OVERRIDE = DAY_SUM | DAY_SNAPSHOT
 
 
 def _norm_name(name: str) -> str:
@@ -125,11 +146,33 @@ def _write_series(cur: sqlite3.Cursor, metric: str,
                     " VALUES (?, ?, ?)", (metric, val, ts))
         return 1
     if metric in DAY_OVERRIDE:
-        # One value per day; a re-sent day replaces cleanly.
+        # One row per day. SUM metrics accumulate the day's samples;
+        # SNAPSHOT metrics take the day's newest reading.
         by_day: dict[str, tuple[str, float]] = {}
-        for ts, val in sorted(points):
-            by_day[ts[:10]] = (ts, val)
+        if metric in DAY_SUM:
+            totals: dict[str, float] = {}
+            last_ts: dict[str, str] = {}
+            for ts, val in sorted(points):
+                day = ts[:10]
+                totals[day] = totals.get(day, 0.0) + val
+                last_ts[day] = ts
+            by_day = {d: (last_ts[d], t) for d, t in totals.items()}
+        else:
+            for ts, val in sorted(points):
+                by_day[ts[:10]] = (ts, val)
         for day, (ts, val) in by_day.items():
+            if metric in DAY_SUM:
+                # Guard against a PARTIAL day payload ("since last sync"
+                # sends only the newest samples) silently overwriting a
+                # complete day with a smaller number. These metrics only
+                # grow within a day, so the larger value is the truer
+                # one; a full re-send still converges upward.
+                prior = cur.execute(
+                    "SELECT MAX(value) FROM raw_vitals WHERE "
+                    "metric_type = ? AND timestamp LIKE ?",
+                    (metric, f"{day}%")).fetchone()[0]
+                if prior is not None and prior > val:
+                    val = prior
             cur.execute("DELETE FROM raw_vitals WHERE metric_type = ? "
                         "AND timestamp LIKE ?", (metric, f"{day}%"))
             cur.execute("INSERT INTO raw_vitals (metric_type, value, "
