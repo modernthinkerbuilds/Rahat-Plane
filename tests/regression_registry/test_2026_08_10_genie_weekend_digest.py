@@ -177,15 +177,15 @@ def test_tick_skips_quietly_when_inventory_is_empty(env):
 def test_slash_digest_is_a_genie_intent_and_answers(env):
     from agents.genie import intents, handler
     assert intents.GENIE_SLASH_RE.match("/digest")
-    # route() windows on the REAL clock — seed the event onto the real
-    # upcoming Saturday, never a hardcoded date (2026-08-17 rollover
-    # lesson: a frozen Aug-15 seed went stale the day the weekend
-    # passed).
-    from datetime import timedelta
-    real_now = datetime.now()
-    sat = (real_now + timedelta(days=(5 - real_now.weekday()) % 7)
-           ).strftime("%Y-%m-%d")
-    _seed([dict(_LINDEN, start_ts=f"{sat} 10:30:00")])
+    # route() windows on the REAL clock. Seed INSIDE the exact window
+    # the digest will use — by asking weekend_window() itself, not by
+    # recomputing "next Saturday" (second rollover lesson, 2026-08-16:
+    # on a SUNDAY the window is today-only while "next Saturday" is six
+    # days out, so a hand-rolled seed date drifts out of the window one
+    # day a week). One source of truth for the date, zero drift.
+    from bridges.events.digest import weekend_window
+    start, _end, _label = weekend_window(datetime.now())
+    _seed([dict(_LINDEN, start_ts=f"{start} 10:30:00")])
     out = handler.route("/digest")
     assert "lined up for" in out and "Author visit" in out
 
