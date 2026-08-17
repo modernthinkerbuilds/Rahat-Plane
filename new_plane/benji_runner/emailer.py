@@ -97,6 +97,8 @@ def send_email(*, subject: str, body: str,
     for i, chunk in enumerate(chunks if attachments else [[]], start=1):
         msg = EmailMessage()
         msg["From"], msg["To"] = sender, recipient
+        msg["X-Benji-Agent"] = "1"   # inbox loop-guard: Benji never
+        #                              parses its own mail (see inbox.py)
         msg["Subject"] = subject if total == 1 else \
             f"{subject} ({i}/{total})"
         msg.set_content(body if i == 1 else

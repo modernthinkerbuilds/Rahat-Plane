@@ -85,7 +85,8 @@ def _imap_fetch_unseen() -> list[dict]:
                                               f"<no-id-{num.decode()}>"),
                         "sender": sender.lower(),
                         "subject": msg.get("Subject", ""),
-                        "body": body})
+                        "body": body,
+                        "x_benji": msg.get("X-Benji-Agent", "")})
             imap.store(num, "+FLAGS", "\\Seen")
     return out
 
@@ -104,6 +105,15 @@ def poll_inbox(*, messages: list[dict] | None = None,
     for msg in messages:
         mid = msg.get("message_id") or ""
         if mid and store.mail_seen(mid, path=store_path):
+            continue
+        if msg.get("x_benji"):
+            # Benji's OWN outbound (single-mailbox setups deliver it to
+            # the same inbox). Without this guard, Benji would parse its
+            # own digest, ack it, see the ack, ack the ack — a self-mail
+            # loop. Marked seen, never parsed, never answered.
+            if mid:
+                store.mail_mark(mid, now=now, path=store_path)
+            ignored += 1
             continue
         sender = (msg.get("sender") or "").lower()
         if sender not in allowed:

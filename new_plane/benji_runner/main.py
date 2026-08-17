@@ -28,6 +28,16 @@ configure(os.getenv("BENJI_LOG_PATH", "vault/benji_runner.log"),
           level=os.getenv("BENJI_LOG_LEVEL", "INFO"))
 logger = logging.getLogger("benji_runner")
 
+# Launchd starts this process with a bare environment — the BENJI_* keys
+# live in .env. Never under test mode (the hermetic stack must not read
+# a developer's real .env — the exact class core.io guards against).
+if os.getenv("RAHAT_TEST_MODE") != "1":
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+    except Exception:                              # noqa: BLE001
+        pass
+
 
 def cmd_ingest() -> int:
     from agents.benji.pipeline import run_cycle
