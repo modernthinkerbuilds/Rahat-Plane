@@ -72,6 +72,37 @@ DIGEST_CAL="        <dict><key>Hour</key><integer>7</integer><key>Minute</key><i
 install_plist "com.rahat.benji.ingest" "--ingest" "$INGEST_CAL"
 install_plist "com.rahat.benji.digest" "--digest" "$DIGEST_CAL"
 
+# Inbox poll (S3): every 15 minutes, StartInterval not calendar.
+INBOX_PLIST="$HOME/Library/LaunchAgents/com.rahat.benji.inbox.plist"
+cat > "$INBOX_PLIST" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>com.rahat.benji.inbox</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>$PYTHON_BIN</string>
+        <string>-m</string>
+        <string>new_plane.benji_runner.main</string>
+        <string>--inbox</string>
+    </array>
+    <key>WorkingDirectory</key><string>$REPO</string>
+    <key>StartInterval</key><integer>900</integer>
+    <key>StandardOutPath</key><string>$REPO/vault/benji_runner.log</string>
+    <key>StandardErrorPath</key><string>$REPO/vault/benji_runner.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>
+PLIST
+launchctl unload "$INBOX_PLIST" 2>/dev/null || true
+launchctl load "$INBOX_PLIST"
+echo "✓ loaded com.rahat.benji.inbox (every 15 min)"
+
 echo "Running the first ingest now (Tier-1 feeds; prints the yield table)…"
 cd "$REPO" && "$PYTHON_BIN" -m new_plane.benji_runner.main --ingest || {
     echo "✗ first ingest failed — check vault/benji_runner.log"; exit 1; }

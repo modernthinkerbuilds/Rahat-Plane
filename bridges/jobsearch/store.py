@@ -80,6 +80,10 @@ def _connect(path: str | None = None) -> sqlite3.Connection:
         kind TEXT, sent_at TEXT, meta TEXT)""")
     con.execute("""CREATE TABLE IF NOT EXISTS story_usage (
         story TEXT, org TEXT, role_id INTEGER, used_at TEXT)""")
+    con.execute("""CREATE TABLE IF NOT EXISTS meta (
+        key TEXT PRIMARY KEY, value TEXT)""")
+    con.execute("""CREATE TABLE IF NOT EXISTS processed_mail (
+        message_id TEXT PRIMARY KEY, processed_at TEXT)""")
     return con
 
 
@@ -406,5 +410,65 @@ def last_digest(kind: str, path: str | None = None) -> str | None:
             "SELECT sent_at FROM digest_log WHERE kind=? "
             "ORDER BY sent_at DESC LIMIT 1", (kind,)).fetchone()
         return row["sent_at"] if row else None
+    finally:
+        con.close()
+
+
+def meta_get(key: str, default: str = "", path: str | None = None) -> str:
+    con = _connect(path)
+    try:
+        row = con.execute("SELECT value FROM meta WHERE key=?",
+                          (key,)).fetchone()
+        return row["value"] if row else default
+    finally:
+        con.close()
+
+
+def meta_set(key: str, value: str, path: str | None = None) -> None:
+    con = _connect(path)
+    try:
+        con.execute("INSERT INTO meta (key, value) VALUES (?,?) "
+                    "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                    (key, value))
+        con.commit()
+    finally:
+        con.close()
+
+
+def mail_seen(message_id: str, path: str | None = None) -> bool:
+    con = _connect(path)
+    try:
+        return con.execute("SELECT 1 FROM processed_mail WHERE "
+                           "message_id=?", (message_id,)).fetchone() \
+            is not None
+    finally:
+        con.close()
+
+
+def mail_mark(message_id: str, *, now: datetime,
+              path: str | None = None) -> None:
+    con = _connect(path)
+    try:
+        con.execute("INSERT OR IGNORE INTO processed_mail "
+                    "(message_id, processed_at) VALUES (?,?)",
+                    (message_id, _iso(now)))
+        con.commit()
+    finally:
+        con.close()
+
+
+def wake_snoozed(*, now: datetime, path: str | None = None) -> int:
+    """Snoozed rows whose wake date (stored in status_note as
+    'until:YYYY-MM-DD') has passed return to 'new' and undigested, so
+    the next morning queue resurfaces them."""
+    con = _connect(path)
+    try:
+        today = now.strftime("%Y-%m-%d")
+        cur = con.execute(
+            "UPDATE jobs SET status='new', digested_at=NULL, "
+            "status_note='' WHERE status='snoozed' AND "
+            "substr(status_note, 7, 10) <= ?", (today,))
+        con.commit()
+        return cur.rowcount
     finally:
         con.close()

@@ -54,6 +54,12 @@ def cmd_digest(which: str | None, *, preview: bool = False) -> int:
     if which is None:
         which = "morning" if now.hour < 12 else "evening"
 
+    if store.meta_get("digests_paused") == "1":
+        logger.info("digests paused (she said `pause`) — skipping %s",
+                    which)
+        return 0
+    store.wake_snoozed(now=now)      # snoozes that expired resurface
+
     if which == "morning":
         # S2: auto-build packages for the apply band before the digest
         # renders — capped by preferences, coverage floor enforced
@@ -164,7 +170,15 @@ def main(argv: list[str] | None = None) -> int:
                     help="--mark 87 applied [note…]")
     ap.add_argument("--kit", type=int, metavar="ID",
                     help="build + email the package for one role")
+    ap.add_argument("--inbox", action="store_true",
+                    help="poll the mailbox once and act on her replies")
     args = ap.parse_args(argv)
+
+    if args.inbox:
+        from new_plane.benji_runner.inbox import poll_inbox
+        result = poll_inbox()
+        logger.info("inbox: %s", result)
+        return 0
 
     if args.kit is not None:
         return cmd_kit(args.kit, preview=args.preview)
