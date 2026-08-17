@@ -190,6 +190,8 @@ class _NpagParser(HTMLParser):
 
 
 def fetch_npag(http) -> list[dict]:
+    from urllib.parse import urljoin
+
     page = http("GET", NPAG_URL)
     if not isinstance(page, str):
         raise ParseFailed("npag returned non-text response")
@@ -200,6 +202,10 @@ def fetch_npag(http) -> list[dict]:
         raise ParseFailed(f"npag parse yielded {len(entries)} entries — "
                           "page structure changed?")
     for e in entries:
+        # Page hrefs are often relative ("/hewlett-paed") — the canonical
+        # URL is the application destination, so join against the page
+        # base (first-live-run lesson, 2026-08-17).
+        e["canonical_url"] = urljoin(NPAG_URL, e["canonical_url"])
         e.update({"location": "", "posted_date": None, "jd_text": "",
                   "comp_range": ""})
     return entries

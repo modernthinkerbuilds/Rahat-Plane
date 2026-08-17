@@ -43,6 +43,16 @@ ORG_TYPE_POINTS = {
     "tech_general": 8,
 }
 
+
+def _norm_org(name: str) -> str:
+    """Dream-org matching is normalization-insensitive: 'William and
+    Flora Hewlett Foundation' (as NPAG spells it) must match 'William &
+    Flora Hewlett Foundation' (as the dream list spells it). A +10 that
+    silently fails on an ampersand is the first-live-run lesson."""
+    n = (name or "").lower().replace("&", "and")
+    n = re.sub(r"\b(the|foundation|fund)\b", " ", n)
+    return re.sub(r"[^a-z0-9]+", " ", n).strip()
+
 CLUSTER_POINTS = {"A": 20, "C": 18, "B": 16, "D": 14, "E": 8}
 
 _FIFTEEN_PLUS = re.compile(r"\b1[5-9]\+?\s*(?:or more\s*)?years", re.I)
@@ -107,10 +117,13 @@ def score_job(posting: dict, cfg: dict, candidate_text: str,
     rep = _coverage(jd, candidate_text, job_title=title)
     exp = experience_match_points(rep.coverage)
     org_type = ""
+    assumed = False
     for s in cfg.get("sources", []):
         if s.get("org") == org:
             org_type = s.get("org_type", "")
             break
+    if not org_type and posting.get("_org_type_hint"):
+        org_type, assumed = posting["_org_type_hint"], True
     org_pts = ORG_TYPE_POINTS.get(org_type, 8)
     cluster_pts = CLUSTER_POINTS.get(cluster, 8)
     cluster_pts += title_adjustments(title, jd,
@@ -118,7 +131,8 @@ def score_job(posting: dict, cfg: dict, candidate_text: str,
     mission = mission_fit_points(title, jd)
     salary = salary_points(posting.get("comp_range", ""), jd)
 
-    dream = org in set(cfg.get("dream_orgs", []))
+    dream_set = {_norm_org(d) for d in cfg.get("dream_orgs", [])}
+    dream = _norm_org(org) in dream_set
     bonus = 10 if dream else 0
     total = max(0, exp + org_pts + max(0, cluster_pts) + mission
                 + salary + bonus)
@@ -135,7 +149,8 @@ def score_job(posting: dict, cfg: dict, candidate_text: str,
 
     rationale_bits = [f"{int(rep.coverage * 100)}% match"]
     if org_type:
-        rationale_bits.append(org_type.replace("_", " "))
+        rationale_bits.append(org_type.replace("_", " ")
+                              + (" (assumed)" if assumed else ""))
     if dream:
         rationale_bits.append("dream org")
     breakdown = {"experience": exp, "org_type": org_pts,
@@ -155,7 +170,8 @@ def drop_reach_outside_dream(posting: dict, cfg: dict) -> str | None:
     cluster = posting.get("title_cluster") or ""
     title = (posting.get("title") or "").lower()
     reach = cluster == "E" or "director of" in title
-    if reach and posting.get("org") not in set(cfg.get("dream_orgs", [])):
+    dream_set = {_norm_org(d) for d in cfg.get("dream_orgs", [])}
+    if reach and _norm_org(posting.get("org", "")) not in dream_set:
         return "reach role outside the dream-org list"
     return None
 

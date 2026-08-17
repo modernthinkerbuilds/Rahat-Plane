@@ -50,10 +50,15 @@ def _days_ago(posted: str | None, now: datetime) -> str:
 def _fmt_full(row: dict, now: datetime, *, org_types: dict) -> str:
     comp = row.get("comp_range") or "comp unlisted"
     org_type = org_types.get(row.get("org", ""), "").replace("_", " ")
+    # A JD-less entry (search-firm page) has coverage measured on the
+    # title alone — thin evidence; say so instead of printing "100%".
+    match = (f"{int((row.get('coverage') or 0) * 100)}% match"
+             if (row.get("jd_text") or "").strip()
+             else "match n/a — no JD on the search page")
     bits = [b for b in (org_type or None,
                         f"Cluster {row['title_cluster']}"
                         if row.get("title_cluster") else None,
-                        f"{int((row.get('coverage') or 0) * 100)}% match",
+                        match,
                         comp, _days_ago(row.get("posted_date"), now))
             if b]
     lines = [f"[{row['id']}] {row['title']} — {row['org']}",

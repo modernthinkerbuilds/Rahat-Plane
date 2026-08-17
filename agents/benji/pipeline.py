@@ -68,6 +68,9 @@ def _process_source(src: dict, postings: list[dict], cfg: dict,
         p["org"] = src.get("org") or p.get("org", "")
         p["source"] = src["source"]
         p["source_tier"] = src.get("tier", 1)
+        if not any(s.get("org") == p["org"]
+                   for s in cfg.get("sources", [])):
+            p["_org_type_hint"] = src.get("default_org_type", "")
 
         outcome = apply_filters(p, cfg)
         p["title_cluster"] = outcome.cluster
@@ -90,8 +93,15 @@ def _process_source(src: dict, postings: list[dict], cfg: dict,
                       "stretch": s.stretch})
             if s.stretch_label:
                 p["flags"] = p["flags"] + [s.stretch_label]
-            if cold and not (p.get("posted_date")
-                             and p["posted_date"] >= cutoff):
+            if src.get("dateless"):
+                # Page-based sources (NPAG) carry no dates but list ONLY
+                # currently-open searches — presence on the page IS
+                # freshness. Cold-start backlogging them would bury her
+                # highest-value channel (the 2026-08-17 first-live-run
+                # lesson); they are always 'new'.
+                p["status"] = STATUS_NEW
+            elif cold and not (p.get("posted_date")
+                               and p["posted_date"] >= cutoff):
                 p["status"] = STATUS_BACKLOG    # old OR undated: backlog
             else:
                 p["status"] = STATUS_NEW
@@ -115,8 +125,14 @@ def run_cycle(*, http, now: datetime | None = None,
         s["source"] = s.get("org", s.get("token", "?"))
         sources.append(s)
     if cfg.get("npag_enabled"):
+        # dateless: presence on the page is freshness (see
+        # _process_source). default_org_type: NPAG's clients are
+        # foundations/nonprofits — score unknown orgs on that honest
+        # prior (rationale says "assumed") instead of burying them at
+        # tech-general points until S2 org research runs.
         sources.append({"source": "npag", "platform": "npag",
-                        "org": "", "tier": 3})
+                        "org": "", "tier": 3, "dateless": True,
+                        "default_org_type": "nonprofit"})
 
     for src in sources:
         name = src["source"]
