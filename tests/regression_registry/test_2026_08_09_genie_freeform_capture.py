@@ -50,7 +50,11 @@ Husband and wife outing - Every Friday
 
 
 def _next_saturday_iso() -> str:
-    now = datetime.now()
+    # Anchored, not wall-clock (datefreeze convention): computed from the
+    # live incident's Sunday. Wall-clock next-Saturday collided with the
+    # fixture's hardcoded 2026-08-22 once real time reached the week of
+    # 08-17, making the merge test's two weekends the same weekend.
+    now = datetime(2026, 8, 9, 12, 0)
     return (now + timedelta(days=(5 - now.weekday()) % 7)).strftime("%Y-%m-%d")
 
 
@@ -86,6 +90,15 @@ def genie(tmp_path, monkeypatch):
     from agents.genie import state, handler
     importlib.reload(state)
     importlib.reload(handler)
+    # Freeze to the live incident's date (Sun 2026-08-09, datefreeze
+    # convention) so "next Saturday" resolves to 08-15 in both the fixture
+    # helper and the plan sequencer — rollover collision caught 2026-08-17.
+    from tests.datefreeze import freeze
+    from datetime import date as _date
+    freeze(monkeypatch, _date(2026, 8, 9),
+           modules=("agents.genie.handler", "agents.genie.calendar",
+                    "agents.genie.concierge", "agents.genie.protocols",
+                    "agents.genie.live_plan", "agents.genie.ideas"))
     return handler
 
 

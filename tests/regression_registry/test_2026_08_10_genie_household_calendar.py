@@ -54,6 +54,14 @@ def env(tmp_path, monkeypatch):
     from agents.genie import state, handler
     importlib.reload(state)
     importlib.reload(handler)
+    # Freeze the clock to _WED (datefreeze convention): fixtures anchor on
+    # the Sat 08-15 weekend, and NL phrases like "Saturday" resolved past it
+    # once the wall clock caught up (went red 2026-08-17 — the exact
+    # incident class tests/datefreeze.py documents).
+    from tests.datefreeze import freeze
+    freeze(monkeypatch, _WED.date(),
+           modules=("agents.genie.handler", "agents.genie.calendar",
+                    "agents.genie.concierge", "agents.genie.protocols"))
     return tmp_path
 
 
