@@ -121,6 +121,17 @@ def _ts(v: Any) -> str | None:
 def _ensure_schema(cur: sqlite3.Cursor) -> None:
     cur.execute("""CREATE TABLE IF NOT EXISTS raw_vitals (
         metric_type TEXT, value REAL, timestamp TEXT)""")
+    # Query-path index (2026-08-17). raw_vitals had NO index — every
+    # consumer (Kobe's kcal SUM, weight lookups, Scientist reads, the
+    # future Huberman trend queries) was a full table scan. Fine at
+    # 37K rows; a drag at HAE's ~5K rows/day growth (~1.8M rows/yr).
+    # (metric_type, timestamp) serves both filter shapes in use:
+    # equality on metric_type always; timestamp range/prefix when the
+    # query uses one. IF NOT EXISTS + running inside every ingest means
+    # the live DB indexes itself on the next HAE sync — no manual
+    # migration, idempotent forever.
+    cur.execute("""CREATE INDEX IF NOT EXISTS idx_raw_vitals_metric_ts
+        ON raw_vitals (metric_type, timestamp)""")
     cur.execute("""CREATE TABLE IF NOT EXISTS sleep_sessions (
         sleep_start TEXT PRIMARY KEY,
         sleep_end TEXT,
