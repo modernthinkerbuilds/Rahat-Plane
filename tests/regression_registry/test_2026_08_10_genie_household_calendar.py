@@ -35,6 +35,16 @@ import pytest
 
 _WED = datetime(2026, 8, 12, 9, 0)          # → weekend of Sat 08-15
 
+
+def _real_next_saturday() -> str:
+    """For tests that go through route() (which uses the real clock):
+    the upcoming Saturday, computed — never hardcoded (2026-08-17
+    rollover lesson)."""
+    from datetime import timedelta
+    now = datetime.now()
+    return (now + timedelta(days=(5 - now.weekday()) % 7)
+            ).strftime("%Y-%m-%d")
+
 _DEPOT = {"title": "Kids Workshop: build a race car",
           "start_ts": "2026-08-15 12:30:00",
           "venue": "Home Depot San Jose", "city": "San Jose",
@@ -54,14 +64,6 @@ def env(tmp_path, monkeypatch):
     from agents.genie import state, handler
     importlib.reload(state)
     importlib.reload(handler)
-    # Freeze the clock to _WED (datefreeze convention): fixtures anchor on
-    # the Sat 08-15 weekend, and NL phrases like "Saturday" resolved past it
-    # once the wall clock caught up (went red 2026-08-17 — the exact
-    # incident class tests/datefreeze.py documents).
-    from tests.datefreeze import freeze
-    freeze(monkeypatch, _WED.date(),
-           modules=("agents.genie.handler", "agents.genie.calendar",
-                    "agents.genie.concierge", "agents.genie.protocols"))
     return tmp_path
 
 
@@ -133,7 +135,10 @@ def test_nl_commitment_routes_to_calendar_not_concierge(env):
     out = handler.route("We have to go to Navya's home for lunch on "
                         "Saturday", chat_id="111")
     assert "household calendar" in out.lower()
-    rows = state.calendar_entries("2026-08-15", "2026-08-15")
+    # route() resolves "Saturday" against the REAL clock — compute it,
+    # never hardcode (2026-08-17 date-rollover lesson).
+    sat = _real_next_saturday()
+    rows = state.calendar_entries(sat, sat)
     assert len(rows) == 1
     assert rows[0]["start"] == "12:00"          # lunch → deterministic window
     assert "navya" in rows[0]["title"].lower()
@@ -144,7 +149,8 @@ def test_wishlist_capture_from_spotted_event(env):
     out = handler.route("I want to attend this lantern festival on "
                         "Saturday evening", chat_id="111")
     assert "want-to-attend" in out.lower()
-    rows = state.calendar_entries("2026-08-15", "2026-08-15")
+    sat = _real_next_saturday()
+    rows = state.calendar_entries(sat, sat)
     assert rows and rows[0]["kind"] == "wishlist"
 
 

@@ -59,14 +59,6 @@ def env(tmp_path, monkeypatch):
     from agents.genie import state, handler
     importlib.reload(state)
     importlib.reload(handler)
-    # Freeze the clock to _WED (datefreeze convention): fixtures anchor on
-    # the Sat 08-15 weekend and went red once the wall clock passed it
-    # (2026-08-17) — the incident class tests/datefreeze.py documents.
-    from tests.datefreeze import freeze
-    freeze(monkeypatch, _WED.date(),
-           modules=("agents.genie.handler", "agents.genie.calendar",
-                    "agents.genie.concierge", "agents.genie.protocols",
-                    "bridges.events.digest", "bridges.events.store"))
     return tmp_path
 
 
@@ -185,7 +177,15 @@ def test_tick_skips_quietly_when_inventory_is_empty(env):
 def test_slash_digest_is_a_genie_intent_and_answers(env):
     from agents.genie import intents, handler
     assert intents.GENIE_SLASH_RE.match("/digest")
-    _seed([_LINDEN])
+    # route() windows on the REAL clock — seed the event onto the real
+    # upcoming Saturday, never a hardcoded date (2026-08-17 rollover
+    # lesson: a frozen Aug-15 seed went stale the day the weekend
+    # passed).
+    from datetime import timedelta
+    real_now = datetime.now()
+    sat = (real_now + timedelta(days=(5 - real_now.weekday()) % 7)
+           ).strftime("%Y-%m-%d")
+    _seed([dict(_LINDEN, start_ts=f"{sat} 10:30:00")])
     out = handler.route("/digest")
     assert "lined up for" in out and "Author visit" in out
 

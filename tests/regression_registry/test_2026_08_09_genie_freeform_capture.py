@@ -49,13 +49,15 @@ Husband and wife outing - Every Friday
 3. let's find some hot spring kinda experience - those adults only exp in Japan that we missed out on."""
 
 
-def _next_saturday_iso() -> str:
-    # Anchored, not wall-clock (datefreeze convention): computed from the
-    # live incident's Sunday. Wall-clock next-Saturday collided with the
-    # fixture's hardcoded 2026-08-22 once real time reached the week of
-    # 08-17, making the merge test's two weekends the same weekend.
-    now = datetime(2026, 8, 9, 12, 0)
-    return (now + timedelta(days=(5 - now.weekday()) % 7)).strftime("%Y-%m-%d")
+def _next_saturday_iso(weeks_out: int = 0) -> str:
+    """Rollover-proof date helper. NEVER hardcode a weekend date in this
+    file: on 2026-08-17 the dynamic 'next Saturday' rolled onto a
+    hardcoded '2026-08-22' and two entries collided (the exact
+    date-rollover failure class the 2026-08-01 re-entry audit found in
+    the May tests)."""
+    now = datetime.now()
+    days = (5 - now.weekday()) % 7 + 7 * weeks_out
+    return (now + timedelta(days=days)).strftime("%Y-%m-%d")
 
 
 def _elicited() -> dict:
@@ -64,7 +66,7 @@ def _elicited() -> dict:
             {"weekend_of": _next_saturday_iso(), "label": "Alameda",
              "items": ["Alameda outing"],
              "companions": "Ravi uncle and fam", "notes": ""},
-            {"weekend_of": "2026-08-22", "label": "Mt. Madonna",
+            {"weekend_of": _next_saturday_iso(1), "label": "Mt. Madonna",
              "items": ["Mt. Madonna"], "companions": "", "notes": ""},
         ],
         "date_nights": [
@@ -90,15 +92,6 @@ def genie(tmp_path, monkeypatch):
     from agents.genie import state, handler
     importlib.reload(state)
     importlib.reload(handler)
-    # Freeze to the live incident's date (Sun 2026-08-09, datefreeze
-    # convention) so "next Saturday" resolves to 08-15 in both the fixture
-    # helper and the plan sequencer — rollover collision caught 2026-08-17.
-    from tests.datefreeze import freeze
-    from datetime import date as _date
-    freeze(monkeypatch, _date(2026, 8, 9),
-           modules=("agents.genie.handler", "agents.genie.calendar",
-                    "agents.genie.concierge", "agents.genie.protocols",
-                    "agents.genie.live_plan", "agents.genie.ideas"))
     return handler
 
 
@@ -184,8 +177,9 @@ def test_capture_is_charter_gated(genie, monkeypatch):
 def test_recapture_updates_same_weekend_and_dedups_rotation(genie):
     from agents.genie import state
     state.save_household_ideas(_elicited(), by_role="spouse")
+    wk2 = _next_saturday_iso(1)
     revised = {
-        "weekends": [{"weekend_of": "2026-08-22", "label": "Big Basin",
+        "weekends": [{"weekend_of": wk2, "label": "Big Basin",
                       "items": ["Big Basin instead"], "companions": "",
                       "notes": ""}],
         "date_nights": ["Midnight Tea in SF",        # dup — must not double
@@ -195,7 +189,7 @@ def test_recapture_updates_same_weekend_and_dedups_rotation(genie):
     state.save_household_ideas(revised, by_role="primary")
     ideas = state.household_ideas()
     aug22 = [w for w in ideas["weekends"]
-             if w.get("weekend_of") == "2026-08-22"]
+             if w.get("weekend_of") == wk2]
     assert len(aug22) == 1 and aug22[0]["label"] == "Big Basin"
     dn = ideas["date_nights"]
     assert dn.count("Midnight Tea in SF") == 1

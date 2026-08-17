@@ -57,8 +57,7 @@ echo ""
 echo "── 4. rendering launchd plists from templates ──"
 for tmpl in scripts/com.rahat.miya.v2.plist.template \
             scripts/com.rahat.genie.plist.template \
-            bridges/sugarwod/com.rahat.sugar.bridge.plist.template \
-            skills/com.rahat.vitals.plist.template; do
+            bridges/sugarwod/com.rahat.sugar.bridge.plist.template; do
   if [ ! -f "$tmpl" ]; then
     echo "    skipped (no template): $tmpl"
     continue
@@ -98,11 +97,13 @@ echo "      bash scripts/install_genie_bot.sh       # com.rahat.genie"
 echo "      bash scripts/install_events_ingest.sh   # com.rahat.events"
 echo "      bash scripts/install_vitals_bridge.sh   # com.rahat.vitals.v2"
 echo ""
-echo "  Retired 2026-08-11 — do not reinstate without reading the commit:"
-echo "      com.rahat.miya (superseded by miya.v2), and the four nightly"
-echo "      jobs (regression / greenstreak / hygiene / evolve), dead since"
-echo "      2026-05-10. greenstreak auto-committed to main on green — that"
-echo "      is the specific behavior we do NOT want back."
+echo "  Retired 2026-08-11/17 — do not reinstate without reading the commits:"
+echo "      com.rahat.miya (superseded by miya.v2); the four nightly jobs"
+echo "      (regression / greenstreak / hygiene / evolve), dead since"
+echo "      2026-05-10 — greenstreak auto-committed to main on green, that"
+echo "      behavior in particular must not come back; and the old Flask"
+echo "      vitals listener (skills/), superseded by bridges/healthkit"
+echo "      (com.rahat.vitals.v2 + Health Auto Export)."
 echo ""
 echo "  To run tests anytime:"
 echo "      RAHAT_TEST_MODE=1 ./venv/bin/python -m tests.run_all"
