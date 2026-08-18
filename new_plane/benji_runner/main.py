@@ -24,14 +24,20 @@ from datetime import datetime
 
 from new_plane.log_setup import configure
 
-configure(os.getenv("BENJI_LOG_PATH", "vault/benji_runner.log"),
-          level=os.getenv("BENJI_LOG_LEVEL", "INFO"))
 logger = logging.getLogger("benji_runner")
 
-# Launchd starts this process with a bare environment — the BENJI_* keys
-# live in .env. Never under test mode (the hermetic stack must not read
-# a developer's real .env — the exact class core.io guards against).
-if os.getenv("RAHAT_TEST_MODE") != "1":
+
+def _configure_runtime() -> None:
+    """Log file + .env — called from main(), NEVER at import. The
+    import-time version wrote every pre-push test's fixture lines
+    ('stranger@evil.com', fake digests) into the LIVE
+    vault/benji_runner.log, which derailed launch-day debugging
+    (2026-08-17 20:06). Tests import this module's functions; only the
+    real entrypoint touches the real log and the real .env."""
+    if os.getenv("RAHAT_TEST_MODE") == "1":
+        return
+    configure(os.getenv("BENJI_LOG_PATH", "vault/benji_runner.log"),
+              level=os.getenv("BENJI_LOG_LEVEL", "INFO"))
     try:
         from dotenv import load_dotenv
         load_dotenv()
@@ -173,6 +179,7 @@ def cmd_status() -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    _configure_runtime()
     ap = argparse.ArgumentParser(prog="benji_runner")
     ap.add_argument("--ingest", action="store_true")
     ap.add_argument("--digest", nargs="?", const="auto",
