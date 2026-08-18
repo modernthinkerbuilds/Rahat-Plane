@@ -152,6 +152,9 @@ def build_morning(*, now: datetime, store_path: str | None = None,
         if package_names:
             body.append(f"  ({len(package_names)} tailored package(s) "
                         "attached: " + ", ".join(package_names) + ")")
+        elif int(prefs.get("morning_package_cap", 5)) <= 0:
+            body.append("  (packages are on-request by your preference "
+                        "— reply `kit <id>` for any role)")
         else:
             body.append("  (no packages attached this morning — low "
                         "match, cap reached, or generation degraded; "
@@ -210,7 +213,8 @@ def build_morning(*, now: datetime, store_path: str | None = None,
             sample=sample, ledger=store.source_ledger(path=store_path),
             warnings=warnings, org_types=org_types,
             first_morning=first_morning, overflow_count=len(overflow),
-            package_names=package_names)
+            package_names=package_names,
+            kit_only=int(prefs.get("morning_package_cap", 5)) <= 0)
         return subject, "\n".join(body), attachments, html
     return subject, "\n".join(body), attachments
 

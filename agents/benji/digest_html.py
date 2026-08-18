@@ -84,7 +84,8 @@ def render_morning_html(*, now: datetime, bands: dict, seen_count: int,
                         ledger: list[dict], warnings: list[str],
                         org_types: dict, first_morning: bool,
                         overflow_count: int,
-                        package_names: list[str] | None) -> str:
+                        package_names: list[str] | None,
+                        kit_only: bool = False) -> str:
     parts = [f'<div style="{FONT}max-width:860px;">',
              f'<h2 style="{FONT}font-size:17px;margin:0 0 2px 0;">'
              f'Benji — morning queue · {now.strftime("%a %Y-%m-%d")}'
@@ -99,6 +100,8 @@ def render_morning_html(*, now: datetime, bands: dict, seen_count: int,
         if not rows:
             continue
         color, label = BAND_STYLES[band]
+        if band == "apply" and kit_only:
+            label = "APPLY — reply `kit ID` for the package"
         extra = ""
         if band == "apply" and package_names:
             extra = (f' · {len(package_names)} package(s) attached: '

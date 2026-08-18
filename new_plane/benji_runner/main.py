@@ -79,10 +79,14 @@ def cmd_digest(which: str | None, *, preview: bool = False) -> int:
 
         prefs, _ = load_preferences()
         cap = int(prefs.get("morning_package_cap", 5))
-        candidates = [r for r in store.queue_rows(only_undigested=True)
-                      if (r.get("score") or 0) >= 75
-                      and (r.get("coverage") or 0) >= COVERAGE_FLOOR
-                      and (r.get("jd_text") or "").strip()]
+        if cap <= 0:
+            candidates = []      # kits on request only (her preference)
+        else:
+            candidates = [
+                r for r in store.queue_rows(only_undigested=True)
+                if (r.get("score") or 0) >= 75
+                and (r.get("coverage") or 0) >= COVERAGE_FLOOR
+                and (r.get("jd_text") or "").strip()]
         candidates.sort(key=lambda r: -(r.get("score") or 0))
         pkg_files: list = []
         pkg_names: list[str] = []

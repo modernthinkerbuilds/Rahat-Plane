@@ -59,6 +59,31 @@ def test_three_tuple_contract_unchanged_without_html(env):
     assert len(result) == 3            # S1 pins' unpacking stays valid
 
 
+def test_kit_only_mode_builds_nothing_and_says_so(env, tmp_path,
+                                                  monkeypatch):
+    """Co-owner decision (2026-08-18): morning_package_cap=0 → NO
+    auto-built packages, ever; the digest says packages are on-request
+    by preference (not the 'low match / degraded' explanation), and the
+    runner skips generation entirely."""
+    import json
+    prefs = tmp_path / "prefs.json"
+    prefs.write_text(json.dumps({"morning_package_cap": 0}))
+    monkeypatch.setenv("BENJI_PREFERENCES", str(prefs))
+    sent = []
+    import new_plane.benji_runner.emailer as emailer
+    monkeypatch.setattr(emailer, "_smtp_transport", lambda: sent.append)
+    from new_plane.benji_runner.main import cmd_digest
+    assert cmd_digest("morning", preview=False) == 0
+    msg = sent[0]
+    names = [p.get_filename() for p in msg.iter_attachments()]
+    assert not any(n.startswith("Resume_") for n in names)
+    body = msg.get_body(("plain",)).get_content()
+    assert "on-request by your preference" in body
+    assert "low match, cap reached" not in body
+    rich = msg.get_body(("html",)).get_content()
+    assert "reply `kit ID` for the package" in rich
+
+
 def test_email_carries_multipart_alternative(env):
     from new_plane.benji_runner.emailer import send_email
     sent = []
