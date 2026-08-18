@@ -68,7 +68,7 @@ def _chunk_attachments(attachments: list[tuple[str, object]],
     return chunks
 
 
-def send_email(*, subject: str, body: str,
+def send_email(*, subject: str, body: str, html: str | None = None,
                attachments: list[tuple[str, object]] | None = None,
                transport=None, now: datetime | None = None
                ) -> tuple[bool, str]:
@@ -104,6 +104,8 @@ def send_email(*, subject: str, body: str,
         msg.set_content(body if i == 1 else
                         f"(attachment overflow {i}/{total} for: "
                         f"{subject})")
+        if html and i == 1:
+            msg.add_alternative(html, subtype="html")
         for name, content in chunk:
             ext = "." + name.rsplit(".", 1)[-1].lower()
             maintype, subtype = _MIME.get(ext, ("text", "plain"))

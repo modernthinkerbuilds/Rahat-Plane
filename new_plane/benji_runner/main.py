@@ -94,16 +94,16 @@ def cmd_digest(which: str | None, *, preview: bool = False) -> int:
             else:
                 logger.warning("package for [%s] not built: %s", r["id"],
                                result.get("refusal"))
-        subject, body, attachments = dg.build_morning(
-            now=now, package_names=pkg_names or None)
+        subject, body, attachments, html = dg.build_morning(
+            now=now, package_names=pkg_names or None, with_html=True)
         attachments = attachments + pkg_files
     else:
-        result = dg.build_evening(now=now)
+        result = dg.build_evening(now=now, with_html=True)
         if result is None:
             logger.info("evening delta: nothing ≥60 since morning — "
                         "staying silent")
             return 0
-        subject, body = result
+        subject, body, html = result
         attachments = []
 
     if preview:
@@ -112,7 +112,7 @@ def cmd_digest(which: str | None, *, preview: bool = False) -> int:
             print(f"\n--- attachment: {name} ({len(content)} bytes) ---")
         return 0
 
-    sent, reason = send_email(subject=subject, body=body,
+    sent, reason = send_email(subject=subject, body=body, html=html,
                               attachments=attachments, now=now)
     if sent:
         store.log_digest(which, now=now,

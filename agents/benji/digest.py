@@ -99,9 +99,11 @@ def _ledger_footer(store_path, warnings: list[str]) -> str:
 
 def build_morning(*, now: datetime, store_path: str | None = None,
                   warnings: list[str] | None = None,
-                  package_names: list[str] | None = None
-                  ) -> tuple[str, str, list[tuple[str, str]]]:
-    """Returns (subject, body, attachments[(filename, text)]).
+                  package_names: list[str] | None = None,
+                  with_html: bool = False):
+    """Returns (subject, body, attachments[(filename, text)]) — plus a
+    4th element, the HTML alternative, when with_html=True (the runner
+    passes it; pins keep the stable 3-tuple).
     `package_names`: names of S2 packages the runner built for the
     apply band — mentioned in the body; the runner attaches the files."""
     cfg, cfg_w = load_filter_config()
@@ -180,6 +182,7 @@ def build_morning(*, now: datetime, store_path: str | None = None,
         body += [_fmt_one_line(r) for r in flagged]
         body.append("")
 
+    sample: list[dict] = []
     if now.weekday() == 6:  # Sunday: rejects sample (Tara #4)
         n = int(prefs["weekly_rejects_sample"])
         sample = store.sample_rejects(seed=now.strftime("%Y-%m-%d"), n=n,
@@ -196,11 +199,24 @@ def build_morning(*, now: datetime, store_path: str | None = None,
     n_top = len(bands[BAND_APPLY])
     subject = (f"Benji · {now.strftime('%a %m-%d')} · "
                f"{len(rows)} new, {n_top} in the apply band")
+    if with_html:
+        from agents.benji.digest_html import render_morning_html
+        html = render_morning_html(
+            now=now,
+            bands={"apply": bands[BAND_APPLY],
+                   "worth_a_look": bands[BAND_WORTH_A_LOOK],
+                   "maybe": bands[BAND_MAYBE]},
+            seen_count=len(bands[BAND_SEEN]), flagged=flagged,
+            sample=sample, ledger=store.source_ledger(path=store_path),
+            warnings=warnings, org_types=org_types,
+            first_morning=first_morning, overflow_count=len(overflow),
+            package_names=package_names)
+        return subject, "\n".join(body), attachments, html
     return subject, "\n".join(body), attachments
 
 
-def build_evening(*, now: datetime, store_path: str | None = None
-                  ) -> tuple[str, str] | None:
+def build_evening(*, now: datetime, store_path: str | None = None,
+                  with_html: bool = False):
     """Evening delta (18:00): ONLY when something ≥60 landed since the
     morning queue. Returns None to stay silent — no noise emails."""
     rows = store.queue_rows(statuses=("new",), only_undigested=True,
@@ -214,4 +230,11 @@ def build_evening(*, now: datetime, store_path: str | None = None
             "(they'll be in tomorrow's queue too):", ""]
     body += [_fmt_two_line(r, now) for r in hot]
     subject = f"Benji · evening: {len(hot)} new 60+ role(s)"
+    if with_html:
+        from agents.benji.digest_html import render_evening_html
+        cfg, _ = load_filter_config()
+        org_types = {s.get("org"): s.get("org_type", "")
+                     for s in cfg.get("sources", [])}
+        return subject, "\n".join(body), render_evening_html(
+            now=now, rows=hot, org_types=org_types)
     return subject, "\n".join(body)
