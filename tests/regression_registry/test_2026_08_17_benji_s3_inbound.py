@@ -192,6 +192,6 @@ def test_status_and_expand_attach_reports(env):
 
 
 def test_imap_client_refuses_wire_under_test_mode(env):
-    from new_plane.benji_runner.inbox import _imap_fetch_unseen
+    from new_plane.benji_runner.inbox import _imap_fetch_recent
     with pytest.raises(RuntimeError, match="no wire"):
-        _imap_fetch_unseen()
+        _imap_fetch_recent()

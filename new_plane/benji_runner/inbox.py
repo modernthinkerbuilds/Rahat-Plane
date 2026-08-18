@@ -46,13 +46,22 @@ def _allowed_senders() -> set[str]:
     return out
 
 
-def _imap_fetch_unseen() -> list[dict]:
+def _imap_fetch_recent() -> list[dict]:
     """Production IMAP path. Returns [{message_id, sender, subject,
-    body}]. Refuses to exist under test mode (inject instead)."""
+    body, x_benji}]. Refuses to exist under test mode (inject instead).
+
+    Searches by DATE (last 3 days), NOT by UNSEEN — Gmail delivers
+    self-sent mail to the inbox already marked read, so in the
+    single-mailbox topology her replies would never match UNSEEN
+    (caught on launch day). Idempotency comes from the processed_mail
+    Message-ID ledger, and NO flags are ever changed: this is HER
+    inbox — employer mail and her unread badges are not Benji's to
+    touch."""
     if os.getenv("RAHAT_TEST_MODE") == "1":
         raise RuntimeError("no wire under RAHAT_TEST_MODE=1 — inject "
                            "messages into poll_inbox()")
     import imaplib
+    from datetime import datetime as _dt, timedelta as _td
 
     user = os.getenv("BENJI_SMTP_USER", "")
     password = os.getenv("BENJI_SMTP_APP_PASSWORD", "")
@@ -60,11 +69,12 @@ def _imap_fetch_unseen() -> list[dict]:
         raise RuntimeError("BENJI_SMTP_USER / BENJI_SMTP_APP_PASSWORD "
                            "unset — cannot poll inbox")
     host = os.getenv("BENJI_IMAP_HOST", "imap.gmail.com")
+    since = (_dt.now() - _td(days=3)).strftime("%d-%b-%Y")
     out: list[dict] = []
     with imaplib.IMAP4_SSL(host) as imap:
         imap.login(user, password)
         imap.select("INBOX")
-        _, data = imap.search(None, "UNSEEN")
+        _, data = imap.search(None, f'(SINCE "{since}")')
         for num in (data[0] or b"").split():
             _, msg_data = imap.fetch(num, "(RFC822)")
             raw = msg_data[0][1]
@@ -87,7 +97,6 @@ def _imap_fetch_unseen() -> list[dict]:
                         "subject": msg.get("Subject", ""),
                         "body": body,
                         "x_benji": msg.get("X-Benji-Agent", "")})
-            imap.store(num, "+FLAGS", "\\Seen")
     return out
 
 
@@ -98,7 +107,7 @@ def poll_inbox(*, messages: list[dict] | None = None,
     """One poll cycle. Returns counts for the log/ledger."""
     now = now or datetime.now()
     if messages is None:
-        messages = _imap_fetch_unseen()
+        messages = _imap_fetch_recent()
     allowed = _allowed_senders()
     handled = ignored = 0
 
@@ -126,6 +135,15 @@ def poll_inbox(*, messages: list[dict] | None = None,
             continue
 
         parsed = parse_commands(msg.get("body", ""))
+        benji_directed = bool(parsed.commands) or \
+            "benji" in (msg.get("subject") or "").lower()
+        if not benji_directed:
+            # Her mail, not Benji's business (a note-to-self, an
+            # employer reply): ledger it silently — no ack, no quiz.
+            if mid:
+                store.mail_mark(mid, now=now, path=store_path)
+            ignored += 1
+            continue
         results, attachments = execute(parsed.commands, now=now,
                                        store_path=store_path, llm=llm)
         lines: list[str] = []
