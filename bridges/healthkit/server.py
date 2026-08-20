@@ -49,6 +49,28 @@ if os.getenv("RAHAT_TEST_MODE") != "1":          # keep tests quiet
 app = FastAPI(title="Rahat HealthKit bridge", docs_url=None, redoc_url=None)
 
 
+@app.middleware("http")
+async def _no_connection_reuse(request: Request, call_next):
+    """Every response says `Connection: close` — clients must not pool
+    sockets to this bridge.
+
+    LIVE FAILURE (2026-08-19, HAE Activity Log): background automation
+    uploads died with "The network connection was lost" while manual
+    retries succeeded — the classic stale-socket race. Health Auto
+    Export pools its HTTP connection; iOS suspends the app for hours;
+    uvicorn closes idle connections after ~5s; the woken app then
+    REUSES the dead socket, the write fails, and a background
+    automation gives up silently (a foreground manual tap just retries
+    on a fresh socket — which is why "manual works sometimes"). A LAN
+    bridge taking a handful of uploads a day gains nothing from
+    keep-alive; telling the client to close per-request deletes the
+    entire failure class regardless of server-side idle timeouts.
+    """
+    response = await call_next(request)
+    response.headers["Connection"] = "close"
+    return response
+
+
 def _db_path() -> str:
     return os.getenv(
         "RAHAT_VITALS_DB",
