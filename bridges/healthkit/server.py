@@ -32,6 +32,20 @@ from bridges.healthkit.ingest import ingest_payload  # noqa: E402
 
 logger = logging.getLogger("healthkit_bridge")
 
+# Root logging with timestamps (2026-08-19). The per-ingest summary
+# lines ("hae: N points, N sleep …") had NEVER appeared in
+# vault/vitals.log: under uvicorn the module logger has no handler —
+# uvicorn configures only its own uvicorn.* loggers — so every summary
+# was silently dropped, and when the owner asked "is the phone's
+# automation actually firing?" the log could not answer (uvicorn
+# access lines carry no timestamps either). new_plane.log_setup adds a
+# timestamped root handler and skips the FileHandler when launchd has
+# already redirected stdout to the same file (the every-line-twice
+# bug, 2026-08-11). uvicorn's own loggers keep their handlers.
+if os.getenv("RAHAT_TEST_MODE") != "1":          # keep tests quiet
+    from new_plane.log_setup import configure as _log_configure
+    _log_configure(os.getenv("HAE_LOG_PATH", "vault/vitals.log"))
+
 app = FastAPI(title="Rahat HealthKit bridge", docs_url=None, redoc_url=None)
 
 
