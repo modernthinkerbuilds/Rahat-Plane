@@ -249,6 +249,16 @@ _WOD_DESIGN_GUARD_RE = re.compile(
     re.I,
 )
 
+# Workout NOUNS for the early design-preempt check (2026-08-20). The
+# guard's verbs alone are too broad to fire early ("give me a day-by-day
+# breakdown" is a status ask) — authoring intent is verb + one of these.
+_WORKOUT_NOUN_RE = re.compile(
+    r"\b(workouts?|wods?|metcons?|sessions?|amrap|emom|"
+    r"strength(?:\s+(?:work|piece|day))?|accessor(?:y|ies)|"
+    r"conditioning|intervals?|program\w*)\b",
+    re.I,
+)
+
 # Intent-layer intents that must NOT divert at the DELEGATE level (ADR-017).
 # These have keywords that are ambiguous at the orchestrate boundary, so a
 # fuzzy match here risks stealing a synthesis-needing query:
@@ -336,6 +346,22 @@ def classify_delegation(msg: str) -> tuple[str, str]:
     if (_WEIGHT_LOG_RE.search(text) or _HRV_LOG_RE.search(text)
             or _BURN_LOG_RE.search(text) or _TIER_RE.search(text)):
         return ("kobe_route", text)
+
+    # 4b. EXPLICIT DESIGN INTENT preempts every deterministic Kobe READ
+    #     below (live incident 2026-08-20, 12:44 AM): "…catch in my right
+    #     hip after deadlifts LAST WEEK… give me a bench press strength,
+    #     a good WOD and accessories… burn 800 CALORIES in 75 min" — a
+    #     rich authoring request — matched STATUS ('last week') at step 5
+    #     and was answered, twice, with last week's kcal total. The
+    #     design guard existed but was only consulted at steps 8/8a-genie,
+    #     AFTER the status/pain/plan reads it needed to protect against.
+    #     Design verb + workout noun = authoring work → orchestrate
+    #     (Fraser designs; the synth folds in status facts and the pain
+    #     caution). Deliberately AFTER plan mutations and state logs:
+    #     "swap out Tuesday's session" stays a Kobe plan mutation, and
+    #     logs never carry design verbs.
+    if _WOD_DESIGN_GUARD_RE.search(text) and _WORKOUT_NOUN_RE.search(text):
+        return ("orchestrate", text)
 
     # 5. Status queries → Kobe (he formats deterministically + cheaply).
     if _STATUS_QUERY_RE.search(text):
