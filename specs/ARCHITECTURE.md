@@ -104,36 +104,64 @@ Each principle below is paired with the alternative we rejected and the cost we 
 
 Borrowed in spirit from Borg / Vertex AI Agent Engine: separate **what to run** (declarative) from **what to remember** (state) from **how to run it** (compute). The goal is that adding agent #20 changes one of the three planes minimally and the other two not at all.
 
+*Diagram refreshed 2026-08-20 (as built). Since the original drawing the runtime moved to the `new_plane/` Python runners (ADR-013), the household got a standalone Genie bot channel, a second architect shipped Benji on the same substrate, and three ingestion bridges went live. Seven launchd services run 24/7 on the Mac mini.*
+
 ```
-                ┌────────────────────────────────────────────┐
-                │                  CHANNELS                  │
-                │  Telegram (now)  ·  Mobile (later)  ·  …   │
-                └────────────────────┬───────────────────────┘
-                                     │
-                ┌────────────────────▼───────────────────────┐
-                │             Miya (Orchestrator)            │
-                │  classify → fan-out → synthesize → voice   │
-                └─────────┬────────────────────┬────────────┘
-                          │                    │
-       ┌──────────────────▼──────┐  ┌──────────▼──────────────┐
-       │      Charter (Policy)    │  │  Decisions (Trace Log)  │
-       │  every work-order passes │  │ trace_id, span, latency │
-       │  approve · modify · veto │  │  cost, outcome, replay  │
-       └──────────────────┬───────┘  └──────────┬──────────────┘
-                          │                     │
-                ┌─────────▼─────────────────────▼─────────────┐
-                │              Agent Host                      │
-                │  KobeAgent · Coach · Curriculum · …     │
-                │     (Python class implements: Agent)         │
-                └────────────────────┬─────────────────────────┘
-                                     │
-                ┌────────────────────▼─────────────────────────┐
-                │           SQLite Intent Ledger               │
-                │ raw_vitals · weighin_log · workout_log       │
-                │ weekly_plan · week_preferences · intents     │
-                │ governance_log · decisions · episodes        │
-                └──────────────────────────────────────────────┘
+┌──────────────────────────── CHANNELS ─────────────────────────────┐
+│  Telegram: Bade Miya bot (owner)     Telegram: Genie bot          │
+│  (single voice, all agents)          (owner + spouse, paired)     │
+│  Email/Gmail: Benji mailbox          iPhone: Health Auto Export   │
+│  (digests out, replies in)           (HealthKit → LAN POST)       │
+└──────────────┬─────────────────────────────┬──────────────────────┘
+               │                             │
+┌──────────────▼──────────────┐  ┌───────────▼──────────────────────┐
+│  miya_runner  (miya.v2)     │  │  genie_runner  (genie)           │
+│  poll → delegate_classifier:│  │  household gate · pair codes ·   │
+│  @addr → slash → mutations  │  │  8am weekend-digest tick;        │
+│  → logs → DESIGN-PREEMPT →  │  │  transport only — same brain     │
+│  status → pain → lookup →   │  ├──────────────────────────────────┤
+│  genie-NL → orchestrate     │  │  benji_runner (benji.ingest /    │
+│  (lookup·design·synth·voice)│  │  benji.digest) — Gmail in/out    │
+└───────┬─────────────────────┘  └───────────┬──────────────────────┘
+        │                                    │
+┌───────▼────────────────────────────────────▼─────────────────────┐
+│                       AGENTS (one contract)                      │
+│  Kobe (training/kcal)   Fraser (workout design)   Scientist      │
+│  Genie (weekend concierge · household calendar · events digest)  │
+│  Benji (job search: ingest→filter→score→digest)  Huberman (stub) │
+│  Bajrangi (memory-adapter proof of concept)                      │
+└───────┬──────────────────────┬───────────────────────┬───────────┘
+        │                      │                       │
+┌───────▼────────┐  ┌──────────▼─────────┐  ┌──────────▼───────────┐
+│ Charter        │  │ Decisions ledger   │  │ core.llm.generate    │
+│ every write    │  │ trace_id · span ·  │  │ ONE spend chokepoint │
+│ reviewed;      │  │ latency · cost ·   │  │ budget + cost gates; │
+│ governance_log │  │ outcome · replay   │  │ Gemini 2.5-flash     │
+│ audit row      │  │                    │  │ (pinned) + grounding │
+└───────┬────────┘  └──────────┬─────────┘  └──────────┬───────────┘
+        │                      │                       │
+┌───────▼──────────────────────▼───────────────────────▼───────────┐
+│                    DATA PLANE (vault/, gitignored)               │
+│  rahat.db: raw_vitals(+idx) · sleep_sessions · workouts_hk ·     │
+│   events_inventory · decisions · governance_log · memory_* ·     │
+│   weekly_plan · intents · user_state · weighin/hrv/nudge logs    │
+│  JSON stores: genie_household (calendar·plans·chats) ·           │
+│   family_profile · event_sources overlay · benji/* · .env        │
+└──────────────────────────────▲───────────────────────────────────┘
+                               │
+┌──────────────────────────────┴───────────────────────────────────┐
+│  INGESTION BRIDGES (launchd)                                     │
+│  vitals.v2 — uvicorn :5000 /hae: HealthKit minute series, sleep  │
+│   stages, typed workouts; DAY_SUM vs DAY_SNAPSHOT semantics;     │
+│   Connection: close (no stale sockets); legacy /vitals retained  │
+│  events — 07:00/12:30/18:00: 20 Bay-wide sources (SF · Marin ·   │
+│   East Bay · Peninsula · South Bay · Santa Cruz · Monterey),     │
+│   grounded search + iCal, dedup + suspect-marking                │
+│  sugar.bridge — SugarWOD → gym WOD sync                          │
+└──────────────────────────────────────────────────────────────────┘
 ```
+
+**As-built inventory (2026-08-20).** launchd services: `com.rahat.miya.v2`, `com.rahat.genie`, `com.rahat.benji.ingest`, `com.rahat.benji.digest`, `com.rahat.events`, `com.rahat.vitals.v2`, `com.rahat.sugar.bridge`. Retired 2026-08-11/17 (do not reinstate): old `com.rahat.miya`, the four nightly jobs, the Flask vitals listener. Two architects share `main` under the two-architect protocol (lanes by directory; shared-file changes carry `COORDINATION:` commit lines); the pre-push gate (regression registry ~1,000 pins · silent-failure guard · unit · contract layers; ~2,900 tests total) blocks any red push.
 
 ### 4.1 Control plane — declarative
 
@@ -153,10 +181,13 @@ The Intent Ledger is a single SQLite file (`vault/rahat.db`) with WAL mode enabl
 
 | Category | Tables | What they hold |
 |---|---|---|
-| **Observations** | `raw_vitals`, `vitality_samples`, `vitality_daily_summary`, `hrv_log`, `weighin_log`, `workout_log` | Passive data from sensors and manual logs. Append-only in spirit. |
-| **Intents** | `intents` | Hard-coded North Stars: 84 kg by 2026-08-13 (intermediate), 80 kg by 2026-11-03 (final). Auto-recomputed on weight log via `recalibrate_intents()`. |
-| **Plans** | `weekly_plan`, `week_preferences`, `weekly_campaigns` | The materialized 7-day schedule for each week, plus per-week overrides (unavailable days, forced CF picks, tolerated blacklist movements). |
-| **Audit & runtime** | `governance_log`, `decisions`, `episodes`, `episode_notes`, `nudge_log`, `user_state` | Charter verdicts, decision traces, episodic memory, throttling state, cross-restart key-value (e.g. `recovery_tier`). |
+| **Observations** | `raw_vitals` (indexed on `metric_type, timestamp`), `sleep_sessions`, `workouts_hk`, `hrv_log`, `weighin_log`, `workout_log` | Sensor + manual data. Since 2026-08-16 the HealthKit bridge feeds minute-granularity series, per-session sleep stages, and typed workouts; daily metrics keep one row/day (`DAY_SUM` accumulates, `DAY_SNAPSHOT` newest-wins). |
+| **World inventory** | `events_inventory`, `events_refresh_log` | Verified local events from the 20-source Bay-wide registry, deduped on (title, date, city) with silent-cancellation suspect-marking. Genie reads inventory first. |
+| **Intents & plans** | `intents`, `weekly_plan`, `week_preferences`, `weekly_campaigns` | North Stars + the materialized 7-day schedule and per-week overrides. |
+| **Memory** | `memory_entities`, `memory_events`, `memory_threads`, `memory_preferences`, `memory_relationships` | The universal memory substrate; per-agent adapters (Scientist live, Bajrangi PoC) define their own entity types on the same tables. |
+| **Audit & runtime** | `governance_log`, `decisions`, `nudge_log`, `user_state` | Charter verdicts, decision traces, throttling state, cross-restart key-value. |
+
+JSON stores beside the DB (all gitignored): `genie_household.json` (household calendar, committed plans, chat allowlist, concierge sessions), `family_profile.json` (role-based Subjects, `present_until` temporaries), `event_sources.json` (registry overlay — add/disable sources without a commit), and `benji/*` (filter config, candidate source, preferences, gate rules).
 
 **Why SQLite, not Postgres / DuckDB / lancedb?**
 
@@ -169,9 +200,11 @@ The Intent Ledger is a single SQLite file (`vault/rahat.db`) with WAL mode enabl
 
 ### 4.3 Runtime plane — compute
 
-What the system **does right now**.
+What the system **does right now**. *(Refreshed 2026-08-20 — the runtime is the `new_plane/` runner generation, ADR-013.)*
 
-- **Miya (orchestrator).** Owns the Telegram poll loop and the agent registry. Hybrid router: walk every agent's `triggers` (cheap regex first); if exactly one fires, dispatch; if zero or multiple, fall back to a Gemini Flash classifier ("which of these N agent descriptions best matches?").
+- **miya_runner (`com.rahat.miya.v2`).** Owns the Bade Miya Telegram poll loop. Inbound goes through `delegate_classifier` — a strictly ordered deterministic ladder (@-address → Genie slash → slash→Kobe → plan mutations → state logs → **design-intent preempt** (design verb + workout noun → orchestrate, 2026-08-20) → status → plan view → pain → recovery → WOD lookup → Genie NL → intent layer → orchestrate). Orchestrate = lookup → design → synthesize → validate → voice; deterministic routes skip the LLM entirely.
+- **genie_runner (`com.rahat.genie`).** Genie's own Telegram bot — transport only (pairing via deep-link codes, household allowlist capped at 2 adults + 1 group, the 8am weekend-digest tick). Both channels share one brain: `agents/genie/*`, with intent patterns single-sourced in `agents/genie/intents.py` and pinned by object identity.
+- **benji_runner (`com.rahat.benji.ingest` / `.digest`).** Benji's scheduled jobs — Gmail out (digests, on-request kits) and in (reading her replies), with charter-gated send policies (single approved recipient, fail-closed).
 - **Agent host.** Lifecycle: `on_start`, `on_message → route → Reply`, `on_tick(now)`, `on_stop`. Each agent implements a 4-method contract (`name`, `description`, `triggers`, `route`, `tick`).
 - **Tool broker** (`core/io.py`). Single chokepoint for outbound Telegram calls, Gemini API calls, and SQLite connections. 20 agents share one connection-pooled HTTP session and one Gemini client; without this, we'd have 20 redundant client init paths.
 - **Voice layer** (`core/voice.py`). Per PRD §3, Miya owns the persona ("Dakhini-Hyderabadi wit + PM brevity"). Implemented as a deterministic phrasebook (no per-message LLM call) classified by message kind. Idempotent and preserves all numbers/dates/structure verbatim.
