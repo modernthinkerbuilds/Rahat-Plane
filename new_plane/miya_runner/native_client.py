@@ -270,24 +270,31 @@ def genie_route(message: str, chat_id: str | None = None,
 
 def huberman_route(message: str, chat_id: str | None = None,
                    trace_id: str | None = None) -> AdapterResult:
-    """P1-3 (2026-06-10): explicit @huberman path.
+    """@huberman + cooldown-NL path. UNPARKED 2026-08-24 (S1).
 
-    Today, the @huberman prefix funnels through Kobe and Kobe's
-    `_should_delegate` may route on. That works but the log path
-    just shows `kobe_route` which is misleading. This wrapper makes
-    the routing decision explicit + auditable.
-
-    Implementation: ask Kobe's handler.route() with the message but
-    prepend an explicit @huberman marker so the old plane's mesh
-    routes it correctly. The actual Huberman handler lives in
-    agents/huberman/ once it's populated; until then this delegates
-    to Kobe with a clear log marker.
+    Two-tier dispatch, one log path (was P1-3's Kobe-mesh delegation):
+      1. Cooldown-shaped bodies (agents.huberman.handler.COOLDOWN_RE —
+         cooldown / stretch / mobility / down-regulation) are answered
+         first-class by the new Huberman handler: Starrett-voice
+         session via core.llm.generate("huberman", …), injury-aware,
+         variety-rotated, deterministic never-empty fallback. The
+         message itself steers regeneration ("more hips", "10 min").
+      2. Everything else ("is my HRV ok for a PR") keeps the parked-era
+         behavior VERBATIM: delegate to Kobe's handler.route() with an
+         explicit @huberman marker so the old plane's mesh routes it —
+         Kobe owns recovery STATUS via core.huberman_bridge, whose
+         no-data all-None floor (2026-05-19 user rule) is untouched.
+         Pinned by test_2026_06_14_huberman_parked_route.py, which
+         stays green through the unpark on exactly this tier.
     """
     tid = _trace(trace_id)
     try:
+        from agents.huberman import handler as hub_handler
+        text = hub_handler.route(message, trace_id=tid)
+        if text is not None:
+            return _ok(tid, {"text": text, "path": "huberman_route"})
         from agents.the_scientist.handler import route as kobe_route_fn
-        # Pass through with an explicit @huberman tag so Kobe's
-        # _should_delegate routes via the mesh.
+        # Non-cooldown body → Kobe's mesh, explicit @huberman tag.
         text = kobe_route_fn(f"@huberman {message}")
         return _ok(tid, {"text": text or "", "path": "huberman_route"})
     except Exception as e:

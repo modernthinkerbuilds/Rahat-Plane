@@ -177,7 +177,11 @@ def test_slash_calendar_view_add_remove(env):
     assert "calendar is empty" in handler.route("/calendar")
     handler.route("/calendar add dinner at Ravi uncle's on Sunday",
                   chat_id="111")
-    view = handler.handle_calendar("", now=_WED)
+    # route() resolved "Sunday" against the REAL clock, so the view must
+    # use the real clock too — a hardcoded now=_WED gives a 14-day
+    # window that stops covering the real next-Sunday two weeks after
+    # the pin was written (third date-rollover lesson, 2026-08-24).
+    view = handler.handle_calendar("", now=datetime.now())
     assert "Ravi uncle" in view and "Sunday" in view
     out = handler.route("/calendar remove ravi", chat_id="111")
     assert "Removed" in out

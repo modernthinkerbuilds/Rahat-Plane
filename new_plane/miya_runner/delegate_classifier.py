@@ -180,6 +180,20 @@ _PAIN_PROFILE_RE = re.compile(
 )
 
 
+# ─── Cooldown / mobility asks (Huberman owns these) ────────────────────
+# Agent #5 unpark, S1 (2026-08-24). Single source of truth is
+# agents.huberman.handler.COOLDOWN_RE — the classifier and
+# native_client's in-handler check must agree on what "cooldown-shaped"
+# means, or a message could route to huberman_route only to be bounced
+# back to Kobe's mesh (or vice versa). Deliberately DISJOINT from
+# _RECOVERY_RE below: Kobe keeps breathing protocols / pre-fuel /
+# post-recovery / "recovery routine"; Huberman owns cooldown, stretch,
+# mobility, down-regulation, and the soft-tissue tool words.
+# COORDINATION: shared file — rung addition only, no existing pattern
+# touched.
+from agents.huberman.handler import COOLDOWN_RE as _COOLDOWN_RE  # noqa: E402
+
+
 # ─── Recovery / breathing protocols (Kobe owns these) ──────────────────
 _RECOVERY_RE = re.compile(
     r"\b("
@@ -287,14 +301,14 @@ def classify_delegation(msg: str) -> tuple[str, str]:
       - "genie_route" → call native_client.genie_route(stripped_msg) and
         return as-is (agent #4, 2026-08-06 — household/weekend planning;
         fully deterministic in this phase)
-      - "huberman_route" → PARKED agent. The route is live and auditable
-        (native_client.huberman_route logs path="huberman_route"), but the
-        Huberman agent itself is a stub (agents/huberman/ is empty) — the
-        route delegates to Kobe's mesh, which handles Huberman-domain
-        (HRV/sleep/soreness) internally via core.huberman_bridge. When no
-        HRV/sleep data exists, the bridge returns "unknown" and the
-        constraint is not applied (per the 2026-05-19 user rule). Building
-        Huberman first-class is deferred; do not relitigate in-session.
+      - "huberman_route" → call native_client.huberman_route(stripped_msg).
+        UNPARKED 2026-08-24 (S1, owner: "lets build huberman now"):
+        cooldown / stretch / mobility asks are answered first-class by
+        agents.huberman.handler (Starrett-voice cooldown, injury-aware,
+        variety-rotated, deterministic fallback). Non-cooldown bodies
+        ("is my HRV ok") still delegate to Kobe's mesh exactly as the
+        parked route did — core.huberman_bridge's no-data safety floor
+        (2026-05-19 user rule) is unchanged.
       - "orchestrate" → use the standard lookup/design/synthesize flow
     """
     if not msg or not msg.strip():
@@ -375,6 +389,16 @@ def classify_delegation(msg: str) -> tuple[str, str]:
     # 6. Pain/profile mutations → Kobe (slash family + NL forms).
     if _PAIN_PROFILE_RE.search(text):
         return ("kobe_route", text)
+
+    # 6b. Cooldown / stretch / mobility → Huberman (agent #5, 2026-08-24).
+    #     AFTER pain (step 6): "my hip hurts when stretching" is a pain
+    #     report Kobe owns, not a cooldown request. BEFORE recovery
+    #     (step 7) so Huberman claims his domain before Kobe's broader
+    #     recovery family gets a look. native_client.huberman_route
+    #     answers cooldown-shaped bodies with the new handler and still
+    #     delegates recovery-STATUS bodies to Kobe's mesh.
+    if _COOLDOWN_RE.search(text):
+        return ("huberman_route", text)
 
     # 7. Recovery protocols → Kobe (breathing, pre-fuel, post-recovery).
     if _RECOVERY_RE.search(text):

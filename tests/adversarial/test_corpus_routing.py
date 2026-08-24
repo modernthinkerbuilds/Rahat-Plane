@@ -19,8 +19,12 @@ moment the architect's fix lands. See PROPOSED_FIXES.md.
 Labels are the CONTRACT (intended route), not a copy of current behavior:
 deterministic command surface (slash, logs, explicit plan mutations,
 explicit WOD lookups, recovery, pain, Kobe-owned stats) → kobe_route;
-explicit @fraser → fraser_route; open-ended coaching / design / planning
-questions → orchestrate (the synth path is correct for those).
+explicit @fraser → fraser_route; cooldown / stretch / mobility asks →
+huberman_route (agent #5 unpark, 2026-08-24 — these entries were
+labeled orchestrate while Huberman was parked; the owner's real
+cooldown phrasings are now exactly the messages the agent exists for);
+open-ended coaching / design / planning questions → orchestrate (the
+synth path is correct for those).
 """
 from __future__ import annotations
 
@@ -32,7 +36,8 @@ import pytest
 from new_plane.miya_runner.delegate_classifier import classify_delegation
 
 CORPUS_PATH = Path(__file__).parent / "corpus.json"
-VALID_PATHS = {"kobe_route", "fraser_route", "orchestrate"}
+VALID_PATHS = {"kobe_route", "fraser_route", "huberman_route",
+               "orchestrate"}
 
 
 def _load() -> list[dict]:

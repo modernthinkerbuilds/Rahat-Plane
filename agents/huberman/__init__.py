@@ -1,10 +1,19 @@
-"""huberman — recovery / sleep / HRV agent (rebranded from bajrangi 2026-05-12).
+"""huberman — mobility / cooldown / recovery agent (agent #5).
 
-Same alias-package pattern as agents/kobe/. See agents/kobe/__init__.py
-for the full rationale. bajrangi is a 110-LOC stub today, so the file
-move would be cheap — but doing it asymmetrically (one package moved,
-one aliased) would create needless surprise. Both get the same
-treatment so the rebrand mechanics are uniform.
+UNPARKED 2026-08-24 (S1, owner: "lets build huberman now"): the
+first-class modules live HERE as real files — protocols.py (drill
+library + deterministic composer), state.py (vault profile, variety
+memory, autocool marker — all test-sandboxed), context.py (read-only
+HealthKit substrate reads), coach.py (Starrett-voice LLM composer with
+the never-empty fallback), handler.py (route + the 9:30 PM autocool
+tick). Athlete PII lives ONLY in vault/huberman_profile.json and
+vault/huberman/ (gitignored) — this package ships PII-free defaults.
+
+The `memory` submodule below is still the rebrand ALIAS of
+agents.bajrangi.memory (2026-05-12, same pattern as agents/kobe/ —
+see agents/kobe/__init__.py). agents/bajrangi/ is the memory-substrate
+PoC and belongs to the other architect's lane (two-architect protocol);
+the alias is read-only coupling and stays untouched.
 
 For users / docs / public-facing strings, `huberman` is the brand.
 Miya's Dakhini opener may still address the agent as "Bajrangi bhai"

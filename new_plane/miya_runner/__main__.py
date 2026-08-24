@@ -186,12 +186,25 @@ def _fire_nudges(tg: "TelegramClient", chat_id: str) -> None:
         logger.warning("nudge import failed: %s: %s", type(e).__name__, e)
         return
 
-    for name, fn in (
+    # Huberman autocool (agent #5 S1, 2026-08-24): the 9:30 PM
+    # post-CrossFit cooldown push (owner: "I want huberman at 9:30 pm
+    # autorun"). Separate import so a Huberman bug can never take down
+    # Kobe's nudges — and vice versa.
+    # COORDINATION: shared file — additive tick entry only.
+    nudge_fns: list = [
         ("morning_briefing", maybe_morning_briefing),
         ("weekly_reset", maybe_weekly_reset),
         ("recovery_nudge", maybe_recovery_nudge),
         ("walk_nudge", maybe_walk_nudge),
-    ):
+    ]
+    try:
+        from agents.huberman.handler import maybe_autocool
+        nudge_fns.append(("huberman_autocool", maybe_autocool))
+    except Exception as e:
+        logger.warning("huberman autocool import failed: %s: %s",
+                       type(e).__name__, e)
+
+    for name, fn in nudge_fns:
         try:
             text = fn()
         except Exception as e:

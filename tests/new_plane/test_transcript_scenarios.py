@@ -87,9 +87,12 @@ class TestFraserCoachScenarios:
         assert path in ("orchestrate", "fraser_route")
 
     def test_cooldown_request_via_design(self):
-        """Cool-downs and stretching routines."""
+        """Cool-downs and stretching routines → Huberman (agent #5
+        unpark, 2026-08-24). This scenario expected orchestrate while
+        Huberman was parked; cooldown asks are now his first-class
+        domain (see test_2026_08_24_huberman_s1_cooldown.py)."""
         path, _ = classify_delegation("give me a good cool down after my 10K")
-        assert path in ("orchestrate", "fraser_route")
+        assert path == "huberman_route"
 
     def test_recovery_routine_request_routes_to_kobe(self):
         """When user says 'recovery routine' (a specific term),
