@@ -305,6 +305,20 @@ def build_prompt_md(job: dict, resume_text: str, letter_text: str,
     ])
 
 
+def cfg_sources_lookup(job: dict, *, load_filter: bool = False):
+    """Yield the org_type for a job: registry entry first, else the
+    source's assumed hint, else '' — same precedence scoring uses."""
+    from agents.benji.protocols import load_filter_config
+    cfg, _ = load_filter_config()
+    for s in cfg.get("sources", []):
+        if s.get("org") == job.get("org"):
+            yield s.get("org_type", "")
+            return
+    yield job.get("_org_type_hint", "") or ("nonprofit"
+                                            if job.get("source_tier") == 3
+                                            else "")
+
+
 def generate_package(display_id: int, *, llm=None,
                      now: datetime | None = None,
                      store_path: str | None = None) -> dict:
@@ -353,6 +367,66 @@ def generate_package(display_id: int, *, llm=None,
                      "from source defaults; the coverage figure is "
                      "title-only and NOT meaningful. Read the posting "
                      "at the link before sending.")
+
+    # ── Markdown kit mode (co-owner decision 2026-08-24): the
+    # deliverable is ONE Claude-ready .md brief — no docx/pdf. The
+    # optional LLM positioning narrative is gate-checked and DROPPED on
+    # failure (deterministic core always ships; a kit is never blocked).
+    if str(prefs.get("package_format", "docx")).lower() == "md":
+        from agents.benji.coverage import required_terms
+        from agents.benji.kit_md import build_claude_kit, lead_experiences
+        from agents.benji.verification import (check_numbers, check_rules,
+                                               load_gate_rules)
+
+        story, story_why = select_story(job, store_path=store_path)
+        org_type = ""
+        for s in cfg_sources_lookup(job, load_filter=True):
+            org_type = s
+            break
+        req = required_terms(job.get("jd_text", "")) or jd_terms
+        leads = lead_experiences(source, req, jd_terms)
+
+        pos_prompt = f"""Write a positioning brief (150-250 words) for this
+candidate targeting this role. Facts ONLY from the record excerpts below —
+no new numbers, no new claims. Cover: the strongest through-line for THIS
+org, how to frame the two most relevant experiences, and one honest line on
+the biggest gap. Plain language. Return only the brief.
+
+RECORD EXCERPTS:
+{source.profile}
+{source.narrative}
+LEAD ROLES: {'; '.join(l['role'].title + ' at ' + l['role'].org for l in leads)}
+
+ROLE: {job.get('title')} at {job.get('org')}
+JD EXCERPT: {(job.get('jd_text') or '')[:1200]}"""
+        llm_pos = _llm_call(pos_prompt, llm=llm)
+        if llm_pos:
+            rules, _ = load_gate_rules()
+            fails = (check_numbers(llm_pos, source, "positioning")
+                     + check_rules(llm_pos, rules, "positioning",
+                                   is_resume=False))
+            if fails:
+                flags.append("LLM positioning brief dropped at the gate "
+                             f"({fails[0][:80]}) — deterministic "
+                             "positioning below stands")
+                llm_pos = None
+        kit = build_claude_kit(job=job, source=source, cov=cov,
+                               story=story, story_why=story_why,
+                               org_type=org_type, leads=leads,
+                               llm_positioning=llm_pos, now=now)
+        org_slug = re.sub(r"[^A-Za-z0-9]+", "", job.get("org", "Org"))[:24]
+        review = build_review_md(job, cov, story, story_why, [],
+                                 flags, GateReport(), prefs)
+        benji_state.gated_story_append(story, job.get("org", ""),
+                                       display_id, now=now,
+                                       store_path=store_path)
+        return {"ok": True,
+                "files": [(f"Claude_Kit_{org_slug}.md", kit),
+                          ("review.md", review)],
+                "gate": GateReport(), "review_md": review,
+                "story": story, "coverage": cov.coverage, "job": job,
+                "flags": flags}
+
 
     roles_out = []
     role_bullets: dict[str, tuple[int, int]] = {}

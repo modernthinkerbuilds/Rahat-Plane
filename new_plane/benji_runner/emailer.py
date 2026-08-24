@@ -17,6 +17,7 @@ import os
 import smtplib
 from datetime import datetime
 from email.message import EmailMessage
+from email.utils import format_datetime, make_msgid
 
 from agents.benji.protocols import KIND_EMAIL_SEND, load_preferences
 from agents.benji.state import _charter_gate
@@ -70,6 +71,7 @@ def _chunk_attachments(attachments: list[tuple[str, object]],
 
 def send_email(*, subject: str, body: str, html: str | None = None,
                attachments: list[tuple[str, object]] | None = None,
+               in_reply_to: str | None = None,
                transport=None, now: datetime | None = None
                ) -> tuple[bool, str]:
     """Charter-gated send to the configured co-owner address.
@@ -99,6 +101,17 @@ def send_email(*, subject: str, body: str, html: str | None = None,
         msg["From"], msg["To"] = sender, recipient
         msg["X-Benji-Agent"] = "1"   # inbox loop-guard: Benji never
         #                              parses its own mail (see inbox.py)
+        # Deliverability (found live 2026-08-24: digests "sent" daily
+        # but drifting to Spam): a missing Date and Message-ID are
+        # classic spam-score signals on raw SMTP mail, and threading an
+        # ack into her own conversation both looks legitimate and reads
+        # better. Real headers, always.
+        msg["Date"] = format_datetime((now or datetime.now()).astimezone())
+        msg["Message-ID"] = make_msgid(domain=(sender.split("@")[-1]
+                                               or "benji.local"))
+        if in_reply_to:
+            msg["In-Reply-To"] = in_reply_to
+            msg["References"] = in_reply_to
         msg["Subject"] = subject if total == 1 else \
             f"{subject} ({i}/{total})"
         msg.set_content(body if i == 1 else

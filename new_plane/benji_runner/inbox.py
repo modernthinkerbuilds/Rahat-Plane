@@ -159,6 +159,7 @@ def poll_inbox(*, messages: list[dict] | None = None,
         sent, reason = send_email(subject=subject,
                                   body="\n".join(lines),
                                   attachments=attachments,
+                                  in_reply_to=mid or None,
                                   transport=transport, now=now)
         if not sent:
             logger.error("inbox ack NOT sent: %s", reason)
