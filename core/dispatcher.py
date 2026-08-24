@@ -284,6 +284,27 @@ def _h_daily_breakdown(msg: str, match: re.Match) -> str:
     return _kobe.handle_daily_burn_breakdown()
 
 
+def _h_daily_burn(msg: str, match: re.Match) -> str:
+    """'how many calories did I burn yesterday/today' → deterministic
+    single-day burn lookup.
+
+    LIVE BUG 2026-08-24 (12:18 AM, screenshot): "How many calories did
+    I burn yesterday" had NO dispatcher route, fell to the reasoner —
+    whose context carries only the weekly total — and the user was told
+    "I don't have a record of your calorie burn for yesterday" while
+    raw_vitals held 1,615 kcal for that exact day. Same defect class as
+    the 06-21 daily_breakdown fix, one day narrower. handle_daily_burn
+    (the legacy YEST_RE rung the reasoner was pre-empting) already
+    answers this correctly; it just needed a route in front of the LLM.
+    """
+    from datetime import datetime, timedelta
+    from agents.the_scientist import handler as _kobe
+    when = datetime.now()
+    if re.search(r"\byesterday\b", msg, re.I):
+        when -= timedelta(days=1)
+    return _kobe.handle_daily_burn(when)
+
+
 def _h_one_rm_set(msg: str, match: re.Match):
     """Natural-language 1RM set → the tested ``/profile set`` persist path.
 
@@ -553,6 +574,32 @@ _DAILY_BREAKDOWN_RE = re.compile(
     re.I,
 )
 
+# Single-day burn lookup — "how many calories did I burn yesterday",
+# "burn today", "calories yesterday" (live bug 2026-08-24, see
+# _h_daily_burn). Guards, in order of what they protect:
+#   * requires a today/yesterday token — weekly asks stay with
+#     last_week / weekly_remaining;
+#   * `did\s*i` (optional space) — the live message arrived as the
+#     phone-keyboard merge "didi burn"; "valleys" likewise arrived as a
+#     dictation mishear of "calories" (both verbatim in the screenshot);
+#   * NO 3-4 digit number — "wod 850 today" / "burned 800 cal today"
+#     are burn LOGS, not lookups;
+#   * NO need/target/remaining/left/goal/plan words — "how many more
+#     calories do I need today" is a pacing question, not a lookup.
+_DAILY_BURN_RE = re.compile(
+    r"^(?!.*\b\d{3,4}\b)"
+    r"(?!.*\b(?:need|target|goal|remaining|left|plan|more)\b)"
+    r"(?=.*\b(?:today|yesterday)\b)"
+    r".*\b(?:"
+    r"(?:how\s+(?:many|much)\b.{0,30}?(?:did\s*i|do\s*i)\s+burn)|"
+    r"(?:did\s*i\s+burn)|"
+    r"(?:cal(?:orie)?s?|kcal|valleys?|burn(?:ed|t)?)\s+"
+    r"(?:for\s+|on\s+)?(?:today|yesterday)|"
+    r"(?:today'?s?|yesterday'?s?)\s+(?:burn|cal(?:orie)?s?|kcal)"
+    r")",
+    re.I | re.S,
+)
+
 # Plan EDITS (mutations). Coarse gate — the precise per-intent routing +
 # weekday/question gating happens in handler._try_plan_mutation, which
 # returns None (→ fall through to the reasoner) for anything that isn't
@@ -618,6 +665,9 @@ ROUTES: list[Route] = [
     Route("list_dislikes", _LIST_DISLIKES_RE, _h_list_dislikes),
     # Per-day breakdown must beat weekly_remaining (both mention burn/cal).
     Route("daily_breakdown", _DAILY_BREAKDOWN_RE, _h_daily_breakdown),
+    # daily_burn AFTER daily_breakdown ("burn by day today" is a
+    # breakdown ask) and BEFORE last_week/weekly_remaining.
+    Route("daily_burn", _DAILY_BURN_RE, _h_daily_burn),
     # last_week BEFORE weekly_remaining: a "last week" query is about the
     # COMPLETED week's total, not this week's remaining (bug 2026-06-23).
     Route("last_week", _LAST_WEEK_RE, _h_last_week),

@@ -164,6 +164,8 @@ def test_existing_routes_still_match_after_agent_field(monkeypatch):
         "list_dislikes": "list my dislikes",
         "weekly_remaining": "how much burn remaining this week",
         "daily_breakdown": "calories by the day",
+        # 2026-08-24: single-day burn lookup (live no-record bug).
+        "daily_burn": "how many calories did I burn yesterday",
         "rel_day_workout": "what is tomorrow's WOD",
         "bare_wod_rel": "wod tomorrow",
         "bare_wod_day_after": "wod monday",

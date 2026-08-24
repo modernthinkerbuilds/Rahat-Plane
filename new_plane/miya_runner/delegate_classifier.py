@@ -147,7 +147,9 @@ _STATUS_QUERY_RE = re.compile(
     r"how\s+am\s+i\s+(doing|on)|"
     r"what.?s\s+(today.?s|tomorrow.?s)\s+(target|burn|plan)|"
     r"how\s+(much|many)\s+(more|cal|kcal|calor)|"
-    r"how\s+(many|much)(?:\s+\w+){0,5}\s+(do\s+i|should\s+i|did\s+i)\s+(burn|need)|"
+    # `did\s*i` (optional space): live 2026-08-24 the phone keyboard
+    # merged "did i" into "didi burn" and the ask fell out of this rung.
+    r"how\s+(many|much)(?:\s+\w+){0,5}\s+(do\s*i|should\s+i|did\s*i)\s+(burn|need)|"
     r"weekly\s+(target|remaining|burn)|"
     r"week\s+so\s+far|"
     r"this\s+week.?s\s+(total|burn|target)|"
