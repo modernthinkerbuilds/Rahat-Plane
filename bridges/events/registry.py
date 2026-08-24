@@ -10,11 +10,25 @@ Source shape:
     id          stable slug
     name        human label
     kind        "ical" (RFC 5545 feed URL — precise, preferred) |
-                "search" (site-scoped grounded LLM extraction)
-    url         feed URL (ical) or site/page to scope the search to
+                "page" (fetch the URL directly — an events page or RSS
+                feed — and LLM-extract from its actual text; recall is
+                ~deterministic because the whole page is in-context) |
+                "search" (site-scoped grounded LLM extraction — last
+                resort; recall flaps per refresh, see 2026-08-24)
+    url         feed URL (ical/page) or site/page to scope the search to
     city        home city label
     categories  coarse tags the inventory filters on
-    query_hint  extra guidance for search-kind extraction
+    query_hint  extra guidance for search/page-kind extraction
+
+2026-08-24 (owner: "genie isn't picking up events from sites like
+linden, home depot, local libraries, bay area city sites"): the live
+yield table showed why — grounded SEARCH extraction has near-zero
+recall on small venue/library/city calendar sites (mv-libcal: zero
+rows ever; linden-tree: 9 rows in two weeks; sjpl's real storytimes
+all decayed to suspect). Every source below whose events live on a
+server-rendered page or a public RSS feed (verified by fetch on
+2026-08-24) is now kind "page"; search remains only where the surface
+is JS-only or genuinely needs discovery across a whole region.
 
 Upgrade path: when a LibCal/city iCal URL is known, flip that source's
 kind to "ical" in the overlay — precision beats extraction.
@@ -30,37 +44,76 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_SOURCES: list[dict] = [
     # ── Libraries (storytimes, author visits, kids workshops) ──
+    # bibliocommons gateway RSS feeds: live, dated, server-rendered —
+    # each verified by fetch 2026-08-24. One feed covers every branch.
     {"id": "sjpl", "name": "San José Public Library",
-     "kind": "search", "url": "https://sjpl.bibliocommons.com/v2/events",
+     "kind": "page",
+     "url": "https://gateway.bibliocommons.com/v2/libraries/sjpl/rss/events",
      "city": "San Jose", "categories": ["kids", "library", "author"],
      "query_hint": "storytimes, author visits, kids programs, workshops"},
+    {"id": "sccl-library", "name": "Santa Clara County Library District",
+     "kind": "page",
+     "url": "https://gateway.bibliocommons.com/v2/libraries/sccl/rss/events",
+     "city": "Los Altos", "categories": ["kids", "library", "author"],
+     "query_hint": "Los Altos, Cupertino, Campbell, Saratoga, Milpitas, "
+                   "Gilroy branches — storytimes, kids programs, "
+                   "workshops"},
+    {"id": "paloalto-library", "name": "Palo Alto City Library",
+     "kind": "page",
+     "url": "https://gateway.bibliocommons.com/v2/libraries/paloalto/"
+            "rss/events",
+     "city": "Palo Alto", "categories": ["kids", "library", "author"],
+     "query_hint": "storytimes, LEGO days, STEAM workshops, author "
+                   "visits"},
     {"id": "mv-libcal", "name": "Mountain View Library",
-     "kind": "search",
+     "kind": "search",       # LibCal is JS-only (verified 08-24) — no
+                             # server-rendered surface; search until an
+                             # iCal cid is found for the overlay.
      "url": "https://mountainview.libcal.com/calendar/libraryevents",
      "city": "Mountain View", "categories": ["kids", "library", "author"],
-     "query_hint": "library events calendar"},
+     "query_hint": "Mountain View Public Library events: storytimes, "
+                   "kids programs, maker workshops"},
     {"id": "linden-tree", "name": "Linden Tree Books",
-     "kind": "search", "url": "https://www.lindentreebooks.com",
+     "kind": "page",         # events calendar is server-rendered with
+                             # 15+ dated events (verified 08-24)
+     "url": "https://www.lindentreebooks.com/events-calendar/",
      "city": "Los Altos", "categories": ["kids", "author", "books"],
-     "query_hint": "author visits, storytimes, book signings"},
+     "query_hint": "author visits, storytimes, book clubs, writing "
+                   "workshops, book signings"},
     # ── City calendars ──
     {"id": "mv-city", "name": "City of Mountain View events",
-     "kind": "search", "url": "https://www.mountainview.gov/events/",
+     "kind": "page",         # server-rendered monthly calendar
+                             # (verified 08-24; old /events/ URL 404s)
+     "url": "https://www.mountainview.gov/whats-happening/events",
      "city": "Mountain View", "categories": ["city", "festival", "family"],
-     "query_hint": "city special events, festivals, markets"},
-    {"id": "sj-city", "name": "City of San José events",
-     "kind": "search", "url": "https://www.sanjoseca.gov",
+     "query_hint": "city special events, Music on Castro, Concerts on "
+                   "the Plaza, movie nights, festivals, markets"},
+    {"id": "sj-city", "name": "San José city & Visit San José events",
+     "kind": "search",       # sanjose.org calendar is JS-rendered;
+                             # grounded search indexes it well
+     "url": "https://www.sanjose.org/events",
      "city": "San Jose", "categories": ["city", "festival", "family"],
-     "query_hint": "city events, parks and recreation programs"},
+     "query_hint": "San Jose events: downtown festivals, parks and "
+                   "recreation programs, Christmas in the Park class "
+                   "events, VivaCalleSJ"},
     {"id": "pa-city", "name": "City of Palo Alto events",
-     "kind": "search", "url": "https://www.cityofpaloalto.org",
+     "kind": "search",       # city moved to paloalto.gov (old
+                             # cityofpaloalto.org URLs 404 — 08-24)
+     "url": "https://www.paloalto.gov/Home/Calendar",
      "city": "Palo Alto", "categories": ["city", "family", "theatre"],
-     "query_hint": "city events, children's theatre productions"},
+     "query_hint": "Palo Alto city events, children's theatre "
+                   "productions, community festivals"},
     # ── Retail workshops ──
     {"id": "home-depot-kids", "name": "Home Depot Kids Workshops",
-     "kind": "search", "url": "https://www.homedepot.com/workshops",
+     "kind": "search",       # workshops page is a JS app; the program
+                             # itself is well-indexed
+     "url": "https://www.homedepot.com/workshops",
      "city": "Bay Area", "categories": ["kids", "workshop"],
-     "query_hint": "free kids workshop first Saturday, Bay Area stores"},
+     "query_hint": "free kids workshop — traditionally the FIRST "
+                   "SATURDAY of each month, 9am-noon, at Bay Area "
+                   "stores (San Jose, Mountain View, Sunnyvale, East "
+                   "Palo Alto); find the next dates and the month's "
+                   "build project"},
     # ── Live shows & performances ──
     {"id": "broadway-sj", "name": "Broadway San José",
      "kind": "search", "url": "https://broadwaysanjose.com",
@@ -81,6 +134,20 @@ DEFAULT_SOURCES: list[dict] = [
      "city": "Bay Area", "categories": ["market", "family"],
      "query_hint": "flea markets: San Jose Flea Market, De Anza, Alameda "
                    "Point Antiques Faire dates"},
+    # ── Fitness (owner, 2026-08-24: "I'd also like fitness events") ──
+    {"id": "bayarea-races", "name": "Bay Area running races & fun runs",
+     "kind": "search", "url": "https://runsignup.com",
+     "city": "Bay Area", "categories": ["fitness", "run", "outdoor"],
+     "query_hint": "5K, 10K, half marathon, trail races, fun runs and "
+                   "kids runs in the South Bay and Peninsula (San Jose, "
+                   "Mountain View, Palo Alto, Santa Clara, Los Gatos) — "
+                   "registration-open races with dates"},
+    {"id": "bayarea-fitness", "name": "Bay Area fitness & wellness events",
+     "kind": "search", "url": "https://www.eventbrite.com",
+     "city": "Bay Area", "categories": ["fitness", "wellness"],
+     "query_hint": "fitness events in the South Bay: yoga in the park, "
+                   "outdoor bootcamps, community CrossFit competitions, "
+                   "hike meetups, cycling events, wellness fairs"},
     # ── Aggregators ──
     {"id": "funcheap-sj", "name": "Funcheap South Bay",
      "kind": "search", "url": "https://sf.funcheap.com/region/san-jose/",

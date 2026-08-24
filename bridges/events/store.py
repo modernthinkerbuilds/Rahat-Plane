@@ -6,9 +6,28 @@ so the same event via Funcheap AND the library feed merges instead of
 duplicating.
 
 Freshness (PRD §6.3 'silent cancellations'): every refresh stamps
-last_seen per source; a FUTURE event whose source has since refreshed
-twice without mentioning it flips to status='suspect' and is excluded
-from default queries — "seen before, gone on re-crawl → mark suspect".
+last_seen per source; a FUTURE event unseen across the source's recent
+PRODUCTIVE refreshes flips to status='suspect' and is excluded from
+default queries — "seen before, gone on re-crawl → mark suspect".
+
+Suspect rule rework (2026-08-24, owner: "genie isn't picking up events
+from sites like linden, home depot, local libraries"): the original
+rule — unseen across the last TWO refreshes, any refreshes — silently
+erased the future calendar. Live evidence: 1,123 suspect rows vs 571
+active; SJPL's real upcoming storytimes ALL suspect; linden-tree,
+mv-city, broadway-sj with ZERO active future events. Two causes, two
+fixes:
+  * An extractor failure is not a cancellation. A refresh that fetched
+    ZERO events (LLM outage, page 404, feed hiccup) proves nothing
+    about any event — it no longer counts as evidence. Only
+    PRODUCTIVE refreshes (fetched > 0) advance the suspect clock.
+  * Grounded-search recall FLAPS: each refresh surfaces a different
+    subset, so a real event routinely skips two refreshes. Search-kind
+    sources now need FOUR consecutive productive misses (~1.3 days at
+    3 refreshes/day) before suspicion; deterministic kinds (ical,
+    page) keep the tight window of two — when the whole feed is
+    in-context, absence twice really does mean gone.
+Re-seen events still resurrect to 'active' on the spot (unchanged).
 """
 from __future__ import annotations
 
@@ -16,7 +35,11 @@ import hashlib
 import os
 import re
 import sqlite3
+import unicodedata
 from datetime import datetime
+
+# Consecutive PRODUCTIVE refreshes an event must miss before 'suspect'.
+_SUSPECT_MISSES = {"ical": 2, "page": 2, "search": 4}
 
 
 def db_path() -> str:
@@ -58,11 +81,24 @@ def _connect(path: str | None = None) -> sqlite3.Connection:
         first_seen TEXT, last_seen TEXT)""")
     con.execute("""CREATE TABLE IF NOT EXISTS events_refresh_log (
         source_id TEXT, refreshed_at TEXT)""")
+    # 2026-08-24: the suspect clock needs to know whether a refresh was
+    # PRODUCTIVE. Legacy rows keep NULL and count as productive so the
+    # live DB's history doesn't reset the clock on upgrade.
+    try:
+        con.execute("ALTER TABLE events_refresh_log "
+                    "ADD COLUMN fetched INTEGER")
+    except sqlite3.OperationalError:
+        pass                                 # column already exists
     return con
 
 
 def _norm(s: str) -> str:
-    return re.sub(r"[^a-z0-9]+", " ", (s or "").lower()).strip()
+    # NFKD accent-fold first (2026-08-24): "San José" and "San Jose"
+    # were hashing to different event keys, duplicating every SJPL row
+    # that arrived spelled both ways.
+    s = unicodedata.normalize("NFKD", s or "").encode(
+        "ascii", "ignore").decode()
+    return re.sub(r"[^a-z0-9]+", " ", s.lower()).strip()
 
 
 def event_key(title: str, start_ts: str, city: str) -> str:
@@ -72,8 +108,10 @@ def event_key(title: str, start_ts: str, city: str) -> str:
 
 def upsert_events(events: list[dict], source_id: str, *,
                   now: datetime | None = None,
-                  path: str | None = None) -> dict:
-    """Idempotent write of one source's refresh. Returns counts."""
+                  path: str | None = None,
+                  source_kind: str = "search") -> dict:
+    """Idempotent write of one source's refresh. Returns counts.
+    `source_kind` sets the suspect window (see _SUSPECT_MISSES)."""
     now_iso = (now or datetime.now()).strftime("%Y-%m-%d %H:%M:%S")
     con = _connect(path)
     added = updated = 0
@@ -109,19 +147,25 @@ def upsert_events(events: list[dict], source_id: str, *,
                      "active", now_iso, now_iso))
                 added += 1
         con.execute("INSERT INTO events_refresh_log (source_id, "
-                    "refreshed_at) VALUES (?, ?)", (source_id, now_iso))
-        # Silent-cancellation heuristic: future events from THIS source
-        # not seen across its last two refreshes → suspect.
+                    "refreshed_at, fetched) VALUES (?, ?, ?)",
+                    (source_id, now_iso, len(events)))
+        # Silent-cancellation heuristic (reworked 2026-08-24, see module
+        # docstring): a future event from THIS source unseen across its
+        # last N PRODUCTIVE refreshes → suspect. Zero-yield refreshes
+        # are extractor failures, not evidence; NULL = legacy row,
+        # counted productive.
+        n_miss = _SUSPECT_MISSES.get(source_kind, 4)
         refreshes = [r[0] for r in con.execute(
             "SELECT refreshed_at FROM events_refresh_log WHERE "
-            "source_id = ? ORDER BY refreshed_at DESC LIMIT 2",
-            (source_id,)).fetchall()]
-        if len(refreshes) == 2:
+            "source_id = ? AND (fetched IS NULL OR fetched > 0) "
+            "ORDER BY refreshed_at DESC LIMIT ?",
+            (source_id, n_miss)).fetchall()]
+        if len(refreshes) == n_miss:
             con.execute(
                 "UPDATE events_inventory SET status = 'suspect' WHERE "
                 "source_id = ? AND status = 'active' AND start_ts > ? "
                 "AND last_seen < ?",
-                (source_id, now_iso, refreshes[1]))
+                (source_id, now_iso, refreshes[-1]))
         con.commit()
     finally:
         con.close()

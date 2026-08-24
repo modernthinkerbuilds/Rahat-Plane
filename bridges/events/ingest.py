@@ -1,6 +1,6 @@
 """Event ingestion — per-source fetch → typed events → store.
 
-Two fetch kinds (PRD §6.3: high-yield structured first, degrade
+Three fetch kinds (PRD §6.3: high-yield structured first, degrade
 gracefully everywhere else):
 
   * "ical"   — an RFC 5545 feed URL. Minimal VEVENT parser (DTSTART,
@@ -8,18 +8,31 @@ gracefully everywhere else):
                a feed URL is known. RRULE expansion is v2 — recurring
                masters are ingested at their DTSTART occurrence and a
                debug line notes the skipped rule.
+  * "page"   — 2026-08-24 (owner: venue/library/city events not being
+               picked up): fetch the source URL directly (an events
+               page or a public RSS feed), strip it to text, and
+               LLM-extract dated events from THAT text (plain call, no
+               search grounding). Recall is ~deterministic — the whole
+               calendar is in-context — which is what small venue
+               sites (Linden Tree), bibliocommons library RSS feeds,
+               and server-rendered city calendars need; grounded
+               search barely surfaces them (mv-libcal: zero rows in
+               two weeks of refreshes).
   * "search" — site-scoped grounded LLM extraction through the
                budget-gated chokepoint: "search site/domain X for dated
                events in the next N days, STRICT JSON out". No fragile
                scraping; failures degrade to zero events, never raise.
+               Recall flaps per refresh — last resort for JS-only
+               surfaces and regional discovery.
 
 CLI:
     .venv/bin/python -m bridges.events            # refresh all sources
     .venv/bin/python -m bridges.events --stats    # yield per source
 
-Cost note: one grounded flash call per search-kind source per refresh —
-~12 sources × 3 refreshes/day, all through core.llm.generate
-(actor="events", budget-capped).
+Cost note: one flash call per LLM-extracted source per refresh —
+grounded for search-kind, plain (cheaper) for page-kind — ~24 sources
+× 3 refreshes/day, all through core.llm.generate (actor="events",
+budget-capped).
 """
 from __future__ import annotations
 
@@ -86,6 +99,101 @@ def _fetch_ical(source: dict) -> list[dict]:
     return parse_ical(resp.text, source)
 
 
+# ─────────────────────────── page-kind (fetch + extract) ───────────────
+_PAGE_TEXT_CAP = 18000       # chars of stripped page text into the prompt
+
+
+def _strip_html(html: str) -> str:
+    """Markup → readable text. Good enough for extraction: kill
+    script/style/head blocks, then tags, then collapse whitespace.
+    RSS/XML passes through mostly intact (tags become separators)."""
+    text = re.sub(r"(?is)<(script|style|head|noscript|svg)[^>]*>.*?</\1>",
+                  " ", html or "")
+    text = re.sub(r"(?s)<!--.*?-->", " ", text)
+    text = re.sub(r"<[^>]+>", "\n", text)
+    text = re.sub(r"&nbsp;?", " ", text)
+    text = re.sub(r"&amp;?", "&", text)
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n\s*\n+", "\n", text)
+    return text.strip()[:_PAGE_TEXT_CAP]
+
+
+def _page_prompt(source: dict, today: datetime, page_text: str) -> str:
+    until = (today + timedelta(days=_HORIZON_DAYS)).strftime("%Y-%m-%d")
+    return f"""Today is {today.strftime('%Y-%m-%d')}. Below is the text content of
+{source['name']} ({source['url']}). Extract REAL dated events from it.
+
+Focus: {source.get('query_hint', 'upcoming events')}
+Area: {source.get('city', 'Bay Area')}, California
+Window: today through {until}
+
+Only events that actually appear in the text, each with a real calendar
+date in the window. Resolve relative dates ("Sunday, August 30") against
+today's date. No inventions, no past events, no "check the website".
+
+Return STRICT JSON only, no fences:
+{{"events": [{{"title": "...", "start_ts": "YYYY-MM-DD HH:MM:SS",
+              "end_ts": "" , "venue": "...", "city": "...",
+              "url": "..."}}]}}
+Use 00:00:00 for all-day events. Max {_MAX_EVENTS_PER_SOURCE}.
+
+PAGE TEXT:
+{page_text}"""
+
+
+def _fetch_page(source: dict, today: datetime,
+                llm: Callable[[str], str] | None,
+                http: Callable[[str], str] | None = None) -> list[dict]:
+    """Fetch the source URL, extract events from its text. Both the
+    HTTP fetch and the LLM call have test seams; hermetic runs without
+    seams yield zero events (never the wire — same rule as search)."""
+    if http is not None:
+        html = http(source["url"]) or ""
+    else:
+        if os.getenv("RAHAT_TEST_MODE") == "1":
+            return []            # hermetic: no wire without a seam
+        import requests
+        resp = requests.get(
+            source["url"], timeout=30,
+            headers={"User-Agent": "Mozilla/5.0 (rahat-events-bridge)"})
+        resp.raise_for_status()
+        html = resp.text
+    page_text = _strip_html(html)
+    if not page_text:
+        return []
+    prompt = _page_prompt(source, today, page_text)
+    if llm is not None:
+        raw = llm(prompt) or ""
+    else:
+        if os.getenv("RAHAT_TEST_MODE") == "1":
+            return []            # hermetic: no wire without a seam
+        from core import llm as _llm
+        model = os.getenv("NEW_MIYA_MODEL_FLASH", "gemini-2.5-flash")
+        usage = _llm.generate("events", "events.ingest.page",
+                              prompt=prompt, model=model)
+        if usage.error:
+            logger.warning("ingest page-extract failed for %s: %s",
+                           source["id"], usage.error)
+            return []
+        raw = usage.text
+    return _typed_events(raw, source)
+
+
+def _typed_events(raw: str, source: dict) -> list[dict]:
+    """Shared JSON-out validation for the LLM extraction kinds."""
+    from agents.genie.live_plan import _parse_json_block
+    obj = _parse_json_block(raw)
+    if not isinstance(obj, dict):
+        return []
+    out = []
+    for e in (obj.get("events") or [])[:_MAX_EVENTS_PER_SOURCE]:
+        if isinstance(e, dict) and e.get("title") and e.get("start_ts"):
+            e.setdefault("city", source.get("city", ""))
+            e["categories"] = list(source.get("categories") or [])
+            out.append(e)
+    return out
+
+
 # ─────────────────────────── search-kind (grounded LLM) ────────────────
 def _search_prompt(source: dict, today: datetime) -> str:
     until = (today + timedelta(days=_HORIZON_DAYS)).strftime("%Y-%m-%d")
@@ -124,35 +232,30 @@ def _fetch_search(source: dict, today: datetime,
                            source["id"], usage.error)
             return []
         raw = usage.text
-    from agents.genie.live_plan import _parse_json_block
-    obj = _parse_json_block(raw)
-    if not isinstance(obj, dict):
-        return []
-    out = []
-    for e in (obj.get("events") or [])[:_MAX_EVENTS_PER_SOURCE]:
-        if isinstance(e, dict) and e.get("title") and e.get("start_ts"):
-            e.setdefault("city", source.get("city", ""))
-            e["categories"] = list(source.get("categories") or [])
-            out.append(e)
-    return out
+    return _typed_events(raw, source)
 
 
 # ─────────────────────────── refresh ───────────────────────────
 def refresh_source(source: dict, *, today: datetime | None = None,
                    llm: Callable[[str], str] | None = None,
+                   http: Callable[[str], str] | None = None,
                    db_path: str | None = None) -> dict:
     """Refresh one source. Never raises; failures yield zero events."""
     today = today or datetime.now()
+    kind = source.get("kind") or "search"
     try:
-        if source.get("kind") == "ical":
+        if kind == "ical":
             events = _fetch_ical(source)
+        elif kind == "page":
+            events = _fetch_page(source, today, llm, http)
         else:
             events = _fetch_search(source, today, llm)
     except Exception as e:  # noqa: BLE001
         logger.warning("refresh %s failed (%s: %s)", source.get("id"),
                        type(e).__name__, e)
         events = []
-    counts = upsert_events(events, source["id"], now=today, path=db_path)
+    counts = upsert_events(events, source["id"], now=today, path=db_path,
+                           source_kind=kind)
     counts["source_id"] = source["id"]
     counts["fetched"] = len(events)
     return counts

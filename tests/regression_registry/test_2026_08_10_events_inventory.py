@@ -15,9 +15,13 @@ THE PINS.
     idempotent — refreshing twice converges.
   * Dedup: the same event from two sources merges on (title, date,
     city) — the PRD's blocking key.
-  * Freshness: a FUTURE event that disappears from its source for two
-    consecutive refreshes flips to 'suspect' and leaves default
-    queries — "seen before, gone on re-crawl → mark suspect".
+  * Freshness (reworked 2026-08-24, owner: real venue events were
+    being erased): a FUTURE event that disappears from its source
+    across consecutive PRODUCTIVE refreshes (fetched > 0) flips to
+    'suspect' and leaves default queries. Zero-yield refreshes are
+    extractor failures, not evidence — they never advance the clock.
+    Window: 2 misses for deterministic kinds (ical/page), 4 for
+    search-kind (grounded recall flaps per refresh).
   * iCal parser handles folded lines + DTSTART/DTEND/SUMMARY/LOCATION.
   * Genie reads inventory FIRST: /whatson leads with the verified feed
     section; the concierge context carries the inventory block.
@@ -127,17 +131,64 @@ def test_garbage_and_hermetic_yield_zero_not_crash(env):
 
 
 def test_silent_cancellation_marks_suspect(env):
+    """Reworked 2026-08-24. Search-kind: FOUR consecutive PRODUCTIVE
+    refreshes without the event → suspect. Grounded-search recall
+    flaps, so two misses was erasing real events (live: SJPL's whole
+    future storytime calendar sat suspect)."""
+    from bridges.events.ingest import refresh_source
+    from bridges.events.store import query_window
+    _OTHER = {"title": "Some Other Event",
+              "start_ts": "2026-08-16 10:00:00", "city": "San Jose"}
+    src = {"id": "s", "kind": "search", "name": "S", "url": "x",
+           "city": "San Jose", "categories": []}
+    refresh_source(src, today=datetime(2026, 8, 12, 7),
+                   llm=_search_llm([_DEPOT]))
+    # Three PRODUCTIVE refreshes without it — still active (grace).
+    for hour in (10, 13, 16):
+        refresh_source(src, today=datetime(2026, 8, 12, hour),
+                       llm=_search_llm([_OTHER]))
+        assert len(query_window("2026-08-15", "2026-08-15")) == 1
+    # Fourth productive miss → suspect, out of default queries.
+    refresh_source(src, today=datetime(2026, 8, 12, 19),
+                   llm=_search_llm([_OTHER]))
+    assert query_window("2026-08-15", "2026-08-15") == []
+    assert len(query_window("2026-08-15", "2026-08-15",
+                            include_suspect=True)) == 1
+
+
+def test_zero_yield_refreshes_never_advance_the_suspect_clock(env):
+    """2026-08-24 (owner: "genie isn't picking up events"): an
+    extractor failure is not a cancellation. Any number of EMPTY
+    refreshes leaves the future calendar alone."""
     from bridges.events.ingest import refresh_source
     from bridges.events.store import query_window
     src = {"id": "s", "kind": "search", "name": "S", "url": "x",
            "city": "San Jose", "categories": []}
     refresh_source(src, today=datetime(2026, 8, 12, 7),
                    llm=_search_llm([_DEPOT]))
-    # Two later refreshes where the (still-future) event is GONE.
+    for hour in (9, 11, 13, 15, 17):
+        refresh_source(src, today=datetime(2026, 8, 12, hour),
+                       llm=_search_llm([]))
+    assert len(query_window("2026-08-15", "2026-08-15")) == 1
+
+
+def test_page_kind_suspects_on_two_productive_misses(env):
+    """Deterministic kinds keep the tight window: the whole feed is
+    in-context, so absence twice really does mean gone."""
+    from bridges.events.ingest import refresh_source
+    from bridges.events.store import query_window
+    _OTHER = {"title": "Some Other Event",
+              "start_ts": "2026-08-16 10:00:00", "city": "San Jose"}
+    src = {"id": "p", "kind": "page", "name": "P",
+           "url": "https://x.example/events",
+           "city": "San Jose", "categories": []}
+    html = "<html><body>events</body></html>"
+    refresh_source(src, today=datetime(2026, 8, 12, 7),
+                   llm=_search_llm([_DEPOT]), http=lambda u: html)
     refresh_source(src, today=datetime(2026, 8, 12, 12),
-                   llm=_search_llm([]))
+                   llm=_search_llm([_OTHER]), http=lambda u: html)
     refresh_source(src, today=datetime(2026, 8, 12, 18),
-                   llm=_search_llm([]))
+                   llm=_search_llm([_OTHER]), http=lambda u: html)
     assert query_window("2026-08-15", "2026-08-15") == []
     assert len(query_window("2026-08-15", "2026-08-15",
                             include_suspect=True)) == 1

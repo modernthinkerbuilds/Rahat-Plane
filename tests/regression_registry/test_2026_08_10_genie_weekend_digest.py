@@ -116,15 +116,20 @@ def test_empty_inventory_yields_none_not_noise(env):
 
 
 def test_suspect_events_stay_out_of_the_digest(env):
+    # Reworked 2026-08-24: only PRODUCTIVE refreshes advance the
+    # suspect clock (search-kind window = 4) — zero-yield refreshes
+    # are extractor failures and had been erasing real venue events.
     from bridges.events.ingest import refresh_source
     src = {"id": "seed", "kind": "search", "name": "S", "url": "x",
            "city": "San Jose", "categories": []}
+    other = {"title": "Weekday-only thing",
+             "start_ts": "2026-08-13 10:00:00", "city": "San Jose"}
     refresh_source(src, today=datetime(2026, 8, 11, 7),
                    llm=lambda p: json.dumps({"events": [_DEPOT]}))
-    # Gone on the next two refreshes → suspect → not advertised.
-    for hour in (12, 18):
+    # Gone across four PRODUCTIVE refreshes → suspect → not advertised.
+    for hour in (9, 12, 15, 18):
         refresh_source(src, today=datetime(2026, 8, 11, hour),
-                       llm=lambda p: json.dumps({"events": []}))
+                       llm=lambda p: json.dumps({"events": [other]}))
     from bridges.events.digest import build_digest
     assert build_digest(_WED) is None
 
