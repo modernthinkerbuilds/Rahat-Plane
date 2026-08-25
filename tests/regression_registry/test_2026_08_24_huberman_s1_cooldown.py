@@ -28,8 +28,11 @@ THE PINS.
   * Variety: back-to-back sessions don't share drills while the
     library has headroom.
   * Autocool: fires in the 21:30–21:59 window, once per day (marker),
-    ONLY when a non-run workout landed in workouts_hk today. Run-only
-    days, pre-window minutes, and HUBERMAN_AUTOCOOL=0 are silent.
+    when a non-run workout landed in workouts_hk today OR the day had
+    no workout at all (rest-day maintenance — spec change 2026-08-25,
+    owner: "I'd also want a cool down on days that I don't workout").
+    Run/walk-ONLY days, pre-window minutes, and HUBERMAN_AUTOCOOL=0
+    are silent.
   * Hermeticity: every Huberman path (profile, store, health DB)
     resolves inside the sandbox under RAHAT_TEST_MODE=1.
 """
@@ -217,9 +220,19 @@ def test_autocool_is_silent_before_the_window(env):
     assert handler.maybe_autocool(now=_at(20, 45)) is None
 
 
-def test_autocool_is_silent_on_run_only_and_rest_days(env):
+def test_autocool_fires_on_rest_days_too(env):
+    """Spec change 2026-08-25 (owner): rest days get a maintenance
+    mobility session — no workout in workouts_hk still fires."""
     from agents.huberman import handler
-    assert handler.maybe_autocool(now=_at(21, 35)) is None    # rest day
+    out = handler.maybe_autocool(now=_at(21, 35))
+    assert out and "cooldown" in out.lower()
+    assert handler.maybe_autocool(now=_at(21, 40)) is None    # marker dedup
+
+
+def test_autocool_is_silent_on_run_only_days(env):
+    """Unchanged from the 08-23 spec: on run days the owner works with
+    Huberman directly — a run/walk-ONLY day stays silent."""
+    from agents.huberman import handler
     _seed_workout("Outdoor Run", _at(7, 0))
     assert handler.maybe_autocool(now=_at(21, 35)) is None    # run-only
 

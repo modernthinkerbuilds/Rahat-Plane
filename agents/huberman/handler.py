@@ -23,10 +23,13 @@ Two entry points:
   maybe_autocool(now)   → str | None
       The miya_runner minute-tick hook (same family as Kobe's
       maybe_morning_briefing). Fires in the 21:30–21:59 window, once
-      per day (vault marker), ONLY when a CrossFit-family workout
-      landed in workouts_hk today. Run/walk-only days and rest days
-      stay silent by design. Flag HUBERMAN_AUTOCOOL default ON
-      (explicit owner request), =0 kills it.
+      per day (vault marker), when a CrossFit-family workout landed in
+      workouts_hk today OR when no workout landed at all (rest-day
+      maintenance session — spec change 2026-08-25, owner: "I'd also
+      want a cool down on days that I don't workout"). Run/walk-ONLY
+      days stay silent by design — the owner asks directly on those.
+      Flag HUBERMAN_AUTOCOOL default ON (explicit owner request),
+      =0 kills it.
 """
 from __future__ import annotations
 
@@ -105,12 +108,24 @@ def maybe_autocool(now: datetime | None = None) -> str | None:
     if state.autocool_sent(today):
         return None
     from agents.huberman import context as hctx
-    cf = hctx.crossfit_workouts_today(now)
-    if not cf:
-        return None                      # run-only / rest day → silent
+    workouts = hctx.workouts_today(now)
+    cf = [w for w in workouts if not w["ask_direct"]]
+    # Spec change 2026-08-25 (owner: "I'd also want a cool down on days
+    # that I don't workout"): rest days now FIRE — a maintenance
+    # mobility + down-regulation session biased to the hotspots. The
+    # only silent case left is a run/walk-ONLY day, where the owner
+    # works with Huberman directly (original 08-23 spec, unchanged).
+    if workouts and not cf:
+        return None                      # run/walk-only day → he asks
     from agents.huberman import coach
-    names = ", ".join(w["name"] for w in cf)
-    text = coach.generate_cooldown(now=now)
+    steering = None
+    if not workouts:
+        steering = ("rest day — no training logged today, so skip the "
+                    "post-workout framing: make this a maintenance "
+                    "mobility session on the chronic hotspots, ending "
+                    "in down-regulation for sleep")
+    text = coach.generate_cooldown(now=now, steering=steering)
     state.mark_autocool(today)
-    logger.info("[autocool] fired for: %s", names)
+    logger.info("[autocool] fired (%s)",
+                ", ".join(w["name"] for w in cf) or "rest day")
     return text
