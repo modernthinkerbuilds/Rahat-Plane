@@ -31,6 +31,26 @@ GENIE_SLASH_RE = re.compile(
     r"^\s*/\s*(genie|weekend_plan|family_log|whatson|swap|why|family"
     r"|replan_day|digest|calendar)\b", re.I)
 
+# ─── Day shortcut ("Saturday", "events friday", "what's on Sunday") ───
+# Owner (2026-08-30): "if I tell a particular day, like Saturday, I
+# should get all events for Saturday along with the links." ANCHORED
+# full-match on purpose: the message must be essentially just the day
+# (optional what's-on/events/show/list filler) so commitment capture
+# ("we have lunch at Navya's on Saturday") and couple-outing phrasing
+# ("date night Saturday") are never stolen. Checked BEFORE WHATS_ON_RE
+# in the route ladder — "events saturday" means THAT day, not the
+# weekend digest view.
+DAY_EVENTS_RE = re.compile(
+    r"^\s*/?\s*"
+    r"(?:(?:what'?s?\s+(?:is\s+)?on|whats\s+on|events?|show|list)\s+)?"
+    r"(?:on\s+|for\s+)?"
+    r"(?P<day>monday|tuesday|wednesday|thursday|friday|saturday|sunday"
+    r"|today|tomorrow)"
+    r"(?:\s+events?)?"
+    r"\s*[?.!]*\s*$",
+    re.I,
+)
+
 # ─── J5 raw list ("what's on this weekend") ───────────────────────────
 WHATS_ON_RE = re.compile(
     r"^\s*/\s*what[\s_-]*s?[\s_-]*on\b"
@@ -155,6 +175,7 @@ GENIE_NL_RE = re.compile(
         # scheduling is Genie's, whichever channel it arrives on.
         COMMITMENT_NL_RE.pattern,
         r"\bwhat'?s\s+on\b.*\b(week|weekend|saturday|sunday)\b",
+        DAY_EVENTS_RE.pattern,      # day shortcut (2026-08-30)
         r"\bevents?\b.*\b(week|weekend)\b",
         r"^\s*swap\s+in\s+\S+",
         # Couple outings are Genie's (J2): "date night Saturday",

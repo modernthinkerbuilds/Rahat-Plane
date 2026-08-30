@@ -648,6 +648,78 @@ def handle_set_location(value: str, *, by_role: str = "") -> str:
 
 
 # ─────────────────────────── /whatson (PRD J5) ────────────────────────
+def resolve_day_date(token: str, now: datetime | None = None) -> datetime:
+    """'saturday' → the UPCOMING Saturday (today counts as itself),
+    'today'/'tomorrow' → those. One source of truth so the day-shortcut
+    tests can derive their seed dates from the SAME function route()
+    uses (the date-trap rule)."""
+    now = now or datetime.now()
+    t = (token or "").lower().strip()
+    if t == "today":
+        return now
+    if t == "tomorrow":
+        return now + timedelta(days=1)
+    names = ["monday", "tuesday", "wednesday", "thursday", "friday",
+             "saturday", "sunday"]
+    if t in names:
+        return now + timedelta(days=(names.index(t) - now.weekday()) % 7)
+    return now
+
+
+def handle_day_events(day_token: str, *,
+                      now: datetime | None = None) -> str:
+    """The day shortcut (owner, 2026-08-30): "Saturday" → EVERY
+    inventory event for that day, each line ending in the one-tap
+    [here] link — no per-day cap, unlike the digest's 6. Commitments
+    for the day render first, same order the digest uses."""
+    now = now or datetime.now()
+    target = resolve_day_date(day_token, now)
+    day_iso = target.strftime("%Y-%m-%d")
+    label = target.strftime("%A %b %-d")
+
+    lines = [f"*{label} — everything on the radar*"]
+    try:
+        from agents.genie.state import calendar_entries
+        commits = calendar_entries(day_iso, day_iso)
+    except Exception:  # noqa: BLE001
+        commits = []
+    for c in commits:
+        when = c.get("start") or "time TBC"
+        if c.get("start") and c.get("end"):
+            when = f"{c['start']}–{c['end']}"
+        mark = "📌" if c.get("kind") != "wishlist" else "⭐"
+        cl = f"  {mark} {when} — {c.get('title', '')}"
+        if c.get("where"):
+            cl += f" @ {c['where']}"
+        lines.append(cl)
+
+    rows: list[dict] = []
+    try:
+        from bridges.events.store import query_window
+        rows = query_window(day_iso, day_iso, limit=60)
+    except Exception:  # noqa: BLE001
+        pass
+    from bridges.events.digest import _fmt_row
+    seen: set[str] = set()
+    count = 0
+    for r in rows:
+        key = (r.get("title") or "").casefold()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        lines.append(_fmt_row(r))
+        count += 1
+
+    if not count and not commits:
+        return (f"Nothing in the verified feeds for {label} yet — the "
+                f"inventory refreshes at 7:00, 12:30 and 18:00, so ask "
+                f"again after the next pass, or `/whatson` for the "
+                f"whole weekend.")
+    lines += ["", "_Tap a *here* link to open the event. Want a plan "
+                  "built around one of these? Just say which._"]
+    return "\n".join(lines)
+
+
 def handle_whats_on(*, now: datetime | None = None, llm=None) -> str:
     """J5 — "just give me the raw list": the discovery inventory exposed
     directly. A clean, de-duplicated flat list of what's actually on
@@ -1097,6 +1169,7 @@ from agents.genie.intents import (  # noqa: E402
     WEEKEND_PLAN_TOKEN_RE as _WEEKEND_PLAN_TOKEN_RE,
     FAMILY_LOG_TOKEN_RE as _FAMILY_LOG_TOKEN_RE,
     WHATS_ON_RE as _WHATS_ON_RE,
+    DAY_EVENTS_RE as _DAY_EVENTS_RE,
     SWAP_RE as _SWAP_RE,
     WEEKEND_NL_RE as _WEEKEND_NL_RE,
     FAMILY_NL_RE as _FAMILY_NL_RE,
@@ -1304,6 +1377,11 @@ def route(msg: str, *, chat_id: str | int | None = None) -> str:
                                 msg)
         if reply:
             return reply
+    # Day shortcut BEFORE the weekend list: "Saturday" / "events
+    # friday" means THAT day, full list, links (owner 2026-08-30).
+    m = _DAY_EVENTS_RE.match(stripped)
+    if m:
+        return handle_day_events(m.group("day"))
     # J5 raw list ("what's on this weekend").
     if _WHATS_ON_RE.search(low):
         return handle_whats_on()
