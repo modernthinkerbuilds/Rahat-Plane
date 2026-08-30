@@ -126,8 +126,27 @@ DEFAULT_SOURCES: list[dict] = [
     {"id": "indian-live", "name": "Indian music & desi live events (South Bay)",
      "kind": "search", "url": "https://www.sulekha.com",
      "city": "Bay Area", "categories": ["music", "indian", "show"],
-     "query_hint": "Indian live music concerts, band performances, "
-                   "desi cultural events in the South Bay"},
+     "query_hint": "Indian live music concerts, band performances, desi "
+                   "cultural events, community acoustic jams, kirtan and "
+                   "classical baithaks in the South Bay — include "
+                   "Eventbrite, Partiful and Sulekha listings"},
+    # ── Community music orgs (owner, 2026-08-30: Genie missed the SF
+    # Indian Music Project's Aug 29 Saratoga acoustic jam) ──
+    # Their own site is JS-only with no feed/API (verified 08-30), but
+    # their events are indexed on Partiful / UNATION / Sulekha, so a
+    # dedicated grounded search scoped to the org's known series
+    # catches them. The 4-productive-miss suspect window keeps them
+    # once found.
+    {"id": "sfimp", "name": "SF Indian Music Project",
+     "kind": "search", "url": "https://sfindianmusicproject.org",
+     "city": "Bay Area", "categories": ["music", "indian", "jam",
+                                        "family"],
+     "query_hint": "SF Indian Music Project events and RSVPs (their "
+                   "Partiful pages count): Acoustic Jam sessions, "
+                   "concerts, Jam at The Commons SF, Jam at Spark "
+                   "Social SF, and South Bay jams like the Saratoga "
+                   "redwoods acoustic evening — include location, "
+                   "start time, and whether free"},
     # ── Markets ──
     {"id": "flea-markets", "name": "Bay Area flea markets",
      "kind": "search", "url": "https://www.sjfm.com",

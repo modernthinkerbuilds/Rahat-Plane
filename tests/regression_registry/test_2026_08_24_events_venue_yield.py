@@ -123,6 +123,21 @@ def test_verified_venue_sources_are_page_kind(env):
         assert url_frag in by_id[sid]["url"], sid
 
 
+def test_community_music_org_source_exists(env):
+    """Owner, 2026-08-30: Genie missed the SF Indian Music Project's
+    Saratoga acoustic jam. The org's site is JS-only with no feed
+    (verified by fetch), so this is a dedicated grounded-search source
+    whose hint names their real event series — pin it so the source
+    can't be dropped in a registry cleanup."""
+    from bridges.events.registry import load_sources
+    by_id = {s["id"]: s for s in load_sources()}
+    sfimp = by_id["sfimp"]
+    assert sfimp["kind"] == "search"
+    for series in ("Acoustic Jam", "Spark Social", "Saratoga"):
+        assert series in sfimp["query_hint"], series
+    assert "indian" in sfimp["categories"]
+
+
 def test_fitness_sources_exist_with_fitness_category(env):
     from bridges.events.registry import load_sources
     fit = [s for s in load_sources()
