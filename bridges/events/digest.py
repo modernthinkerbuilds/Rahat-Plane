@@ -39,6 +39,22 @@ def weekend_window(now: datetime | None = None
             f"the weekend of {saturday.strftime('%b')} {saturday.day}")
 
 
+def event_link(url: str | None) -> str:
+    """' — [here](url)' when the row carries a plausible link, else ''.
+
+    Owner request (2026-08-30): every event line should end in a short
+    tappable link — "just say here" — so the event page is one tap
+    away without lengthening the text. Genie sends via the Markdown-
+    mode Telegram client, so [here](url) renders as a link. Telegram's
+    legacy Markdown terminates the URL at the first ')' — encode ')'
+    and spaces so a messy URL can't break out of the link."""
+    u = (url or "").strip()
+    if not u.lower().startswith(("http://", "https://")):
+        return ""
+    u = u.replace(" ", "%20").replace(")", "%29")
+    return f" — [here]({u})"
+
+
 def _fmt_row(row: dict) -> str:
     hhmm = (row.get("start_ts") or "")[11:16]
     when = "All day" if hhmm in ("", "00:00") else hhmm
@@ -47,7 +63,7 @@ def _fmt_row(row: dict) -> str:
         line += f" @ {row['venue']}"
     if row.get("city"):
         line += f" ({row['city']})"
-    return line
+    return line + event_link(row.get("url"))
 
 
 def build_digest(now: datetime | None = None, *,

@@ -157,6 +157,48 @@ def test_accented_city_variants_merge_not_duplicate(env):
                          "San Jose"))
 
 
+# ── one-tap event links (owner, 2026-08-30: "just say here") ──────────
+def test_digest_lines_end_in_a_here_link(env):
+    from bridges.events.ingest import refresh_source
+    src = {"id": "seed", "kind": "search", "name": "S", "url": "x",
+           "city": "San Jose", "categories": []}
+    refresh_source(src, today=datetime(2026, 8, 11, 7), llm=_llm([
+        {"title": "Kids Workshop", "start_ts": "2026-08-15 09:00:00",
+         "city": "San Jose",
+         "url": "https://homedepot.com/workshops?loc=SJ (South)"},
+        {"title": "Berryessa Flea Market",
+         "start_ts": "2026-08-15 00:00:00", "city": "San Jose"}]))
+    from bridges.events.digest import build_digest
+    out = build_digest(_NOW)
+    # Linked event: short [here](url), with ')' and spaces encoded so
+    # Telegram's legacy Markdown can't truncate the link.
+    assert ("Kids Workshop (San Jose) — "
+            "[here](https://homedepot.com/workshops?loc=SJ%20%28South"
+            not in out)                       # '(' need not be encoded…
+    assert "[here](https://homedepot.com/workshops?loc=SJ%20(South%29)"         in out
+    # No url → no dangling link.
+    assert "Flea Market (San Jose) — [here]" not in out
+
+
+def test_whatson_lines_carry_the_same_link(env):
+    # Fixed clock + fixed seed dates (the date-trap rule): _NOW is Wed
+    # Aug 12, whose weekend is Aug 15-16 — same pattern as the 08-10
+    # whats-on pins.
+    from bridges.events.ingest import refresh_source
+    src = {"id": "seed", "kind": "search", "name": "S", "url": "x",
+           "city": "San Jose", "categories": []}
+    refresh_source(src, today=datetime(2026, 8, 11, 7), llm=_llm([
+        {"title": "Author visit", "start_ts": "2026-08-15 10:30:00",
+         "city": "Los Altos",
+         "url": "https://www.lindentreebooks.com/events-calendar/"}]))
+    import importlib
+    from agents.genie import handler
+    importlib.reload(handler)
+    out = handler.handle_whats_on(now=_NOW)
+    assert ("[here](https://www.lindentreebooks.com/events-calendar/)"
+            in out)
+
+
 # ── fitness reaches the digest ────────────────────────────────────────
 def test_fitness_event_shows_up_in_the_weekend_digest(env):
     from bridges.events.ingest import refresh_source

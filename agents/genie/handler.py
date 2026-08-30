@@ -693,6 +693,10 @@ def handle_whats_on(*, now: datetime | None = None, llm=None) -> str:
             if r.get("venue"):
                 line += f" @ {r['venue']}"
             line += f" ({r['city']})"
+            # One-tap event link (owner 2026-08-30) — same helper as
+            # the digest so both surfaces render identically.
+            from bridges.events.digest import event_link
+            line += event_link(r.get("url"))
             if weekend_commits:
                 try:
                     from agents.genie import calendar as _cal
