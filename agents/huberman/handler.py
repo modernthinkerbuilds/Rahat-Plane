@@ -44,14 +44,34 @@ logger = logging.getLogger("huberman")
 # family (breathing protocols, pre-fuel, post-recovery, "recovery
 # routine") — Kobe keeps those; Huberman owns cooldown / stretching /
 # mobility / down-regulation.
-COOLDOWN_RE = re.compile(
-    r"\b("
+# `stre?t?ch`: the live 2026-09-02 ask arrived as "Streching routine"
+# (phone keyboard) and fell straight past this pattern.
+_COOLDOWN_NOUN = (
     r"cool[\s-]?downs?|"
-    r"stretch(?:es|ing)?|"
+    r"stre?t?ch(?:es|ing)?|"
     r"mobilit(?:y|ies)|mobili[sz]e|"
     r"down[\s-]?regulat\w*|downshift|"
     r"foam\s+roll\w*|lacrosse\s+ball|peanut\s+ball"
-    r")\b",
+)
+COOLDOWN_RE = re.compile(r"\b(" + _COOLDOWN_NOUN + r")\b", re.I)
+
+# A cooldown REQUEST — request verb, then at most five words that are
+# NOT a workout noun, then a cooldown noun. Consulted by the delegate
+# classifier AHEAD of the design-preempt and pain rungs (2026-09-02
+# live misroute: "I did today's WOD and my right hip feels sore at the
+# catch, give me a good Streching routine" → "give me a" + "WOD"
+# tripped design-preempt → orchestrate → the WOD lookup dumped the
+# day's programming instead of a stretch). The no-workout-noun-between
+# guard keeps "design me a workout with stretching at the end" on the
+# Fraser side, and the request verb keeps bare pain reports ("my hip
+# hurts when stretching") on Kobe's.
+COOLDOWN_REQUEST_RE = re.compile(
+    r"\b(?:give\s+me|i\s+need|need|i\s+want|want|suggest|recommend|"
+    r"can\s+(?:you|i)\s+(?:get|have|do)|what'?s\s+a\s+good|design|"
+    r"build|make\s+me|put\s+together|send\s+me)\b"
+    r"(?:\s+(?!(?:workouts?|wods?|sessions?|metcons?|amrap|emom)\b)"
+    r"[\w'\-]+){0,5}?\s+"
+    r"(?:" + _COOLDOWN_NOUN + r")\b",
     re.I,
 )
 

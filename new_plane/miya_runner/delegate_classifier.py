@@ -193,7 +193,10 @@ _PAIN_PROFILE_RE = re.compile(
 # mobility, down-regulation, and the soft-tissue tool words.
 # COORDINATION: shared file — rung addition only, no existing pattern
 # touched.
-from agents.huberman.handler import COOLDOWN_RE as _COOLDOWN_RE  # noqa: E402
+from agents.huberman.handler import (  # noqa: E402
+    COOLDOWN_RE as _COOLDOWN_RE,
+    COOLDOWN_REQUEST_RE as _COOLDOWN_REQUEST_RE,
+)
 
 
 # ─── Recovery / breathing protocols (Kobe owns these) ──────────────────
@@ -376,6 +379,17 @@ def classify_delegation(msg: str) -> tuple[str, str]:
     #     caution). Deliberately AFTER plan mutations and state logs:
     #     "swap out Tuesday's session" stays a Kobe plan mutation, and
     #     logs never carry design verbs.
+    # 4a½. Cooldown REQUEST → Huberman, BEFORE design-preempt and pain
+    #     (2026-09-02 live misroute: "I did today's WOD and my right
+    #     hip feels sore at the catch, give me a good Streching routine"
+    #     — the WOD mention + "give me a" fired 4b, orchestrate did a
+    #     WOD lookup, and the athlete got the day's programming instead
+    #     of a stretch). Request verb → cooldown noun with no workout
+    #     noun between; the pain mention rides along as steering.
+    #     COORDINATION: shared file — one additive rung.
+    if _COOLDOWN_REQUEST_RE.search(text):
+        return ("huberman_route", text)
+
     if _WOD_DESIGN_GUARD_RE.search(text) and _WORKOUT_NOUN_RE.search(text):
         return ("orchestrate", text)
 
