@@ -128,8 +128,9 @@ def maybe_autocool(now: datetime | None = None) -> str | None:
     if state.autocool_sent(today):
         return None
     from agents.huberman import context as hctx
-    workouts = hctx.workouts_today(now)
-    cf = [w for w in workouts if not w["ask_direct"]]
+    ctx = hctx.gather(now)
+    workouts = ctx["workouts"]
+    cf = ctx["crossfit_today"]
     # Spec change 2026-08-25 (owner: "I'd also want a cool down on days
     # that I don't workout"): rest days now FIRE — a maintenance
     # mobility + down-regulation session biased to the hotspots. The
@@ -139,7 +140,12 @@ def maybe_autocool(now: datetime | None = None) -> str | None:
         return None                      # run/walk-only day → he asks
     from agents.huberman import coach
     steering = None
-    if not workouts:
+    # 2026-09-03: "rest day" framing only when the day really looks
+    # like rest. If the plan says CrossFit and a WOD is programmed but
+    # the Watch export hasn't run (the 09-02 "No workout logged" night),
+    # context carries trained_today/assumed_from_plan and the coach
+    # frames it honestly as the programmed WOD.
+    if not workouts and not ctx.get("trained_today"):
         steering = ("rest day — no training logged today, so skip the "
                     "post-workout framing: make this a maintenance "
                     "mobility session on the chronic hotspots, ending "
@@ -147,5 +153,7 @@ def maybe_autocool(now: datetime | None = None) -> str | None:
     text = coach.generate_cooldown(now=now, steering=steering)
     state.mark_autocool(today)
     logger.info("[autocool] fired (%s)",
-                ", ".join(w["name"] for w in cf) or "rest day")
+                ", ".join(w["name"] for w in cf)
+                or ("programmed WOD, Watch unsynced"
+                    if ctx.get("assumed_from_plan") else "rest day"))
     return text

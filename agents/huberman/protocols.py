@@ -33,6 +33,7 @@ and is applied at compose time.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 
@@ -155,6 +156,86 @@ DRILLS: tuple[Drill, ...] = (
 _BY_KEY = {d.key: d for d in DRILLS}
 
 
+# ── Movement → tissue stress (2026-09-03) ──────────────────────────────
+# Owner: "have this explain why it made a certain stretch choice —
+# based on today's workout." The programmed WOD text (SugarWOD, via
+# Kobe) is scanned for movement families; each hit names the areas it
+# loaded and a one-line reason the coach can quote. Areas use the
+# drill vocabulary above so a hit maps straight onto drill selection,
+# and the reason becomes the drill's "why" tail. Regexes are loose on
+# purpose (SugarWOD spelling varies: "Pull-Up", "pullups", "C2B").
+MOVEMENT_STRESS: tuple[tuple[re.Pattern, tuple[str, ...], str], ...] = (
+    (re.compile(r"\b(?:power\s+|hang\s+|squat\s+)?(?:cleans?|snatch(?:es)?|"
+                r"jerks?)\b", re.I),
+     ("hip", "t_spine", "traps"),
+     "cleans/snatches load the hip drive, the rack position and the "
+     "upper traps"),
+    (re.compile(r"\b(?:front|back|overhead|goblet)?\s*squats?\b|"
+                r"\bthrusters?\b|\bwall[\s-]?balls?\b", re.I),
+     ("hip", "glutes", "quads"),
+     "squatting under load compresses the hip capsule — the glute-crease "
+     "catch lives exactly there"),
+    (re.compile(r"\bdead\s*lifts?\b|\b(?:kb|kettlebell)\s+swings?\b|"
+                r"\bgood\s+mornings?\b|\bRDLs?\b", re.I),
+     ("hamstrings", "glutes"),
+     "hinge volume shortens the hamstrings and hammers the glute origin"),
+    (re.compile(r"\b(?:strict\s+|kipping\s+)?(?:pull|chin)[\s-]?ups?\b|"
+                r"\bmuscle[\s-]?ups?\b|\bring\s+rows?\b|"
+                r"\brope\s+climbs?\b|\btoes[\s-]to[\s-]bar\b|\bC2B\b|"
+                r"\bT2B\b", re.I),
+     ("lats", "t_spine"),
+     "pulling volume locks up the lats and mid-back"),
+    (re.compile(r"\bbox\s+jumps?\b|\bdouble[\s-]?unders?\b|"
+                r"\bjump\s+rope\b|\bburpees?\b|\brun(?:ning)?\b|"
+                r"\bsprints?\b", re.I),
+     ("calves", "foot"),
+     "jumping/running loads the calves and the post-tib line under the "
+     "right arch"),
+    (re.compile(r"\b(?:push|shoulder|strict)\s+press\b|\bpress(?:es)?\b|"
+                r"\bHSPU\b|\bhandstands?\b|\boverhead\b|"
+                r"\bpush[\s-]?ups?\b|\bbench\b|\bdips?\b", re.I),
+     ("neck", "traps", "t_spine"),
+     "overhead/pressing volume is the known trigger for the right "
+     "cervical spine"),
+    (re.compile(r"\brow(?:ing|er)?\b|\bcal(?:orie)?s?\s+(?:row|bike)\b|"
+                r"\b(?:assault|echo|air)\s*bike\b|\bski\s*erg\b", re.I),
+     ("hip", "t_spine"),
+     "erg work rounds the mid-back and shortens the hip flexors"),
+    (re.compile(r"\blunges?\b|\bstep[\s-]?ups?\b|\bpistols?\b", re.I),
+     ("hip", "quads", "glutes"),
+     "single-leg work loads the hip stabilizers and quads unevenly"),
+)
+
+
+def loaded_areas(wod_text: str | None) -> list[tuple[str, tuple[str, ...], str]]:
+    """Scan a WOD's text → [(movement_hit, areas, reason)] in first-seen
+    order, one entry per movement family. Empty when nothing matches."""
+    out = []
+    seen: set[int] = set()
+    for i, (rx, areas, why) in enumerate(MOVEMENT_STRESS):
+        m = rx.search(wod_text or "")
+        if m and i not in seen:
+            seen.add(i)
+            out.append((m.group(0), areas, why))
+    return out
+
+
+def why_for(drill: Drill, loads: list[tuple[str, tuple[str, ...], str]],
+            hotspots: list[dict]) -> str:
+    """The one-line reason a drill earned its slot: the first WOD
+    movement whose loaded areas it serves; else the hotspot it
+    maintains; else its role as the down-regulation closer."""
+    for hit, areas, why in loads:
+        if set(areas) & set(drill.areas):
+            return f"{hit.lower()} — {why}"
+    for h in hotspots:
+        if h.get("area_tag") in drill.areas:
+            return f"maintenance on a known hotspot ({h.get('label') or h.get('area_tag')})"
+    if drill.kind == "downreg":
+        return "closes the session — long exhales flip you toward sleep"
+    return "general recovery of what today loaded"
+
+
 def drill(key: str) -> Drill:
     return _BY_KEY[key]
 
@@ -251,18 +332,27 @@ def compose(minutes: float, profile: dict,
     return picked
 
 
-def render(drills: list[Drill], minutes: float, header: str) -> str:
+def render(drills: list[Drill], minutes: float, header: str,
+           whys: dict[str, str] | None = None,
+           preface: str | None = None) -> str:
     """Telegram-friendly deterministic render. Never empty if `drills`
-    is non-empty; coach.py guarantees non-empty via compose()."""
+    is non-empty; coach.py guarantees non-empty via compose(). `whys`
+    (drill key → reason) puts a one-line rationale under each drill —
+    the owner's 2026-09-03 ask: explain the choice, tied to today's
+    workout. `preface` is the one-line context (what today loaded)."""
     total = sum(d.minutes for d in drills)
     lines = [header,
              f"_~{int(round(total))} min including transitions "
-             f"(asked: {int(round(minutes))})_", ""]
-    t = 0.0
+             f"(asked: {int(round(minutes))})_"]
+    if preface:
+        lines.append(preface)
+    lines.append("")
+    whys = whys or {}
     for d in drills:
         lines.append(f"*{_fmt_min(d.minutes)} — {d.name}*")
+        if whys.get(d.key):
+            lines.append(f"  why: {whys[d.key]}")
         lines.append(f"  _{d.cue}_")
-        t += d.minutes
     lines.append("")
     lines.append("Not the flavor you want? Tell me the area or the vibe "
                  "and I'll re-cut it.")

@@ -45,13 +45,24 @@ HARD RULES — violating any of these is a failed answer:
     explicitly complained about repetitive programming. Vary the menu.
   * END with 2-4 minutes of down-regulation breathing (long-exhale
     bias) — this runs at ~9:30 PM and must downshift him toward sleep.
-  * Telegram-friendly markdown: a bold one-line header, then per-drill
-    lines "*X min — Drill name*" each with ONE italic cue line.
-    Under ~180 words. Close with ONE short question inviting a re-cut
+  * EXPLAIN EVERY CHOICE. Under each drill, one "why:" line that ties
+    it to a SPECIFIC movement in today's programmed WOD ("front squats
+    + cleans compressed the hip capsule") or to a named hotspot — the
+    athlete asked to see the reasoning, not just the prescription.
+    Never a generic "good for recovery".
+  * Open with ONE line on what today loaded (name the movements). If
+    TODAY says the Watch hasn't synced but the plan is CrossFit with a
+    programmed WOD, say so in that same line and coach the WOD.
+  * Telegram-friendly markdown: a bold one-line header, the loading
+    line, then per-drill blocks:
+      *X min — Drill name*
+      why: <the movement or hotspot it answers>
+      _<ONE cue line>_
+    Under ~230 words. Close with ONE short question inviting a re-cut
     (area or vibe), not a paragraph.
-  * Never invent metrics, weights, or data not given here. If the
-    workout details are missing, coach off the hotspots alone and say
-    so in five words, not fifty."""
+  * Never invent metrics, weights, or data not given here. If both the
+    Watch and the programming are empty, coach off the hotspots alone
+    and say so in five words, not fifty."""
 
 
 def _profile_block(profile: dict) -> str:
@@ -83,7 +94,20 @@ def _context_block(ctx: dict) -> str:
             bits.append(f"{w['distance_km']} km")
         lines.append("  Workout: " + ", ".join(str(b) for b in bits))
     if not (ctx.get("workouts") or []):
-        lines.append("  (no workout data synced)")
+        if ctx.get("assumed_from_plan"):
+            lines.append("  Watch has NOT synced today's session yet, but "
+                         "the plan says CrossFit and a WOD is programmed "
+                         "— coach the WOD below as done.")
+        else:
+            lines.append("  (no workout data synced)")
+    if ctx.get("gym_wod_today"):
+        lines.append("  Today's programmed WOD (SugarWOD):")
+        lines.append("    " + ctx["gym_wod_today"][:700].replace("\n",
+                                                               "\n    "))
+    if ctx.get("loaded"):
+        lines.append("  What that loaded: " + "; ".join(
+            f"{hit} → {', '.join(areas)}"
+            for hit, areas, _why in ctx["loaded"]))
     if ctx.get("sleep_hours_last_night"):
         lines.append(f"  Sleep last night: "
                      f"{ctx['sleep_hours_last_night']} h")
@@ -155,13 +179,37 @@ def _focus_from(steering: str | None) -> list[str]:
 def fallback(profile: dict, minutes: float, recent: set[str],
              ctx: dict, salt: int = 0,
              steering: str | None = None) -> tuple[str, list[str]]:
-    """The deterministic floor. Always returns non-empty text."""
+    """The deterministic floor. Always returns non-empty text — and,
+    since 2026-09-03, always explains itself: focus areas come from
+    what today's WOD loaded (steering words still win), and every
+    drill carries a why line naming the movement or hotspot."""
+    loads = ctx.get("loaded") or []
+    focus = _focus_from(steering)
+    if not focus:
+        for _hit, areas, _why in loads:
+            for a in areas:
+                if a not in focus:
+                    focus.append(a)
     drills = protocols.compose(minutes, profile, exclude=recent,
-                               focus=_focus_from(steering), salt=salt)
+                               focus=focus, salt=salt)
     if not drills:                        # library filtered to nothing
         drills = [protocols.drill("breath_48")]
+    hotspots = profile.get("hotspots") or []
+    whys = {d.key: protocols.why_for(d, loads, hotspots) for d in drills}
+    if loads:
+        moves = ", ".join(hit.lower() for hit, _a, _w in loads[:4])
+        preface = (f"_Today loaded: {moves}"
+                   + (" (Watch not synced yet — coaching the programmed "
+                      "WOD)" if ctx.get("assumed_from_plan") else "")
+                   + "._")
+    elif ctx.get("crossfit_today"):
+        preface = "_Post-session — no movement detail synced; hotspots lead._"
+    else:
+        preface = "_No workout logged; hitting hotspots._"
     header = "*🧘 Tonight's cooldown*"
-    return protocols.render(drills, minutes, header), [d.key for d in drills]
+    return (protocols.render(drills, minutes, header, whys=whys,
+                             preface=preface),
+            [d.key for d in drills])
 
 
 def generate_cooldown(minutes: float | None = None,
