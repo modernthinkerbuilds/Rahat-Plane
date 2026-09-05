@@ -22,6 +22,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
+_PICKS_PER_DAY = 3        # ranked recurring picks; the rest of the
+                          # day's slots go to new/unrated events
 _MAX_PER_DAY = 6
 
 
@@ -66,9 +68,24 @@ def _fmt_row(row: dict) -> str:
     return line + event_link(row.get("url"))
 
 
+def _pick_line(row: dict) -> str:
+    """A ranked pick: the normal line plus a compact ★score · evidence
+    tail so the reader sees WHY it ranked (curation, 2026-09-03)."""
+    line = _fmt_row(row)
+    tail = []
+    if row.get("_score") is not None:
+        tail.append(f"★{int(row['_score'])}")
+    if row.get("_evidence"):
+        tail.append(str(row["_evidence"])[:90])
+    if tail:
+        line += "\n      _" + " · ".join(tail) + "_"
+    return line
+
+
 def build_digest(now: datetime | None = None, *,
                  path: str | None = None,
-                 commitments: list[dict] | None = None) -> str | None:
+                 commitments: list[dict] | None = None,
+                 interests: list[str] | None = None) -> str | None:
     """The daily weekend digest, or None when there is nothing to say.
 
     `commitments` (optional): household-calendar entries for the window
@@ -124,17 +141,42 @@ def build_digest(now: datetime | None = None, *,
         day_rows = by_day[day_iso]
         if day_commits and day_rows:
             lines.append("  _Also on nearby:_")
-        for r in day_rows[:_MAX_PER_DAY]:
-            line = _fmt_row(r)
-            hits = _row_conflicts(r, day_commits)
-            if hits:
-                line += (f"\n      ⚠️ overlaps {hits[0].get('title')} — "
-                         f"swap it in, or keep the commitment?")
-            lines.append(line)
-        extra = len(day_rows) - _MAX_PER_DAY
+        # Curation (owner 2026-09-03: "the list is so exhaustive"):
+        # recurring series with a track record are RANKED (online
+        # popularity + family fit) and shown as picks; brand-new events
+        # are shown as-is for the humans to judge. Still at most
+        # _MAX_PER_DAY lines a day — but chosen, not first-come.
+        from bridges.events.popularity import rank
+        picks, fresh = rank(day_rows, interests=interests, path=path)
+        n_picks = min(len(picks), _PICKS_PER_DAY)
+        n_new = min(len(fresh), _MAX_PER_DAY - n_picks)
+        shown = 0
+        if n_picks:
+            lines.append("  _Top picks — recurring, well-regarded:_")
+            for r in picks[:n_picks]:
+                line = _pick_line(r)
+                hits = _row_conflicts(r, day_commits)
+                if hits:
+                    line += (f"\n      ⚠️ overlaps {hits[0].get('title')}"
+                             f" — swap it in, or keep the commitment?")
+                lines.append(line)
+                shown += 1
+        if n_new:
+            if n_picks:
+                lines.append("  _New this weekend — your call:_")
+            for r in fresh[:n_new]:
+                line = _fmt_row(r)
+                hits = _row_conflicts(r, day_commits)
+                if hits:
+                    line += (f"\n      ⚠️ overlaps {hits[0].get('title')}"
+                             f" — swap it in, or keep the commitment?")
+                lines.append(line)
+                shown += 1
+        extra = len(day_rows) - shown
         if extra > 0:
-            lines.append(f"  _…plus {extra} more — `/whatson` for the "
-                         f"full list._")
+            lines.append(f"  _…plus {extra} more — say "
+                         f"\"{day.strftime('%A')}\" or `/whatson` for "
+                         f"everything._")
     lines += ["", "_From your verified event feeds (refreshed through "
                   "the day). Want a plan around any of these? Just tell "
                   "me — e.g. \"plan Saturday around the kids workshop\"._"]

@@ -188,7 +188,14 @@ def maybe_send_digest(send, now=None) -> bool:
         commitments = state.calendar_entries(start, end)
     except Exception:  # noqa: BLE001 — calendar optional in the digest
         commitments = []
-    text = build_digest(now, commitments=commitments)
+    # Curation (2026-09-03): the family's per-member preferences are
+    # the interest signal that ranks recurring picks.
+    try:
+        interests = [pref for subj in state.load_family_subjects()
+                     for pref in (subj.preferences or [])]
+    except Exception:  # noqa: BLE001 — profile optional
+        interests = []
+    text = build_digest(now, commitments=commitments, interests=interests)
     if not text:
         logger.info("digest skipped — inventory empty for the weekend "
                     "window (feeds refresh 07:00/12:30/18:00)")

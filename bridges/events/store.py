@@ -89,6 +89,12 @@ def _connect(path: str | None = None) -> sqlite3.Connection:
                     "ADD COLUMN fetched INTEGER")
     except sqlite3.OperationalError:
         pass                                 # column already exists
+    # Curation (2026-09-03): one row per recurring series — how popular
+    # / well-reviewed it is online, looked up ONCE and reused.
+    con.execute("""CREATE TABLE IF NOT EXISTS events_popularity (
+        series_key TEXT PRIMARY KEY,
+        score INTEGER, evidence TEXT, audience TEXT,
+        checked_at TEXT)""")
     return con
 
 
@@ -99,6 +105,23 @@ def _norm(s: str) -> str:
     s = unicodedata.normalize("NFKD", s or "").encode(
         "ascii", "ignore").decode()
     return re.sub(r"[^a-z0-9]+", " ", s.lower()).strip()
+
+
+_SERIES_NOISE = re.compile(
+    r"\b(?:mon|tue|wed|thu|fri|sat|sun)\w*\b|"
+    r"\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\b|"
+    r"\b\d{1,4}(?:st|nd|rd|th)?\b|\b20\d\d\b|\bweek\s*\d+\b|"
+    r"\b(?:part|session|day)\s+\d+\b", re.I)
+
+
+def series_key(title: str, venue: str = "") -> str:
+    """Identity of a RECURRING SERIES: the title with dates / weekdays /
+    numbers stripped, plus the venue. "Music on Castro — Aug 26" and
+    "Music on Castro — Sep 2" collapse to one series; "Storytime with
+    <author>" (one-off) stays its own key. Curation (2026-09-03) keys
+    recurrence detection and the popularity cache on this."""
+    t = _SERIES_NOISE.sub(" ", title or "")
+    return f"{_norm(t)}|{_norm(venue)}"
 
 
 def event_key(title: str, start_ts: str, city: str) -> str:
@@ -211,5 +234,60 @@ def inventory_stats(path: str | None = None) -> list[tuple]:
             "SELECT source_id, SUM(status = 'active'), MAX(last_seen) "
             "FROM events_inventory GROUP BY source_id "
             "ORDER BY 2 DESC").fetchall()
+    finally:
+        con.close()
+
+
+
+# ─────────────────────────── curation reads/writes ───────────────────
+def recurrence_counts(path: str | None = None) -> dict[str, int]:
+    """series_key → number of DISTINCT dates the series has appeared on,
+    across the whole inventory (past rows included, any status). ≥2 =
+    a recurring series with a track record worth looking up."""
+    con = _connect(path)
+    try:
+        rows = con.execute("SELECT title, venue, date(start_ts) "
+                           "FROM events_inventory").fetchall()
+    finally:
+        con.close()
+    dates: dict[str, set[str]] = {}
+    for title, venue, d in rows:
+        if not d:
+            continue
+        dates.setdefault(series_key(title or "", venue or ""), set()).add(d)
+    return {k: len(v) for k, v in dates.items()}
+
+
+def get_popularity(keys: list[str],
+                   path: str | None = None) -> dict[str, dict]:
+    if not keys:
+        return {}
+    con = _connect(path)
+    try:
+        out: dict[str, dict] = {}
+        for i in range(0, len(keys), 400):
+            chunk = keys[i:i + 400]
+            q = ("SELECT series_key, score, evidence, audience, checked_at "
+                 "FROM events_popularity WHERE series_key IN (" +
+                 ",".join("?" * len(chunk)) + ")")
+            for k, sc, ev, au, at in con.execute(q, chunk):
+                out[k] = {"score": sc, "evidence": ev or "",
+                          "audience": au or "", "checked_at": at or ""}
+        return out
+    finally:
+        con.close()
+
+
+def set_popularity(key: str, score: int | None, evidence: str,
+                   audience: str, *, now: datetime | None = None,
+                   path: str | None = None) -> None:
+    now_iso = (now or datetime.now()).strftime("%Y-%m-%d %H:%M:%S")
+    con = _connect(path)
+    try:
+        con.execute("INSERT OR REPLACE INTO events_popularity VALUES "
+                    "(?,?,?,?,?)",
+                    (key, score, (evidence or "")[:200],
+                     (audience or "")[:120], now_iso))
+        con.commit()
     finally:
         con.close()

@@ -284,6 +284,10 @@ def main() -> int:
     for r in refresh_all():
         print(f"{r['source_id']:24s} fetched {r['fetched']:3d}  "
               f"added {r['added']:3d}  updated {r['updated']:3d}")
+    # Curation (2026-09-03): look up online popularity for at most 10
+    # recurring series per pass (30-day cache) so the digest can rank.
+    from bridges.events.popularity import score_upcoming
+    print(f"popularity: scored {score_upcoming()} recurring series")
     return 0
 
 
