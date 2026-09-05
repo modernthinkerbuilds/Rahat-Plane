@@ -211,9 +211,16 @@ def handle_daily_burn(when: datetime) -> str:
     label = when.strftime("%a %b %-d")
     if when.date() == datetime.now().date():
         return f"Today ({label}): *{fmt_kcal(kcal)}*."
+    # Provisional past day (2026-09-05): say so, and how to set it now.
+    tail = ""
+    last = burn_is_provisional(when)
+    if last:
+        tail = (f" ⏳ _synced to {last} — the next 7-day export will "
+                f"finalize it; `/fix {when.strftime('%a').lower()} <kcal>` "
+                f"sets it now._")
     if when.date() == (datetime.now() - timedelta(days=1)).date():
-        return f"Yesterday ({label}): *{fmt_kcal(kcal)}*."
-    return f"{label}: *{fmt_kcal(kcal)}*."
+        return f"Yesterday ({label}): *{fmt_kcal(kcal)}*.{tail}"
+    return f"{label}: *{fmt_kcal(kcal)}*.{tail}"
 
 
 def handle_daily_burn_breakdown() -> str:
@@ -241,9 +248,15 @@ def handle_daily_burn_breakdown() -> str:
             continue
         actual = burn_for_date(d)
         total_actual += actual
-        lines.append(f"{marker} {name}: *{fmt_kcal(actual)}* / {fmt_kcal(ideal)}")
+        prov = burn_is_provisional(d, now=datetime.now())
+        flag = f" ⏳{prov}" if prov else ""
+        lines.append(f"{marker} {name}: *{fmt_kcal(actual)}* / "
+                     f"{fmt_kcal(ideal)}{flag}")
     lines.append(f"\nSo far: *{fmt_kcal(total_actual)}* burned / "
                  f"{fmt_kcal(total_ideal)} planned.")
+    if any("⏳" in ln for ln in lines):
+        lines.append("_⏳ = last sync that day; the next 7-day export "
+                     "finalizes it. `/fix <day> <kcal>` to set it now._")
     return "\n".join(lines)
 
 

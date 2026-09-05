@@ -96,6 +96,9 @@ import json as _json  # local alias to avoid touching the import block
 __all__ = [
     "_db",
     "burn_for_date",
+    "burn_is_provisional",
+    "burn_last_sync",
+    "BURN_FINAL_HOUR",
     "burn_for_range",
     "burn_last_week",
     "burn_this_week",
@@ -267,6 +270,49 @@ def state_set(key: str, value: str) -> None:
         con.commit()
     finally:
         con.close()
+
+
+# Provisional-day marker (2026-09-05). Live: the owner's Friday showed
+# 1,073 kcal at Saturday 12:50 while his Watch said 1,190 — the day's
+# row was stamped 19:50 (last "Today" sync). The phone's 7-day export
+# is what finalizes yesterday, and it has NO fixed slot (one week of
+# log: 06:51, 08:33, 10:18, 13:00, 15:58, 18:11, 22:25 …); today's ran
+# at 13:00 and Friday became 1,191 @ 23:54. Until that export lands, a
+# past day whose latest active-calorie row is before this hour is
+# PROVISIONAL and gets flagged instead of masquerading as final.
+BURN_FINAL_HOUR = 22
+
+
+def burn_last_sync(target: datetime) -> str | None:
+    """'HH:MM' of the latest active_calories row on that date, or None
+    when the day has no rows at all."""
+    con = _db()
+    try:
+        d = target.strftime("%Y-%m-%d")
+        row = con.execute(
+            "SELECT MAX(timestamp) FROM raw_vitals WHERE "
+            "metric_type='active_calories' AND substr(timestamp,1,10)=?",
+            (d,)).fetchone()
+        ts = row[0] if row else None
+        return ts[11:16] if ts and len(ts) >= 16 else None
+    finally:
+        con.close()
+
+
+def burn_is_provisional(target: datetime,
+                        now: datetime | None = None) -> str | None:
+    """Return the last-sync 'HH:MM' when a PAST day's burn is still
+    provisional (latest row before BURN_FINAL_HOUR), else None. Today is
+    never provisional (it is in progress by definition), and a day with
+    a 23:59 row — the shape /fix and the weekly heal both write — is
+    final."""
+    now = now or datetime.now()
+    if target.date() >= now.date():
+        return None
+    last = burn_last_sync(target)
+    if last is None:
+        return None
+    return last if int(last[:2]) < BURN_FINAL_HOUR else None
 
 
 def burn_for_date(target: datetime) -> float:
