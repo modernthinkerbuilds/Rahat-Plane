@@ -281,7 +281,9 @@ def _h_daily_breakdown(msg: str, match: re.Match) -> str:
     Bug 2026-06-21: this fell to the reasoner, which has only the weekly
     total and (correctly) refused to invent a per-day split."""
     from agents.the_scientist import handler as _kobe
-    return _kobe.handle_daily_burn_breakdown()
+    # 2026-09-07: pass the message so "…by the day last week" / "week
+    # starting Aug 31" render THAT week, not this one.
+    return _kobe.handle_daily_burn_breakdown(text=msg)
 
 
 def _h_daily_burn(msg: str, match: re.Match) -> str:

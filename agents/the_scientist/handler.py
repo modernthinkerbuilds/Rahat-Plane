@@ -223,13 +223,60 @@ def handle_daily_burn(when: datetime) -> str:
     return f"{label}: *{fmt_kcal(kcal)}*.{tail}"
 
 
-def handle_daily_burn_breakdown() -> str:
-    """Per-day ACTUAL burn vs the day's ideal for the current week —
-    answers 'give me calories by the day'. Deterministic (reads
-    burn_for_date per day + the locked plan), so it never falls to the
-    reasoner, which only has the weekly total and (correctly) refuses to
-    invent a per-day split."""
-    monday, _ = week_bounds()
+# Which week does a breakdown ask mean? (2026-09-07 live bug: "How many
+# calories did I burn by the day last week" / "past week" / "the week
+# starting August 31" — asked Monday 07:08 — ALL rendered the current
+# week's all-zero grid, because the dispatcher's daily_breakdown route
+# outranks last_week and the handler only knew "this week".)
+_WEEK_REL_RE = re.compile(r"\b(?:last|past|previous|prior)\s+week\b", re.I)
+_WEEK_DATE_RE = re.compile(
+    r"\bweek\s+(?:starting|of|beginning|from|commencing)\s+(?:the\s+)?"
+    r"(?:(?P<mon>[A-Za-z]{3,9})\s+(?P<day>\d{1,2})(?:st|nd|rd|th)?"
+    r"|(?P<iso>\d{4}-\d{2}-\d{2}))\b", re.I)
+
+
+def resolve_week_monday(text: str | None,
+                        now: datetime | None = None) -> datetime:
+    """The Monday of the week a message refers to: 'last/past/previous
+    week' → last week; 'week starting|of <Mon DD>' / ISO date → that
+    date's week (the most recent such date not in the future); else
+    the current week. ONE resolver so tests and route agree."""
+    now = now or datetime.now()
+    this_monday, _ = week_bounds(now)
+    t = text or ""
+    m = _WEEK_DATE_RE.search(t)
+    if m:
+        target = None
+        if m.group("iso"):
+            try:
+                target = datetime.strptime(m.group("iso"), "%Y-%m-%d")
+            except ValueError:
+                target = None
+        else:
+            for fmt in ("%b %d %Y", "%B %d %Y"):
+                try:
+                    target = datetime.strptime(
+                        f"{m.group('mon')} {m.group('day')} {now.year}", fmt)
+                    break
+                except ValueError:
+                    continue
+            if target is not None and target > now + timedelta(days=1):
+                target = target.replace(year=now.year - 1)   # "Dec 29" in Jan
+        if target is not None:
+            return week_bounds(target)[0]
+    if _WEEK_REL_RE.search(t):
+        return this_monday - timedelta(days=7)
+    return this_monday
+
+
+def handle_daily_burn_breakdown(text: str | None = None) -> str:
+    """Per-day ACTUAL burn vs the day's ideal for the week the message
+    names (default: this week) — answers 'give me calories by the day',
+    '…by the day last week', '…for the week starting Aug 31'.
+    Deterministic (reads burn_for_date per day + the locked plan), so it
+    never falls to the reasoner, which only has the weekly total and
+    (correctly) refuses to invent a per-day split."""
+    monday = resolve_week_monday(text)
     plan = current_plan(monday)
     plan_by_wd = {r["weekday"]: r for r in plan}
     today = datetime.now().date()
@@ -252,7 +299,9 @@ def handle_daily_burn_breakdown() -> str:
         flag = f" ⏳{prov}" if prov else ""
         lines.append(f"{marker} {name}: *{fmt_kcal(actual)}* / "
                      f"{fmt_kcal(ideal)}{flag}")
-    lines.append(f"\nSo far: *{fmt_kcal(total_actual)}* burned / "
+    past_week = (monday + timedelta(days=6)).date() < today
+    lines.append(f"\n{'Total' if past_week else 'So far'}: "
+                 f"*{fmt_kcal(total_actual)}* burned / "
                  f"{fmt_kcal(total_ideal)} planned.")
     if any("⏳" in ln for ln in lines):
         lines.append("_⏳ = last sync that day; the next 7-day export "
