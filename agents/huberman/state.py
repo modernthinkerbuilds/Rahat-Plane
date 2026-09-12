@@ -85,7 +85,17 @@ DEFAULT_PROFILE: dict = {
     "equipment": [],
     "issues": [],
     "avoid_tags": [],
-    "preferences": {"variety_days": 4, "include_transitions": True},
+    # Assessment-driven coaching (2026-09-12) — all optional, all
+    # vault-only when set: what a hands-on assessment concluded, the
+    # coaching rules it implies, the athlete's own test-retest movement,
+    # and a side/area bias for dosing. preferences.control_drills is
+    # how many motor-control drills a session carries (protocols.compose).
+    "assessment": [],
+    "rules": [],
+    "test_retest": "",
+    "bias": {},
+    "preferences": {"variety_days": 4, "include_transitions": True,
+                    "control_drills": 1},
 }
 
 

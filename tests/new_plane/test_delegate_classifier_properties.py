@@ -69,8 +69,15 @@ def test_path_is_valid(msg):
 # ── Property 3: a slash-prefixed alpha command routes to Kobe ──────────
 # (…unless it is one of Genie's carved-out commands — agent #4; the
 # authoritative list lives in agents/genie/intents.py GENIE_SLASH_RE.)
-_GENIE_SLASH_PREFIXES = ("genie", "weekend_plan", "family_log",
-                         "whatson", "swap")
+# Derived from the regex itself so this list can never lag it again
+# (2026-09-12: Hypothesis found "/WHY" after /why, /family, /replan_day,
+# /digest and /calendar joined the carve-out without this tuple).
+import re as _re
+from agents.genie.intents import GENIE_SLASH_RE as _GENIE_SLASH_RE
+_GENIE_SLASH_PREFIXES = tuple(
+    _re.search(r"\(([a-z_|]+)\)\\b", _GENIE_SLASH_RE.pattern).group(1)
+    .split("|"))
+assert "genie" in _GENIE_SLASH_PREFIXES and "why" in _GENIE_SLASH_PREFIXES
 
 
 @_S

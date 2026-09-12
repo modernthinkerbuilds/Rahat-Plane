@@ -62,7 +62,14 @@ HARD RULES — violating any of these is a failed answer:
     (area or vibe), not a paragraph.
   * Never invent metrics, weights, or data not given here. If both the
     Watch and the programming are empty, coach off the hotspots alone
-    and say so in five words, not fifty."""
+    and say so in five words, not fifty.
+  * If the profile carries an ASSESSMENT and RULES, they OVERRIDE your
+    generic instincts: obey every RULE verbatim, never prescribe a
+    class of drill a rule retires (no matter what today loaded), give
+    the BIAS side the extra time it names, and open the session with
+    the TEST-RETEST movement — then close by retesting it, before the
+    breathing. Coach the pattern the assessment describes, not the
+    tissue length."""
 
 
 def _profile_block(profile: dict) -> str:
@@ -81,6 +88,24 @@ def _profile_block(profile: dict) -> str:
     eq = profile.get("equipment") or []
     lines.append("  Equipment: " + (", ".join(eq) if eq
                                     else "bodyweight only"))
+    # Assessment-driven coaching (2026-09-12): a hands-on finding, the
+    # rules it implies, the test the athlete uses to check progress and
+    # any side bias. All vault-only; rendered only when present.
+    assess = profile.get("assessment") or []
+    if assess:
+        lines.append("  ASSESSMENT (working hypothesis, not a diagnosis):")
+        lines += [f"    - {a}" for a in assess]
+    rules = profile.get("rules") or []
+    if rules:
+        lines.append("  RULES (obey verbatim):")
+        lines += [f"    - {r}" for r in rules]
+    if profile.get("test_retest"):
+        lines.append(f"  TEST-RETEST: {profile['test_retest']}")
+    bias = profile.get("bias") or {}
+    if bias.get("side") and bias.get("areas"):
+        lines.append(f"  BIAS: {bias['side']} side gets "
+                     f"~{bias.get('factor', 2)}x the time on "
+                     + ", ".join(bias["areas"]))
     return "\n".join(lines)
 
 
@@ -206,9 +231,16 @@ def fallback(profile: dict, minutes: float, recent: set[str],
         preface = "_Post-session — no movement detail synced; hotspots lead._"
     else:
         preface = "_No workout logged; hitting hotspots._"
+    # Assessment-driven profile: bracket the session with its test so
+    # the athlete can feel whether the pattern moved, and dose the
+    # biased side. (Vault profile only; generic profiles see neither.)
+    if profile.get("test_retest"):
+        preface += (f"\n_Test first, retest at the end: "
+                    f"{profile['test_retest']}_")
+    notes = protocols.side_bias_notes(drills, profile)
     header = "*🧘 Tonight's cooldown*"
     return (protocols.render(drills, minutes, header, whys=whys,
-                             preface=preface),
+                             preface=preface, notes=notes),
             [d.key for d in drills])
 
 

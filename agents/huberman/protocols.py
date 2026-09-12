@@ -25,6 +25,16 @@ Design rules encoded here:
     a 9:30 PM protocol; the last thing it does is downshift the nervous
     system for sleep (trap/neck release + long-exhale, the same
     guardrail Fraser's Part 6 encodes).
+  * MOTOR CONTROL IS A TIER (2026-09-12). A hands-on assessment can
+    conclude that length is NOT the limiter — that a joint runs out of
+    range because the pattern is wrong, not because the tissue is
+    short. For that athlete passive holds are the wrong tool and the
+    library must offer the replacement: kind="control" drills (PNF,
+    hinge rehearsal, bridges with a top squeeze) that re-teach the
+    joint where to go. The profile decides which passive classes are
+    retired (`avoid_tags`: passive_hamstring, passive_er, anterior_band)
+    and how many control drills a session carries
+    (`preferences.control_drills`); the library stays generic.
 
 PII note: this file ships in the PUBLIC repo. Drill definitions are
 generic coaching content; everything athlete-specific (hotspots,
@@ -42,11 +52,15 @@ class Drill:
     key: str
     name: str
     minutes: float                    # includes setup/transition time
-    kind: str                         # "soft_tissue" | "stretch" | "downreg"
+    kind: str                         # "soft_tissue" | "stretch" | "control" | "downreg"
     areas: tuple[str, ...]            # body areas served
     cue: str                          # the one coaching cue that matters
     equipment: tuple[str, ...] = ()   # required kit ('' entries = none)
     contra: tuple[str, ...] = ()      # contraindication tags
+    rationale: str = ""               # built-in "why" (control drills:
+                                      # the pattern they re-teach)
+    sided: bool = True                # done one side at a time (a side
+                                      # bias can dose it); False = bilateral
 
 
 # ── The library ────────────────────────────────────────────────────────
@@ -96,21 +110,41 @@ DRILLS: tuple[Drill, ...] = (
     Drill("pigeon", "Pigeon — front-leg bias", 4.0,
           "stretch", ("glutes", "hip"),
           "Square the hips, long exhale into the front glute.",
-          ()),
+          (),
+          ("passive_er",)),                  # deep passive external rotation
     Drill("ninety_ninety", "90/90 hip switches → hold", 3.5,
           "stretch", ("hip", "glutes"),
           "Slow switches x5, then 60s hold each side, chest proud.",
-          ()),
-    Drill("band_hip_distraction", "Banded hip distraction (door anchor)", 4.0,
+          (),
+          ("passive_er",)),
+    Drill("band_hip_distraction",
+          "Banded hip distraction (anchor in front, traction)", 4.0,
           "stretch", ("hip",),
-          "Band high in the capsule, sit back; joint-friendly on a "
-          "grumpy lateral hip — traction, not compression.",
-          ("band", "door anchor strap")),
-    Drill("band_hamstring", "Banded hamstring floss", 3.5,
+          "Band high in the capsule, anchor in front, sit back; "
+          "joint-friendly on a grumpy lateral hip — traction, not "
+          "compression.",
+          ("band", "door anchor strap"),
+          ("anterior_band",)),               # pulls the femur FORWARD
+    Drill("band_posterior_glide",
+          "Banded posterior hip glide (quadruped, anchor behind)", 4.0,
+          "control", ("hip", "glutes"),   # an ACTIVE seat-the-femur
+                                          # mobilization, so it rotates
+                                          # with the hinge and the bridge
+          "Band high on the thigh pulling BACK toward the anchor; "
+          "quadruped, sit the hips back and let the band seat the "
+          "femur in the socket. Long exhale, no lumbar rounding.",
+          ("band", "door anchor strap"),
+          (),
+          "seats the femoral head back in the socket — the posterior "
+          "glide a forward-sitting hip is missing"),
+    Drill("band_hamstring", "Banded hamstring PNF (contract-relax)", 3.5,
           "stretch", ("hamstrings",),
-          "Leg vertical, band on the arch; kick to a straight knee, "
-          "2s holds.",
-          ("band",)),
+          "Leg vertical, band on the arch: push INTO the band 5s at "
+          "~30 percent, relax, take the new range; 4 rounds a side.",
+          ("band",),
+          (),
+          "active contract-relax instead of a passive hold — length "
+          "gains you can keep"),
     Drill("band_neck_stretch", "Banded first-rib / scalene opener", 3.0,
           "stretch", ("neck", "traps"),
           "Band over the trap, step away; long neck, ear to shoulder.",
@@ -123,7 +157,8 @@ DRILLS: tuple[Drill, ...] = (
           "stretch", ("hamstrings", "full_body"),
           "Hold the DBs, hinge, let the weight lengthen the fold — "
           "zero pulling.",
-          ("dumbbells",)),
+          ("dumbbells",),
+          ("passive_hamstring",)),           # a loaded passive hold
     Drill("tspine_wall_reach", "Wall thoracic reach-backs", 3.0,
           "stretch", ("t_spine", "lats"),
           "Hips back, arms on the wall; drop the chest through.",
@@ -133,6 +168,26 @@ DRILLS: tuple[Drill, ...] = (
           "Tendon-friendly loading for a resolving lateral hip: "
           "5 x 20s holds at 50 percent effort, zero pain rule.",
           ()),
+    # — motor control (re-teach the pattern; never passive) —
+    Drill("dowel_hinge", "Dowel hinge rehearsal", 3.5,
+          "control", ("hip", "hamstrings"),
+          "Dowel on head, T-spine and sacrum. Push the hips BACK, soft "
+          "knees, chest long; stop the instant the dowel leaves any "
+          "point. 3 x 8 slow reps.",
+          (),
+          (),
+          "re-teaches a hip-first hinge — hips travel back and the "
+          "spine stays long instead of rounding to reach the floor",
+          sided=False),
+    Drill("glute_bridge_squeeze", "Glute bridge — 3s top squeeze", 3.0,
+          "control", ("glutes", "hip"),
+          "Heels close, ribs down; drive through the heels and SQUEEZE "
+          "at the top for 3s before the hamstrings can take over. "
+          "2 x 10, then 8 single-leg on the weaker side.",
+          (),
+          (),
+          "wakes the glutes to own hip extension so the hamstrings "
+          "stop doing all of it"),
     # — down-regulation (closers) —
     Drill("breath_48", "4-8 breathing", 3.0,
           "downreg", ("full_body",),
@@ -224,10 +279,17 @@ def why_for(drill: Drill, loads: list[tuple[str, tuple[str, ...], str]],
             hotspots: list[dict]) -> str:
     """The one-line reason a drill earned its slot: the first WOD
     movement whose loaded areas it serves; else the hotspot it
-    maintains; else its role as the down-regulation closer."""
+    maintains; else its role as the down-regulation closer. A drill
+    with a built-in rationale (control work, the posterior glide)
+    leads with the movement hit when there is one and always ends on
+    the pattern it re-teaches — that IS the reason it was chosen."""
     for hit, areas, why in loads:
         if set(areas) & set(drill.areas):
+            if drill.rationale:
+                return f"{hit.lower()} — {drill.rationale}"
             return f"{hit.lower()} — {why}"
+    if drill.rationale:
+        return drill.rationale
     for h in hotspots:
         if h.get("area_tag") in drill.areas:
             return f"maintenance on a known hotspot ({h.get('label') or h.get('area_tag')})"
@@ -246,12 +308,21 @@ def known_keys() -> frozenset[str]:
 
 def _equipment_ok(d: Drill, owned: list[str]) -> bool:
     """A drill is available if every required item matches something the
-    athlete owns (substring match: 'band' matches 'green Rogue band')."""
+    athlete owns. Match = every WORD of the requirement appears in one
+    owned item, any order ('door anchor strap' matches 'door hip anchor
+    strap'; 'band' matches 'green Rogue band'). The 2026-09-12 audit
+    found the owner's profile had never qualified for a single
+    door-anchor band drill because of the old substring rule."""
     if not d.equipment:
         return True
-    owned_l = [o.lower() for o in owned]
-    return all(any(req in o for o in owned_l) for req in
-               (r.lower() for r in d.equipment))
+    owned_words = [set(re.findall(r"[a-z0-9]+", o.lower())) for o in owned]
+    for req in d.equipment:
+        need = set(re.findall(r"[a-z0-9]+", req.lower()))
+        if not need:
+            continue
+        if not any(need <= have for have in owned_words):
+            return False
+    return True
 
 
 def eligible(profile: dict) -> list[Drill]:
@@ -278,24 +349,33 @@ def compose(minutes: float, profile: dict,
             salt: int = 0) -> list[Drill]:
     """Deterministically assemble a session of ~`minutes` total.
 
-    Selection order: (1) soft tissue on hotspot areas, (2) stretch on
-    hotspot then focus areas, (3) general stretch filler, (4) ALWAYS one
-    down-regulation closer. `exclude` drops recently-used keys (variety
-    rule) unless that would empty a tier — never sacrifice the session
-    to the rotation. `salt` rotates equally-ranked picks so two calls on
-    the same day still differ.
+    Selection order: (1) soft tissue on hotspot areas, (2) motor-control
+    work on those areas (`preferences.control_drills` picks, default 1),
+    (3) stretch on hotspot then focus areas, (4) general stretch filler,
+    (5) ALWAYS one down-regulation closer. `exclude` drops recently-used
+    keys (variety rule) unless that would empty a tier — never
+    sacrifice the session to the rotation. `salt` rotates
+    equally-ranked picks so two calls on the same day still differ.
     """
     exclude = exclude or set()
     hot = [h.get("area_tag") or "" for h in (profile.get("hotspots") or [])]
     want = [a for a in (focus or []) if a] or hot or ["hip", "t_spine"]
+    prefs = profile.get("preferences") or {}
+    try:
+        control_cap = max(0, int(prefs.get("control_drills", 1)))
+    except (TypeError, ValueError):
+        control_cap = 1
 
     pool = eligible(profile)
 
-    def _tier(kind: str, areas: list[str] | None) -> list[Drill]:
+    def _tier(kind: str, areas: list[str] | None,
+              strict: bool = False) -> list[Drill]:
         t = [d for d in pool if d.kind == kind
              and (areas is None or any(a in d.areas for a in areas))]
         fresh = [d for d in t if d.key not in exclude]
-        t = fresh or t                    # rotation never empties a tier
+        # Rotation never empties a REQUIRED tier; the optional control
+        # tier is strict, so a one-drill tier can't repeat every night.
+        t = fresh if strict else (fresh or t)
         # Stable rotation: rank by key, rotate by salt.
         t = sorted(t, key=lambda d: d.key)
         off = salt % len(t) if t else 0
@@ -310,9 +390,17 @@ def compose(minutes: float, profile: dict,
     # spend the whole slot rolling — every session keeps room for the
     # stretch/capsule tier (observed in the S1 smoke: 4 soft-tissue
     # picks left zero stretch minutes).
+    # Control work sits BETWEEN rolling and stretching: the pattern gets
+    # rehearsed while the tissue is warm and before the athlete goes
+    # passive. Capped by the profile so a generic athlete keeps most
+    # of the slot for stretching while an assessment-driven one leans
+    # on the control tier.
     for cap, tier in ((2, _tier("soft_tissue", want)),
+                      (control_cap, _tier("control", want, strict=True)),
                       (99, _tier("stretch", want)),
                       (99, _tier("stretch", None))):
+        if cap <= 0:
+            continue
         taken = 0
         for d in tier:
             if d in picked:
@@ -332,14 +420,35 @@ def compose(minutes: float, profile: dict,
     return picked
 
 
+def side_bias_notes(drills: list[Drill], profile: dict) -> dict[str, str]:
+    """profile['bias'] = {"side": "right", "areas": [...], "factor": 2}
+    → a per-drill dosing note for every non-closer drill that serves a
+    biased area ("right side ~2x the time"). Empty when no bias."""
+    bias = profile.get("bias") or {}
+    side = str(bias.get("side") or "").strip()
+    areas = set(bias.get("areas") or [])
+    if not side or not areas:
+        return {}
+    try:
+        factor = float(bias.get("factor") or 2)
+    except (TypeError, ValueError):
+        factor = 2.0
+    note = f"{side} side ~{factor:g}x the time"
+    return {d.key: note for d in drills
+            if d.sided and d.kind != "downreg" and areas & set(d.areas)}
+
+
 def render(drills: list[Drill], minutes: float, header: str,
            whys: dict[str, str] | None = None,
-           preface: str | None = None) -> str:
+           preface: str | None = None,
+           notes: dict[str, str] | None = None) -> str:
     """Telegram-friendly deterministic render. Never empty if `drills`
     is non-empty; coach.py guarantees non-empty via compose(). `whys`
     (drill key → reason) puts a one-line rationale under each drill —
     the owner's 2026-09-03 ask: explain the choice, tied to today's
-    workout. `preface` is the one-line context (what today loaded)."""
+    workout. `preface` is the one-line context (what today loaded).
+    `notes` (drill key → dosing note, e.g. the side bias) rides on the
+    cue line."""
     total = sum(d.minutes for d in drills)
     lines = [header,
              f"_~{int(round(total))} min including transitions "
@@ -348,11 +457,15 @@ def render(drills: list[Drill], minutes: float, header: str,
         lines.append(preface)
     lines.append("")
     whys = whys or {}
+    notes = notes or {}
     for d in drills:
         lines.append(f"*{_fmt_min(d.minutes)} — {d.name}*")
         if whys.get(d.key):
             lines.append(f"  why: {whys[d.key]}")
-        lines.append(f"  _{d.cue}_")
+        cue = d.cue
+        if notes.get(d.key):
+            cue = f"{cue} ({notes[d.key]})"
+        lines.append(f"  _{cue}_")
     lines.append("")
     lines.append("Not the flavor you want? Tell me the area or the vibe "
                  "and I'll re-cut it.")
