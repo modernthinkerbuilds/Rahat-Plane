@@ -145,16 +145,24 @@ def upsert_events(events: list[dict], source_id: str, *,
             if not title or len(start) < 10:
                 continue
             key = event_key(title, start, str(e.get("city") or ""))
-            row = con.execute("SELECT event_id FROM events_inventory "
+            row = con.execute("SELECT event_id, url FROM events_inventory "
                               "WHERE event_id = ?", (key,)).fetchone()
             if row:
+                new_url = str(e.get("url") or "")[:300]
+                # Never let a fresh opaque redirect link clobber a real
+                # page URL that an earlier pass already resolved
+                # (2026-09-13).
+                if ("grounding-api-redirect" in new_url
+                        and row[1] and
+                        "grounding-api-redirect" not in row[1]):
+                    new_url = ""
                 con.execute(
                     "UPDATE events_inventory SET last_seen = ?, "
                     "status = 'active', end_ts = COALESCE(NULLIF(?, ''), "
                     "end_ts), url = COALESCE(NULLIF(?, ''), url) "
                     "WHERE event_id = ?",
                     (now_iso, str(e.get("end_ts") or "")[:19],
-                     str(e.get("url") or "")[:300], key))
+                     new_url, key))
                 updated += 1
             else:
                 con.execute(
@@ -222,6 +230,37 @@ def query_window(start_date: str, end_date: str, *,
         cols = ("title", "start_ts", "end_ts", "venue", "city", "url",
                 "source_id", "categories", "status")
         return [dict(zip(cols, r)) for r in con.execute(sql, args)]
+    finally:
+        con.close()
+
+
+def redirect_url_rows(marker: str, *, start_date: str | None = None,
+                      limit: int = 40, path: str | None = None
+                      ) -> list[tuple[str, str]]:
+    """[(event_id, url)] for active rows whose url contains `marker`
+    (a redirect host), soonest first — the backfill queue for
+    ingest.resolve_stored_urls (2026-09-13)."""
+    con = _connect(path)
+    try:
+        sql = ("SELECT event_id, url FROM events_inventory WHERE "
+               "status = 'active' AND url LIKE ?")
+        args: list = [f"%{marker}%"]
+        if start_date:
+            sql += " AND date(start_ts) >= ?"
+            args.append(start_date)
+        sql += " ORDER BY start_ts LIMIT ?"
+        args.append(limit)
+        return [(r[0], r[1]) for r in con.execute(sql, args)]
+    finally:
+        con.close()
+
+
+def set_url(event_id: str, url: str, path: str | None = None) -> None:
+    con = _connect(path)
+    try:
+        con.execute("UPDATE events_inventory SET url = ? WHERE event_id = ?",
+                    (str(url or "")[:300], event_id))
+        con.commit()
     finally:
         con.close()
 

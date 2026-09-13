@@ -41,30 +41,64 @@ def weekend_window(now: datetime | None = None
             f"the weekend of {saturday.strftime('%b')} {saturday.day}")
 
 
+# Telegram legacy-Markdown hardening (2026-09-13). LIVE BUG: a grounded-
+# search URL carrying '_' (…7baN02t-gXGL…_Rduvjv…) made Telegram reject
+# the whole /whatson message as unparseable; the runner's plain-text
+# fallback then delivered literal "*What's on*" and "[here](https://…)"
+# to the owner's phone. Legacy Markdown has no escaping inside a link
+# URL, so the URL is percent-encoded (still a valid, tappable URL) and
+# free text is backslash-escaped — both go through here so every
+# surface (digest, /whatson, the day shortcut) renders alike.
+_URL_ENC = {" ": "%20", ")": "%29", "(": "%28", "_": "%5F", "*": "%2A",
+            "`": "%60", "[": "%5B", "]": "%5D", "\\": "%5C"}
+_MD_SPECIAL = "_*`["
+
+
+def md_url(url: str) -> str:
+    """A URL safe to sit inside legacy-Markdown [text](url)."""
+    return "".join(_URL_ENC.get(ch, ch) for ch in (url or "").strip())
+
+
+def md_escape(text: str) -> str:
+    """Backslash-escape the four legacy-Markdown control characters in
+    free text (titles, venues, cities) so an event called
+    "Bay_Area *Makers*" cannot break the message."""
+    out = []
+    for ch in str(text or ""):
+        if ch in _MD_SPECIAL:
+            out.append("\\")
+        out.append(ch)
+    return "".join(out)
+
+
 def event_link(url: str | None) -> str:
     """' — [here](url)' when the row carries a plausible link, else ''.
 
     Owner request (2026-08-30): every event line should end in a short
     tappable link — "just say here" — so the event page is one tap
     away without lengthening the text. Genie sends via the Markdown-
-    mode Telegram client, so [here](url) renders as a link. Telegram's
-    legacy Markdown terminates the URL at the first ')' — encode ')'
-    and spaces so a messy URL can't break out of the link."""
+    mode Telegram client, so [here](url) renders as a link. The URL is
+    percent-encoded for legacy Markdown (see md_url)."""
     u = (url or "").strip()
     if not u.lower().startswith(("http://", "https://")):
         return ""
-    u = u.replace(" ", "%20").replace(")", "%29")
-    return f" — [here]({u})"
+    return f" — [here]({md_url(u)})"
 
 
-def _fmt_row(row: dict) -> str:
-    hhmm = (row.get("start_ts") or "")[11:16]
+def _fmt_row(row: dict, *, with_date: bool = False) -> str:
+    """One event line. `with_date` prefixes MM-DD (the /whatson weekend
+    list spans two days). A midnight timestamp means the feed gave no
+    time, so it reads "All day", never "00:00"."""
+    ts = row.get("start_ts") or ""
+    hhmm = ts[11:16]
     when = "All day" if hhmm in ("", "00:00") else hhmm
-    line = f"  • {when} — {row['title']}"
+    if with_date and len(ts) >= 10:
+        when = f"{ts[5:10]} · {when}"
+    line = f"  • {when} — {md_escape(row['title'])}"
     if row.get("venue"):
-        line += f" @ {row['venue']}"
+        line += f" @ {md_escape(row['venue'])}"
     if row.get("city"):
-        line += f" ({row['city']})"
+        line += f" ({md_escape(row['city'])})"
     return line + event_link(row.get("url"))
 
 

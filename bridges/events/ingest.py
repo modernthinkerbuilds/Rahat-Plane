@@ -235,10 +235,99 @@ def _fetch_search(source: dict, today: datetime,
     return _typed_events(raw, source)
 
 
+# ─────────────── grounding-redirect URLs (2026-09-13) ───────────────
+# LIVE: search-kind sources come back from Gemini grounded search with
+# opaque redirect links (vertexaisearch.cloud.google.com/grounding-api-
+# redirect/AUZIYQG…=). They work, but they are 200+ characters of noise
+# under a "[here]" link, they carry '_' (which broke Telegram's legacy
+# Markdown — see digest.md_url), and at 300 chars the store truncates
+# them into dead links. Resolve them to the real page at ingest, and
+# backfill rows already stored. Hermetic: no wire under RAHAT_TEST_MODE
+# unless a `resolver` seam is passed.
+REDIRECT_MARKERS = ("grounding-api-redirect",)
+
+
+def is_redirect_url(url: str | None) -> bool:
+    u = url or ""
+    return any(m in u for m in REDIRECT_MARKERS)
+
+
+def resolve_url(url: str, resolver: Callable[[str], str] | None = None,
+                timeout: float = 8.0) -> str:
+    """The final URL behind a redirect link, or the input unchanged."""
+    if not is_redirect_url(url):
+        return url
+    if resolver is not None:
+        try:
+            return (resolver(url) or "").strip() or url
+        except Exception:  # noqa: BLE001
+            return url
+    if os.getenv("RAHAT_TEST_MODE") == "1":
+        return url
+    try:
+        import requests
+        resp = requests.head(url, allow_redirects=True, timeout=timeout)
+        final = resp.url or ""
+        if not final or is_redirect_url(final) or resp.status_code >= 400:
+            resp = requests.get(url, allow_redirects=True, timeout=timeout,
+                                stream=True)
+            final = resp.url or ""
+            resp.close()
+        return final if final and not is_redirect_url(final) else url
+    except Exception as e:  # noqa: BLE001
+        logger.debug("redirect resolve failed for %s: %s", url[:60], e)
+        return url
+
+
+def resolve_event_urls(events: list[dict],
+                       resolver: Callable[[str], str] | None = None,
+                       limit: int = 30) -> int:
+    """In place: swap redirect links for their targets, at most `limit`
+    lookups per call. Returns how many changed."""
+    changed = 0
+    for e in events:
+        if limit <= 0:
+            break
+        u = str(e.get("url") or "")
+        if not is_redirect_url(u):
+            continue
+        limit -= 1
+        final = resolve_url(u, resolver)
+        if final != u:
+            e["url"] = final
+            changed += 1
+    return changed
+
+
+def resolve_stored_urls(resolver: Callable[[str], str] | None = None, *,
+                        now: datetime | None = None, limit: int = 40,
+                        db_path: str | None = None) -> int:
+    """Backfill: resolve redirect links already in the inventory (from
+    the upcoming window on), soonest first. Returns how many changed."""
+    from bridges.events.store import redirect_url_rows, set_url
+    now = now or datetime.now()
+    changed = 0
+    try:
+        rows = redirect_url_rows(REDIRECT_MARKERS[0],
+                                 start_date=now.strftime("%Y-%m-%d"),
+                                 limit=limit, path=db_path)
+    except Exception:  # noqa: BLE001
+        return 0
+    for event_id, url in rows:
+        final = resolve_url(url, resolver)
+        if final != url:
+            set_url(event_id, final, path=db_path)
+            changed += 1
+    if changed:
+        logger.info("events: resolved %d redirect links", changed)
+    return changed
+
+
 # ─────────────────────────── refresh ───────────────────────────
 def refresh_source(source: dict, *, today: datetime | None = None,
                    llm: Callable[[str], str] | None = None,
                    http: Callable[[str], str] | None = None,
+                   resolver: Callable[[str], str] | None = None,
                    db_path: str | None = None) -> dict:
     """Refresh one source. Never raises; failures yield zero events."""
     today = today or datetime.now()
@@ -250,6 +339,7 @@ def refresh_source(source: dict, *, today: datetime | None = None,
             events = _fetch_page(source, today, llm, http)
         else:
             events = _fetch_search(source, today, llm)
+            resolve_event_urls(events, resolver)
     except Exception as e:  # noqa: BLE001
         logger.warning("refresh %s failed (%s: %s)", source.get("id"),
                        type(e).__name__, e)
@@ -288,6 +378,7 @@ def main() -> int:
     # recurring series per pass (30-day cache) so the digest can rank.
     from bridges.events.popularity import score_upcoming
     print(f"popularity: scored {score_upcoming()} recurring series")
+    print(f"links: resolved {resolve_stored_urls()} redirect links")
     return 0
 
 

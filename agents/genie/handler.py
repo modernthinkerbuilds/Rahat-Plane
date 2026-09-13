@@ -648,6 +648,10 @@ def handle_set_location(value: str, *, by_role: str = "") -> str:
 
 
 # ─────────────────────────── /whatson (PRD J5) ────────────────────────
+_DAY_TOKENS = ("today", "tomorrow", "monday", "tuesday", "wednesday",
+               "thursday", "friday", "saturday", "sunday")
+
+
 def resolve_day_date(token: str, now: datetime | None = None) -> datetime:
     """'saturday' → the UPCOMING Saturday (today counts as itself),
     'today'/'tomorrow' → those. One source of truth so the day-shortcut
@@ -663,7 +667,55 @@ def resolve_day_date(token: str, now: datetime | None = None) -> datetime:
              "saturday", "sunday"]
     if t in names:
         return now + timedelta(days=(names.index(t) - now.weekday()) % 7)
-    return now
+    d = parse_explicit_date(t, now)
+    return d if d is not None else now
+
+
+_MONTHS = {m: i for i, m in enumerate(
+    ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct",
+     "nov", "dec"], start=1)}
+_DATE_ISO_RE = re.compile(r"^(\d{4})-(\d{1,2})-(\d{1,2})$")
+_DATE_US_RE = re.compile(r"^(\d{1,2})/(\d{1,2})(?:/(\d{2,4}))?$")
+_DATE_MON_RE = re.compile(r"^([a-z]{3,9})\.?\s+(\d{1,2})(?:st|nd|rd|th)?"
+                          r"(?:,?\s*(\d{4}))?$"
+                          r"|^(\d{1,2})(?:st|nd|rd|th)?\s+([a-z]{3,9})"
+                          r"(?:,?\s*(\d{4}))?$")
+
+
+def parse_explicit_date(token: str, now: datetime) -> datetime | None:
+    """'09/13', '9/13/2026', '2026-09-13', 'Sep 13', '13 Sep' → that
+    date (LIVE BUG 2026-09-13: "/whatson 09/13" ignored the date and
+    answered NEXT weekend). A month/day with no year means the coming
+    occurrence: this year, or next year once it is >7 days behind."""
+    t = (token or "").strip().lower()
+    y = m = d = None
+    if (mt := _DATE_ISO_RE.match(t)):
+        y, m, d = (int(g) for g in mt.groups())
+    elif (mt := _DATE_US_RE.match(t)):
+        m, d = int(mt.group(1)), int(mt.group(2))
+        if mt.group(3):
+            y = int(mt.group(3))
+            y = y + 2000 if y < 100 else y
+    elif (mt := _DATE_MON_RE.match(t)):
+        name, day, year = ((mt.group(1), mt.group(2), mt.group(3))
+                           if mt.group(1) else
+                           (mt.group(5), mt.group(4), mt.group(6)))
+        m = _MONTHS.get(name[:3])
+        if m is None:
+            return None
+        d = int(day)
+        y = int(year) if year else None
+    else:
+        return None
+    try:
+        if y is None:
+            cand = datetime(now.year, m, d)
+            if cand < now - timedelta(days=7):
+                cand = datetime(now.year + 1, m, d)
+            return cand
+        return datetime(y, m, d)
+    except ValueError:
+        return None
 
 
 def handle_day_events(day_token: str, *,
@@ -729,8 +781,20 @@ def handle_whats_on(*, now: datetime | None = None, llm=None) -> str:
     unavailable.
     """
     location = household_location()
-    saturday = _next_saturday(now)
-    sunday = saturday + timedelta(days=1)
+    now = now or datetime.now()
+    # Same weekend rule as the digest: on a Sunday the weekend is NOW
+    # and Saturday is gone, so the window is today alone — not the
+    # following Saturday (LIVE BUG 2026-09-13, Sunday 01:33: "/whatson"
+    # answered "weekend of 09-19").
+    if now.weekday() == 6:
+        saturday = sunday = now.replace(hour=0, minute=0, second=0,
+                                        microsecond=0)
+    else:
+        saturday = _next_saturday(now)
+        sunday = saturday + timedelta(days=1)
+    header = (f"*What's on — Sunday {sunday.strftime('%Y-%m-%d')} (today)*"
+              if saturday == sunday else
+              f"*What's on — weekend of {saturday.strftime('%Y-%m-%d')}*")
 
     # ── Household calendar: what the family is ALREADY committed to
     # this weekend — rendered first, and used to ⚠️-flag any suggested
@@ -750,25 +814,21 @@ def handle_whats_on(*, now: datetime | None = None, llm=None) -> str:
     # ── Inventory first (PRD §6.3): the registry's verified events for
     # the weekend, before any live search. Works even offline.
     inventory_lines: list[str] = []
+    seen_inv: set[str] = set()
     try:
         from bridges.events.store import query_window
         rows = query_window(saturday.strftime("%Y-%m-%d"),
                             sunday.strftime("%Y-%m-%d"), limit=20)
-        seen_inv: set[str] = set()
         for r in rows:
             key = r["title"].casefold()
             if key in seen_inv:
                 continue
             seen_inv.add(key)
-            when = r["start_ts"][5:16].replace(" ", " · ")
-            line = f"  • {when} — {r['title']}"
-            if r.get("venue"):
-                line += f" @ {r['venue']}"
-            line += f" ({r['city']})"
-            # One-tap event link (owner 2026-08-30) — same helper as
-            # the digest so both surfaces render identically.
-            from bridges.events.digest import event_link
-            line += event_link(r.get("url"))
+            # Same formatter as the digest / day shortcut (2026-09-13:
+            # this surface had its own, which printed "00:00" for
+            # all-day events and never Markdown-escaped anything).
+            from bridges.events.digest import _fmt_row
+            line = _fmt_row(r, with_date=(saturday != sunday))
             if weekend_commits:
                 try:
                     from agents.genie import calendar as _cal
@@ -784,9 +844,7 @@ def handle_whats_on(*, now: datetime | None = None, llm=None) -> str:
     if not (_live_plan_enabled() and location
             and (llm is not None or not _hermetic())):
         if inventory_lines or commitment_lines:
-            head = [f"*What's on — weekend of "
-                    f"{saturday.strftime('%Y-%m-%d')}* · from your "
-                    f"event feeds"]
+            head = [f"{header} · from your event feeds"]
             if commitment_lines:
                 head += ["", "*Already on your calendar*"] \
                     + commitment_lines
@@ -816,19 +874,18 @@ def handle_whats_on(*, now: datetime | None = None, llm=None) -> str:
                 "bit, or `/weekend_plan` for the offline plan.")
 
     seen: set[str] = set()
-    lines = [f"*What's on — weekend of {saturday.strftime('%Y-%m-%d')}* "
-             f"· near {location}"]
+    lines = [f"{header} · near {location}"]
     if commitment_lines:
         lines += ["", "*Already on your calendar*"] + commitment_lines
     if inventory_lines:
         # Inventory FIRST (verified source feeds), search extras after.
         lines += ["", "*From your event feeds* (verified)"]
-        for inv in inventory_lines[:10]:
-            lines.append(inv)
-            seen.add(inv.split("— ", 1)[-1].split(" @")[0]
-                     .split(" (")[0].casefold())
-    for day_name, opts in (("Saturday", disc.saturday),
-                           ("Sunday", disc.sunday)):
+        lines += inventory_lines[:10]
+        seen.update(seen_inv)             # titles, not parsed-back lines
+    sections = ((("Sunday", disc.saturday + disc.sunday),)
+                if saturday == sunday else
+                (("Saturday", disc.saturday), ("Sunday", disc.sunday)))
+    for day_name, opts in sections:
         day_lines = []
         for o in opts:
             key = o.activity.casefold()
@@ -1255,8 +1312,15 @@ def _try_slash_command(msg: str,
             audience_text=rest,
             want_options=bool(_OPTIONS_ARG_RE.search(rest)))
 
-    # /whatson — J5 raw list.
+    # /whatson — J5 raw list; "/whatson 09/13" / "/whatson sunday" →
+    # that day's full list (LIVE BUG 2026-09-13: the argument was
+    # dropped and a Sunday-1am ask answered the FOLLOWING weekend).
     if _WHATS_ON_RE.match(norm):
+        arg = re.sub(r"^\s*/\s*what[\s_-]*s?[\s_-]*on\b", "", norm,
+                     flags=re.I).strip()
+        if arg and (arg.lower() in _DAY_TOKENS
+                    or parse_explicit_date(arg, datetime.now())):
+            return handle_day_events(arg)
         return handle_whats_on()
 
     # /swap <name> — iterate the saved plan.

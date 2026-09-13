@@ -170,12 +170,12 @@ def test_digest_lines_end_in_a_here_link(env):
          "start_ts": "2026-08-15 00:00:00", "city": "San Jose"}]))
     from bridges.events.digest import build_digest
     out = build_digest(_NOW)
-    # Linked event: short [here](url), with ')' and spaces encoded so
-    # Telegram's legacy Markdown can't truncate the link.
+    # Linked event: short [here](url), with the legacy-Markdown control
+    # characters percent-encoded so Telegram can't truncate or reject
+    # the link (both parens since 2026-09-13's md_url hardening).
     assert ("Kids Workshop (San Jose) — "
-            "[here](https://homedepot.com/workshops?loc=SJ%20%28South"
-            not in out)                       # '(' need not be encoded…
-    assert "[here](https://homedepot.com/workshops?loc=SJ%20(South%29)"         in out
+            "[here](https://homedepot.com/workshops?loc=SJ%20%28South%29)"
+            in out)
     # No url → no dangling link.
     assert "Flea Market (San Jose) — [here]" not in out
 
