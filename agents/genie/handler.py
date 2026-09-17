@@ -772,7 +772,80 @@ def handle_day_events(day_token: str, *,
     return "\n".join(lines)
 
 
-def handle_whats_on(*, now: datetime | None = None, llm=None) -> str:
+# ── audience qualifier (2026-09-17) ──────────────────────────────────
+# LIVE: "Are there any infant friendly events this weekend?" — the
+# qualifier was dropped on the floor. Words → an audience tag; the
+# inventory is ranked by it (title / categories / the popularity
+# lookup's audience column), and the reply says how it filtered.
+_AUDIENCE_WORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("infant", ("infant", "infants", "baby", "babies", "newborn",
+                "newborns", "0-12 months", "lap sit", "lapsit")),
+    ("toddler", ("toddler", "toddlers", "preschool", "preschooler",
+                 "little ones")),
+    ("kids", ("kid", "kids", "child", "children", "family", "families",
+              "all ages", "school age", "school-age")),
+    ("teens", ("teen", "teens", "teenager", "teenagers", "tween",
+               "tweens")),
+    ("adults", ("adult", "adults", "grown-up", "grown-ups", "21+",
+                "date night", "couples", "couple")),
+    ("seniors", ("senior", "seniors", "elderly", "grandparents")),
+)
+_AUDIENCE_PRETTY = {"infant": "infants / babies", "toddler": "toddlers",
+                    "kids": "kids", "teens": "teens", "adults": "adults",
+                    "seniors": "seniors"}
+
+
+def audience_terms(text: str | None) -> list[str]:
+    """Audience tags a message asks for, in first-seen order."""
+    low = f" {(text or '').lower()} "
+    out: list[str] = []
+    for tag, words in _AUDIENCE_WORDS:
+        if any(re.search(r"(?<![a-z0-9])" + re.escape(w) + r"(?![a-z0-9])",
+                         low) for w in words) and tag not in out:
+            out.append(tag)
+    return out
+
+
+def _row_matches_audience(row: dict, tags: list[str],
+                          pop_audience: str = "") -> bool:
+    hay = " ".join([str(row.get("title") or ""),
+                    str(row.get("categories") or ""), pop_audience]).lower()
+    for tag in tags:
+        words = dict(_AUDIENCE_WORDS)[tag]
+        if any(w in hay for w in (tag, *words)):
+            return True
+        # "kids" events generally welcome infants/toddlers too — a
+        # loose second net, only for the youngest asks.
+        if tag in ("infant", "toddler") and any(
+                w in hay for w in ("family", "families", "all ages",
+                                   "storytime", "story time")):
+            return True
+    return False
+
+
+def split_by_audience(rows: list[dict], tags: list[str]
+                      ) -> tuple[list[dict], list[dict]]:
+    """(matching, rest) — feed order preserved. Uses the popularity
+    table's audience column when the series has been reviewed."""
+    if not tags:
+        return list(rows), []
+    pop: dict = {}
+    try:
+        from bridges.events import store as _st
+        keys = [_st.series_key(r.get("title") or "", r.get("venue") or "")
+                for r in rows]
+        pop = _st.get_popularity(list(set(keys)))
+    except Exception:  # noqa: BLE001 — optional signal
+        keys = ["" for _ in rows]
+    hit, rest = [], []
+    for r, k in zip(rows, keys):
+        aud = (pop.get(k) or {}).get("audience", "") if pop else ""
+        (hit if _row_matches_audience(r, tags, aud) else rest).append(r)
+    return hit, rest
+
+
+def handle_whats_on(*, now: datetime | None = None, llm=None,
+                    audience_text: str | None = None) -> str:
     """J5 — "just give me the raw list": the discovery inventory exposed
     directly. A clean, de-duplicated flat list of what's actually on
     next weekend near the household — NOT a plan (no sequencing, no
@@ -815,11 +888,27 @@ def handle_whats_on(*, now: datetime | None = None, llm=None) -> str:
     # the weekend, before any live search. Works even offline.
     inventory_lines: list[str] = []
     seen_inv: set[str] = set()
+    aud_note = ""
+    aud_tags = audience_terms(audience_text)
     try:
         from bridges.events.store import query_window
         rows = query_window(saturday.strftime("%Y-%m-%d"),
-                            sunday.strftime("%Y-%m-%d"), limit=20)
-        for r in rows:
+                            sunday.strftime("%Y-%m-%d"), limit=40)
+        if aud_tags:
+            hit, rest = split_by_audience(rows, aud_tags)
+            rows = hit if hit else rows
+            aud_label = " / ".join(_AUDIENCE_PRETTY.get(t, t)
+                                   for t in aud_tags)
+            if hit:
+                aud_note = (f"_Filtered for {aud_label}: {len(hit)} of "
+                            f"{len(hit) + len(rest)} verified events. "
+                            f"`/whatson` shows everything._")
+            else:
+                aud_note = (f"_Nothing in the feeds is tagged for "
+                            f"{aud_label} specifically — here is everything "
+                            f"verified; family / all-ages ones are the "
+                            f"safest bet._")
+        for r in rows[:20]:
             key = r["title"].casefold()
             if key in seen_inv:
                 continue
@@ -841,20 +930,22 @@ def handle_whats_on(*, now: datetime | None = None, llm=None) -> str:
     except Exception:  # noqa: BLE001 — inventory optional
         pass
 
+    def _inventory_reply(note: str) -> str:
+        head = [f"{header} · from your event feeds"]
+        if commitment_lines:
+            head += ["", "*Already on your calendar*"] + commitment_lines
+        if inventory_lines:
+            head += ([""] if commitment_lines else []) + inventory_lines
+        if aud_note:
+            head += ["", aud_note]
+        return "\n".join(head + ["", note])
+
     if not (_live_plan_enabled() and location
             and (llm is not None or not _hermetic())):
         if inventory_lines or commitment_lines:
-            head = [f"{header} · from your event feeds"]
-            if commitment_lines:
-                head += ["", "*Already on your calendar*"] \
-                    + commitment_lines
-            if inventory_lines:
-                head += ([""] if commitment_lines else []) \
-                    + inventory_lines
-            return "\n".join(
-                head + ["", "_Live search is offline — this is the "
-                            "verified feed inventory. `/weekend_plan` "
-                            "for a plan._"])
+            return _inventory_reply(
+                "_Live search is offline — this is the verified feed "
+                "inventory. `/weekend_plan` for a plan._")
         return ("I need a home area to look things up — set "
                 "RAHAT_GENIE_LOCATION in .env (e.g. \"San Jose, CA\"), "
                 "then ask me again. `/weekend_plan` works offline.")
@@ -867,11 +958,25 @@ def handle_whats_on(*, now: datetime | None = None, llm=None) -> str:
         sun_iso=sunday.strftime("%Y-%m-%d"),
         energy="high",                      # raw list: don't pre-filter
         roles=[s.role for s in subjects],
-        constraints=[c for s in subjects for c in s.constraints],
+        constraints=[c for s in subjects for c in s.constraints]
+        + ([f"the ask is specifically for: {', '.join(aud_tags)}"]
+           if aud_tags else []),
         llm=llm)
     if disc is None:
-        return ("Couldn't reach live listings just now — try again in a "
-                "bit, or `/weekend_plan` for the offline plan.")
+        # LIVE BUG (2026-09-17 01:05, Gemini 429 "monthly spending cap
+        # exceeded"): the live search failing threw away the verified
+        # inventory that was already in hand and answered "couldn't
+        # reach live listings" — twice. The feeds are the primary
+        # source; live search is the garnish. Never hide the feeds.
+        if inventory_lines or commitment_lines:
+            return _inventory_reply(
+                "_Live search is unavailable right now (the AI lookup "
+                "failed) — this is the verified feed inventory. "
+                "`/weekend_plan` for a plan._")
+        return ("Couldn't reach live listings just now, and the feeds have "
+                "nothing verified for this weekend yet — try again after "
+                "the next feed refresh (7:00, 12:30, 18:00), or "
+                "`/weekend_plan` for the offline plan.")
 
     seen: set[str] = set()
     lines = [f"{header} · near {location}"]
@@ -898,6 +1003,8 @@ def handle_whats_on(*, now: datetime | None = None, llm=None) -> str:
     if len(seen) == 0 and not commitment_lines:
         return ("Nothing solid found for next weekend — try again later, "
                 "or `/weekend_plan` for the offline plan.")
+    if aud_note:
+        lines += ["", aud_note]
     lines += ["", "_Scope: next weekend, family-friendly, near "
                   f"{location}. Say `/weekend_plan` for a sequenced plan._"]
     return "\n".join(lines)
@@ -1448,7 +1555,7 @@ def route(msg: str, *, chat_id: str | int | None = None) -> str:
         return handle_day_events(m.group("day"))
     # J5 raw list ("what's on this weekend").
     if _WHATS_ON_RE.search(low):
-        return handle_whats_on()
+        return handle_whats_on(audience_text=msg)
     # Weekend plan — bare token ("Weekend_plan", live incident
     # 2026-08-08), NL phrases, and couple-only asks ("date night
     # Saturday", "plan something just us tonight" — J2). The message
