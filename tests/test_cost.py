@@ -31,8 +31,8 @@ class TestLookup:
 
     def test_known_flash_pricing(self):
         p = cost.lookup("gemini-2.5-flash")
-        assert p["input_per_m"] == 0.30
-        assert p["output_per_m"] == 2.50
+        assert p["input_per_m"] == 0.75          # re-priced 2026-09-19
+        assert p["output_per_m"] == 3.00
 
     def test_known_pro_pricing(self):
         p = cost.lookup("gemini-2.5-pro")
@@ -73,9 +73,17 @@ class TestCostUsd:
         assert cost.cost_usd("gemini-2.5-flash", 0, 0) == 0.0
 
     def test_one_million_in_one_million_out_flash(self):
-        # 1M in @ $0.30 + 1M out @ $2.50 = $2.80
+        # 1M in @ $0.75 + 1M out @ $3.00 = $3.75 (re-priced 2026-09-19)
         c = cost.cost_usd("gemini-2.5-flash", 1_000_000, 1_000_000)
-        assert c == pytest.approx(2.80, rel=1e-9)
+        assert c == pytest.approx(3.75, rel=1e-9)
+
+    def test_thinking_and_grounding_buckets_are_priced(self):
+        # 2026-09-19: thoughts bill at the output rate, grounded web
+        # context at the input rate — the two buckets the ledger missed.
+        c = cost.cost_usd("gemini-2.5-flash", 0, 0,
+                          tokens_thought=1_000_000,
+                          tokens_tool_prompt=1_000_000)
+        assert c == pytest.approx(3.75, rel=1e-9)
 
     def test_one_million_in_one_million_out_pro(self):
         # 1M in @ $1.25 + 1M out @ $10.00 = $11.25

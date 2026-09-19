@@ -1010,6 +1010,31 @@ def handle_whats_on(*, now: datetime | None = None, llm=None,
     return "\n".join(lines)
 
 
+# ─────────────────────────── /refresh ─────────────────────────────────
+def handle_refresh_events(*, now: datetime | None = None, llm=None) -> str:
+    """On-demand paid search pass (2026-09-19). The scheduled search
+    runs Wed/Sat 03:00; this is the owner's "pull fresh listings now",
+    rate-limited to one per 6 h so a double-tap can't run the bill."""
+    now = now or datetime.now()
+    try:
+        from bridges.events import ingest
+        res = ingest.refresh_on_demand(now=now, llm=llm)
+    except Exception as e:  # noqa: BLE001 — never crash the chat
+        return (f"Couldn't refresh the feeds just now ({type(e).__name__}). "
+                f"The scheduled search runs Wednesday and Saturday at 3 AM; "
+                f"`/whatson` shows what's already verified.")
+    if not res["ran"]:
+        last, nxt = res["last"], res["next"]
+        return (f"Feeds were refreshed at {last:%a %H:%M} — the next manual "
+                f"refresh opens at {nxt:%a %H:%M}. `/whatson` shows what's "
+                f"verified now.")
+    return (f"🔄 Refreshed {res['sources']} live sources: {res['fetched']} "
+            f"events found, {res['added']} new. Say a day (\"Saturday\") or "
+            f"`/whatson` to see them. Next manual refresh opens at "
+            f"{res['next']:%a %H:%M}; the scheduled search runs Wed and Sat "
+            f"at 3 AM.")
+
+
 # ─────────────────────────── /digest ──────────────────────────────────
 def handle_digest(now: datetime | None = None) -> str:
     """On-demand weekend digest — the same message the daily 8am
@@ -1333,6 +1358,7 @@ from agents.genie.intents import (  # noqa: E402
     WEEKEND_PLAN_TOKEN_RE as _WEEKEND_PLAN_TOKEN_RE,
     FAMILY_LOG_TOKEN_RE as _FAMILY_LOG_TOKEN_RE,
     WHATS_ON_RE as _WHATS_ON_RE,
+    REFRESH_EVENTS_RE as _REFRESH_EVENTS_RE,
     DAY_EVENTS_RE as _DAY_EVENTS_RE,
     SWAP_RE as _SWAP_RE,
     WEEKEND_NL_RE as _WEEKEND_NL_RE,
@@ -1449,6 +1475,10 @@ def _try_slash_command(msg: str,
     if low.startswith("/digest"):
         return handle_digest()
 
+    # /refresh — on-demand paid search pass (2026-09-19 spend control).
+    if low.startswith("/refresh"):
+        return handle_refresh_events()
+
     # /calendar [add <text> | remove <query>] — the household calendar.
     if low.startswith("/calendar"):
         return handle_calendar(norm[len("/calendar"):].strip(),
@@ -1548,6 +1578,10 @@ def route(msg: str, *, chat_id: str | int | None = None) -> str:
                                 msg)
         if reply:
             return reply
+    # "refresh the events/feeds" — on-demand search pass, before the
+    # events/day rungs so the verb isn't swallowed by "events".
+    if _REFRESH_EVENTS_RE.match(stripped):
+        return handle_refresh_events()
     # Day shortcut BEFORE the weekend list: "Saturday" / "events
     # friday" means THAT day, full list, links (owner 2026-08-30).
     m = _DAY_EVENTS_RE.match(stripped)

@@ -265,6 +265,31 @@ def set_url(event_id: str, url: str, path: str | None = None) -> None:
         con.close()
 
 
+def last_refresh_at(source_id: str, path: str | None = None) -> str | None:
+    """Latest refreshed_at for a source id (also used as the on-demand
+    refresh marker, 2026-09-19)."""
+    con = _connect(path)
+    try:
+        row = con.execute("SELECT MAX(refreshed_at) FROM events_refresh_log "
+                          "WHERE source_id = ?", (source_id,)).fetchone()
+        return row[0] if row and row[0] else None
+    finally:
+        con.close()
+
+
+def mark_refresh(source_id: str, *, now: datetime | None = None,
+                 fetched: int = 0, path: str | None = None) -> None:
+    con = _connect(path)
+    try:
+        con.execute("INSERT INTO events_refresh_log (source_id, "
+                    "refreshed_at, fetched) VALUES (?, ?, ?)",
+                    (source_id, (now or datetime.now()).strftime(
+                        "%Y-%m-%d %H:%M:%S"), int(fetched)))
+        con.commit()
+    finally:
+        con.close()
+
+
 def inventory_stats(path: str | None = None) -> list[tuple]:
     """(source_id, active_count, latest_refresh) — the honest yield view."""
     con = _connect(path)

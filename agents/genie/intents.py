@@ -29,7 +29,14 @@ FAMILY_LOG_TOKEN_RE = re.compile(r"\bfamily[\s_-]*log\b", re.I)
 # commitments calendar) the same day.
 GENIE_SLASH_RE = re.compile(
     r"^\s*/\s*(genie|weekend_plan|family_log|whatson|swap|why|family"
-    r"|replan_day|digest|calendar)\b", re.I)
+    r"|replan_day|digest|calendar|refresh)\b", re.I)
+
+# On-demand feed refresh (2026-09-19, spend control): the paid search
+# pass now runs Wed/Sat 03:00 only, so the owner asked for a way to
+# pull fresh listings by hand. "refresh the events/feeds/listings".
+REFRESH_EVENTS_RE = re.compile(
+    r"^\s*(?:please\s+)?(?:re-?fresh|re-?scan|re-?pull|update)\s+(?:the\s+|my\s+)?"
+    r"(?:events?|feeds?|listings?|event\s+feeds?|inventory)\b", re.I)
 
 # ─── Day shortcut ("Saturday", "events friday", "what's on Sunday") ───
 # Owner (2026-08-30): "if I tell a particular day, like Saturday, I

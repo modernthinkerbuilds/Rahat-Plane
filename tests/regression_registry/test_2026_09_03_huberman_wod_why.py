@@ -109,8 +109,13 @@ def test_fallback_focus_follows_what_the_wod_loaded(env, monkeypatch):
     _kobe_says(monkeypatch, _WOD, "cf")
     from agents.huberman import handler
     out = handler.route("give me a cooldown")
+    # Since the 09-12 control tier, the hinge / bridge / posterior glide
+    # are the hip-and-hamstring answers to deadlifts too; the clock salt
+    # rotates which of these lands on a given run.
     assert any(s in out for s in ("hamstring", "thoracic", "lat sweep",
-                                  "Couch stretch", "90/90", "Pigeon"))
+                                  "Couch stretch", "90/90", "Pigeon",
+                                  "Dowel hinge", "Glute bridge",
+                                  "posterior hip glide"))
     assert "glute/deep rotator" not in out              # GTPS rule holds
 
 

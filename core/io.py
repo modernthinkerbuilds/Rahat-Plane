@@ -226,10 +226,18 @@ def llm_generate(prompt: str, *, model: str | None = None) -> str:
 
 def llm_generate_with_usage(prompt: str, *,
                             model: str | None = None,
-                            search: bool = False) -> "GeminiUsage":
+                            search: bool = False,
+                            thinking_budget: int | None = None
+                            ) -> "GeminiUsage":
     """Like `llm_generate` but returns a `GeminiUsage` carrying token
     counts and the dollar cost, so callers can write a single
     `decisions.span` exit with full telemetry.
+
+    thinking_budget (2026-09-19): 0 turns a thinking model's reasoning
+    OFF for calls that are pure extraction (events ingest, popularity
+    lookups produce JSON from text — nothing to think about). None
+    keeps the model default (dynamic thinking). Thinking tokens bill at
+    the output rate and were a third of the September bill.
 
     search=True (2026-08-09, Genie live discovery): attach the Google
     Search grounding tool so the model can answer from live web results
@@ -242,10 +250,16 @@ def llm_generate_with_usage(prompt: str, *,
     if not c:
         return GeminiUsage(text="", model=model_id, error="gemini-not-configured")
     try:
-        if search:
+        cfg_kwargs: dict = {}
+        if search or thinking_budget is not None:
             from google.genai import types as _gtypes
-            cfg = _gtypes.GenerateContentConfig(
-                tools=[_gtypes.Tool(google_search=_gtypes.GoogleSearch())])
+            if search:
+                cfg_kwargs["tools"] = [
+                    _gtypes.Tool(google_search=_gtypes.GoogleSearch())]
+            if thinking_budget is not None:
+                cfg_kwargs["thinking_config"] = _gtypes.ThinkingConfig(
+                    thinking_budget=int(thinking_budget))
+            cfg = _gtypes.GenerateContentConfig(**cfg_kwargs)
             resp = c.models.generate_content(model=model_id, contents=prompt,
                                              config=cfg)
         else:
@@ -255,16 +269,26 @@ def llm_generate_with_usage(prompt: str, *,
                            error=f"{type(e).__name__}: {e}")
 
     text = getattr(resp, "text", "") or ""
-    # Gemini exposes usage as `usage_metadata.{prompt,candidates,total}_token_count`.
+    # Gemini bills FOUR buckets: prompt, candidates, thoughts (thinking
+    # models, output rate) and tool_use_prompt (grounded web context,
+    # input rate). Read all four — the ledger used to see only two.
     u = getattr(resp, "usage_metadata", None)
-    tokens_in = int(getattr(u, "prompt_token_count", 0) or 0) if u else 0
-    tokens_out = int(getattr(u, "candidates_token_count", 0) or 0) if u else 0
+    _n = lambda k: int(getattr(u, k, 0) or 0) if u else 0  # noqa: E731
+    tokens_in = _n("prompt_token_count")
+    tokens_out = _n("candidates_token_count")
+    tokens_thought = _n("thoughts_token_count")
+    tokens_tool = _n("tool_use_prompt_token_count")
     return GeminiUsage(
         text=text,
         model=model_id,
         tokens_in=tokens_in,
         tokens_out=tokens_out,
-        cost_usd=ccost.cost_usd(model_id, tokens_in, tokens_out),
+        tokens_thought=tokens_thought,
+        tokens_tool_prompt=tokens_tool,
+        grounded=bool(search),
+        cost_usd=ccost.cost_usd(model_id, tokens_in, tokens_out,
+                                tokens_thought=tokens_thought,
+                                tokens_tool_prompt=tokens_tool),
     )
 
 
@@ -279,3 +303,6 @@ class GeminiUsage:
     tokens_out: int = 0
     cost_usd: float = 0.0
     error: str | None = None
+    tokens_thought: int = 0        # thinking tokens (output rate)
+    tokens_tool_prompt: int = 0    # grounded web context (input rate)
+    grounded: bool = False

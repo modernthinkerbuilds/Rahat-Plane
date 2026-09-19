@@ -225,8 +225,12 @@ def _fetch_search(source: dict, today: datetime,
             return []            # hermetic: no wire without a seam
         from core import llm as _llm
         model = os.getenv("NEW_MIYA_MODEL_FLASH", "gemini-2.5-flash")
+        # thinking_budget=0 (2026-09-19): this is JSON extraction from
+        # web results — a thinking model's reasoning tokens were a third
+        # of the September bill and bought nothing here.
         usage = _llm.generate("events", "events.ingest.search",
-                              prompt=prompt, model=model, search=True)
+                              prompt=prompt, model=model, search=True,
+                              thinking_budget=0)
         if usage.error:
             logger.warning("ingest search failed for %s: %s",
                            source["id"], usage.error)
@@ -351,15 +355,80 @@ def refresh_source(source: dict, *, today: datetime | None = None,
     return counts
 
 
+# ─────────────── spend control (2026-09-19) ───────────────
+# September's Gemini invoice was $19.75, 95% of it this pipeline: every
+# search-kind source and every popularity lookup ran THREE times a day,
+# each call grounded (web context billed as input) with dynamic
+# thinking on (billed as output). Owner's call: the free kinds (ical,
+# page) keep their three daily passes; the paid search pass runs
+# Wednesday and Saturday at 03:00 (`--search`, scheduled by launchd)
+# and on demand from Genie, rate-limited. ~102 paid calls/day → ~10.
+FREE_KINDS = ("ical", "page")
+PAID_KINDS = ("search",)
+ON_DEMAND_SOURCE_ID = "_on_demand"
+ON_DEMAND_MIN_GAP_HOURS = 6
+
+
 def refresh_all(*, today: datetime | None = None,
                 llm: Callable[[str], str] | None = None,
-                db_path: str | None = None) -> list[dict]:
+                db_path: str | None = None,
+                kinds: tuple[str, ...] | None = None) -> list[dict]:
+    """Refresh every registered source, or only those whose kind is in
+    `kinds` (None = all). The scheduled free passes call this with
+    FREE_KINDS; the search pass and the on-demand refresh with all."""
+    sources = [s for s in load_sources()
+               if kinds is None or (s.get("kind") or "search") in kinds]
     results = [refresh_source(s, today=today, llm=llm, db_path=db_path)
-               for s in load_sources()]
+               for s in sources]
     total = sum(r["fetched"] for r in results)
-    logger.info("events refresh: %d sources, %d events fetched",
-                len(results), total)
+    logger.info("events refresh: %d sources (%s), %d events fetched",
+                len(results), ",".join(kinds) if kinds else "all", total)
     return results
+
+
+def last_on_demand(db_path: str | None = None) -> datetime | None:
+    from bridges.events.store import last_refresh_at
+    ts = last_refresh_at(ON_DEMAND_SOURCE_ID, path=db_path)
+    if not ts:
+        return None
+    try:
+        return datetime.strptime(ts[:19], "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return None
+
+
+def refresh_on_demand(*, now: datetime | None = None,
+                      llm: Callable[[str], str] | None = None,
+                      resolver: Callable[[str], str] | None = None,
+                      min_gap_hours: float = ON_DEMAND_MIN_GAP_HOURS,
+                      db_path: str | None = None) -> dict:
+    """A paid search pass on request ("refresh the events"), rate-
+    limited so a double-tap can't run the bill. Returns
+      {"ran": bool, "reason": str, "sources": n, "fetched": n,
+       "added": n, "last": datetime|None, "next": datetime|None}.
+    Spend goes through core.llm.generate like any other call."""
+    from bridges.events.store import mark_refresh
+    now = now or datetime.now()
+    last = last_on_demand(db_path)
+    if last is not None and (now - last) < timedelta(hours=min_gap_hours):
+        return {"ran": False, "reason": "rate-limited", "sources": 0,
+                "fetched": 0, "added": 0, "last": last,
+                "next": last + timedelta(hours=min_gap_hours)}
+    results = [refresh_source(s, today=now, llm=llm, resolver=resolver,
+                              db_path=db_path)
+               for s in load_sources()
+               if (s.get("kind") or "search") in PAID_KINDS]
+    try:
+        from bridges.events.popularity import score_upcoming
+        score_upcoming(now, llm=llm, path=db_path)
+    except Exception:  # noqa: BLE001 — curation is best-effort
+        pass
+    mark_refresh(ON_DEMAND_SOURCE_ID, now=now,
+                 fetched=sum(r["fetched"] for r in results), path=db_path)
+    return {"ran": True, "reason": "ok", "sources": len(results),
+            "fetched": sum(r["fetched"] for r in results),
+            "added": sum(r["added"] for r in results), "last": now,
+            "next": now + timedelta(hours=min_gap_hours)}
 
 
 def main() -> int:
@@ -371,14 +440,22 @@ def main() -> int:
             print(f"{source_id:24s} {active or 0:4d} active   "
                   f"last refresh {latest}")
         return 0
-    for r in refresh_all():
+    # Default pass = the FREE kinds only. `--search` adds the paid
+    # search-kind sources + popularity lookups (Wed/Sat 03:00 in launchd).
+    paid = "--search" in sys.argv
+    kinds = None if paid else FREE_KINDS
+    for r in refresh_all(kinds=kinds):
         print(f"{r['source_id']:24s} fetched {r['fetched']:3d}  "
               f"added {r['added']:3d}  updated {r['updated']:3d}")
-    # Curation (2026-09-03): look up online popularity for at most 10
-    # recurring series per pass (30-day cache) so the digest can rank.
-    from bridges.events.popularity import score_upcoming
-    print(f"popularity: scored {score_upcoming()} recurring series")
+    if paid:
+        # Curation (2026-09-03): look up online popularity for at most
+        # 10 recurring series per pass (30-day cache) so the digest can
+        # rank. Paid + grounded → only on the search pass.
+        from bridges.events.popularity import score_upcoming
+        print(f"popularity: scored {score_upcoming()} recurring series")
     print(f"links: resolved {resolve_stored_urls()} redirect links")
+    print("pass:", "search + free" if paid else "free kinds only "
+          "(ical/page); add --search for the paid pass")
     return 0
 
 

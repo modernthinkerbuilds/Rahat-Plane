@@ -254,6 +254,7 @@ def generate(actor: str, kind: str,
              prompt: str,
              model: str | None = None,
              search: bool = False,
+             thinking_budget: int | None = None,
              trace_id: str | None = None,
              db_path: str | None = None) -> "GeminiUsage":
     """Single chokepoint for LLM spend.
@@ -312,10 +313,14 @@ def generate(actor: str, kind: str,
     fixture_prompt = f"search\x00{prompt}" if search else prompt
 
     def _wire():
+        # kwargs are only passed when set, so existing stubs and
+        # monkeypatches of llm_generate_with_usage keep their signature.
+        kw: dict = {}
         if search:
-            return _cio.llm_generate_with_usage(prompt, model=model,
-                                                search=True)
-        return _cio.llm_generate_with_usage(prompt, model=model)
+            kw["search"] = True
+        if thinking_budget is not None:
+            kw["thinking_budget"] = int(thinking_budget)
+        return _cio.llm_generate_with_usage(prompt, model=model, **kw)
 
     if _is_recording():
         usage = _wire()
@@ -335,7 +340,9 @@ def generate(actor: str, kind: str,
     if not usage.error:
         _budget.record_spend(
             actor=actor,
-            tokens=int(usage.tokens_in + usage.tokens_out),
+            tokens=int(usage.tokens_in + usage.tokens_out
+                       + getattr(usage, "tokens_thought", 0)
+                       + getattr(usage, "tokens_tool_prompt", 0)),
             cost_usd=float(usage.cost_usd),
             trace_id=trace_id,
             db_path=db_path,

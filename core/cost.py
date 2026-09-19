@@ -46,10 +46,22 @@ _PRICING: dict[str, _ModelPricing] = {
     # 2.5 Flash: default. Fast, cheap, function-calling-fluent.
     # 2.5 Pro:   high-stakes opt-in (tier changes, weight log, swap_day,
     #            tolerate_movement). Promoted by reasoner heuristic.
-    "gemini-2.5-flash":          {"input_per_m": 0.30,  "output_per_m": 2.50},
-    "gemini-2.5-flash-latest":   {"input_per_m": 0.30,  "output_per_m": 2.50},
+    # Re-priced 2026-09-19 against ai.google.dev/gemini-api/docs/pricing
+    # after the September bill ($19.75) came in at 4.7x the ledger:
+    # 2.5 Flash had moved from $0.30/$2.50 to $0.75/$3.00 and the table
+    # never followed. Thinking tokens bill at the OUTPUT rate; the web
+    # context a grounded call injects bills at the INPUT rate — both are
+    # priced by cost_usd() now (they used to be invisible).
+    "gemini-2.5-flash":          {"input_per_m": 0.75,  "output_per_m": 3.00},
+    "gemini-2.5-flash-latest":   {"input_per_m": 0.75,  "output_per_m": 3.00},
     "gemini-2.5-pro":            {"input_per_m": 1.25,  "output_per_m": 10.00},
     "gemini-2.5-pro-latest":     {"input_per_m": 1.25,  "output_per_m": 10.00},
+    # Gemini 3.x Flash — the Miya reasoner's live pick (miya_v2.log shows
+    # gemini-3.8-flash). Standard tier through 2026-12-31.
+    "gemini-3.8-flash":          {"input_per_m": 0.75,  "output_per_m": 3.75},
+    "gemini-3.7-flash":          {"input_per_m": 0.75,  "output_per_m": 3.75},
+    "gemini-3.6-flash":          {"input_per_m": 0.75,  "output_per_m": 3.75},
+    "gemini-3.5-flash":          {"input_per_m": 1.50,  "output_per_m": 9.00},
 
     # Gemini 2.0 family — Miya classifier (small prompt) + transitional
     # callers. Kept priced so legacy decisions rows still attribute spend.
@@ -93,26 +105,35 @@ def cost_usd(model: str,
              tokens_in: int = 0,
              tokens_out: int = 0,
              *,
-             cache_read_in: int = 0) -> float:
+             cache_read_in: int = 0,
+             tokens_thought: int = 0,
+             tokens_tool_prompt: int = 0) -> float:
     """Compute the dollar cost of one model call.
 
     Args
     ----
-    model         : pricing key (e.g. "gemini-2.5-flash")
-    tokens_in     : input tokens (prompt + tool history)
-    tokens_out    : completion tokens
-    cache_read_in : input tokens served from a paid Gemini cache (when
-                    we adopt explicit caches; today this is always 0)
+    model              : pricing key (e.g. "gemini-2.5-flash")
+    tokens_in          : input tokens (prompt + tool history)
+    tokens_out         : completion tokens
+    cache_read_in      : input tokens served from a paid Gemini cache
+    tokens_thought     : `thoughts_token_count` — a thinking model's
+                         reasoning tokens, billed at the OUTPUT rate
+    tokens_tool_prompt : `tool_use_prompt_token_count` — the web
+                         results a grounded call injects, billed at the
+                         INPUT rate
 
-    Returns USD as a float. Negative inputs are treated as zero —
-    defensive against a buggy SDK returning -1.
+    The last two were the September-2026 leak: Rahat priced two of the
+    four buckets Google bills and the ledger read $4.23 against a
+    $19.75 invoice. Negative inputs are treated as zero.
     """
     p = lookup(model)
     per_token = lambda v: max(v, 0) / 1_000_000.0
     cost = 0.0
-    cost += per_token(tokens_in)     * p.get("input_per_m", 0.0)
-    cost += per_token(tokens_out)    * p.get("output_per_m", 0.0)
-    cost += per_token(cache_read_in) * p.get("cache_read_per_m", 0.0)
+    cost += per_token(tokens_in)         * p.get("input_per_m", 0.0)
+    cost += per_token(tokens_tool_prompt) * p.get("input_per_m", 0.0)
+    cost += per_token(tokens_out)        * p.get("output_per_m", 0.0)
+    cost += per_token(tokens_thought)    * p.get("output_per_m", 0.0)
+    cost += per_token(cache_read_in)     * p.get("cache_read_per_m", 0.0)
     return cost
 
 

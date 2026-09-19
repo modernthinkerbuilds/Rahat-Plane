@@ -79,7 +79,8 @@ def score_series(row: dict, llm: Callable[[str], str] | None = None
         from core import llm as _llm
         model = os.getenv("NEW_MIYA_MODEL_FLASH", "gemini-2.5-flash")
         usage = _llm.generate("events", "events.popularity",
-                              prompt=prompt, model=model, search=True)
+                              prompt=prompt, model=model, search=True,
+                              thinking_budget=0)     # extraction, no reasoning
         if usage.error:
             logger.warning("popularity lookup failed for %r: %s",
                            row.get("title"), usage.error)
