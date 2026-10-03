@@ -44,6 +44,33 @@ SIX_PERSON_PROFILE = {
 }
 
 
+@pytest.fixture(autouse=True)
+def frozen_clock(monkeypatch, genie):
+    """Date-determinism convention (tests/datefreeze.py). The fixture's
+    visit window ends 2026-10-01; from 2026-10-02 the real clock dropped
+    the in-laws from every plan and three pins went red (2026-10-03).
+    Freeze the clock inside the window so the behavior under test is a
+    function of the fixture, never of the day the suite runs. Requests
+    `genie` so it runs AFTER that fixture's importlib.reload, which would
+    otherwise re-import an unfrozen datetime."""
+    import datetime as _dt
+    from tests.datefreeze import freeze
+
+    fixed = _dt.date(2026, 8, 15)
+    fake_datetime = freeze(monkeypatch, fixed,
+                           modules=("agents.genie.handler", "agents.genie.state",
+                                    "agents.genie.protocols"))
+
+    class _FrozenDate(_dt.date):
+        @classmethod
+        def today(cls):
+            return cls(fixed.year, fixed.month, fixed.day)
+
+    from agents.genie import protocols as _protocols
+    monkeypatch.setattr(_protocols, "date", _FrozenDate, raising=False)
+    return fake_datetime
+
+
 @pytest.fixture
 def genie(tmp_path, monkeypatch):
     monkeypatch.setenv("RAHAT_TEST_MODE", "1")
