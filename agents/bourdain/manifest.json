@@ -1,0 +1,33 @@
+{
+  "name": "bourdain",
+  "description": "Where the household eats: a pick for a meal, a day's food plan, a check on a named place, saves and verdicts. Trips and home.",
+  "mode": "conversational",
+  "aliases": ["bourdain", "food", "eat"],
+  "grammar": {
+    "commands": ["/eat", "/coffee", "/dessert", "/list", "/save", "/who", "/where", "/prep", "/kb", "/cost", "/help", "/start", "/join", "/household"],
+    "exact_replies": ["more", "which one", "something else", "just me", "going"]
+  },
+  "system_prompt": "system_prompt.md",
+  "frame_schema": "frame_schema.json",
+  "outcome_library": "outcomes.json",
+  "judge_checklist": "checklist.json",
+  "tools": [
+    "get_profile", "get_household_rules", "get_overrides", "get_leg_context", "get_last_answer",
+    "resolve_name", "kb_search_places", "kb_facts", "web_search", "fetch_page", "read_hours",
+    "read_status", "read_ratings", "read_menu", "count_locations", "room_signals", "acclaim",
+    "weather", "route_time", "parking", "save_place", "record_verdict", "set_override",
+    "edit_plan", "set_location", "yelp_link", "clock"
+  ],
+  "state_scopes": ["turn", "session", "day", "trip", "standing"],
+  "budgets": {
+    "per_ask": {"tool_calls": 12, "search_queries": 10, "usd": 0.50},
+    "daily_usd": null
+  },
+  "latency": {"holding_line_s": 5, "answer_s_trip": 60, "answer_s_home": 30},
+  "render_templates": "templates",
+  "banned_phrases": ["celiac-safe", "zero risk", "cross-contamination"],
+  "golden_sets": ["private/prds/bourdain/evals/golden_trip_2026-09.jsonl", "private/prds/bourdain/evals/golden_home.jsonl"],
+  "cassette_dir": "tests/cassettes/bourdain",
+  "quiet_hours": "22:30-07:00",
+  "judge": {"model": "flash", "prompt_version": "v1", "temperature": 0.0, "authority": "shadow"}
+}

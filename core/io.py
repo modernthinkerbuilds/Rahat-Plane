@@ -278,6 +278,17 @@ def llm_generate_with_usage(prompt: str, *,
     tokens_out = _n("candidates_token_count")
     tokens_thought = _n("thoughts_token_count")
     tokens_tool = _n("tool_use_prompt_token_count")
+    # Gemini 3 bills grounded search PER QUERY the model ran, not per call
+    # (pricing page, read 2026-10-03). The query list rides on the first
+    # candidate's grounding metadata; count it so the ledger can.
+    search_queries = 0
+    try:
+        _cands = getattr(resp, "candidates", None) or []
+        _gm = getattr(_cands[0], "grounding_metadata", None) if _cands else None
+        _q = getattr(_gm, "web_search_queries", None) if _gm is not None else None
+        search_queries = len(_q) if _q else 0
+    except Exception:  # pragma: no cover - defensive; never fail a call over telemetry
+        search_queries = 0
     return GeminiUsage(
         text=text,
         model=model_id,
@@ -286,6 +297,7 @@ def llm_generate_with_usage(prompt: str, *,
         tokens_thought=tokens_thought,
         tokens_tool_prompt=tokens_tool,
         grounded=bool(search),
+        search_queries=search_queries,
         cost_usd=ccost.cost_usd(model_id, tokens_in, tokens_out,
                                 tokens_thought=tokens_thought,
                                 tokens_tool_prompt=tokens_tool),
@@ -306,3 +318,4 @@ class GeminiUsage:
     tokens_thought: int = 0        # thinking tokens (output rate)
     tokens_tool_prompt: int = 0    # grounded web context (input rate)
     grounded: bool = False
+    search_queries: int = 0        # grounded search queries the model ran (billed per query)

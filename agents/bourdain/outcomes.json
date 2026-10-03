@@ -1,0 +1,68 @@
+{
+  "version": "1.0",
+  "outcomes": [
+    {"id": "U1", "text": "Every part of the message is answered: each question, ask and verdict.", "applies": "always", "check": "J", "priority": "must"},
+    {"id": "U2", "text": "The meal or slot is the one asked about, not the clock's; a meal already had is history.", "applies": "eat", "check": "J", "priority": "must", "params_from": ["meal", "history"]},
+    {"id": "U3", "text": "The right people: who is speaking, who it is for, guests.", "applies": "always", "check": "M+J", "priority": "must", "params_from": ["speaker", "diners", "guests"]},
+    {"id": "U4", "text": "The right place: where they are vs where to look vs a route; landmarks and dictated names resolved; negated places excluded.", "applies": "always", "check": "M+J", "priority": "must", "params_from": ["origin", "area", "route", "named_places"]},
+    {"id": "U5", "text": "The right time: now, later or tomorrow; the arrival time; deadlines at the destination.", "applies": "always", "check": "M+J", "priority": "must", "params_from": ["time"]},
+    {"id": "U6", "text": "Exclusions honored: cuisines, places, dishes, areas, with their scope.", "applies": "exclusions_present", "check": "M", "priority": "must", "params_from": ["exclusions"]},
+    {"id": "U7", "text": "Continuity: a correction or plan edit inherits everything it does not change; rejected picks never return.", "applies": "follow_up", "check": "M+J", "priority": "must"},
+    {"id": "U8", "text": "Inferences stated in one line; at most one question; a fork answered both ways.", "applies": "inferring", "check": "J", "priority": "should", "params_from": ["assumptions", "question"]},
+
+    {"id": "P1", "text": "Diet rules per member, with active overrides, pass for every diner's named main.", "applies": "names_places", "check": "M", "priority": "must", "params_from": ["diners", "overrides"]},
+    {"id": "P2", "text": "The primary member's gluten scope: a GF version when the order is a pastry, pizza, bread or pasta; shared kitchens pass; the banned phrases never appear.", "applies": "primary_eating", "check": "M", "priority": "must", "params_from": ["dishes"]},
+    {"id": "P3", "text": "Profile cuisine exclusions lift only on an explicit ask, with a line saying so.", "applies": "names_places", "check": "M", "priority": "must", "params_from": ["cuisines"]},
+    {"id": "P4", "text": "No seafood-led room when the spouse is at the table; seafood-led signatures flagged.", "applies": "spouse_eating", "check": "M", "priority": "must"},
+    {"id": "P5", "text": "A named full main for every diner that passes that diner's rules.", "applies": "names_places", "check": "M", "priority": "must", "params_from": ["diners"]},
+    {"id": "P6", "text": "The infant's room: calm, stroller room, early tables, never a bar; no outdoor-only seating in rain or cold.", "applies": "infant_along", "check": "M+J", "priority": "must"},
+    {"id": "P7", "text": "No bar-led or drinking-led rooms; a bar in a dining room is a flag, a wine bar or pub is a fail.", "applies": "names_places", "check": "M", "priority": "must"},
+    {"id": "P8", "text": "Price: $ or $$; $$–$$$ only with menu mains checked; $$$ never. Shared plates above the cap flagged.", "applies": "names_places", "check": "M", "priority": "must"},
+    {"id": "P9", "text": "Chains: single shops first; small groups labeled with their count; a household chain verdict beats the location count.", "applies": "names_places", "check": "M", "priority": "must"},
+    {"id": "P10", "text": "Rating: the floor, a named source, a minimum review count; no pick without a counted rating; household-reported scores honored.", "applies": "names_places", "check": "M", "priority": "must"},
+    {"id": "P11", "text": "Coffee ritual: a local roaster's espresso with a GF pastry for the primary member.", "applies": "coffee", "check": "M+J", "priority": "should"},
+    {"id": "P12", "text": "The day's rhythm: coffee slots, dessert after lunch, gelato after dinner.", "applies": "plan", "check": "M", "priority": "should"},
+
+    {"id": "E1", "text": "Provenance: every fact in the reply maps to an evidence record with a source URL and a read time; the model supplies none.", "applies": "always", "check": "M", "priority": "must"},
+    {"id": "E2", "text": "Serving at arrival: open that day at the arrival time, last order respected, the dish on that day's menu.", "applies": "names_places", "check": "M", "priority": "must", "params_from": ["time"]},
+    {"id": "E3", "text": "Status current: not closed, moved, coming soon or closed for the season; the newest dated source wins.", "applies": "names_places", "check": "M", "priority": "must"},
+    {"id": "E4", "text": "Weather: the newest official forecast with its issuance time; hazards applied.", "applies": "hazard", "check": "M+J", "priority": "must"},
+    {"id": "E5", "text": "Distance and time from the true origin, computed by a tool or labeled about.", "applies": "names_places", "check": "M", "priority": "must", "params_from": ["origin", "radius"]},
+    {"id": "E6", "text": "No false none: a none names the area and hour searched and offers the nearest place that qualifies.", "applies": "negative_claim", "check": "M+J", "priority": "must"},
+
+    {"id": "D1", "text": "Favorites first: each member's favorite cuisines and the household's saves, when the ask allows.", "applies": "names_places", "check": "M+J", "priority": "should"},
+    {"id": "D2", "text": "Named acclaim for at least the top pick, dated.", "applies": "names_places", "check": "M", "priority": "should", "params_from": ["attributes"]},
+    {"id": "D3", "text": "A signature dish for each diner, inside their rules; substitutions named.", "applies": "names_places", "check": "J", "priority": "should"},
+    {"id": "D4", "text": "The format matches the ask: quick, hole in the wall, sit down nicely, takeout.", "applies": "format_stated", "check": "M+J", "priority": "must", "params_from": ["formats"]},
+    {"id": "D5", "text": "Variety: no place or plate repeated across the trip or the recent-meals window unless asked; cuisine families count together.", "applies": "names_places", "check": "M", "priority": "should"},
+    {"id": "D6", "text": "After boring: lead with the city's signature inside the rules, with a split order if needed; no gate lifted.", "applies": "after_boring", "check": "J", "priority": "must"},
+
+    {"id": "A1", "text": "A trusted-review link and a map link on every pick.", "applies": "names_places", "check": "M", "priority": "must"},
+    {"id": "A2", "text": "The next step where it matters: book, call first, cash only, parking, validation.", "applies": "when_relevant", "check": "J", "priority": "should"},
+    {"id": "A3", "text": "Exactly one clear recommendation when there are two or more picks; never a pick with an unresolved flag on a must.", "applies": "multi_pick", "check": "M", "priority": "must"},
+    {"id": "A4", "text": "Left out, with a short reason each, when a likely candidate was excluded.", "applies": "when_relevant", "check": "J", "priority": "should"},
+    {"id": "A5", "text": "One phone screen; sources in one compact line.", "applies": "always", "check": "M", "priority": "should"},
+
+    {"id": "S1", "text": "A save said in conversation is stored with its date and occasion.", "applies": "saves_present", "check": "M", "priority": "must", "params_from": ["saves"]},
+    {"id": "S2", "text": "A verdict is stored with its type: chain, reported score, price, room, delight, style, loved, chosen.", "applies": "verdicts_present", "check": "M", "priority": "must", "params_from": ["verdicts"]},
+    {"id": "S3", "text": "An override is stored with who, what and until; partial withdrawals applied; the header names the ones in force.", "applies": "overrides_present", "check": "M", "priority": "must", "params_from": ["overrides"]},
+    {"id": "S4", "text": "A plan edit is applied to the day's schedule, keeping the overrides and weather still in force.", "applies": "plan_edits_present", "check": "M", "priority": "must", "params_from": ["plan_edits"]},
+    {"id": "S5", "text": "A location override is stored with an expiry.", "applies": "always", "check": "M", "priority": "should", "params_from": ["origin"]},
+
+    {"id": "L1", "text": "The slots cover what is left of the day, including the rhythm slots.", "applies": "plan", "check": "M+J", "priority": "must"},
+    {"id": "L2", "text": "Each slot's place is open at its slot time.", "applies": "plan", "check": "M", "priority": "must"},
+    {"id": "L3", "text": "Travel between slots works: order, minutes, parking.", "applies": "plan", "check": "M", "priority": "must"},
+    {"id": "L4", "text": "Weather windows respected: outdoors before the rain, off the waterfront under a flood warning.", "applies": "hazard", "check": "M+J", "priority": "must"},
+    {"id": "L5", "text": "Attraction rules respected: strollers, ID, hours.", "applies": "plan", "check": "M", "priority": "should"},
+
+    {"id": "N1", "text": "Coverage behind a negative claim: any none or nothing fits names the list or sweep it rests on.", "applies": "negative_claim", "check": "M+J", "priority": "must"},
+    {"id": "N2", "text": "Novelty against regulars: when an alternative is asked, no regular or its same-name sibling is offered.", "applies": "alternative_asked", "check": "M", "priority": "must"},
+    {"id": "N3", "text": "Exceptions proven: an exclusion's exception clause is used only with named acclaim and a stated reason.", "applies": "exception_present", "check": "M+J", "priority": "must", "params_from": ["exclusions"]},
+    {"id": "N4", "text": "Reaction captured: the owner's next message is classified and linked to the trace.", "applies": "always", "check": "M", "priority": "should"}
+  ],
+  "mandatory": {
+    "names_places": ["P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8", "P9", "P10", "E1", "E2", "E3", "E5", "A1", "A3"],
+    "day_plan": ["L1", "L2", "L3", "L4", "P12", "E4"],
+    "follow_up": ["U7"]
+  }
+}

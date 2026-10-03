@@ -347,6 +347,21 @@ def generate(actor: str, kind: str,
             trace_id=trace_id,
             db_path=db_path,
         )
+        # ADR-018 §2.9: one ledger row per billable event, with the four
+        # token buckets and the grounded search query count. Additive
+        # beside budget.record_spend; a ledger failure never fails a call.
+        try:
+            from core import ledger as _ledger
+            _ledger.record(
+                agent=actor, event_type="model", kind=kind,
+                model=str(getattr(usage, "model", "") or model or ""),
+                tokens_in=int(usage.tokens_in), tokens_out=int(usage.tokens_out),
+                tokens_thought=int(getattr(usage, "tokens_thought", 0) or 0),
+                tokens_tool_prompt=int(getattr(usage, "tokens_tool_prompt", 0) or 0),
+                search_queries=int(getattr(usage, "search_queries", 0) or 0),
+                cost_usd=float(usage.cost_usd), trace_id=trace_id, db_path=db_path)
+        except Exception:  # pragma: no cover
+            pass
 
     return usage
 

@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 import re
 from datetime import datetime
+from pathlib import Path
 from typing import Callable
 from urllib.parse import parse_qs, unquote_plus, urlparse
 
@@ -50,6 +51,8 @@ HELP = (
     "  • `/list` — your saved places for the city you're in\n"
     "  • `save <name>, <where you heard>` or paste a Maps link or a list\n"
     "  • `/who` — who's eating, which leg, where I'm ranking from\n"
+    "  • `/cost` — spend today, this week, this month; `/cost export` for a CSV\n"
+    "  • `/kb stats` — what I know: places, facts, how fresh\n"
     "  • `/household` · `/join <code>` · `/help`"
 )
 
@@ -553,6 +556,35 @@ _LOC_ONLY_RE = re.compile(r"^\s*(?:i'?m|we'?re|were|now)?\s*(?:at|in|near)\s+.+$
 _CORRECTION_WINDOW_MIN = 30
 
 
+def handle_cost(text: str, *, now: datetime) -> str:
+    """`/cost` — today, this week, this month per agent; the month's
+    search queries against the free allowance. `/cost export` writes a
+    CSV beside the database (ADR-018 §2.9). No daily cap, so this is
+    the control: a number, not a stop."""
+    from core import ledger
+    from core import io as cio
+    rest = text.strip().split(None, 1)[1].strip().lower() if " " in text.strip() else ""
+    if rest.startswith("export"):
+        out = Path(str(cio.DB_PATH)).parent / "cost_ledger_export.csv"
+        n = ledger.export_csv(out)
+        return f"Wrote {n} ledger rows to {out.name} (beside the database)."
+    return ledger.render_cost(now=now)
+
+
+def handle_kb(text: str, *, now: datetime) -> str:
+    """`/kb stats` — what the knowledge base holds and how fresh it is.
+    `/kb export` arrives with Phase 1b; say so rather than pretend."""
+    from core.kb import schema as kb_schema
+    rest = text.strip().split(None, 1)[1].strip().lower() if " " in text.strip() else "stats"
+    if rest.startswith("export"):
+        return "Export comes with the next build; `/kb stats` works now."
+    con = kb_schema.connect()
+    try:
+        return kb_schema.render_stats(con, now=now)
+    finally:
+        con.close()
+
+
 def route(text: str, *, chat_id: str | int, now: datetime | None = None,
           llm: Callable[[str], str] | None = None) -> str:
     cid = str(chat_id)
@@ -565,6 +597,10 @@ def route(text: str, *, chat_id: str | int, now: datetime | None = None,
         return HELP
     if low.startswith("/who") or low.startswith("/where"):
         return handle_who(cid, now=now)
+    if low.split("@", 1)[0].split(" ", 1)[0] == "/cost":
+        return handle_cost(text, now=now)
+    if low.split("@", 1)[0].split(" ", 1)[0] == "/kb":
+        return handle_kb(text, now=now)
     if low.startswith("/list") or _LIST_RE.match(text):
         return handle_list(cid, text, now=now)
     if low.startswith("/eat"):

@@ -1,0 +1,719 @@
+{
+ "$defs": {
+  "Exclusion": {
+   "properties": {
+    "kind": {
+     "enum": [
+      "cuisine",
+      "place",
+      "dish",
+      "area",
+      "format"
+     ],
+     "title": "Kind",
+     "type": "string"
+    },
+    "value": {
+     "title": "Value",
+     "type": "string"
+    },
+    "scope": {
+     "default": "session",
+     "enum": [
+      "turn",
+      "session",
+      "day",
+      "trip",
+      "standing"
+     ],
+     "title": "Scope",
+     "type": "string"
+    },
+    "exception": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Exception"
+    }
+   },
+   "required": [
+    "kind",
+    "value"
+   ],
+   "title": "Exclusion",
+   "type": "object"
+  },
+  "Guest": {
+   "properties": {
+    "label": {
+     "title": "Label",
+     "type": "string"
+    },
+    "diet": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Diet"
+    }
+   },
+   "required": [
+    "label"
+   ],
+   "title": "Guest",
+   "type": "object"
+  },
+  "Override": {
+   "properties": {
+    "who": {
+     "items": {
+      "type": "string"
+     },
+     "title": "Who",
+     "type": "array"
+    },
+    "rule": {
+     "title": "Rule",
+     "type": "string"
+    },
+    "until": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Until"
+    },
+    "withdraw": {
+     "default": false,
+     "title": "Withdraw",
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "who",
+    "rule"
+   ],
+   "title": "Override",
+   "type": "object"
+  },
+  "PlaceRef": {
+   "properties": {
+    "label": {
+     "title": "Label",
+     "type": "string"
+    },
+    "kind": {
+     "default": "unknown",
+     "enum": [
+      "stay",
+      "home",
+      "place",
+      "landmark",
+      "area",
+      "address",
+      "unknown"
+     ],
+     "title": "Kind",
+     "type": "string"
+    },
+    "source": {
+     "default": "message",
+     "enum": [
+      "message",
+      "session",
+      "stay",
+      "default"
+     ],
+     "title": "Source",
+     "type": "string"
+    },
+    "resolved_id": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Resolved Id"
+    }
+   },
+   "required": [
+    "label"
+   ],
+   "title": "PlaceRef",
+   "type": "object"
+  },
+  "Radius": {
+   "properties": {
+    "minutes": {
+     "title": "Minutes",
+     "type": "integer"
+    },
+    "mode": {
+     "default": "drive",
+     "enum": [
+      "walk",
+      "drive",
+      "transit"
+     ],
+     "title": "Mode",
+     "type": "string"
+    }
+   },
+   "required": [
+    "minutes"
+   ],
+   "title": "Radius",
+   "type": "object"
+  },
+  "ReferencePlace": {
+   "properties": {
+    "name": {
+     "title": "Name",
+     "type": "string"
+    },
+    "features": {
+     "items": {
+      "type": "string"
+     },
+     "title": "Features",
+     "type": "array"
+    }
+   },
+   "required": [
+    "name"
+   ],
+   "title": "ReferencePlace",
+   "type": "object"
+  },
+  "Route": {
+   "properties": {
+    "to": {
+     "items": {
+      "type": "string"
+     },
+     "title": "To",
+     "type": "array"
+    },
+    "mode": {
+     "anyOf": [
+      {
+       "enum": [
+        "walk",
+        "drive",
+        "transit"
+       ],
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Mode"
+    },
+    "either": {
+     "default": false,
+     "title": "Either",
+     "type": "boolean"
+    }
+   },
+   "title": "Route",
+   "type": "object"
+  },
+  "Save": {
+   "properties": {
+    "place": {
+     "title": "Place",
+     "type": "string"
+    },
+    "for_date": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "For Date"
+    },
+    "heard_from": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Heard From"
+    },
+    "occasion": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Occasion"
+    }
+   },
+   "required": [
+    "place"
+   ],
+   "title": "Save",
+   "type": "object"
+  },
+  "TimeSpec": {
+   "properties": {
+    "kind": {
+     "default": "now",
+     "enum": [
+      "now",
+      "at",
+      "day",
+      "window"
+     ],
+     "title": "Kind",
+     "type": "string"
+    },
+    "at": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "At"
+    },
+    "day": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Day"
+    },
+    "depart": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Depart"
+    },
+    "arrive": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Arrive"
+    },
+    "open_by": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Open By"
+    },
+    "deadline": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Deadline"
+    },
+    "table_limit_min": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Table Limit Min"
+    }
+   },
+   "title": "TimeSpec",
+   "type": "object"
+  },
+  "Verdict": {
+   "properties": {
+    "place": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Place"
+    },
+    "kind": {
+     "enum": [
+      "chain",
+      "reported_score",
+      "price",
+      "room",
+      "delight",
+      "style",
+      "loved",
+      "chosen",
+      "rejected",
+      "closed",
+      "boring",
+      "wrong_claim",
+      "other"
+     ],
+     "title": "Kind",
+     "type": "string"
+    },
+    "value": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Value"
+    },
+    "text": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Text"
+    },
+    "class_target": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Class Target"
+    }
+   },
+   "required": [
+    "kind"
+   ],
+   "title": "Verdict",
+   "type": "object"
+  }
+ },
+ "properties": {
+  "schema_version": {
+   "default": "1.0",
+   "title": "Schema Version",
+   "type": "string"
+  },
+  "speaker": {
+   "title": "Speaker",
+   "type": "string"
+  },
+  "intents": {
+   "items": {
+    "enum": [
+     "eat",
+     "plan",
+     "plan_edit",
+     "verdict",
+     "save",
+     "recall",
+     "place_check",
+     "logistics",
+     "profile_change",
+     "question",
+     "chat"
+    ],
+    "type": "string"
+   },
+   "minItems": 1,
+   "title": "Intents",
+   "type": "array"
+  },
+  "diners": {
+   "items": {
+    "type": "string"
+   },
+   "title": "Diners",
+   "type": "array"
+  },
+  "guests": {
+   "items": {
+    "$ref": "#/$defs/Guest"
+   },
+   "title": "Guests",
+   "type": "array"
+  },
+  "meal": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null,
+   "title": "Meal"
+  },
+  "history": {
+   "items": {
+    "type": "string"
+   },
+   "title": "History",
+   "type": "array"
+  },
+  "time": {
+   "$ref": "#/$defs/TimeSpec"
+  },
+  "origin": {
+   "anyOf": [
+    {
+     "$ref": "#/$defs/PlaceRef"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "area": {
+   "anyOf": [
+    {
+     "$ref": "#/$defs/PlaceRef"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "route": {
+   "anyOf": [
+    {
+     "$ref": "#/$defs/Route"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "radius": {
+   "anyOf": [
+    {
+     "$ref": "#/$defs/Radius"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "cuisines": {
+   "items": {
+    "type": "string"
+   },
+   "title": "Cuisines",
+   "type": "array"
+  },
+  "dishes": {
+   "items": {
+    "type": "string"
+   },
+   "title": "Dishes",
+   "type": "array"
+  },
+  "formats": {
+   "items": {
+    "type": "string"
+   },
+   "title": "Formats",
+   "type": "array"
+  },
+  "attributes": {
+   "items": {
+    "type": "string"
+   },
+   "title": "Attributes",
+   "type": "array"
+  },
+  "exclusions": {
+   "items": {
+    "$ref": "#/$defs/Exclusion"
+   },
+   "title": "Exclusions",
+   "type": "array"
+  },
+  "overrides": {
+   "items": {
+    "$ref": "#/$defs/Override"
+   },
+   "title": "Overrides",
+   "type": "array"
+  },
+  "verdicts": {
+   "items": {
+    "$ref": "#/$defs/Verdict"
+   },
+   "title": "Verdicts",
+   "type": "array"
+  },
+  "verdicts_in_force": {
+   "items": {
+    "type": "string"
+   },
+   "title": "Verdicts In Force",
+   "type": "array"
+  },
+  "saves": {
+   "items": {
+    "$ref": "#/$defs/Save"
+   },
+   "title": "Saves",
+   "type": "array"
+  },
+  "named_places": {
+   "items": {
+    "type": "string"
+   },
+   "title": "Named Places",
+   "type": "array"
+  },
+  "reference_place": {
+   "anyOf": [
+    {
+     "$ref": "#/$defs/ReferencePlace"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "plan_edits": {
+   "items": {
+    "type": "string"
+   },
+   "title": "Plan Edits",
+   "type": "array"
+  },
+  "refers_to_last_answer": {
+   "default": false,
+   "title": "Refers To Last Answer",
+   "type": "boolean"
+  },
+  "weather_hazard": {
+   "default": false,
+   "title": "Weather Hazard",
+   "type": "boolean"
+  },
+  "dictation": {
+   "additionalProperties": {
+    "type": "string"
+   },
+   "title": "Dictation",
+   "type": "object"
+  },
+  "assumptions": {
+   "items": {
+    "type": "string"
+   },
+   "title": "Assumptions",
+   "type": "array"
+  },
+  "question": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null,
+   "title": "Question"
+  },
+  "confidence": {
+   "additionalProperties": {
+    "type": "number"
+   },
+   "title": "Confidence",
+   "type": "object"
+  }
+ },
+ "required": [
+  "speaker",
+  "intents"
+ ],
+ "title": "Frame",
+ "type": "object"
+}
