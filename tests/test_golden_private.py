@@ -27,6 +27,7 @@ SEED = Path("private/prds/bourdain/seed_nyc_boston.json")
 CASSETTES = Path("private/cassettes/bourdain")
 MANIFEST = cmanifest.load("bourdain")
 SETS = [Path(p) for p in MANIFEST.golden_sets]
+STUB_FLOOR = 50          # 54/59 on the first stub run against the household profile (2026-10-04); the rest are real catches
 
 pytestmark = pytest.mark.skipif(not (SEED.exists() and all(p.exists() for p in SETS)),
                                 reason="private golden sets not present")
@@ -42,27 +43,33 @@ def sandbox(tmp_path, monkeypatch):
     monkeypatch.setenv("RAHAT_BOURDAIN_STORE_JSON", str(tmp_path / "store.json"))
     monkeypatch.setenv("RAHAT_TOKEN_BUDGET_DAILY_USD_BOURDAIN", "0")
     monkeypatch.delenv("RAHAT_FIXTURE_RECORD", raising=False)
+    # grade against the household's own rules, as the recordings were made (fix 2026-10-04)
+    env, ppath, plabel = ev.household_profile("bourdain")
+    if env and ppath:
+        monkeypatch.setenv(env, str(ppath))
     from agents.bourdain import harness as bh
     monkeypatch.setattr(bh.BourdainTenant, "speaker_for", lambda self, chat_id: "primary")
     bh.reset()
-    yield {"cases": cases, "db": str(db), "tenant": bh.tenant()}
+    yield {"cases": cases, "db": str(db), "tenant": bh.tenant(), "profile": plabel}
     bh.reset()
 
 
 def test_every_private_case_runs_in_stub_mode(sandbox):
-    rep = ev.run_set(sandbox["tenant"], sandbox["cases"], mode="stub", db_path=sandbox["db"], cassette_dir=None)
+    rep = ev.run_set(sandbox["tenant"], sandbox["cases"], mode="stub", db_path=sandbox["db"], cassette_dir=None,
+                     profile=sandbox["profile"])
+    print(rep.render())
     assert rep.total == len(sandbox["cases"]) == 59
     errors = [(c.id, c.error) for c in rep.cases if c.error]
     assert errors == []
     assert all(c.musts for c in rep.cases)
-    assert rep.passed >= 40          # the stub picker's floor; the model runs are the real gate
-    print(rep.render())
+    assert rep.passed >= STUB_FLOOR   # the stub picker's floor (a smoke check); the model runs are the gate
 
 
 @pytest.mark.skipif(not CASSETTES.exists(), reason="no recorded cassettes (run scripts/eval_outcomes.py --mode live with RAHAT_FIXTURE_RECORD=1)")
 def test_private_cases_replay_green_from_cassettes(sandbox, monkeypatch):
     monkeypatch.setenv("RAHAT_CASSETTE_DIR", str(CASSETTES))
-    rep = ev.run_set(sandbox["tenant"], sandbox["cases"], mode="replay", db_path=sandbox["db"], cassette_dir=str(CASSETTES))
+    rep = ev.run_set(sandbox["tenant"], sandbox["cases"], mode="replay", db_path=sandbox["db"], cassette_dir=str(CASSETTES),
+                     profile=sandbox["profile"])
     print(rep.render(verbose=True))
     hermetic = [c.id for c in rep.cases if c.error == "hermetic"]
     if hermetic:

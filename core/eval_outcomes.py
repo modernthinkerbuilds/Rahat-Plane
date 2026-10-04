@@ -25,7 +25,9 @@ previous case's answer the way the household did.
 """
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import re
 import time
 from dataclasses import dataclass, field
@@ -405,6 +407,7 @@ class EvalReport:
     cases: list[CaseResult] = field(default_factory=list)
     started: str = ""
     finished: str = ""
+    profile: str = ""            # which household profile the cases were graded against
 
     @property
     def passed(self) -> int:
@@ -429,6 +432,7 @@ class EvalReport:
         lat = sorted(c.latency_ms for c in self.cases) or [0]
         lines = [
             f"Golden set {self.agent} ({self.mode}): {self.passed}/{self.total} passed · musts failed most: {fails}",
+            f"profile: {self.profile or 'not stated'}",
             f"cost ${self.cost():.3f} · {sum(c.search_queries for c in self.cases)} search queries · "
             f"{sum(c.tool_calls for c in self.cases)} tool calls · median latency {lat[len(lat) // 2] / 1000:.1f}s · "
             f"floor {sum(1 for c in self.cases if c.floor_used)} · errors {sum(1 for c in self.cases if c.error)}",
@@ -445,7 +449,8 @@ class EvalReport:
         return "\n".join(lines)
 
     def as_json(self) -> dict:
-        return {"agent": self.agent, "mode": self.mode, "set": self.set_path, "started": self.started, "finished": self.finished,
+        return {"agent": self.agent, "mode": self.mode, "set": self.set_path, "profile": self.profile,
+                "started": self.started, "finished": self.finished,
                 "passed": self.passed, "total": self.total, "fail_counts": self.fail_counts(), "cost_usd": round(self.cost(), 5),
                 "cases": [c.as_json() for c in self.cases]}
 
@@ -527,8 +532,9 @@ def run_case(tenant: Any, case: dict, *, mode: str, db_path: str, cassette_dir: 
 
 def run_set(tenant: Any, cases: list[dict], *, mode: str, db_path: str, cassette_dir: str | None, set_path: str = "",
             chat_id: str = "golden", judge_enabled: bool = True, only: set[str] | None = None, limit: int | None = None,
-            k: int = 1, progress: Any = None) -> EvalReport:
-    report = EvalReport(agent=tenant.name, mode=mode, set_path=set_path, started=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+            k: int = 1, progress: Any = None, profile: str = "") -> EvalReport:
+    report = EvalReport(agent=tenant.name, mode=mode, set_path=set_path, profile=profile,
+                        started=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
     cassette.reset_episodes()          # recurrences are numbered from the start of the set
     prev: str | None = None
     for case in cases[: limit or None]:
@@ -575,6 +581,39 @@ def latest_report(out_dir: str | Path, agent: str) -> dict | None:
         return json.loads(p.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
+
+
+# Where each tenant keeps its household profile, and the variable that
+# points the tenant at it. Test mode sandboxes the DB and, with it, the
+# vault-relative default path, so an eval must point at the file itself.
+EVAL_PROFILES: dict[str, tuple[str, Path]] = {
+    "bourdain": ("RAHAT_BOURDAIN_PROFILE_JSON", Path("vault") / "bourdain" / "profile.json"),
+}
+
+
+def household_profile(agent: str, *, explicit: str | Path | None = None,
+                      repo: str | Path | None = None) -> tuple[str | None, Path | None, str]:
+    """(env var, profile path or None, label) for grading a private golden
+    set against the household's own rules (fix 2026-10-04: without this an
+    eval under RAHAT_TEST_MODE graded every case against the PII-free
+    default profile, which has no diet rules at all). Order: an explicit
+    path, then the variable already set, then the vault file. The label
+    names the file and a short hash of its contents, so a report says
+    exactly which rules it graded against; a changed profile invalidates
+    the recordings by design (the executor's prompt carries the rules)."""
+    env, rel = EVAL_PROFILES.get(agent, (None, None))
+    if env is None or rel is None:
+        return None, None, "n/a (this agent has no household profile)"
+    if explicit:
+        path = Path(explicit)
+    elif os.getenv(env):
+        path = Path(os.environ[env])
+    else:
+        path = Path(repo or cio.ROOT) / rel
+    if path.is_file():
+        digest = hashlib.sha1(path.read_bytes()).hexdigest()[:8]
+        return env, path, f"{rel if not explicit and not os.getenv(env) else path} (sha1 {digest})"
+    return env, None, "DEFAULT (no household profile found; the household's diet rules are NOT applied)"
 
 
 def default_runs_dir() -> Path:

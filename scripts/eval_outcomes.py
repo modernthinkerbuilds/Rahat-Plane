@@ -61,6 +61,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--runs-dir", default=None)
     ap.add_argument("--verbose", "-v", action="store_true")
     ap.add_argument("--db", default=None, help="sandbox db path (default: a temp file)")
+    ap.add_argument("--profile", default=None,
+                    help="the household profile JSON to grade against (default: vault/<agent>/profile.json when present)")
     args = ap.parse_args(argv)
 
     if args.mode == "live":
@@ -81,6 +83,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.mode == "replay" and not Path(cassettes).exists():
         print(f"no cassettes at {cassettes}: record with --mode live and RAHAT_FIXTURE_RECORD=1 first", file=sys.stderr)
         return 2
+    env, ppath, plabel = ev.household_profile(args.agent, explicit=args.profile, repo=_REPO)
+    if env and ppath:
+        os.environ[env] = str(ppath)       # read-only: the eval never writes the profile
+    print(f"profile: {plabel}")
     db_path = args.db or os.path.join(tempfile.gettempdir(), f"rahat_eval_{args.agent}_{os.getpid()}.db")
     cases = [c for s in sets for c in ev.load_golden(s)]
     if not cases:
@@ -93,7 +99,7 @@ def main(argv: list[str] | None = None) -> int:
     tenant = import_module(f"agents.{args.agent}.harness").tenant()
     rep = ev.run_set(tenant, cases, mode=args.mode, db_path=db_path, cassette_dir=cassettes, set_path=",".join(sets),
                      judge_enabled=not args.no_judge, only=set(args.case) if args.case else None, limit=args.limit, k=args.k,
-                     progress=(lambda line: print(line, flush=True)) if args.verbose else None)
+                     progress=(lambda line: print(line, flush=True)) if args.verbose else None, profile=plabel)
     print(rep.render(verbose=args.verbose))
     if args.save:
         path = ev.save_report(rep, args.runs_dir or ev.default_runs_dir())
