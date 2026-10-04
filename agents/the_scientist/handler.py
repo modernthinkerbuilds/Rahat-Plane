@@ -84,7 +84,8 @@ from agents.the_scientist.state import *  # noqa: F401, F403
 # Load .env explicitly here so handler.py is self-sufficient. main.py
 # also calls load_dotenv() before importing this module, so this is a
 # belt-and-suspenders measure — load_dotenv is idempotent.
-load_dotenv()
+if not os.getenv("RAHAT_TEST_MODE"):   # hermetic under test: the owner's .env never leaks into pytest (2026-10-04)
+    load_dotenv()
 
 API_KEY = os.getenv("GEMINI_API_KEY")
 client = genai.Client(api_key=API_KEY) if API_KEY else None

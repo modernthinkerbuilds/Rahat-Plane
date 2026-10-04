@@ -33,7 +33,8 @@ from datetime import datetime, timedelta
 
 from dotenv import load_dotenv
 
-load_dotenv()
+if not os.getenv("RAHAT_TEST_MODE"):   # hermetic under test: the owner's .env never leaks into pytest (2026-10-04)
+    load_dotenv()
 
 # ─────────────────────────── Athlete constants (PRD §3 + §6) ───────────────────────────
 BMR_KCAL          = int(os.getenv("BMR_KCAL", "2100"))

@@ -103,7 +103,8 @@ from agents.the_scientist.protocols import (  # noqa: E402
 from core import io as cio  # noqa: E402
 
 # ─────────────────────────── Config ───────────────────────────
-load_dotenv()
+if not os.getenv("RAHAT_TEST_MODE"):   # hermetic under test: the owner's .env never leaks into pytest (2026-10-04)
+    load_dotenv()
 API_KEY  = os.getenv("GEMINI_API_KEY")
 TOKEN    = os.getenv("SCIENTIST_BOT_TOKEN")
 CHAT_ID  = os.getenv("TELEGRAM_CHAT_ID")
