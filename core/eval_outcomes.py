@@ -282,6 +282,77 @@ def contract_from_golden(case: dict, library: OutcomeLibrary) -> Contract:
     return Contract(library_version=library.version, frame_schema_version=Frame.model_fields["schema_version"].default, outcomes=outs)
 
 
+# ── frame faithfulness (quality pass 2026-10-04) ─────────────────────────
+# The verifier checks the answer against the model's OWN reading of the
+# ask (U3 only asks that the frame be internally consistent). A reading
+# that drops the spouse from "coffee near me" — or, as on the morning of
+# 2026-10-04, takes the primary member for the spouse — produces an
+# answer that passes every diet check for the wrong people. So the reading itself is
+# scored against the case: who is speaking and who is eating are musts
+# (they decide whose rules apply); the rest is reported per field.
+FRAME_MUST_FIELDS = ("speaker", "eaters")
+_CHILDREN = ("infant", "toddler")
+
+
+def _eaters(frame: Frame) -> tuple[frozenset[str], bool]:
+    """(the members eating, the baby and the toddler aside; any guests along)."""
+    return frozenset(d for d in frame.diners if d not in _CHILDREN and not d.startswith("guest")), \
+        bool(frame.guests or any(d.startswith("guest") for d in frame.diners))
+
+
+def _words(label: str | None) -> set[str]:
+    return {w for w in re.findall(r"[a-z0-9]+", (label or "").lower())
+            if w not in ("the", "a", "an", "near", "in", "at", "of", "trail", "city", "san")}
+
+
+def frame_faithfulness(model: Frame, oracle: Frame) -> dict[str, dict]:
+    """Field by field: {field: {"ok", "model", "expected"}}. Only fields the
+    case speaks to are compared (an oracle with no meal says nothing about
+    the meal)."""
+    out: dict[str, dict] = {}
+
+    def put(name: str, ok: bool, got, want) -> None:
+        out[name] = {"ok": bool(ok), "model": got, "expected": want}
+
+    put("speaker", model.speaker == oracle.speaker, model.speaker, oracle.speaker)
+    m_eat, m_guests = _eaters(model)
+    o_eat, o_guests = _eaters(oracle)
+    put("eaters", m_eat == o_eat and m_guests == o_guests,
+        sorted(m_eat) + (["guests"] if m_guests else []), sorted(o_eat) + (["guests"] if o_guests else []))
+    put("children", {d for d in model.diners if d in _CHILDREN} == {d for d in oracle.diners if d in _CHILDREN},
+        sorted(d for d in model.diners if d in _CHILDREN), sorted(d for d in oracle.diners if d in _CHILDREN))
+    if oracle.meal:
+        put("meal", (model.meal or "").lower() == oracle.meal.lower(), model.meal, oracle.meal)
+    o_where = oracle.area or oracle.origin
+    if o_where is not None and o_where.label:
+        m_labels = " ".join(p.label for p in (model.area, model.origin) if p is not None)
+        want = _words(o_where.label)
+        put("where", bool(want) and len(want & _words(m_labels)) * 2 >= len(want), m_labels or None, o_where.label)
+    if oracle.radius is not None:
+        got = model.radius.minutes if model.radius else None
+        put("radius", got is not None and abs(got - oracle.radius.minutes) <= 5, got, oracle.radius.minutes)
+    o_ex = {e.value.lower() for e in oracle.exclusions if e.kind == "cuisine"}
+    if o_ex:
+        m_ex = {e.value.lower() for e in model.exclusions if e.kind == "cuisine"}
+        put("exclusions", o_ex <= m_ex, sorted(m_ex), sorted(o_ex))
+    if oracle.refers_to_last_answer:
+        put("follow_up", model.refers_to_last_answer, model.refers_to_last_answer, True)
+    return out
+
+
+def score_frame(result: "CaseResult", model: Frame, oracle: Frame) -> None:
+    """Record the reading's faithfulness on the result; a wrong speaker or a
+    wrong set of eaters fails the case with the outcome id FRAME."""
+    ff = frame_faithfulness(model, oracle)
+    result.frame_fields = {k: v["ok"] for k, v in ff.items()}
+    result.frame_matches_oracle = all(ff[k]["ok"] for k in FRAME_MUST_FIELDS)
+    result.frame_notes = [f"{k}: read {v['model']}, the case says {v['expected']}" for k, v in ff.items() if not v["ok"]]
+    if not result.frame_matches_oracle:
+        result.failed = sorted(set(result.failed) | {"FRAME"})
+        result.passed = False
+        result.messages = [f"FRAME: {n}" for n in result.frame_notes if n.split(":")[0] in FRAME_MUST_FIELDS] + result.messages
+
+
 # ── the stub executor ───────────────────────────────────────────────────
 def stub_execute(tenant: Any, frame: Frame, ctx: dict) -> cexecute.ExecResult:
     """A deterministic knowledge-base picker standing in for the model:
@@ -394,6 +465,8 @@ class CaseResult:
     trace_id: str = ""
     traps: list[str] = field(default_factory=list)
     frame_matches_oracle: bool | None = None
+    frame_fields: dict[str, bool] = field(default_factory=dict)    # per reading field: did the model agree with the case?
+    frame_notes: list[str] = field(default_factory=list)
 
     def as_json(self) -> dict:
         return self.__dict__.copy()
@@ -427,6 +500,22 @@ class EvalReport:
     def cost(self) -> float:
         return sum(c.cost_usd for c in self.cases)
 
+    def frame_summary(self) -> str:
+        """'reading: speaker 14/14 · who is eating 12/14 · meal …' over the cases a model read
+        (empty in stub mode, where the case's own reading is used)."""
+        counts: dict[str, list[int]] = {}
+        for c in self.cases:
+            for k, ok in (c.frame_fields or {}).items():
+                counts.setdefault(k, [0, 0])
+                counts[k][0] += int(ok)
+                counts[k][1] += 1
+        if not counts:
+            return ""
+        names = {"speaker": "speaker", "eaters": "who is eating", "children": "baby/toddler", "meal": "meal",
+                 "where": "where", "radius": "radius", "exclusions": "exclusions", "follow_up": "follow-up"}
+        order = [k for k in names if k in counts]
+        return "reading: " + " · ".join(f"{names[k]} {counts[k][0]}/{counts[k][1]}" for k in order)
+
     def render(self, *, verbose: bool = False) -> str:
         fails = ", ".join(f"{k} ×{v}" for k, v in list(self.fail_counts().items())[:8]) or "none"
         lat = sorted(c.latency_ms for c in self.cases) or [0]
@@ -437,6 +526,9 @@ class EvalReport:
             f"{sum(c.tool_calls for c in self.cases)} tool calls · median latency {lat[len(lat) // 2] / 1000:.1f}s · "
             f"floor {sum(1 for c in self.cases if c.floor_used)} · errors {sum(1 for c in self.cases if c.error)}",
         ]
+        frame_line = self.frame_summary()
+        if frame_line:
+            lines.append(frame_line)
         for c in self.cases:
             mark = "✓" if c.passed else "✗"
             extra = f" [{', '.join(c.failed)}]" if c.failed else ""
@@ -446,12 +538,16 @@ class EvalReport:
             if verbose:
                 for m in c.messages[:6]:
                     lines.append(f"      - {m}")
+                for n in c.frame_notes[:4]:
+                    if not any(n in m for m in c.messages[:6]):
+                        lines.append(f"      ~ reading: {n}")
         return "\n".join(lines)
 
     def as_json(self) -> dict:
         return {"agent": self.agent, "mode": self.mode, "set": self.set_path, "profile": self.profile,
                 "started": self.started, "finished": self.finished,
                 "passed": self.passed, "total": self.total, "fail_counts": self.fail_counts(), "cost_usd": round(self.cost(), 5),
+                "reading": self.frame_summary(),
                 "cases": [c.as_json() for c in self.cases]}
 
 
@@ -522,8 +618,8 @@ def run_case(tenant: Any, case: dict, *, mode: str, db_path: str, cassette_dir: 
             cr.judged = {v.outcome: (v.verdict if v.valid else "invalid") for v in res.control.judge.verdicts}
         if res.frame is not None:
             oracle = frame_from_golden(case, library=library)
-            cr.frame_matches_oracle = (res.frame.meal == oracle.meal) and (set(res.frame.diners) == set(oracle.diners))
             _score(tenant, res.frame, contract, res.answer, res.ctx, cr)
+            score_frame(cr, res.frame, oracle)
         else:
             _score(tenant, frame_from_golden(case, library=library), contract, None, res.ctx, cr)
     cr.latency_ms = cr.latency_ms or int((time.monotonic() - t0) * 1000)
