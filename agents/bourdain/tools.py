@@ -714,6 +714,10 @@ def _point(con, label: str, ctx: dict) -> tuple[float, float] | None:
     m = re.match(r"^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$", lab)
     if m:
         return float(m.group(1)), float(m.group(2))
+    if re.fullmatch(r"[0-9a-f]{16}", lab):          # a place_id, as every other tool hands it out
+        p = query.place(con, lab)
+        if p and p.get("lat") is not None:
+            return (p["lat"], p["lng"])
     if lab in ("stay", "the stay", "hotel", "the hotel", "home", "the house", "origin", "here"):
         o = ctx.get("origin_latlng")
         if o:
