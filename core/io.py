@@ -176,6 +176,8 @@ def llm_client():
 # exactly (optional "models/" prefix). Preview / omni / lite / experimental
 # variants are excluded — they may reject generateContent or tool configs.
 _FLASH_STABLE_RE = re.compile(r"^(?:models/)?gemini-(\d+)(?:\.(\d+))?-flash$")
+_PICK_TTL_S = 6 * 3600
+_PICKED: tuple | None = None        # (client, picked at, model id)
 
 
 def llm_pick_flash_model() -> str:
@@ -191,12 +193,20 @@ def llm_pick_flash_model() -> str:
     `gemini-<major>.<minor>-flash` names qualify, and "newest" compares
     the parsed version tuple, not string order.
     """
-    global _LLM_MODEL_ID
+    global _LLM_MODEL_ID, _PICKED
     if os.getenv("GEMINI_MODEL"):
         return _LLM_MODEL_ID          # explicit pin — never auto-upgrade
     c = llm_client()
     if not c:
         return _LLM_MODEL_ID
+    # The cache this docstring promised (2026-10-04): the list was fetched
+    # on EVERY call — two paginated GETs before each of a harness ask's
+    # ~15–20 model calls. Kept per client object, for _PICK_TTL_S, so a
+    # newly released model is still picked up without a restart.
+    import time as _time
+    now = _time.monotonic()
+    if _PICKED is not None and _PICKED[0] is c and now - _PICKED[1] < _PICK_TTL_S:
+        return _PICKED[2]
     try:
         best, best_ver = None, (-1, -1)
         for m in c.models.list():
@@ -208,6 +218,7 @@ def llm_pick_flash_model() -> str:
                 best, best_ver = m.name, ver
         if best:
             _LLM_MODEL_ID = best
+        _PICKED = (c, now, _LLM_MODEL_ID)
     except Exception:
         pass
     return _LLM_MODEL_ID
