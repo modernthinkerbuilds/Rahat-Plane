@@ -92,11 +92,23 @@ def _links(pe: PlaceEvidence) -> list[str]:
     return out
 
 
+def _household_words(text: str, labels: dict[str, str] | None) -> str:
+    """A check's own words name members by id ("… for primary is
+    unverified"); the household reads its own words ("… for you …").
+    LIVE (2026-10-04, replayed): a soft finding went out with "primary" in it."""
+    if not labels or not text:
+        return text
+    pat = re.compile(r"\b(" + "|".join(re.escape(k) for k in sorted(labels, key=len, reverse=True)) + r")\b")
+    return pat.sub(lambda m: labels.get(m.group(1), m.group(1)), text)
+
+
 def _source_label(f: dict) -> str | None:
     url = f.get("source_url") or ""
     name = f.get("source_name") or ""
     date = str(f.get("observed_at") or "")[:10]
     host = urllib.parse.urlparse(url).netloc.replace("www.", "") if url.startswith("http") else ""
+    if name == "Google Maps":            # Google's attribution terms: the words "Google Maps", as written
+        host = "Google Maps"
     label = host or (name if name and name not in ("model", "seed") else "") or ("household notes" if f.get("method") in ("seed", "owner", "user_report") else "")
     if not label:
         return None
@@ -181,7 +193,7 @@ def render(frame: Frame, answer: Answer, evidence: Evidence, *, now: datetime, m
     if answer.question:
         lines.append("Q: " + md_escape(take(answer.question, "question")))
     for d in out.disclosures:
-        lines.append(md_escape(d))
+        lines.append(md_escape(_household_words(d, labels)))
     if sources:
         out.sources = sources
     tail = ("Sources: " + md_escape(", ".join(sources[:6])) + " · " if sources else "") + f"Checked {_fmt_time(now)}"
