@@ -75,6 +75,11 @@
       "search_queries": 10,
       "usd": 0.5
     },
+    "per_ask_wide": {
+      "tool_calls": 18,
+      "search_queries": 14,
+      "usd": 0.8
+    },
     "daily_usd": null
   },
   "latency": {

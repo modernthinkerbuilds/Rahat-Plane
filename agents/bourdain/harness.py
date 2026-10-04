@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -51,6 +52,13 @@ GAP_WORDS = {
     "U6": "something you ruled out", "U7": "already turned down", "N2": "one of your regulars",
     "A1": "no address I could map",
 }
+
+# A wide ask wants a spread of options, not one answer (LIVE 2026-10-04: "anywhere in the area, I can
+# drive 50 minutes" came back with one café): a drive of half an hour or more, or words asking for range.
+WIDE_RADIUS_MIN = 30
+WIDE_WORDS = re.compile(r"\b(options|choices|alternatives|ideas|list|anywhere|throughout|across|all over|everywhere|"
+                        r"wider|widen|expand|a few|several|other places|more places)\b", re.I)
+WIDE_MAX_CHARS = 3000          # five picks don't fit the one-screen 1800; Telegram's own limit is 4096
 
 
 class BourdainTenant:
@@ -268,7 +276,8 @@ class BourdainTenant:
     def moment(self, ctx: dict, frame: Frame) -> dict:
         now = ctx["now"]
         last = ctx.get("last_answer") or {}
-        return {
+        budget = ctx.get("budget") or self.budgets.per_ask
+        out = {
             "now": now.strftime("%Y-%m-%d %H:%M"), "weekday": now.strftime("%A"), "mode": ctx.get("mode"),
             "leg": {k: ctx["leg"].get(k) for k in ("leg_id", "kind", "label", "city", "tz", "minutes_mode", "radius_min", "stay_name")},
             "origin": ctx.get("origin_label"), "origin_known": ctx.get("origin_latlng") is not None,
@@ -278,9 +287,24 @@ class BourdainTenant:
             "last_answer_picks": [p.get("name") for p in last.get("picks", [])],
             "last_answer_rejected": last.get("rejected", []),
             "weather_on_file": ctx.get("weather"),
-            "brake": {"tool_calls": self.budgets.per_ask.tool_calls, "search_queries": self.budgets.per_ask.search_queries,
-                      "usd": self.budgets.per_ask.usd},
+            "brake": {"tool_calls": budget.tool_calls, "search_queries": budget.search_queries, "usd": budget.usd},
         }
+        if ctx.get("wide"):
+            out["wide_ask"] = {"picks_max": ctx.get("max_picks", 5),
+                               "how": "a spread across the area, not the nearest one: search two or three towns or "
+                                      "neighborhoods in the range, verify each pick, aim for three or four, still one "
+                                      "clear recommendation"}
+        return out
+
+    def is_wide(self, frame: Frame, text: str, ctx: dict) -> bool:
+        """A wide ask: a drive of half an hour or more, the whole area, or
+        more options asked for. A day plan, or a check on one named place,
+        is never wide."""
+        if "plan" in frame.intents or (frame.named_places and not frame.refers_to_last_answer):
+            return False
+        if frame.radius is not None and frame.radius.minutes >= WIDE_RADIUS_MIN:
+            return True
+        return bool(WIDE_WORDS.search(text or ""))
 
     def labels(self, ctx: dict, frame: Frame | None = None) -> dict[str, str]:
         """What a reply calls each diner ("you" for the speaker)."""
@@ -324,7 +348,8 @@ class BourdainTenant:
         return hrender.render(frame, answer, evidence, now=ctx["now"], mode=ctx.get("mode", "home"),
                               origin=ctx.get("origin_latlng"), minutes_mode=ctx.get("minutes_mode", "drive"),
                               banned=self.banned_phrases, chains_label_from=int(chains.get("label_from_locations", 2)),
-                              disclosures=disclosures, labels=self.labels(ctx, frame))
+                              disclosures=disclosures, labels=self.labels(ctx, frame),
+                              max_chars=WIDE_MAX_CHARS if ctx.get("wide") else hrender.MAX_CHARS)
 
     def gap_reason(self, f: cverify.Failure) -> str:
         """Why a found place isn't offered, said to the household."""

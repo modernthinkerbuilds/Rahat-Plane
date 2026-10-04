@@ -37,6 +37,8 @@ from core.harness.render import Rendered
 from core.tools import Brake, ToolRegistry
 
 ENV_SANITY = "RAHAT_HARNESS_SANITY"       # "0" turns the cheap frame sanity check off
+PICKS = 3                                 # at most three picks and one clear recommendation
+WIDE_PICKS = 5                            # a wide ask: up to five, spread across the area
 
 
 class SanityOut(BaseModel):
@@ -221,10 +223,19 @@ def run(tenant: Tenant, text: str, *, chat_id: str, now: datetime, serve_mode: s
 
     # 3. Execute (+ repairs through the controller)
     registry = tenant.registry(ctx)
-    budgets = tenant.budgets.per_ask
+    # A wide ask (a long drive, a whole region, "other options") wants a spread, not one answer: more picks and
+    # the research to back them (LIVE 2026-10-04: a 50-minute, whole-area ask came back with one café).
+    wide = bool(hasattr(tenant, "is_wide") and tenant.is_wide(frame, text, ctx))
+    wide_budget = getattr(tenant.budgets, "per_ask_wide", None)
+    budgets = wide_budget if (wide and wide_budget is not None) else tenant.budgets.per_ask
+    max_picks = WIDE_PICKS if wide else PICKS
+    ctx["wide"], ctx["max_picks"], ctx["budget"] = wide, max_picks, budgets
+    if wide:
+        result.steps.append({"step": "breadth", "wide": True, "max_picks": max_picks, "tool_calls": budgets.tool_calls})
     brake = Brake(max_tool_calls=budgets.tool_calls, max_search_queries=budgets.search_queries, max_usd=budgets.usd)
     prompt = cexecute.build_prompt(ask=text, frame=frame, contract=contract, library_texts=texts,
-                                   moment=tenant.moment(ctx, frame), rules_text=tenant.rules_text(ctx, frame))
+                                   moment=tenant.moment(ctx, frame), rules_text=tenant.rules_text(ctx, frame),
+                                   max_picks=max_picks)
     latency = tenant.latency
     time_budget = float(getattr(latency, "answer_s_trip" if mode == "trip" else "answer_s_home", 60.0)) \
         if time_budget_s is None else float(time_budget_s)

@@ -52,6 +52,7 @@ class PerAsk(BaseModel):
 
 class Budgets(BaseModel):
     per_ask: PerAsk = Field(default_factory=PerAsk)
+    per_ask_wide: PerAsk | None = None   # a wide ask (a long drive, a whole region, "options"): a spread, not one answer
     daily_usd: float | None = None   # None = no daily cap (the default since 2026-10-03)
 
 

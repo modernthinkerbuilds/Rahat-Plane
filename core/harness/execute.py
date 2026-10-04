@@ -68,8 +68,25 @@ def _contract_text(contract: Contract, library_texts: dict[str, str]) -> str:
     return "\n".join(lines)
 
 
+_PICK_WORDS = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six"}
+
+
+def _stop_rule(max_picks: int) -> str:
+    """When to stop researching. A wide ask (more than three picks allowed)
+    wants a spread: stopping at "enough for one recommendation" gave two
+    picks with most of the research budget unspent (replayed 2026-10-04)."""
+    n = _PICK_WORDS.get(max_picks, str(max_picks))
+    if max_picks > 3:
+        return ("Keep going until you have three or four verified candidates spread across the area — fewer only "
+                f"when the searches run dry, {n} when they come easily — with a named main for every diner and one "
+                f"clear recommendation (at most {n} picks); then stop calling tools and reply with the single word "
+                f"{READY}.")
+    return (f"When you have enough verified candidates for one clear recommendation (at most {n} picks, a named main "
+            f"for every diner), stop calling tools and reply with the single word {READY}.")
+
+
 def build_prompt(*, ask: str, frame: Frame, contract: Contract, library_texts: dict[str, str],
-                 moment: dict[str, Any], rules_text: str, hints: list[str] | None = None) -> str:
+                 moment: dict[str, Any], rules_text: str, hints: list[str] | None = None, max_picks: int = 3) -> str:
     """The Execute step's opening user turn: the ask, the frame, the
     contract, the moment and the rules for the people at the table."""
     parts = [
@@ -84,8 +101,7 @@ def build_prompt(*, ask: str, frame: Frame, contract: Contract, library_texts: d
         _contract_text(contract, library_texts),
         "How to work: use the tools to find and verify candidates (the knowledge base first, saves first; the web "
         "only through the tools). Every fact must come from a tool result; you pick places, you never supply a "
-        "fact. When you have enough verified candidates for one clear recommendation (at most three picks, a "
-        f"named main for every diner), stop calling tools and reply with the single word {READY}.",
+        "fact. " + _stop_rule(max_picks),
     ]
     if hints:
         parts.append("Repair hints from the verifier (fix every one; call tools where needed):\n- " + "\n- ".join(hints))
