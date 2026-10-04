@@ -60,11 +60,9 @@ def sci_module(tmp_path_factory):
         ]))
     plan_path.write_text("\n".join(blocks) + "\n")
 
-    live = ROOT / "vault" / "rahat.db"
-    if live.exists():
-        shutil.copy(live, test_db)
-    else:
-        test_db.touch()
+    # Never the live database (quality pass 2026-10-04): copying vault/rahat.db made this
+    # fixture read the household's own data on the Mac and an empty DB everywhere else.
+    test_db.touch()
 
     spec = importlib.util.spec_from_file_location(
         "sci", ROOT / "agents" / "the_scientist" / "main.py")

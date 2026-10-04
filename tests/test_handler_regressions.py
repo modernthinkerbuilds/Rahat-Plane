@@ -157,11 +157,9 @@ def sci_for_routing(tmp_path):
         ]))
     plan_path.write_text("\n".join(blocks) + "\n")
 
-    live = ROOT / "vault" / "rahat.db"
-    if live.exists():
-        shutil.copy(live, test_db)
-    else:
-        test_db.touch()
+    # Never the live database (quality pass 2026-10-04): copying vault/rahat.db made this
+    # fixture read the household's own data on the Mac and an empty DB everywhere else.
+    test_db.touch()
 
     spec = importlib.util.spec_from_file_location(
         "sci", ROOT / "agents" / "the_scientist" / "main.py")
@@ -554,20 +552,17 @@ def sci_with_db(tmp_path, monkeypatch):
         ]))
     plan_path.write_text("\n".join(blocks) + "\n")
 
-    live = ROOT / "vault" / "rahat.db"
-    if live.exists():
-        shutil.copy(live, test_db)
-    else:
-        # Minimal schema for /fix's DELETE+INSERT to work.
-        con = sqlite3.connect(test_db)
-        con.executescript(
-            "CREATE TABLE IF NOT EXISTS raw_vitals ("
-            " metric_type TEXT, value REAL, timestamp TEXT);"
-            "CREATE TABLE IF NOT EXISTS workout_log ("
-            " kind TEXT, kcal REAL, ts DATETIME);"
-        )
-        con.commit()
-        con.close()
+    # Never the live database (quality pass 2026-10-04): the minimal schema for
+    # /fix's DELETE+INSERT, always.
+    con = sqlite3.connect(test_db)
+    con.executescript(
+        "CREATE TABLE IF NOT EXISTS raw_vitals ("
+        " metric_type TEXT, value REAL, timestamp TEXT);"
+        "CREATE TABLE IF NOT EXISTS workout_log ("
+        " kind TEXT, kcal REAL, ts DATETIME);"
+    )
+    con.commit()
+    con.close()
 
     cio.DB_PATH = test_db
 

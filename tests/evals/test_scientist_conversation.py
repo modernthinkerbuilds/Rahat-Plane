@@ -76,12 +76,9 @@ def sci_module(tmp_path_factory):
         ]))
     plan_path.write_text("\n".join(blocks) + "\n")
 
-    # Copy live DB if present; otherwise start empty (CI / fresh checkout).
-    live_db = ROOT / "vault" / "rahat.db"
-    if live_db.exists():
-        shutil.copy(live_db, test_db)
-    else:
-        test_db.touch()
+    # Never the live database (quality pass 2026-10-04): copying vault/rahat.db made the
+    # suite read the household's own data on the Mac and an empty DB everywhere else.
+    test_db.touch()
 
     # Load the legacy module under name 'sci' (matches the existing eval
     # harness so any internal references like sys.modules['sci'] work).
