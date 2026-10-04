@@ -21,9 +21,11 @@ records the live run wrote — the knowledge base ends up identical.
 from __future__ import annotations
 
 import json
+import os
 import re
 import urllib.parse
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -37,6 +39,9 @@ from core import weather as cweather
 from core.kb import geo, query, schema as kb
 from core.tools import ToolRegistry, ToolResult
 from agents.bourdain import profile as cprofile
+
+_REPO = Path(__file__).resolve().parents[2]
+_REPO_AS_REACHED = Path(os.path.abspath(__file__)).parents[2]     # the same, through any symlink
 
 AGENT = "bourdain"
 LOCATION_OVERRIDE_HOURS = 3.0
@@ -286,6 +291,21 @@ def _sanitize_values(tool, args: dict, res: ToolResult, ctx: dict) -> ToolResult
     return res
 
 
+def _portable_source(src: str | None) -> str | None:
+    """Where the profile came from, without this machine's absolute path:
+    the value reaches the model, so a recording made on one checkout must
+    replay on another (and the path would name the machine's user)."""
+    if not src or not os.path.isabs(src):
+        return src
+    p = Path(os.path.normpath(src))
+    for root, resolve in ((_REPO_AS_REACHED, False), (_REPO, False), (_REPO, True)):
+        try:
+            return (p.resolve() if resolve else p).relative_to(root).as_posix()
+        except (ValueError, OSError, RuntimeError):
+            continue
+    return p.name
+
+
 def build_registry(ctx: dict, *, allow: list[str] | None = None) -> ToolRegistry:
     reg = ToolRegistry(allow=allow)
     reg.pre_hooks.append(_deny_blocked_hosts)
@@ -297,7 +317,7 @@ def build_registry(ctx: dict, *, allow: list[str] | None = None) -> ToolRegistry
     def get_profile(a: MembersArgs, c):
         members = a.members or cprofile.member_ids(prof)
         return {"members": {m: prof["members"].get(m, {"role": "guest"}) for m in members},
-                "household": prof.get("household", {}), "source": prof.get("_source")}
+                "household": prof.get("household", {}), "source": _portable_source(prof.get("_source"))}
 
     @reg.tool("get_household_rules", "Rules learned from the household's verdicts, with their provenance.", args=NoArgs)
     def get_household_rules(a: NoArgs, c):
