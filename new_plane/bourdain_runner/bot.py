@@ -18,6 +18,7 @@ from __future__ import annotations
 import logging
 import os
 from datetime import datetime
+from typing import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -104,8 +105,10 @@ def _handle_household(chat_id: str, role: str) -> str:
 
 
 def process_message(chat_id: str | int, text: str,
-                    now: datetime | None = None) -> str:
-    """One inbound message → one reply. Never raises, never empty."""
+                    now: datetime | None = None, *,
+                    send: Callable[[str], None] | None = None) -> str:
+    """One inbound message → one reply. Never raises, never empty.
+    `send` lets the harness post its holding line while it researches."""
     from core import decisions
     cid = str(chat_id)
     text = (text or "").strip()
@@ -113,7 +116,7 @@ def process_message(chat_id: str | int, text: str,
     try:
         with decisions.span("bourdain_bot.turn", trace_id=tid,
                             actor="bourdain", input=text[:200]) as s:
-            reply = _process(cid, text, now or trip_now())
+            reply = _process(cid, text, now or trip_now(), send=send)
             s.output = (reply or "")[:200]
     except Exception as e:  # noqa: BLE001 — the poll loop must survive
         logger.exception("bourdain_bot turn failed: %s", e)
@@ -124,7 +127,8 @@ def process_message(chat_id: str | int, text: str,
     return reply
 
 
-def _process(cid: str, text: str, now: datetime) -> str:
+def _process(cid: str, text: str, now: datetime,
+             send: Callable[[str], None] | None = None) -> str:
     low = text.lower()
     if low.startswith("/join"):
         return _handle_join(cid, text)
@@ -142,4 +146,4 @@ def _process(cid: str, text: str, now: datetime) -> str:
     from agents.bourdain import handler
     if low.startswith("/start") or low.startswith("/help"):
         return handler.HELP
-    return handler.route(text, chat_id=cid, now=now)
+    return handler.route(text, chat_id=cid, now=now, holding_line=send)

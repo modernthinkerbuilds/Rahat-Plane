@@ -90,7 +90,9 @@ def cmd_serve() -> int:
                     continue
                 last_id = max(last_id, tu.update_id)
                 logger.info("[in] chat=%s text=%r", tu.chat_id, tu.text[:200])
-                reply = process_message(tu.chat_id, tu.text)
+                reply = process_message(
+                    tu.chat_id, tu.text,
+                    send=lambda t, _cid=tu.chat_id: tg.send_message(_cid, t))
                 tg.send_message(tu.chat_id, reply)
                 logger.info("[out] chat=%s len=%d", tu.chat_id, len(reply))
             consecutive_errors = 0

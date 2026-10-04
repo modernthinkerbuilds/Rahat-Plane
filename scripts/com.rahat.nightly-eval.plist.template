@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+    Launchd manifest TEMPLATE for com.rahat.nightly-eval (2026-10-04):
+    the nightly outcome-scored replay of every agent's golden set from cassettes (ADR-018 §2.10); a failing must blocks the auto-commit.
+
+    Render and load by hand (the owner only; see private/prds/platform/RUNBOOK_2026-10-04.md):
+        sed -e "s|{{RAHAT_HOME}}|$HOME/developer/agency/rahat|g" \
+            -e "s|{{PYTHON_BIN}}|$HOME/developer/agency/rahat/.venv/bin/python|g" \
+            scripts/com.rahat.nightly-eval.plist.template > ~/Library/LaunchAgents/com.rahat.nightly-eval.plist
+        launchctl load -w ~/Library/LaunchAgents/com.rahat.nightly-eval.plist
+
+    Secrets live in .env (the script loads dotenv itself). NEVER put a
+    literal $VAR here: launchd does not shell-expand (the 2026-08-01
+    literal-$HOME incident).
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.rahat.nightly-eval</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>{{PYTHON_BIN}}</string>
+        <string>-u</string>
+        <string>scripts/eval_outcomes.py</string>
+        <string>--agent</string>
+        <string>bourdain</string>
+        <string>--mode</string>
+        <string>replay</string>
+        <string>--save</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>{{RAHAT_HOME}}</string>
+
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict>
+            <key>Hour</key>
+            <integer>3</integer>
+            <key>Minute</key>
+            <integer>10</integer>
+        </dict>
+    </array>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>{{RAHAT_HOME}}/vault/nightly_eval.log</string>
+    <key>StandardErrorPath</key>
+    <string>{{RAHAT_HOME}}/vault/nightly_eval.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>
