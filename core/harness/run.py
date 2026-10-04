@@ -251,6 +251,8 @@ def run(tenant: Tenant, text: str, *, chat_id: str, now: datetime, serve_mode: s
         result.tool_calls += res.tool_calls
         result.steps.append({"step": "execute" if prior is None else "repair", "rounds": res.rounds,
                              "tool_calls": res.tool_calls, "cost_usd": res.cost_usd, "error": res.error})
+        if "e" in _ev:
+            _ev["e"].refresh()           # what this round recorded is what the sanitizer and the checks read
         if res.answer is not None:
             # Citation slips are fixed, not punished: a wrong fact id costs the citation, never the place.
             res.answer, notes = sanitize_citations(res.answer, evidence_now())

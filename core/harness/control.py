@@ -115,9 +115,11 @@ def control(agent: str, *, first: ExecResult, verify_for: Callable[[Answer], cve
         return out
 
     hints: list[str] = []
+    check_repaired = False
     for round_no in range(max_repairs + 1):
+        in_time = (time.monotonic() - started_at) < time_budget_s
         if exec_res.answer is None:
-            if round_no < max_repairs and (round_no == 0 or (time.monotonic() - started_at) < time_budget_s):
+            if round_no < max_repairs and (round_no == 0 or in_time):
                 exec_res = run_exec(exec_res, ["the answer JSON did not validate: " + "; ".join(exec_res.problems[:4])])
                 out.execs.append(exec_res)
                 out.repairs += 1
@@ -135,9 +137,12 @@ def control(agent: str, *, first: ExecResult, verify_for: Callable[[Answer], cve
         hints = report.hints()
         if out.judge is not None and out.judge.authority in (cjudge.BLOCK,):
             hints += out.judge.hints()
-        # The first repair always runs: research alone outlasts the latency budget, and without it every
-        # failing pick was dropped unrepaired (LIVE 2026-10-04: repairs 0, the family got nothing).
-        if round_no < max_repairs and (round_no == 0 or (time.monotonic() - started_at) < time_budget_s):
+        # The first repair of the checks always runs, even after a JSON repair: research alone outlasts
+        # the latency budget, and without it every failing pick was dropped unrepaired (LIVE 2026-10-04:
+        # repairs 0, the family got nothing; then a JSON fix spent the one repair and a café was dropped
+        # for a diner line the repair would have fixed).
+        if round_no < max_repairs and (not check_repaired or in_time):
+            check_repaired = True
             exec_res = run_exec(exec_res, hints)
             out.execs.append(exec_res)
             out.repairs += 1

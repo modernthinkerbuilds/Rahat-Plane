@@ -214,6 +214,14 @@ class Evidence:
         self._facts_by_id: dict[int, dict] = {}
         self._saved: set[str] | None = None
 
+    def refresh(self) -> None:
+        """Forget what was read about each place. A repair round can record
+        new facts (a rating, the hours, the place's own status) for a place
+        the first answer already named; the checks must see them. Records by
+        id never change, so those stay."""
+        self._places.clear()
+        self._saved = None
+
     # ---- places ----
     def place(self, place_id: str) -> PlaceEvidence:
         if place_id in self._places:
