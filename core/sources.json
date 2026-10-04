@@ -10,6 +10,7 @@
     "api.weather.gov":     {"policy": "api", "trust_tier": "official", "notes": "free government API; identify with the User-Agent; forecasts carry issuance times"},
     "forecast.weather.gov":{"policy": "check_robots", "trust_tier": "official"},
     "nominatim.openstreetmap.org": {"policy": "api", "trust_tier": "open_data", "rate_limit_per_s": 1, "notes": "geocoding only; attribution required; one request per second"},
+    "geocoding.geo.census.gov": {"policy": "api", "trust_tier": "official", "rate_limit_per_s": 10, "notes": "U.S. Census Bureau geocoder: US street addresses only; free, no key; public domain"},
     "www.tripadvisor.com": {"policy": "check_robots", "trust_tier": "aggregator"},
     "www.restaurantji.com":{"policy": "check_robots", "trust_tier": "aggregator"},
     "wanderlog.com":       {"policy": "check_robots", "trust_tier": "aggregator"},

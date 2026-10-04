@@ -2,8 +2,8 @@
 
 `chat()` is a single Gemini `generate_content` call with a system
 prompt, a message history in Gemini's own content shape, optional
-native function declarations, optional Google Search grounding and an
-optional JSON response schema. Every call: is replayable from a
+native function declarations, optional Google Search or Google Maps
+grounding and an optional JSON response schema. Every call: is replayable from a
 cassette keyed on the whole request; checks the actor's daily cap (an
 error result, never an exception, so the controller can disclose);
 writes one ledger row with the four token buckets and the grounded
@@ -71,6 +71,7 @@ class ChatResult:
     from_cassette: bool = False
     latency_ms: int = 0
     model_parts: list[dict] = field(default_factory=list)      # the model's turn, to append to history
+    maps_places: list[dict] = field(default_factory=list)      # Google Maps grounding: [{url, title, text, place_id}]
 
     @property
     def ok(self) -> bool:
@@ -173,6 +174,13 @@ def _build_config(request: dict) -> dict:
         tools.append({"function_declarations": request["tools"]})
     if request.get("search"):
         tools.append({"google_search": {}})
+    maps = request.get("maps")
+    if maps:
+        # Grounding with Google Maps (Gemini API): the places Maps returns come back as grounding chunks.
+        tools.append({"google_maps": {}})
+        if isinstance(maps, dict) and maps.get("lat") is not None and maps.get("lng") is not None:
+            cfg["tool_config"] = {"retrieval_config": {"lat_lng": {"latitude": float(maps["lat"]),
+                                                                   "longitude": float(maps["lng"])}}}
     if tools:
         cfg["tools"] = tools
     if request.get("schema") is not None:
@@ -227,10 +235,21 @@ def _serialize_response(resp: Any) -> dict:
         if gm is not None:
             chunks = getattr(gm, "grounding_chunks", None) or []
             urls = []
+            maps_places: list[dict] = []
             for ch in chunks:
                 web = getattr(ch, "web", None)
-                urls.append({"url": getattr(web, "uri", "") or "", "title": getattr(web, "title", "") or ""}
-                            if web is not None else {"url": "", "title": ""})
+                mp = getattr(ch, "maps", None)
+                if web is not None:
+                    urls.append({"url": getattr(web, "uri", "") or "", "title": getattr(web, "title", "") or ""})
+                elif mp is not None:
+                    place = {"url": getattr(mp, "uri", "") or "", "title": getattr(mp, "title", "") or "",
+                             "text": getattr(mp, "text", "") or "", "place_id": getattr(mp, "place_id", "") or ""}
+                    maps_places.append(place)
+                    urls.append({"url": place["url"], "title": place["title"]})
+                else:
+                    urls.append({"url": "", "title": ""})
+            if maps_places:
+                out["maps_places"] = maps_places
             supports = getattr(gm, "grounding_supports", None) or []
             cites: list[dict] = []
             for s in supports:
@@ -310,7 +329,7 @@ def _call_wire_with_retry(request: dict) -> dict:
 
 def chat(actor: str, kind: str, *, system: str = "", messages: list[dict],
          tools: list[dict] | None = None, response_schema: dict | type[BaseModel] | None = None,
-         search: bool = False, model: str | None = None, cheap: bool = False,
+         search: bool = False, maps: dict | bool | None = None, model: str | None = None, cheap: bool = False,
          temperature: float | None = None, thinking_budget: int | None = None,
          max_output_tokens: int | None = None, step: str = "", mode: str = "",
          trace_id: str | None = None, db_path: str | None = None,
@@ -320,6 +339,13 @@ def chat(actor: str, kind: str, *, system: str = "", messages: list[dict],
     request = {"model": model_id, "system": system, "messages": messages, "tools": tools or [],
                "schema": schema, "search": bool(search), "temperature": temperature,
                "thinking_budget": thinking_budget, "max_output_tokens": max_output_tokens}
+    if maps:
+        # Grounding with Google Maps around a point. The point is rounded to about a kilometre: what leaves
+        # the Mac is the neighborhood, never the household's exact address. (Only set when used, so every
+        # other call's cassette key is unchanged.)
+        request["maps"] = ({"lat": round(float(maps["lat"]), 2), "lng": round(float(maps["lng"]), 2)}
+                           if isinstance(maps, dict) and maps.get("lat") is not None and maps.get("lng") is not None
+                           else True)
 
     snap = _budget.check_budget(actor=actor, db_path=db_path)
     if snap.get("exceeded"):
@@ -360,7 +386,7 @@ def chat(actor: str, kind: str, *, system: str = "", messages: list[dict],
         tokens_in=int(usage.get("in", 0)), tokens_out=int(usage.get("out", 0)),
         tokens_thought=int(usage.get("thought", 0)), tokens_tool_prompt=int(usage.get("tool_prompt", 0)),
         stop_reason=raw.get("stop_reason", ""), from_cassette=from_cassette, latency_ms=latency,
-        model_parts=raw.get("parts", []),
+        model_parts=raw.get("parts", []), maps_places=list(raw.get("maps_places") or []),
     )
     result.cost_usd = 0.0 if from_cassette else ccost.cost_usd(
         model_id, result.tokens_in, result.tokens_out, tokens_thought=result.tokens_thought,
