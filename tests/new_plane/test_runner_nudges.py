@@ -19,6 +19,20 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _huberman_autocool_is_quiet(monkeypatch):
+    """The tick also runs Huberman's 21:30 autocool (added 2026-08-24).
+    These tests count Kobe's four nudges; left live, the autocool fired
+    for real whenever the suite ran between 21:30 and 21:59 and the extra
+    message broke the counts (full suite, 2026-10-04 21:39). Pinned by
+    tests/regression_registry/test_2026_10_04_nudge_tick_tests_ignore_the_clock.py."""
+    try:
+        import agents.huberman.handler as _hub
+    except Exception:  # noqa: BLE001 — the import-failure test covers this path
+        return
+    monkeypatch.setattr(_hub, "maybe_autocool", lambda *a, **k: None)
+
+
 @pytest.fixture
 def fake_tg():
     tg = MagicMock()
