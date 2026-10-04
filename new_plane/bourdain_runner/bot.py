@@ -40,17 +40,32 @@ def _primary_chat() -> str:
     return (os.getenv("BOURDAIN_PRIMARY_CHAT") or "").strip()
 
 
-def trip_now() -> datetime:
-    """Naive local time in the trip's zone when a trip is loaded, else
-    the machine clock. S4 makes the zone per leg."""
-    from agents.bourdain import state
-    if (state.trip() or {}).get("stays"):
-        try:
-            from zoneinfo import ZoneInfo
-            return datetime.now(ZoneInfo(TRIP_TZ)).replace(tzinfo=None)
-        except Exception:  # noqa: BLE001 — tzdata missing → machine clock
-            pass
-    return datetime.now()
+def trip_now(now_utc: datetime | None = None) -> datetime:
+    """Naive local time where the household is: the trip's zone while a
+    trip leg is on (by that leg's own local date), else the home zone from
+    the profile, else the machine clock. S4 makes the zone per leg.
+
+    LIVE BUG (2026-10-04): this returned trip time whenever a trip was
+    LOADED, so a week after the family flew home every reply ran on
+    Eastern time — "Checked 1:05 PM" at 10:05, hours checked three hours
+    ahead, "tonight" meaning the wrong evening."""
+    from datetime import timezone
+    utc = now_utc.astimezone(timezone.utc) if now_utc else datetime.now(timezone.utc)
+    try:
+        from zoneinfo import ZoneInfo
+        from agents.bourdain import resolve, state
+        trip = state.trip() or {}
+        if trip.get("stays"):
+            local = utc.astimezone(ZoneInfo(TRIP_TZ)).replace(tzinfo=None)
+            if resolve.leg_for(trip, local):
+                return local
+        from agents.bourdain import profile as cprofile
+        home_tz = str((cprofile.load().get("home") or {}).get("tz") or "").strip()
+        if home_tz:
+            return utc.astimezone(ZoneInfo(home_tz)).replace(tzinfo=None)
+    except Exception:  # noqa: BLE001 — tzdata missing or an unreadable store → machine clock
+        pass
+    return utc.astimezone().replace(tzinfo=None)
 
 
 def _ensure_primary(chat_id: str) -> str | None:
