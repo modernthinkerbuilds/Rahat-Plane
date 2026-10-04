@@ -106,15 +106,42 @@ def _without(text: str) -> set[str]:
     return out
 
 
+# A word the line says it AVOIDS is not ordered: "sweet waffle, avoiding
+# pork and lamb", "no pork, lamb or bacon", "instead of bacon". LIVE
+# (2026-10-04): the model explained that a waffle line kept a diner's rule,
+# and the check read the explanation as an order, dropping the café.
+_NEG_TRIGGERS = {"no", "not", "without", "avoiding", "avoid", "avoids", "excluding", "exclude", "excludes", "skip",
+                 "skips", "skipping", "hold", "holding", "minus", "sans", "never", "nor", "zero", "instead", "omit",
+                 "omitting", "omits", "drop", "dropping", "leave", "leaving"}
+_NEG_FILLER = {"the", "any", "a", "an", "of", "and", "or", "also", "all", "out", "both", "either", "neither"}
+
+
+def _negated_at(toks: list[str], i: int, diet_words: set[str]) -> bool:
+    """True when toks[i] sits in a list that a negation word opens."""
+    for j in range(i - 1, max(-1, i - 8), -1):
+        t = toks[j]
+        if t in _NEG_TRIGGERS:
+            return True
+        if t == "of" and j > 0 and toks[j - 1] == "free":          # "free of pork"
+            return True
+        if t in _NEG_FILLER or t in diet_words:
+            continue
+        return False
+    return False
+
+
 def _hits(text: str, hard: set[str], soft: set[str]) -> tuple[list[str], list[str]]:
     """(hard words, soft words) the line actually orders, after negations,
     substitutes and product words are read."""
     removed = _without(text)
     toks = _ordered(text)
+    diet_words = hard | soft | MEAT | CHICKEN | SEAFOOD
     h: list[str] = []
     sft: list[str] = []
     for i, t in enumerate(toks):
         if t in removed or not (t in hard or t in soft):
+            continue
+        if _negated_at(toks, i, diet_words):
             continue
         before = toks[max(0, i - 2):i]
         if any(b in ANALOGUE for b in before):
