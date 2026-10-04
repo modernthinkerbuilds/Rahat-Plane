@@ -12,6 +12,7 @@ acclaim, format, variety and novelty. Every rule reads the profile
 """
 from __future__ import annotations
 
+import json
 import re
 
 from core.harness.contract import ContractOutcome
@@ -46,16 +47,86 @@ HOLE_TAGS = {"hole_in_the_wall", "hole-in-the-wall", "casual", "counter", "no_fr
 TABLE_TAGS = {"table_service", "sit_down", "sit-down", "trattoria", "dining_room", "reservations"}
 
 
+# An avoided protein is a family of words: "avoid pork" covers bacon and
+# prosciutto. Unambiguous words fail; ambiguous ones (a burger, a ragu,
+# dumplings) are flagged so the line says which meat it is.
+PORK_HARD = {"pork", "bacon", "ham", "prosciutto", "pancetta", "salami", "pepperoni", "chorizo", "lardons", "carnitas",
+             "pastor", "guanciale", "soppressata", "mortadella", "chashu", "tonkatsu", "porchetta", "speck", "nduja",
+             "lechon", "cochinita"}
+PORK_SOFT = {"sausage", "sausages", "meatball", "meatballs", "dumpling", "dumplings", "bao", "ribs", "wonton", "wontons",
+             "gyoza", "mandu", "ramen", "tonkotsu"}
+BEEF_HARD = {"beef", "steak", "brisket", "bulgogi", "galbi", "kalbi", "pastrami", "oxtail", "asada", "ribeye", "sirloin",
+             "veal", "barbacoa", "corned", "wagyu"}
+BEEF_SOFT = {"burger", "burgers", "meatball", "meatballs", "bolognese", "ragu", "pho", "birria", "kebab", "kabob", "gyro",
+             "shawarma", "lasagna", "lasagne", "ribs", "sausage", "sausages", "dumpling", "dumplings"}
+SHELLFISH = {"shrimp", "prawn", "prawns", "crab", "lobster", "clam", "clams", "mussel", "mussels", "oyster", "oysters",
+             "scallop", "scallops", "crawfish", "shellfish", "camarones"}
+AVOID_FAMILIES: dict[str, tuple[set[str], set[str]]] = {
+    "pork": (PORK_HARD, PORK_SOFT), "beef": (BEEF_HARD, BEEF_SOFT), "seafood": (SEAFOOD, set()),
+    "fish": (SEAFOOD - SHELLFISH, set()), "shellfish": (SHELLFISH, set()), "meat": (MEAT, set()),
+    "chicken": (CHICKEN, set()), "egg": (EGG, set()), "eggs": (EGG, set()), "dairy": (DAIRY, set()),
+}
+# A substitute named before a meat word means it is not that meat:
+# "veggie sausage", "plant-based chicken", "eggless omelet".
+ANALOGUE = {"veggie", "vegan", "vegetarian", "plant", "based", "meatless", "impossible", "beyond", "mock", "faux",
+            "seitan", "jackfruit", "eggless", "imitation"}
+# A product word takes the protein named just before it: "turkey bacon" is
+# turkey, "mushroom burger" is mushroom. The protein word is judged itself.
+PRODUCT_WORDS = {"bacon", "sausage", "sausages", "burger", "burgers", "meatball", "meatballs", "ham", "pastrami", "chorizo",
+                 "pepperoni", "salami", "dumpling", "dumplings", "bolognese", "ragu", "pho", "birria", "kebab", "kabob", "gyro",
+                 "shawarma", "jerky", "patty", "nuggets", "wings", "bao", "ribs", "wonton", "wontons", "gyoza", "mandu",
+                 "lasagna", "lasagne", "katsu", "satay", "skewers"}
+PROTEIN_NAMES = ANALOGUE | {"turkey", "chicken", "beef", "lamb", "duck", "fish", "salmon", "tuna", "shrimp", "pork", "goat",
+                            "veal", "crab", "lobster", "tofu", "tempeh", "mushroom", "cauliflower", "eggplant", "beet",
+                            "bean", "lentil", "chickpea", "falafel", "paneer", "quinoa", "vegetable"}
+_NEG_RE = re.compile(
+    r"\b(?:without|hold the|minus|skip the|skip|sans|leave out(?: the)?|no)[\s-]+"
+    r"((?:(?!with\b|and\b|but\b|plus\b|on\b|over\b|frills\b|fuss\b|reservations\b)[\w']+[\s-]*){1,4}"
+    r"(?:\([^)]*\))?)", re.I)
+_FREE_RE = re.compile(r"\b(\w+)-free\b", re.I)
+
+
 def _tokens(s: str) -> set[str]:
     return {w for w in re.sub(r"[^a-z0-9 ]+", " ", (s or "").lower()).split()}
 
 
-def _without(note: str) -> set[str]:
-    """Words a diner line removes: 'without the dried shrimp', 'no egg', 'hold the bacon'."""
+def _ordered(s: str) -> list[str]:
+    return re.sub(r"[^a-z0-9 ]+", " ", (s or "").lower()).split()
+
+
+def _without(text: str) -> set[str]:
+    """Words a diner line takes out: 'without the dried shrimp', 'no egg',
+    'on a no-egg day', 'skip the mohinga (fish sauce)', 'hold the bacon',
+    'egg-free'. Read from the dish and the note alike."""
     out: set[str] = set()
-    for m in re.finditer(r"\b(?:without|no|hold the|minus|skip the|sans)\s+((?:\w+\s?){1,3})", (note or "").lower()):
+    for m in _NEG_RE.finditer(text or ""):
+        out |= _tokens(m.group(1))
+    for m in _FREE_RE.finditer(text or ""):
         out |= _tokens(m.group(1))
     return out
+
+
+def _hits(text: str, hard: set[str], soft: set[str]) -> tuple[list[str], list[str]]:
+    """(hard words, soft words) the line actually orders, after negations,
+    substitutes and product words are read."""
+    removed = _without(text)
+    toks = _ordered(text)
+    h: list[str] = []
+    sft: list[str] = []
+    for i, t in enumerate(toks):
+        if t in removed or not (t in hard or t in soft):
+            continue
+        before = toks[max(0, i - 2):i]
+        if any(b in ANALOGUE for b in before):
+            continue
+        if t in PRODUCT_WORDS and any(b in PROTEIN_NAMES for b in before):
+            continue
+        if t in hard:
+            if t not in h:
+                h.append(t)
+        elif t not in sft:
+            sft.append(t)
+    return h, sft
 
 
 def _excluded_words(ctx: VerifyContext, member: str) -> tuple[set[str], set[str]]:
@@ -79,16 +150,22 @@ def _excluded_words(ctx: VerifyContext, member: str) -> tuple[set[str], set[str]
         if not any("chicken" in d.lower() for d in ctx.frame.dishes):
             soft |= CHICKEN
     for w in diet.get("avoid") or []:
-        hard |= _tokens(str(w))
+        fam = AVOID_FAMILIES.get(str(w).strip().lower())
+        if fam:
+            hard |= fam[0]
+            soft |= fam[1]
+        else:
+            hard |= _tokens(str(w))
     for r in rules:
         m = re.match(r"^no\s+(.+)$", r)
         if m:
             words = _tokens(m.group(1))
             hard |= words
-            if words & {"egg", "eggs"}:
-                hard |= EGG
-            if words & {"chicken"}:
-                hard |= CHICKEN
+            for wd in words:
+                fam = AVOID_FAMILIES.get(wd)
+                if fam:
+                    hard |= fam[0]
+                    soft |= fam[1]
         m = re.match(r"^(.+?)\s+(?:is\s+)?(?:ok|okay|back|fine)$", r)
         if m:
             words = _tokens(m.group(1))
@@ -99,7 +176,8 @@ def _excluded_words(ctx: VerifyContext, member: str) -> tuple[set[str], set[str]
             hard -= words
     for w in diet.get("ok") or []:
         hard -= _tokens(str(w))
-    return hard, soft
+        soft -= _tokens(str(w))
+    return hard, soft - hard
 
 
 def _needs_main(ctx: VerifyContext, member: str) -> bool:
@@ -116,16 +194,16 @@ def register(reg) -> None:
                 if line.member not in ctx.frame.diners:
                     continue
                 hard, soft = _excluded_words(ctx, line.member)
-                words = (_tokens(line.dish) | _tokens(line.note or "")) - _without(line.note or "")
-                hit = sorted(words & hard)
+                hit, soft_hit = _hits(f"{line.dish} ; {line.note or ''}", hard, soft)
                 if hit:
                     out.append(Failure(o.id, f"{pick.name}: {line.member}'s '{line.dish}' has {', '.join(hit)}, outside their rules",
                                        "name a main inside the member's rules", place_id=pick.place_id))
                     continue
-                soft_hit = sorted(words & soft)
                 if soft_hit:
-                    out.append(Failure(o.id, f"{pick.name}: {line.member}'s '{line.dish}' has {', '.join(soft_hit)}, only occasionally in their rules",
-                                       "say it is an occasional choice or name another main", place_id=pick.place_id, hard=False))
+                    out.append(Failure(o.id, f"{pick.name}: {line.member}'s '{line.dish}' has {', '.join(soft_hit)}: "
+                                       "an occasional choice, or a meat their rules may not allow",
+                                       "say which meat it is, or that it is an occasional choice", place_id=pick.place_id,
+                                       hard=False))
         return out
 
     @reg.register("P2")
@@ -154,6 +232,8 @@ def register(reg) -> None:
                         out.append(Failure(o.id, f"{pick.name}: injera for {line.member} without carrying the teff-vs-wheat question",
                                            "say to ask whether the injera is pure teff", place_id=pick.place_id))
                     continue
+                if _dedicated_gf(pe):
+                    continue          # the whole kitchen is gluten-free (from the place's own records)
                 item = pe.menu_match(line.dish)
                 gf_on_menu = (item or {}).get("gf") if item else None
                 if gf_on_menu == "no":
@@ -450,6 +530,24 @@ def register(reg) -> None:
                 out.append(Failure(o.id, f"{pe.name} shares its name with a regular", "offer something new, or say it is a sibling",
                                    place_id=pick.place_id))
         return out
+
+
+_DEDICATED_GF_RE = re.compile(r"100\s*%\s*gluten[- ]free|dedicated gluten[- ]free|entirely gluten[- ]free|"
+                              r"whole kitchen is gluten[- ]free|all[- ]gluten[- ]free (?:kitchen|menu)", re.I)
+
+
+def _dedicated_gf(pe) -> bool:
+    """A kitchen that is gluten-free throughout, by its records: the seed's
+    gf_only tag, or a note or why that says so. Never from the model."""
+    tags = {str(t).lower() for t in (pe.place or {}).get("format_tags") or []}
+    if tags & {"gf_only", "dedicated_gf", "gluten_free_only"}:
+        return True
+    for claim in ("note", "why", "format", "tags"):
+        v = pe.value(claim)
+        text = v if isinstance(v, str) else json.dumps(v, ensure_ascii=False) if v is not None else ""
+        if _DEDICATED_GF_RE.search(text):
+            return True
+    return False
 
 
 def _price(text: str | None) -> float | None:
