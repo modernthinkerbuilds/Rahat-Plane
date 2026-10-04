@@ -79,6 +79,45 @@ def _apply_drops(answer: Answer, drop_ids: list[str]) -> Answer:
     return a
 
 
+_GENERIC = {"the", "a", "an", "cafe", "café", "coffee", "bar", "restaurant", "kitchen", "house", "shop", "and", "of", "at"}
+
+
+def _norm(text: str) -> str:
+    return " ".join(re.sub(r"[^0-9a-zà-ÿ]+", " ", (text or "").lower()).split())
+
+
+def _mentions(line: str, name: str) -> bool:
+    """True when a line talks about the named place: its first two telling
+    words, or — for a name like "The Cozy Café" — the name as written."""
+    words = [w for w in _norm(name).split() if w not in _GENERIC]
+    if len(words) >= 2:
+        return f" {words[0]} {words[1]} " in f" {_norm(line)} "
+    as_written = re.sub(r"^(the|a|an)\s+", "", (name or "").strip(), flags=re.I)
+    return bool(as_written) and as_written in (line or "")
+
+
+def _gap_lines(lines: list[str], dropped: list, report: cverify.VerifyReport,
+               gap_reason: Callable[[cverify.Failure], str] | None) -> list[str]:
+    """When every pick was dropped: the model's lines about those picks go
+    (they describe a place the household is not being sent to), and one
+    plain line says what was found and why it isn't offered. LIVE
+    (2026-10-04): "<café> offers a full tabletop board game space…" sat
+    above "Nothing I found passed the checks: <café>: '<dish>' for
+    primary is in the gluten scope…" — a contradiction, in the checks'
+    own words."""
+    kept = [ln for ln in lines if not any(_mentions(ln, p.name) for p in dropped)]
+    why: list[str] = []
+    for p in dropped[:3]:
+        fails = [f for f in report.hard() if f.place_id == p.place_id]
+        if not fails:
+            continue
+        reason = gap_reason(fails[0]) if gap_reason else fails[0].message
+        why.append(f"{p.name} ({reason})" if gap_reason else reason)
+    if not why:
+        why = sorted({f.message for f in report.hard() if f.place_id})[:3]
+    return kept + ["Nothing I found passed the checks: " + "; ".join(why) + ". Say the word and I'll widen the search."]
+
+
 def _soft_disclosures(report: cverify.VerifyReport, evidence_names: Callable[[str], str]) -> list[str]:
     """Soft findings the renderer does not already show per pick, folded
     into at most two lines."""
@@ -101,7 +140,8 @@ def control(agent: str, *, first: ExecResult, verify_for: Callable[[Answer], cve
             registry: cverify.Registry, run_exec: Callable[[ExecResult, list[str]], ExecResult],
             render_for: Callable[[Answer, list[str]], Rendered], judge_for: Callable[[Answer], cjudge.JudgeReport] | None,
             floor: Callable[[], str] | None, evidence_name: Callable[[str], str], started_at: float,
-            time_budget_s: float, max_repairs: int = MAX_REPAIRS, judge_before_repair: bool = False) -> ControlResult:
+            time_budget_s: float, max_repairs: int = MAX_REPAIRS, judge_before_repair: bool = False,
+            gap_reason: Callable[[cverify.Failure], str] | None = None) -> ControlResult:
     out = ControlResult(execs=[first])
     exec_res = first
 
@@ -174,11 +214,11 @@ def control(agent: str, *, first: ExecResult, verify_for: Callable[[Answer], cve
         drops = report.drop_ids()
         if drops:
             out.dropped = drops
+            dropped_picks = [p for p in answer.picks if p.place_id in drops]
             answer = _apply_drops(answer, drops)
             if not answer.picks and answer.kind == "picks":
-                reasons = "; ".join(sorted({f.message for f in report.hard() if f.place_id})[:3])
-                answer = answer.model_copy(update={"kind": "answer", "lines": answer.lines + [
-                    "Nothing I found passed the checks: " + reasons + ". Say the word and I'll widen the search."]})
+                answer = answer.model_copy(update={"kind": "answer", "lines": _gap_lines(answer.lines, dropped_picks,
+                                                                                         report, gap_reason)})
                 out.gap_stated = True
             report = cverify.run(verify_for(answer), registry)
             out.verify = report

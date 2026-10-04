@@ -41,6 +41,17 @@ from agents.bourdain import tools as btools
 AGENT = "bourdain"
 ROLE_TO_MEMBER = {"primary": "primary", "spouse": "spouse", "group": "primary"}
 
+# Why a found place isn't offered, in the household's words (the checks'
+# messages are written for the model's repair, with member ids in them).
+GAP_WORDS = {
+    "P1": "no dish I could confirm for everyone's diet", "P2": "no gluten-free dish I could confirm",
+    "P5": "no full main I could confirm for everyone", "P3": "a cuisine you skip", "P4": "a seafood-led room",
+    "P6": "not a room for the baby", "P7": "a bar-led room", "P8": "over your price range", "P9": "a chain",
+    "E1": "facts I couldn't source", "E2": "not open at that time", "E5": "outside your travel time",
+    "U6": "something you ruled out", "U7": "already turned down", "N2": "one of your regulars",
+    "A1": "no address I could map",
+}
+
 
 class BourdainTenant:
     name = AGENT
@@ -314,6 +325,19 @@ class BourdainTenant:
                               origin=ctx.get("origin_latlng"), minutes_mode=ctx.get("minutes_mode", "drive"),
                               banned=self.banned_phrases, chains_label_from=int(chains.get("label_from_locations", 2)),
                               disclosures=disclosures, labels=self.labels(ctx, frame))
+
+    def gap_reason(self, f: cverify.Failure) -> str:
+        """Why a found place isn't offered, said to the household."""
+        msg = (f.message or "").lower()
+        if f.outcome == "P10":
+            return "its rating is under your bar" if ("under the" in msg or "reported" in msg) else "no rating I could source"
+        if f.outcome == "E3":
+            if "reported" in msg:
+                return "you said it's closed"
+            if "permanently" in msg:
+                return "it's closed for good"
+            return "it's temporarily closed" if "temporarily" in msg else "it may be closed"
+        return GAP_WORDS.get(f.outcome, "it didn't pass a check")
 
     # ── the floor ─────────────────────────────────────────────────────────
     def floor(self, text: str, ctx: dict) -> str:

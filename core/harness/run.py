@@ -297,7 +297,8 @@ def run(tenant: Tenant, text: str, *, chat_id: str, now: datetime, serve_mode: s
         ctl = ccontrol.control(
             tenant.name, first=first, verify_for=verify_for, registry=vreg, run_exec=run_exec, render_for=render_for,
             judge_for=judge_for if judge_enabled else None, floor=lambda: tenant.floor(text, ctx),
-            evidence_name=lambda pid: evidence.place(pid).name, started_at=t0, time_budget_s=time_budget)
+            evidence_name=lambda pid: evidence.place(pid).name, started_at=t0, time_budget_s=time_budget,
+            gap_reason=getattr(tenant, "gap_reason", None))
         s.output = {"repairs": ctl.repairs, "dropped": ctl.dropped, "floor": ctl.floor_used, "gap": ctl.gap_stated,
                     "verify_ok": ctl.verify.ok if ctl.verify else None}
     result.control = ctl
