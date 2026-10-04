@@ -115,10 +115,20 @@ def _to_minutes(tok: str, *, default_pm_below: int = 7, ref_start: int | None = 
     return h * 60 + mm
 
 
+_CLOSED_RE = re.compile(r"\bclosed\b", re.I)
+_ALLDAY_RE = re.compile(r"\b24\s*(?:hours|hrs|h)\b|\b24/7\b|\bopen 24\b", re.I)
+
+
 def _segments(text: str) -> list[str]:
-    """Split hours text into one segment per day spec: on ';', newlines and
-    bullets first, then at every day spec that follows a comma
-    ("Sun–Tue 11 AM–9 PM, Wed–Sat 11 AM–10 PM" is two segments)."""
+    """Split hours text into clauses, one per day spec that owns its times.
+
+    Hard separators first (';', newlines, bullets, '|'). Then a new clause
+    starts at a day spec once the current clause already holds a time
+    range (or a "closed") and the day spec is itself followed by a range
+    (or a "closed"). So "Sun–Tue 11 AM–9 PM, Wed–Sat 11 AM–10 PM" and
+    Google's "Monday: 12pm-11pm. Tuesday: 12pm-11pm." split per day, while
+    "Mon, Wed, Fri 9–5" stays one clause (its days are unioned) and
+    "Sat 11:30–15:00, 16:00–22:00" keeps both ranges on Saturday."""
     out: list[str] = []
     text = re.sub(r"\([^)]*\)", " ", text or "")       # a parenthetical note is not hours
     for seg in re.split(r"[;\n·|]+", text):
@@ -126,12 +136,33 @@ def _segments(text: str) -> list[str]:
         if len(specs) <= 1:
             out.append(seg)
             continue
-        cuts = [0] + [m.start() for m in specs[1:] if seg[max(0, m.start() - 3):m.start()].strip().endswith(",")
-                      or seg[:m.start()].rstrip().endswith((",", "and", "&"))]
-        cuts = sorted(set(cuts)) + [len(seg)]
+        cuts = [0]
+        for i, m in enumerate(specs[1:], start=1):
+            since = seg[cuts[-1]:m.start()]
+            nxt = specs[i + 1].start() if i + 1 < len(specs) else len(seg)
+            after = seg[m.end():nxt]
+            owns_before = _RANGE_RE.search(since) or _CLOSED_RE.search(since) or _ALLDAY_RE.search(since)
+            owns_after = _RANGE_RE.search(after) or _CLOSED_RE.search(after) or _ALLDAY_RE.search(after)
+            if owns_before and owns_after:
+                cuts.append(m.start())
+        cuts.append(len(seg))
         for a, b in zip(cuts, cuts[1:]):
-            out.append(seg[a:b].rstrip(" ,&").removesuffix("and").strip())
+            piece = re.sub(r"\b(?:and|&)\s*$", "", seg[a:b].strip(" ,.")).strip(" ,.&")
+            if piece:
+                out.append(piece)
     return out
+
+
+def _clause_days(seg: str) -> list[int]:
+    """The days a clause is about: every day spec before its first time
+    range (or anywhere in it when the days come after the times); every
+    day when it names none."""
+    rng = _RANGE_RE.search(seg)
+    head = seg[:rng.start()] if rng else seg
+    specs = list(_DAYSPEC_RE.finditer(head)) or list(_DAYSPEC_RE.finditer(seg))
+    if not specs:
+        return list(range(7))
+    return sorted({d for s in specs for d in _days_from(s)})
 
 
 def parse(text: str) -> Hours:
@@ -143,14 +174,16 @@ def parse(text: str) -> Hours:
         if not seg:
             continue
         low = seg.lower()
-        if "closed" in low:
-            spec = _DAYSPEC_RE.search(low)
-            if spec and not _RANGE_RE.search(low):
-                out.closed_days.update(_days_from(spec))
+        if _CLOSED_RE.search(low) and not _RANGE_RE.search(low):
+            if _DAYSPEC_RE.search(low):
+                out.closed_days.update(_clause_days(low))
                 continue
+        days = _clause_days(seg)
+        if _ALLDAY_RE.search(low) and not _RANGE_RE.search(low):
+            for d in days:
+                out.intervals.append(Interval(weekday=d, open_min=0, close_min=24 * 60, service="all", text=seg))
+            continue
         service = next((s for s in _SERVICES if s in low), "all")
-        spec = _DAYSPEC_RE.search(seg)
-        days = _days_from(spec)
         ranges = list(_RANGE_RE.finditer(seg))
         if not ranges:
             out.unparsed.append(seg)
