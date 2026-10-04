@@ -46,6 +46,30 @@ def _value(f: dict | None) -> Any:
     return v
 
 
+# Status words as sources write them → the few the checks read. LIVE
+# (2026-10-04): a search result recorded "Open", the check compared with
+# "open", and a cozy café open that morning was dropped as "status is Open".
+_STATUS_WORDS = {
+    "open": "open", "opened": "open", "open now": "open", "currently open": "open", "operational": "open",
+    "operating": "open", "business_operational": "open", "active": "open",
+    "closed temporarily": "temporarily_closed", "temporarily closed": "temporarily_closed",
+    "temporarily_closed": "temporarily_closed", "closed_temporarily": "temporarily_closed",
+    "closed permanently": "permanently_closed", "permanently closed": "permanently_closed",
+    "permanently_closed": "permanently_closed", "closed_permanently": "permanently_closed",
+    "closed": "closed", "moved": "moved", "relocated": "moved", "coming soon": "coming_soon", "coming_soon": "coming_soon",
+    "seasonal": "seasonal", "closed for the season": "seasonal", "unknown": "unknown",
+}
+
+
+def normalize_status(value: str) -> str:
+    v = " ".join(str(value or "").strip().lower().replace("-", " ").split())
+    if v in _STATUS_WORDS:
+        return _STATUS_WORDS[v]
+    if v.startswith(("open", "opens")):          # "open until 5 pm", "opens at 8"
+        return "open"
+    return v.replace(" ", "_") or "unknown"
+
+
 @dataclass
 class PlaceEvidence:
     place_id: str
@@ -93,9 +117,9 @@ class PlaceEvidence:
     @property
     def status(self) -> str:
         v = self.value("status")
-        if isinstance(v, str) and v:
-            return v
-        return (self.place or {}).get("status") or "unknown"
+        if isinstance(v, str) and v.strip():
+            return normalize_status(v)
+        return normalize_status((self.place or {}).get("status") or "unknown")
 
     @property
     def location_count(self) -> int | None:
