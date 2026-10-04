@@ -310,9 +310,11 @@ def _record(tenant: Tenant, result: RunResult, ctx: dict, text: str, serve_mode:
             floor_used=result.floor_used, error=result.error, outcomes=result.outcome_results(), now=now, db_path=db_path)
         if previous_trace and result.frame is not None:
             judged = [o.id for o in (result.contract.outcomes if result.contract else []) if "J" in o.check]
+            # labels only when the household saw this harness's own previous reply
             result.reaction = crecord.record_reaction(trace_id=result.trace_id, previous_trace=previous_trace, agent=tenant.name,
                                                       chat_id=str(ctx.get("chat_id") or ""), frame=result.frame, text=text,
-                                                      judged_outcomes=judged, now=now, db_path=db_path)
+                                                      judged_outcomes=judged, now=now, db_path=db_path,
+                                                      label=(serve_mode == "serve"))
         try:
             tenant.after_run(result, ctx)
         except Exception as e:  # noqa: BLE001 - a tenant's bookkeeping never fails the ask

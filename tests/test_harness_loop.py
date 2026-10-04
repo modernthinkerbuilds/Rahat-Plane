@@ -239,13 +239,13 @@ def test_sanity_check_rereads_an_unfaithful_frame(world, monkeypatch):
 def test_reaction_links_the_next_message_to_the_previous_trace(world, monkeypatch):
     _wire(monkeypatch, Wire(frame=FRAME, rounds=world["rounds"], answers=[world["good"]],
                             judge={"verdicts": [{"outcome": "U1", "verdict": "pass", "line": "ok", "evidence_ids": []}]}))
-    first = hrun.run(world["tenant"], "pasta tonight", chat_id="c1", now=NOW, db_path=world["db"])
+    first = hrun.run(world["tenant"], "pasta tonight", chat_id="c1", now=NOW, db_path=world["db"], serve_mode="serve")
     verdict_frame = FRAME | {"intents": ["verdict", "eat"], "refers_to_last_answer": True,
                              "verdicts": [{"kind": "chain", "place": "Casa Pasta", "text": "it's a chain"}]}
     rounds = [[{"name": "record_verdict", "args": {"kind": "chain", "place_id": world["casa"], "text": "it's a chain"}}], []]
     _wire(monkeypatch, Wire(frame=verdict_frame, rounds=rounds, answers=[world["good"]]))
     second = hrun.run(world["tenant"], "Casa Pasta is a chain, something else", chat_id="c1", now=NOW, db_path=world["db"],
-                      previous_trace=first.trace_id, judge_enabled=False)
+                      previous_trace=first.trace_id, judge_enabled=False, serve_mode="serve")
     assert second.reaction == {"kind": "verdict", "outcomes": ["P9"]}
     con = kb.connect(world["db"])
     labels = con.execute("SELECT outcome, label FROM judge_labels WHERE trace_id = ?", (first.trace_id,)).fetchall()

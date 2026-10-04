@@ -82,7 +82,7 @@ def test_weekly_report_reads_every_table(db, tmp_path):
     assert "Golden bourdain (stub, 2026-10-04): 1/2 green; failing: E2 ×1." in text
     # two labels: the explicit one plus the acceptance's label on the judged outcome
     assert "Judge bourdain: 2 labels, agreement 1.0" in text and "earned level shadow" in text
-    assert "Reactions bourdain: 1 linked (1 accepted" in text
+    assert "Reactions bourdain to the legacy replies (harness in shadow): 1 linked (1 accepted" in text
     assert "Knowledge base:" in text
 
 

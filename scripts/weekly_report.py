@@ -88,13 +88,15 @@ def build(*, now: datetime | None = None, db_path: str | None = None, runs_dir: 
             if verdicts:
                 lines.append(f"Judge {agent}: in shadow, no owner labels yet (needs 50 before any authority).")
 
-    # 5. reactions
+    # 5. reactions: to the legacy replies while the harness is in shadow (the baseline), to the harness's own in serve
     for agent in agents:
-        cr = crecord.correction_rate(agent, since=week_start, db_path=db_path)
-        if cr["total"]:
-            c = cr["counts"]
-            lines.append(f"Reactions {agent}: {cr['total']} linked ({c.get('acceptance', 0)} accepted, {c.get('correction', 0)} corrections, "
-                         f"{c.get('verdict', 0)} verdicts); correction rate {cr['correction_rate']}.")
+        for mode, whose in (("shadow", "to the legacy replies (harness in shadow)"), ("serve", "to the harness's replies")):
+            cr = crecord.correction_rate(agent, since=week_start, serve_mode=mode, db_path=db_path)
+            if cr["total"]:
+                c = cr["counts"]
+                lines.append(f"Reactions {agent} {whose}: {cr['total']} linked ({c.get('acceptance', 0)} accepted, "
+                             f"{c.get('correction', 0)} corrections, {c.get('verdict', 0)} verdicts); "
+                             f"correction rate {cr['correction_rate']}.")
 
     # 6. the knowledge base
     try:

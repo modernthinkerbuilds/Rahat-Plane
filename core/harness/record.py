@@ -102,10 +102,16 @@ def classify_reaction(frame: Frame | None, text: str) -> tuple[str, list[str]]:
 
 
 def record_reaction(*, trace_id: str, previous_trace: str, agent: str, chat_id: str | None, frame: Frame | None,
-                    text: str, judged_outcomes: list[str], now: datetime, db_path: str | Path | None = None) -> dict:
-    """Link the message to the previous trace and turn it into labels:
-    a verdict indicts its outcomes (fail); an acceptance labels the
-    previous trace's judged outcomes pass."""
+                    text: str, judged_outcomes: list[str], now: datetime, db_path: str | Path | None = None,
+                    label: bool = True) -> dict:
+    """Link the message to the previous trace and, when `label`, turn it
+    into judge labels: a verdict indicts its outcomes (fail); an
+    acceptance labels the previous trace's judged outcomes pass.
+
+    `label` is True only when the household saw the previous trace's own
+    reply (serve mode). In shadow the household reacted to the legacy
+    reply, so the reaction is kept (the legacy baseline) but never
+    labels the harness's judge (fix 2026-10-04)."""
     kind, outs = classify_reaction(frame, text)
     try:
         con = _connect(db_path)
@@ -117,7 +123,9 @@ def record_reaction(*, trace_id: str, previous_trace: str, agent: str, chat_id: 
             con.commit()
         finally:
             con.close()
-        if kind == "verdict":
+        if not label:
+            pass
+        elif kind == "verdict":
             for oid in outs:
                 cjudge.record_label(trace_id=previous_trace, agent=agent, outcome=oid, label="fail", source="reaction",
                                     now=now, db_path=db_path)
@@ -130,13 +138,22 @@ def record_reaction(*, trace_id: str, previous_trace: str, agent: str, chat_id: 
     return {"kind": kind, "outcomes": outs}
 
 
-def correction_rate(agent: str, *, since: str | None = None, db_path: str | Path | None = None) -> dict:
+def correction_rate(agent: str, *, since: str | None = None, serve_mode: str | None = None,
+                    db_path: str | Path | None = None) -> dict:
+    """Reactions by kind and the correction rate. `serve_mode` keeps only
+    reactions to traces run in that mode: "shadow" is the household
+    reacting to the legacy replies (the baseline), "serve" to the
+    harness's own replies."""
     con = _connect(db_path)
     try:
-        where, args = "WHERE agent = ?", [agent]
+        where, args = "WHERE x.agent = ?", [agent]
         if since:
-            where += " AND at >= ?"; args.append(since)
-        rows = con.execute(f"SELECT kind, COUNT(*) FROM harness_reactions {where} GROUP BY kind", args).fetchall()
+            where += " AND x.at >= ?"; args.append(since)
+        join = ""
+        if serve_mode:
+            join = " JOIN harness_runs r ON r.trace_id = x.previous_trace"
+            where += " AND r.serve_mode = ?"; args.append(serve_mode)
+        rows = con.execute(f"SELECT x.kind, COUNT(*) FROM harness_reactions x{join} {where} GROUP BY x.kind", args).fetchall()
     finally:
         con.close()
     counts = {k: n for k, n in rows}
