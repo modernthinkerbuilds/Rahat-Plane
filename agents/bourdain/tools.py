@@ -24,6 +24,7 @@ import json
 import os
 import re
 import urllib.parse
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -38,6 +39,7 @@ from core import state_scopes as ss
 from core import weather as cweather
 from core.kb import geo, query, schema as kb
 from core.tools import ToolRegistry, ToolResult
+from agents.bourdain import maps as bmaps
 from agents.bourdain import profile as cprofile
 
 _REPO = Path(__file__).resolve().parents[2]
@@ -144,6 +146,17 @@ class WebSearchArgs(BaseModel):
     query: str = Field(description="what to find: cuisine, area, format, e.g. 'family-run Burmese restaurant near Allston Boston'")
     city: str = Field(description="the city or area the results must be in")
     want: int = Field(default=5, description="how many candidates")
+
+
+class MapsSearchArgs(BaseModel):
+    query: str = Field(description="what to find, in plain words: 'board game cafés', 'cozy coffee shops with plenty of "
+                                   "seating to linger', 'family-run Burmese restaurants', 'gelato'")
+    near: str | None = Field(default=None, description="a town, neighborhood or landmark to search around; default: "
+                                                       "where the household is starting from")
+    areas: list[str] = Field(default_factory=list, description="for a wide ask: up to four towns or neighborhoods in "
+                                                               "range, searched side by side in one call")
+    within_minutes: int | None = Field(default=None, description="the travel budget in minutes, when the ask gives one")
+    want: int = Field(default=15, description="how many places in all (up to 20)")
 
 
 class PageFactsArgs(BaseModel):
@@ -473,6 +486,135 @@ def build_registry(ctx: dict, *, allow: list[str] | None = None) -> ToolRegistry
                                                              "queries_run": res.search_queries},
                           evidence_ids=ev_ids, cost_usd=res.cost_usd, search_queries=res.search_queries)
 
+    @reg.tool("maps_search", "Google Maps places for the ask, many at once: each with its address, Google rating and review "
+              "count, price, today's hours and open-now, drive minutes from the origin, a short description, attributes "
+              "(cozy, good for kids, vegetarian dishes…) and menu highlights, written to the knowledge base with Google Maps "
+              "as the source. Use it FIRST to find candidates; web_search only for what Maps lacks (menus, acclaim). "
+              "For a wide ask, one call with `areas` (up to four towns in range) covers them side by side; search an "
+              "area once (a repeat with much the same words returns what was found). "
+              "Each place's `facts` are the evidence ids to cite.",
+              args=MapsSearchArgs, kind="network", cacheable=False, returns_evidence=True, search_queries_hint=1)
+    def maps_search(a: MapsSearchArgs, c):
+        now = _now(c)
+        origin = c.get("origin_latlng")
+        leg = c.get("leg") or {}
+        home_area = (leg.get("city") or "").replace("_", " ").title()
+        targets = list(dict.fromkeys(x.strip() for x in ([a.near] if a.near else []) + list(a.areas or []) if x and x.strip()))[:4]
+        if len(targets) >= 2 and home_area and home_area.lower() not in (t.lower() for t in targets):
+            targets = [home_area] + targets[:3]      # a spread across the area still starts at home (replayed 2026-10-04:
+                                                      # four towns searched, not the household's own, and its nearest missed)
+        # The area is named in words; the map is centered where the household is (a town's name is not a place in
+        # the knowledge base, and a same-named café on another trip must not move the search).
+        centers = [(t, origin) for t in targets] or [(home_area or None, origin)]
+        # An area already searched for much the same words in this ask is not searched again (replayed 2026-10-04:
+        # four calls over the same towns — "board game cafe coffee", "board games coffee cafe"… — spent the brake).
+        done: dict = c.setdefault("_maps_done", {})
+        words = _query_words(a.query)
+        again = [(w, ctr) for w, ctr in centers if any(area == (w or "") and _similar(words, q) for (q, area) in done)]
+        centers = [x for x in centers if x not in again]
+        reused = [pair for (q, area), pairs in done.items() for w, _ in again
+                  if area == (w or "") and _similar(words, q) for pair in pairs]
+        mode = leg.get("minutes_mode", "drive")
+        within = (f", within about a {a.within_minutes}-minute {'walk' if mode == 'walk' else 'drive'}"
+                  if a.within_minutes else "")
+        want = max(3, min(int(a.want or 15), 20))
+        per_area = max(6, min(20, -(-want * 3 // (2 * max(1, len(centers))))))
+
+        def one(where: str | None, center) -> llm_chat.ChatResult:
+            prompt = (f"Find on Google Maps: {a.query}{(' in or near ' + where) if where else ''}{within}. Run at most "
+                      "three Google Maps searches, broad ones that cover the area. Then list up to "
+                      f"{per_area} matching places, one per line: name — address.")
+            return llm_chat.chat(AGENT, "bourdain.maps_search",
+                                 system="You find places on Google Maps for a household. Use the Google Maps tool. List "
+                                        "only places Google Maps returned; never add one of your own.",
+                                 messages=[llm_chat.user_text(prompt)],
+                                 maps={"lat": center[0], "lng": center[1]} if center else True,
+                                 thinking_budget=0, step="execute", mode=_mode(c), trace_id=c.get("trace_id"),
+                                 db_path=_db(c), cassette_dir=c.get("cassette_dir"))
+
+        # Several areas are searched side by side: one area's call takes 5–8 s, and a wide ask needs three or four.
+        if not centers:
+            results = []
+        elif len(centers) == 1:
+            results = [one(*centers[0])]
+        else:
+            # A slow area doesn't hold the rest: past MAPS_AREA_WAIT_S the areas still out are left for next time.
+            ex = ThreadPoolExecutor(max_workers=len(centers))
+            futs = [ex.submit(one, *wc) for wc in centers]
+            wait(futs, timeout=MAPS_AREA_WAIT_S)
+            if not any(f.done() for f in futs):
+                wait(futs, timeout=MAPS_AREA_WAIT_S, return_when=FIRST_COMPLETED)
+            ex.shutdown(wait=False)
+            results = [f.result() if f.done() else llm_chat.ChatResult(error=f"timeout: no answer in {MAPS_AREA_WAIT_S:.0f}s")
+                       for f in futs]
+        ok = [r for r in results if r.ok]
+        cost = sum(r.cost_usd for r in results)
+        queries = sum(r.search_queries for r in results)
+        if results and not ok and not reused:
+            return ToolResult(name="maps_search", ok=False, error=results[0].error, cost_usd=cost,
+                              search_queries=len(results))
+        seen: set[str] = set()
+        places: list[bmaps.MapsPlace] = []
+        for chunk in (ch for r in ok for ch in r.maps_places):
+            mp = bmaps.parse_place(chunk)
+            key = (mp.google_place_id or f"{kb.norm_name(mp.name)}|{mp.address}") if mp else ""
+            if mp is None or key in seen:
+                continue
+            seen.add(key)
+            places.append(bmaps.clean(mp, clean_text))           # Maps text is data, on the way in
+        # The brake counts one search per area (each is held to three Maps queries; the ledger has the true count).
+        if not places and not reused:
+            return ToolResult(name="maps_search", ok=True, value={"places": [], "source": bmaps.MAPS_SOURCE,
+                              "note": "Google Maps returned no places for that; try other words, or web_search."},
+                              cost_usd=cost, search_queries=len(results))
+        con = _con(c)
+        written: list[tuple[bmaps.MapsPlace, dict]] = []
+        try:
+            if places:
+                bmaps.purge(con, now=now)                             # Google's 90 days
+                for mp in places:
+                    written.append((mp, bmaps.write_place(con, mp, now=now, trace_id=c.get("trace_id"))))
+                con.commit()
+                _locate(con, [w for _, w in written], now, c)
+                con.commit()
+            for (w, _ctr), r in zip(centers, results):
+                if r.ok:
+                    ids = {ch.get("place_id") or ch.get("url") for ch in r.maps_places}
+                    done[(words, w or "")] = [(mp, wr) for mp, wr in written if (mp.google_place_id or mp.url) in ids]
+            have = {wr["place_id"] for _, wr in written}
+            for mp, wr in reused:
+                if wr["place_id"] not in have:
+                    have.add(wr["place_id"])
+                    written.append((mp, wr))
+            views = [_maps_view(con, mp, w, now, c) for mp, w in written]
+        finally:
+            con.close()
+        budget = a.within_minutes
+        t = getattr(c.get("frame"), "time", None)
+        later = bool(t and (getattr(t, "kind", "now") != "now" or (getattr(t, "day", None) or "today") not in ("today", "now")))
+
+        def rank(v: dict):
+            m = v.get("about_minutes")
+            outside = budget is not None and m is not None and m > budget + 5
+            shut = (not later) and v.get("open_now") is False      # an ask for now: what's open first
+            return (outside, v.get("status") is not None, shut, -v.get("_score", 0.0), m if m is not None else 999)
+
+        views.sort(key=rank)
+        for v in views:
+            v.pop("_score", None)
+        shown, rest = views[:10], views[10:]
+        out = {"places": shown, "source": bmaps.MAPS_SOURCE, "found": len(views), "maps_queries": queries,
+               "note": "Facts from Google Maps. Distances are from the origin, labeled about."}
+        if rest:
+            out["also_found"] = [v["name"] for v in rest][:15]
+        if len(ok) < len(results):
+            out["areas_failed"] = [w for (w, _), r in zip(centers, results) if not r.ok]
+        if again:
+            out["already_searched"] = [w for w, _ in again if w]
+        ev = [fid for _, w in written for fid in w["facts"].values()]
+        return ToolResult(name="maps_search", ok=True, value=out, evidence_ids=ev, cost_usd=cost,
+                          search_queries=len(results))
+
     @reg.tool("read_page_facts", "Read one page (own site, ordering page or aggregator) under the source rules and record the facts it states: hours, status, rating with count, price, menu items, room, phone, location count, acclaim.",
               args=PageFactsArgs, kind="network", cacheable=False, returns_evidence=True)
     def read_page_facts(a: PageFactsArgs, c):
@@ -709,6 +851,88 @@ def _json_items(text: str) -> list[dict]:
     return [i for i in (items or []) if isinstance(i, dict)]
 
 
+MAPS_AREA_WAIT_S = 15.0
+_QUERY_STOP = {"a", "an", "the", "and", "or", "with", "for", "of", "to", "in", "near", "around", "place", "places",
+               "spot", "spots", "shop", "shops", "good", "best", "nice"}
+
+
+def _query_words(q: str) -> frozenset[str]:
+    words = re.findall(r"[a-z0-9]+", (q or "").lower())
+    return frozenset(w[:-1] if len(w) > 3 and w.endswith("s") else w for w in words if w not in _QUERY_STOP)
+
+
+def _similar(a: frozenset[str], b: frozenset[str]) -> bool:
+    return bool(a and b) and len(a & b) / len(a | b) >= 0.5
+
+
+def _fresh_maps_claims(con, place_id: str, now: datetime, mode: str) -> set[str]:
+    """The claims Google Maps holds fresh for a place (a search snippet must not overwrite them)."""
+    out: set[str] = set()
+    for claim in ("hours", "status", "rating", "price"):
+        f = kb.current_fact(con, "place", place_id, claim)
+        if f and f.get("source_name") == bmaps.MAPS_SOURCE and kb.is_fresh(f, now, mode):
+            out.add(claim)
+    return out
+
+
+def _locate(con, written: list[dict], now: datetime, ctx: dict) -> None:
+    """Coordinates for the places that have none: the Census geocoder for US
+    street addresses (several at a time), then OpenStreetMap for a few misses."""
+    need: dict[str, list[dict]] = {}
+    for w in written:
+        row = con.execute("SELECT l.lat, l.address FROM kb_location l WHERE l.location_id = ?", (w["location_id"],)).fetchone()
+        if row and row[0] is None and row[1]:
+            need.setdefault(row[1], []).append(w)
+    if not need:
+        return
+    found = cgeo.geocode_many(list(need), now=now)
+    for addr, g in found.items():
+        if not g:
+            continue
+        for w in need.get(addr, []):
+            fid = kb.add_fact(con, subject_type="place", subject_id=w["place_id"], claim_type="geo", value=g,
+                              source_url=g["source_url"], source_name=g["source_name"], source_rank="own_site",
+                              method="api", observed_at=g["observed_at"], trace_id=ctx.get("trace_id"), now=now)
+            con.execute("UPDATE kb_location SET lat = ?, lng = ?, geocode_fact_id = ? WHERE location_id = ?",
+                        (g["lat"], g["lng"], fid, w["location_id"]))
+
+
+def _maps_view(con, mp: "bmaps.MapsPlace", w: dict, now: datetime, ctx: dict) -> dict:
+    """What the model sees of one Maps place: short, with the evidence ids to cite."""
+    p = query.place(con, w["place_id"]) or {}
+    v: dict[str, Any] = {"place_id": w["place_id"], "name": mp.name,
+                         "address": ", ".join(x.strip() for x in cgeo.street_address(mp.address or "").split(",")[:2]) or None}
+    if mp.rating is not None:
+        v["rating"] = f"{mp.rating} ({mp.rating_count:,})" if mp.rating_count else str(mp.rating)
+    if mp.price_level:
+        v["price"] = mp.price_level
+    origin = ctx.get("origin_latlng")
+    if origin and p.get("lat") is not None:
+        v["about_minutes"] = geo.about_minutes(origin[0], origin[1], p["lat"], p["lng"],
+                                               mode=(ctx.get("leg") or {}).get("minutes_mode", "drive"))
+    if mp.hours_text:
+        h = chours.parse(mp.hours_text)
+        today = [iv.text for iv in h.intervals if iv.weekday == now.weekday()]
+        v["today"] = today[0].split(":", 1)[-1].strip() if today else ("closed" if now.weekday() in h.closed_days else None)
+        v["open_now"] = chours.open_at(h, now.weekday(), now.hour * 60 + now.minute)["open"]
+    if mp.status != "open":
+        v["status"] = mp.status
+    if mp.description:
+        v["about"] = mp.description[:80]
+    tags = mp.format_tags + mp.room_tags + [o for o in mp.attributes.get("offerings", [])
+                                            if re.search(r"vegetarian|vegan|gluten|halal|kosher", o, re.I)][:2]
+    if mp.bar_led:
+        tags = ["bar-led"] + tags
+    if tags:
+        v["tags"] = [t[:30] for t in dict.fromkeys(tags)][:5]
+    if mp.menu:
+        v["menu"] = [m["name"][:40] + (f" ({', '.join(m['tags'])})" if m["tags"] else "") for m in mp.menu[:2]]
+    v["facts"] = {k: w["facts"][k] for k in ("rating", "hours", "status", "menu") if k in w["facts"]}
+    count = mp.rating_count or 0
+    v["_score"] = (mp.rating or 0.0) - 1.0 / (1.0 + count) ** 0.5
+    return v
+
+
 def _point(con, label: str, ctx: dict) -> tuple[float, float] | None:
     lab = (label or "").strip().lower()
     m = re.match(r"^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$", lab)
@@ -743,10 +967,14 @@ def _write_candidate(con, cand: Candidate, cite_urls: list[str], ctx: dict) -> d
     src = cand.url or (cite_urls[0] if cite_urls else None)
     rank = "search_citation" if src else "unverified"
     from core.kb.schema import location_id_for, place_id_for, norm_name
-    loc_id = location_id_for(city, cand.address, None, None, name_hint=cand.name)
-    con.execute("INSERT OR IGNORE INTO kb_location (location_id, address, neighborhood, city, created_at) VALUES (?,?,?,?,?)",
-                (loc_id, cand.address, cand.neighborhood, city, now_s))
-    pid = place_id_for(cand.name, city, address=cand.address)
+    pid = bmaps.find_existing(con, cand.name, city, cand.address)       # one café, one id, whichever source found it
+    if pid:
+        loc_id = con.execute("SELECT location_id FROM kb_place WHERE place_id = ?", (pid,)).fetchone()[0]
+    else:
+        loc_id = location_id_for(city, cand.address, None, None, name_hint=cand.name)
+        con.execute("INSERT OR IGNORE INTO kb_location (location_id, address, neighborhood, city, created_at) VALUES (?,?,?,?,?)",
+                    (loc_id, cand.address, cand.neighborhood, city, now_s))
+        pid = place_id_for(cand.name, city, address=cand.address)
     fam = kb.CUISINE_FAMILIES.get((cand.cuisine or "").lower())
     con.execute(
         "INSERT INTO kb_place (place_id, name, name_norm, location_id, cuisine, cuisine_family, price_level, status, "
@@ -758,8 +986,14 @@ def _write_candidate(con, cand: Candidate, cite_urls: list[str], ctx: dict) -> d
          cand.status if cand.status in ("open", "closed", "moved", "coming_soon", "seasonal_closed") else "open",
          cand.location_count, "[]", "[]", "live", now_s, now_s))
     fact_ids: list[int] = []
+    # A search snippet never overwrites what Google Maps just said about the same place: the newest fact wins at
+    # read time, and a snippet's "7 AM–10 PM" read after Maps' "Sunday: 7 AM–6 PM" put the wrong close on a
+    # pick (replayed 2026-10-04). Fresh Maps hours, status, rating and price stand.
+    maps_fresh = _fresh_maps_claims(con, pid, now, _mode(ctx) if ctx else "home")
 
     def f(claim, value, **kw):
+        if claim in maps_fresh:
+            return None
         fid = kb.add_fact(con, subject_type="place", subject_id=pid, claim_type=claim, value=value, source_url=src,
                           source_name=cand.rating_source if claim == "rating" else ("search" if src else "model"),
                           source_rank=rank, method="search_citation",
@@ -769,14 +1003,15 @@ def _write_candidate(con, cand: Candidate, cite_urls: list[str], ctx: dict) -> d
 
     if cand.rating_value is not None and cand.rating_source:
         fid = f("rating", {"value": cand.rating_value, "source": cand.rating_source, "count": cand.rating_count})
-        if cand.rating_count:
+        if cand.rating_count and fid is not None:
             con.execute("INSERT OR REPLACE INTO kb_rating (fact_id, place_id, source, value, count, observed_at) VALUES (?,?,?,?,?,?)",
                         (fid, pid, cand.rating_source, cand.rating_value, cand.rating_count, now_s))
     if cand.hours_text:
         f("hours", {"value": cand.hours_text})
     if cand.status:
         fid = f("status", cand.status)
-        con.execute("UPDATE kb_place SET status_fact_id = ? WHERE place_id = ?", (fid, pid))
+        if fid is not None:
+            con.execute("UPDATE kb_place SET status_fact_id = ? WHERE place_id = ?", (fid, pid))
     if cand.price_level:
         f("price", {"value": cand.price_level})
     if cand.phone:

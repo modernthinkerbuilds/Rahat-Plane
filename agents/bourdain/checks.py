@@ -269,7 +269,8 @@ def register(reg) -> None:
                     continue
                 if not GF_MARK.search(text) and gf_on_menu not in ("yes", "on_request"):
                     out.append(Failure(o.id, f"{pick.name}: '{line.dish}' for {line.member} is in the gluten scope with no GF version named",
-                                       "name the GF version (or a different main) and whether to ask for it", place_id=pick.place_id))
+                                       "name the GF version (or a different main) and whether to ask for it — from what the tools "
+                                       "already returned, or one look at the menu; no new search", place_id=pick.place_id))
                     continue
                 if gf_on_menu not in ("yes", "on_request") and not line.verified:
                     out.append(Failure(o.id, f"{pick.name}: the GF {line.dish} for {line.member} is unverified",

@@ -291,8 +291,8 @@ class BourdainTenant:
         }
         if ctx.get("wide"):
             out["wide_ask"] = {"picks_max": ctx.get("max_picks", 5),
-                               "how": "a spread across the area, not the nearest one: search two or three towns or "
-                                      "neighborhoods in the range, verify each pick, aim for three or four, still one "
+                               "how": "a spread across the area, not the nearest one: one maps_search with `areas` "
+                                      "(two to four towns in range), verify each pick, aim for three or four, still one "
                                       "clear recommendation"}
         return out
 

@@ -48,6 +48,7 @@
     "resolve_name",
     "kb_search_places",
     "kb_facts",
+    "maps_search",
     "web_search",
     "read_page_facts",
     "acclaim",
