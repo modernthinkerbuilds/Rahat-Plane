@@ -189,7 +189,8 @@ class BourdainTenant:
             "now": now.strftime("%Y-%m-%d %H:%M"), "weekday": now.strftime("%A"), "mode": ctx.get("mode"),
             "leg": {k: ctx["leg"].get(k) for k in ("leg_id", "kind", "label", "city", "tz", "minutes_mode", "radius_min", "stay_name")},
             "origin": ctx.get("origin_label"), "origin_known": ctx.get("origin_latlng") is not None,
-            "diners": frame.diners or ctx.get("diners"), "overrides_in_force": ctx.get("overrides"),
+            "diners": frame.diners or ctx.get("diners"), "call_them": self.labels(ctx, frame),
+            "overrides_in_force": ctx.get("overrides"),
             "exclusions_in_force": ctx.get("exclusions"), "plan_today": ctx.get("plan"),
             "last_answer_picks": [p.get("name") for p in last.get("picks", [])],
             "last_answer_rejected": last.get("rejected", []),
@@ -197,6 +198,11 @@ class BourdainTenant:
             "brake": {"tool_calls": self.budgets.per_ask.tool_calls, "search_queries": self.budgets.per_ask.search_queries,
                       "usd": self.budgets.per_ask.usd},
         }
+
+    def labels(self, ctx: dict, frame: Frame | None = None) -> dict[str, str]:
+        """What a reply calls each diner ("you" for the speaker)."""
+        diners = list((frame.diners if frame else None) or ctx.get("diners") or [])
+        return cprofile.labels(ctx.get("profile") or {}, ctx.get("speaker"), diners)
 
     def rules_text(self, ctx: dict, frame: Frame) -> str:
         members = frame.diners or ctx.get("diners") or []
@@ -235,7 +241,7 @@ class BourdainTenant:
         return hrender.render(frame, answer, evidence, now=ctx["now"], mode=ctx.get("mode", "home"),
                               origin=ctx.get("origin_latlng"), minutes_mode=ctx.get("minutes_mode", "drive"),
                               banned=self.banned_phrases, chains_label_from=int(chains.get("label_from_locations", 2)),
-                              disclosures=disclosures)
+                              disclosures=disclosures, labels=self.labels(ctx, frame))
 
     # ── the floor ─────────────────────────────────────────────────────────
     def floor(self, text: str, ctx: dict) -> str:

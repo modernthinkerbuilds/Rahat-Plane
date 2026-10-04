@@ -108,6 +108,34 @@ def diners_default(profile: dict) -> list[str]:
     return out
 
 
+# What a reply calls a member who isn't the one asking, when the profile
+# gives no "label" of its own. Code and tests speak of roles; the
+# household reads words.
+DEFAULT_LABELS = {"primary": "your partner", "spouse": "your partner", "infant": "baby", "toddler": "toddler",
+                  "senior": "grandparent", "guest": "guest"}
+
+
+def labels(profile: dict, speaker: str | None, diners: list[str] | None = None) -> dict[str, str]:
+    """Member id → the word a reply uses: "you" for the one asking, else
+    the member's own "label" in the profile, else a word for the role.
+    Diners who aren't members (guests) are named by their role word."""
+    members = profile.get("members") or {}
+    seniors = [mid for mid, m in members.items() if (m.get("role") or mid) == "senior"]
+    out: dict[str, str] = {}
+    for mid in list(members) + [d for d in (diners or []) if d not in members]:
+        m = members.get(mid) or {}
+        role = m.get("role") or ("guest" if mid not in members else mid)
+        if mid == speaker:
+            out[mid] = "you"
+        elif str(m.get("label") or "").strip():
+            out[mid] = str(m["label"]).strip()
+        elif role == "senior" and len(seniors) > 1:
+            out[mid] = f"grandparent {seniors.index(mid) + 1}"
+        else:
+            out[mid] = DEFAULT_LABELS.get(role, mid.replace("_", " "))
+    return out
+
+
 def rules_text(profile: dict, members: list[str]) -> str:
     """The rules for the people at the table, rendered whole for the
     executor's prompt (F37: never a summary)."""

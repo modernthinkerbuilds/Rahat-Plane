@@ -111,7 +111,9 @@ def _source_label(f: dict) -> str | None:
 def render(frame: Frame, answer: Answer, evidence: Evidence, *, now: datetime, mode: str = "home",
            origin: tuple[float, float] | None = None, minutes_mode: str = "drive", banned: list[str] | None = None,
            chains_label_from: int = 2, disclosures: list[str] | None = None, header: str | None = None,
-           max_chars: int = MAX_CHARS) -> Rendered:
+           max_chars: int = MAX_CHARS, labels: dict[str, str] | None = None) -> Rendered:
+    """`labels` maps member ids to the words the household reads ("you",
+    "your partner", "baby"); without it the ids are printed."""
     banned = banned or []
     out = Rendered(disclosures=list(disclosures or []))
     lines: list[str] = []
@@ -125,7 +127,7 @@ def render(frame: Frame, answer: Answer, evidence: Evidence, *, now: datetime, m
                 text = re.sub(re.escape(h), "—", text, flags=re.I)
         return text
 
-    head = header if header is not None else frame.header()
+    head = header if header is not None else frame.header(labels=labels)
     if head:
         lines.append(f"_{md_escape(head)}_")
     for ln in answer.lines:
@@ -141,7 +143,7 @@ def render(frame: Frame, answer: Answer, evidence: Evidence, *, now: datetime, m
     for i, pick in enumerate(picks, 1):
         lines += _pick_block(pick, i if multi else None, frame, evidence, now=now, origin=origin, minutes_mode=minutes_mode,
                              take=take, sources=sources, chains_label_from=chains_label_from, out=out,
-                             rec_id=rec.place_id if (rec and multi) else None)
+                             rec_id=rec.place_id if (rec and multi) else None, labels=labels)
 
     if answer.plan:
         lines.append("")
@@ -196,7 +198,8 @@ def render(frame: Frame, answer: Answer, evidence: Evidence, *, now: datetime, m
 
 def _pick_block(pick: Pick, idx: int | None, frame: Frame, evidence: Evidence, *, now: datetime,
                 origin: tuple[float, float] | None, minutes_mode: str, take, sources: list[str],
-                chains_label_from: int, out: Rendered, rec_id: str | None = None) -> list[str]:
+                chains_label_from: int, out: Rendered, rec_id: str | None = None,
+                labels: dict[str, str] | None = None) -> list[str]:
     pe = evidence.place(pick.place_id)
     if not pe.exists:
         out.problems.append(f"pick {pick.name!r} ({pick.place_id}) is not in the knowledge base")
@@ -235,7 +238,8 @@ def _pick_block(pick: Pick, idx: int | None, frame: Frame, evidence: Evidence, *
     for d in pick.diner_lines:
         tag = "" if d.verified else " (unverified)" if pe.menu else ""
         note = f" — {md_escape(take(d.note, 'note'))}" if d.note else ""
-        lines.append(f"   {md_escape(d.member)}: {md_escape(take(d.dish, 'dish'))}{note}{tag}")
+        who = (labels or {}).get(d.member, d.member)
+        lines.append(f"   {md_escape(who)}: {md_escape(take(d.dish, 'dish'))}{note}{tag}")
     for fl in pick.flags[:3]:
         lines.append(f"   ⚑ {md_escape(take(fl.text, 'flag'))}")
     if pick.next_step:

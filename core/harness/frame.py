@@ -141,18 +141,21 @@ class Frame(BaseModel):
     def low_confidence(self, floor: float = 0.6) -> list[str]:
         return sorted(c.field for c in self.confidence if c.score < floor)
 
-    def header(self) -> str:
-        """The compressed reading shown at the top of a reply."""
+    def header(self, labels: dict[str, str] | None = None) -> str:
+        """The compressed reading shown at the top of a reply. `labels`
+        maps member ids to the words the household reads."""
+        def name(d: str) -> str:
+            return (labels or {}).get(d, d)
         parts = []
         if self.meal:
             parts.append(self.meal)
         if "plan" in self.intents:
             parts.append("day plan")
-        who = [d for d in self.diners if d != "infant"]
+        who = [name(d) for d in self.diners if d != "infant"]
         if who:
-            parts.append(" + ".join(who) + (" + baby" if "infant" in self.diners else ""))
+            parts.append(" + ".join(who) + (f" + {name('infant') if labels else 'baby'}" if "infant" in self.diners else ""))
         for o in self.overrides:
-            parts.append(f"{', '.join(o.who)}: {o.rule}" + (" (withdrawn)" if o.withdraw else " today"))
+            parts.append(f"{', '.join(name(w) for w in o.who)}: {o.rule}" + (" (withdrawn)" if o.withdraw else " today"))
         if self.origin and self.origin.label:
             parts.append(f"from {self.origin.label}")
         if self.area and self.area.label and not (self.origin and self.area.label == self.origin.label):

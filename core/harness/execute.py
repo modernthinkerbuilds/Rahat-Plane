@@ -98,7 +98,9 @@ ANSWER_INSTRUCTION = (
     "fact_ids, web_search candidates[].fact_ids). Set recommendation to one pick's place_id when there are "
     "two or more picks. One line per diner with a named main inside their rules. Flags for anything a rule "
     "doubts. Left out with a reason each. Assumptions you made. At most one question. No numbers, hours, "
-    "addresses or ratings in your prose — the renderer prints them from the records."
+    "addresses or ratings in your prose — the renderer prints them from the records. In every text the "
+    "household reads (lines, why, notes, flags, assumptions, the question) call people by the moment's "
+    "call_them words when it has them; member ids go only in a diner line's member field."
 )
 
 
