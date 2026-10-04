@@ -17,6 +17,7 @@ Members are roles, never names; the profile is data in the vault.
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -96,7 +97,7 @@ class BourdainTenant:
                       for r in ss.get_all(AGENT, chat, "exclusion", now=now, db_path=db_path)]
         return {
             "now": now, "chat_id": chat, "db_path": db_path, "trace_id": trace_id,
-            "cassette_dir": cassette_dir or self.manifest.cassette_dir, "profile": prof,
+            "cassette_dir": cassette_dir or os.getenv("RAHAT_CASSETTE_DIR") or self.manifest.cassette_dir, "profile": prof,
             "leg": leg, "mode": "trip" if leg.get("kind") == "trip" else "home",
             "origin_latlng": origin, "origin_label": origin_label,
             "minutes_mode": leg.get("minutes_mode", "drive"),
