@@ -11,7 +11,8 @@ Always under RAHAT_TEST_MODE=1: the run builds its own sandbox knowledge
 base from the seed (never the live vault/rahat.db). `--mode live` calls
 the model and spends money; with RAHAT_FIXTURE_RECORD=1 it writes the
 cassettes that `--mode replay` later needs. Exit code 1 when any must
-fails (the nightly job's auto-commit gate), 2 on a setup error.
+fails (the nightly job logs it; the saved report feeds the weekly
+report), 2 on a setup error.
 """
 from __future__ import annotations
 

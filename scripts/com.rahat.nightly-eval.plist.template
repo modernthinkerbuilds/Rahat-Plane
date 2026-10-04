@@ -2,7 +2,9 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
     Launchd manifest TEMPLATE for com.rahat.nightly-eval (2026-10-04):
-    the nightly outcome-scored replay of every agent's golden set from cassettes (ADR-018 §2.10); a failing must blocks the auto-commit.
+    the nightly outcome-scored replay of every agent's golden set from cassettes (ADR-018 §2.10).
+    Exit 1 when a must fails; the report lands in vault/eval_runs/ and the weekly report reads it.
+    (ADR-018's auto-commit gate is not wired yet: tests/nightly.sh does not read this exit code.)
 
     Render and load by hand (the owner only; see private/prds/platform/RUNBOOK_2026-10-04.md):
         sed -e "s|{{RAHAT_HOME}}|$HOME/developer/agency/rahat|g" \
@@ -56,6 +58,10 @@
     <dict>
         <key>PATH</key>
         <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <!-- the eval refuses to run without it: test mode sandboxes the
+             knowledge base and is the only mode that reads cassettes -->
+        <key>RAHAT_TEST_MODE</key>
+        <string>1</string>
     </dict>
 </dict>
 </plist>
