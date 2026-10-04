@@ -29,7 +29,7 @@ from core import verify as cverify
 from core.harness import control as ccontrol
 from core.harness import execute as cexecute
 from core.harness import record as crecord
-from core.harness.answer import Answer
+from core.harness.answer import Answer, sanitize_citations
 from core.harness.contract import Contract, OutcomeLibrary, assemble, complete_for_answer
 from core.harness.evidence import Evidence
 from core.harness.frame import Frame, FrameError, parse_frame
@@ -222,6 +222,13 @@ def run(tenant: Tenant, text: str, *, chat_id: str, now: datetime, serve_mode: s
         if time_budget_s is None else float(time_budget_s)
     holding_s = float(getattr(latency, "holding_line_s", 5.0))
 
+    _ev: dict[str, Evidence] = {}
+
+    def evidence_now() -> Evidence:
+        if "e" not in _ev:
+            _ev["e"] = tenant.evidence(ctx)
+        return _ev["e"]
+
     def run_exec(prior: cexecute.ExecResult | None, hints: list[str]) -> cexecute.ExecResult:
         with step("execute" if prior is None else "repair", {"hints": hints[:6]}) as s:
             res = cexecute.execute(tenant.name, system=tenant.system_prompt, prompt=prompt, registry=registry, ctx=ctx,
@@ -236,10 +243,15 @@ def run(tenant: Tenant, text: str, *, chat_id: str, now: datetime, serve_mode: s
         result.tool_calls += res.tool_calls
         result.steps.append({"step": "execute" if prior is None else "repair", "rounds": res.rounds,
                              "tool_calls": res.tool_calls, "cost_usd": res.cost_usd, "error": res.error})
+        if res.answer is not None:
+            # Citation slips are fixed, not punished: a wrong fact id costs the citation, never the place.
+            res.answer, notes = sanitize_citations(res.answer, evidence_now())
+            if notes:
+                result.steps.append({"step": "sanitize", "notes": notes[:8]})
         return res
 
     first = run_exec(None, [])
-    evidence = tenant.evidence(ctx)
+    evidence = evidence_now()
     vreg = cverify.for_agent(tenant.name)
 
     def full_contract(answer: Answer) -> Contract:

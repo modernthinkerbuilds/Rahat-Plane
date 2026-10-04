@@ -153,6 +153,47 @@ def parse_answer(data: str | dict[str, Any]) -> Answer:
     return answer
 
 
+def sanitize_citations(answer: Answer, evidence: Any) -> tuple[Answer, list[str]]:
+    """Fix the model's bookkeeping without throwing away a good place.
+
+    A citation to a record that doesn't exist or belongs to another place
+    is dropped; a diner line marked verified without its own menu record
+    becomes unverified; an acclaim with no acclaim record is removed. The
+    renderer prints facts only from each place's own records, so nothing
+    the household reads loses its source. LIVE (2026-10-04): four good
+    cafés were dropped in one morning for exactly these slips ("evidence
+    record 1946 belongs to another place", "acclaim stated without an
+    acclaim record"), and the family got nothing."""
+    notes: list[str] = []
+    picks: list[Pick] = []
+    for p in answer.picks:
+        refs: list[EvidenceRef] = []
+        for r in p.evidence:
+            f = evidence.fact(r.fact_id)
+            if not f:
+                notes.append(f"{p.name}: citation {r.fact_id} dropped (no such record)")
+            elif f.get("subject_type") == "place" and f.get("subject_id") != p.place_id:
+                notes.append(f"{p.name}: citation {r.fact_id} dropped (another place's record)")
+            else:
+                refs.append(r)
+        lines: list[DinerLine] = []
+        for d in p.diner_lines:
+            if d.verified:
+                f = evidence.fact(d.fact_id) if d.fact_id is not None else None
+                if not f or (f.get("subject_type") == "place" and f.get("subject_id") != p.place_id):
+                    d = d.model_copy(update={"verified": False, "fact_id": None})
+                    notes.append(f"{p.name}: {d.member}'s line marked unverified (no menu record of its own)")
+            lines.append(d)
+        acclaim = p.acclaim
+        if acclaim and not evidence.place(p.place_id).acclaim and not any(r.claim == "acclaim" for r in refs):
+            acclaim = None
+            notes.append(f"{p.name}: acclaim without a record removed")
+        picks.append(p.model_copy(update={"evidence": refs, "diner_lines": lines, "acclaim": acclaim}))
+    if not notes:
+        return answer, []
+    return answer.model_copy(update={"picks": picks}), notes
+
+
 def coherence_problems(answer: Answer) -> list[str]:
     """What the schema can't say: the parts of an answer that must agree.
     LIVE (2026-10-04, a real household coffee ask, replayed): the

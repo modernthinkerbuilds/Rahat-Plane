@@ -117,7 +117,7 @@ def control(agent: str, *, first: ExecResult, verify_for: Callable[[Answer], cve
     hints: list[str] = []
     for round_no in range(max_repairs + 1):
         if exec_res.answer is None:
-            if round_no < max_repairs and (time.monotonic() - started_at) < time_budget_s:
+            if round_no < max_repairs and (round_no == 0 or (time.monotonic() - started_at) < time_budget_s):
                 exec_res = run_exec(exec_res, ["the answer JSON did not validate: " + "; ".join(exec_res.problems[:4])])
                 out.execs.append(exec_res)
                 out.repairs += 1
@@ -135,7 +135,9 @@ def control(agent: str, *, first: ExecResult, verify_for: Callable[[Answer], cve
         hints = report.hints()
         if out.judge is not None and out.judge.authority in (cjudge.BLOCK,):
             hints += out.judge.hints()
-        if round_no < max_repairs and (time.monotonic() - started_at) < time_budget_s:
+        # The first repair always runs: research alone outlasts the latency budget, and without it every
+        # failing pick was dropped unrepaired (LIVE 2026-10-04: repairs 0, the family got nothing).
+        if round_no < max_repairs and (round_no == 0 or (time.monotonic() - started_at) < time_budget_s):
             exec_res = run_exec(exec_res, hints)
             out.execs.append(exec_res)
             out.repairs += 1
