@@ -96,10 +96,16 @@ def _norm(s: str) -> str:
 
 
 def covered(incident: Incident, golden_messages: list[str]) -> bool:
-    """True when a golden case already carries this ask (its words in the
-    case's message, which may join several asks with ' · ')."""
+    """True when a golden case already carries this ask: its words in the
+    case's message (which may join several asks with ' · '). A short ask
+    ("Sunday", "/start") must equal one of the joined asks — as a
+    substring it would match half the set."""
     m = _norm(incident.message)
-    return bool(m) and any(m[:60] in _norm(g) for g in golden_messages)
+    if not m:
+        return False
+    if len(m) < 16:
+        return any(m == _norm(part) for g in golden_messages for part in g.split("·"))
+    return any(m[:60] in _norm(g) for g in golden_messages)
 
 
 def skeleton(inc: Incident, n: int) -> dict:

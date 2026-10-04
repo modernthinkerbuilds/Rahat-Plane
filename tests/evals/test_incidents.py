@@ -50,6 +50,12 @@ def test_covered_incidents_are_not_queued_again(log):
     assert all(i.message != "a cafe to sit in, I can drive 45 min" for i in fresh) and fresh
 
 
+def test_a_short_ask_is_covered_only_by_an_equal_ask():
+    short = inc.Incident("genie", "correction", "2026-09-13 01:40:16", "Sunday", "x")
+    assert not inc.covered(short, ["What are the top events on Sunday afternoon"])
+    assert inc.covered(short, ["/whatson · Sunday"])
+
+
 def test_promote_appends_to_the_end_and_never_without_a_contract(tmp_path, log):
     inbox = tmp_path / "incidents_inbox.jsonl"
     rows = [inc.skeleton(i, n) for n, i in enumerate(inc.scan(log, manifest=MANIFEST), start=1)]
