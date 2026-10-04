@@ -143,10 +143,35 @@ def parse_answer(data: str | dict[str, Any]) -> Answer:
     if not isinstance(data, dict):
         raise AnswerError(["answer must be an object"])
     try:
-        return Answer.model_validate(data)
+        answer = Answer.model_validate(data)
     except ValidationError as e:
         probs = [f"{'.'.join(str(p) for p in err['loc']) or '<root>'}: {err['msg']}" for err in e.errors()]
         raise AnswerError(probs) from e
+    probs = coherence_problems(answer)
+    if probs:
+        raise AnswerError(probs)
+    return answer
+
+
+def coherence_problems(answer: Answer) -> list[str]:
+    """What the schema can't say: the parts of an answer that must agree.
+    LIVE (2026-10-04, a real household coffee ask, replayed): the
+    final call came back kind "picks" with a recommendation and no picks
+    array at all; it validated, nothing named a place so no place check
+    ran, and the reply was a header and an assumption."""
+    probs: list[str] = []
+    ids = answer.pick_ids()
+    if answer.kind == "picks" and not answer.picks:
+        probs.append('kind is "picks" but picks is empty: name at least one pick from the evidence, or answer '
+                     'kind "none" with a none_claim that says where and when you looked')
+    if answer.recommendation and answer.recommendation not in ids:
+        probs.append(f"recommendation {answer.recommendation!r} is not one of the picks: put that place in picks, "
+                     f"or recommend one of {ids}")
+    if answer.kind == "plan" and not answer.plan:
+        probs.append('kind is "plan" but plan is empty')
+    if answer.kind == "question" and not (answer.question or "").strip():
+        probs.append('kind is "question" but question is empty')
+    return probs
 
 
 def answer_json_schema() -> dict:
