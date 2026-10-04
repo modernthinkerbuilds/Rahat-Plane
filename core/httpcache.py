@@ -77,12 +77,13 @@ def get(url: str, *, headers: dict | None = None, timeout: float = 10.0, opener=
     if opener is not None:
         return _real(url, headers, timeout, opener)
     key = {"http": url}
-    hit = cassette.lookup(KIND, key, dir=cassette_dir)      # record on miss: a recorded page is reused
-    if hit is not None:
-        return Fetched.from_json(url, hit)
-    if cassette.test_mode() and not cassette.recording():
-        raise HermeticMiss(f"no http cassette for {url}")
+    if cassette.active():                                   # test mode only; production always fetches
+        hit = cassette.lookup(KIND, key, dir=cassette_dir)  # record on miss: a recorded page is reused
+        if hit is not None:
+            return Fetched.from_json(url, hit)
+        if not cassette.recording():
+            raise HermeticMiss(f"no http cassette for {url}")
     out = _real(url, headers, timeout)
-    if cassette.recording() and not (out.error and not out.status):   # transport failures are not worth keeping
+    if cassette.active() and cassette.recording() and not (out.error and not out.status):  # transport failures are not kept
         cassette.save(KIND, key, out.as_json(), dir=cassette_dir)
     return out

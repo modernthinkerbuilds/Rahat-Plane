@@ -331,15 +331,16 @@ def chat(actor: str, kind: str, *, system: str = "", messages: list[dict],
     # The cassette is keyed on the conversation, not the model id: a replay
     # must not depend on which model name the environment resolves today.
     key_req = {k: v for k, v in request.items() if k != "model"}
-    # A recorded conversation is reused even while recording (record on miss),
-    # so a long recording run is resumable and never pays twice for one turn.
-    raw = cassette.lookup(kind, key_req, dir=cassette_dir)
+    # Cassettes exist only under test mode (cassette.active()); production
+    # always goes to the wire. While recording, a recorded turn is reused
+    # (record on miss), so a long recording run resumes and never pays twice.
+    raw = cassette.lookup(kind, key_req, dir=cassette_dir) if cassette.active() else None
     from_cassette = raw is not None
     if raw is None:
-        if cassette.test_mode() and not cassette.recording():
+        if cassette.active() and not cassette.recording():
             return ChatResult(model=model_id, error="hermetic")
         raw = _call_wire_with_retry(request)
-        if cassette.recording() and not raw.get("error"):
+        if cassette.active() and cassette.recording() and not raw.get("error"):
             cassette.save(kind, key_req, dict(raw, model=model_id), dir=cassette_dir)
     latency = int((time.monotonic() - t0) * 1000)
     if from_cassette and raw.get("model"):

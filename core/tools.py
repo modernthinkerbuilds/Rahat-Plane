@@ -183,14 +183,14 @@ class ToolRegistry:
         # 5. the call, from a cassette when the tool is cacheable
         key_req = {"tool": name, "args": parsed.model_dump(mode="json")}
         res: ToolResult | None = None
-        if tool.cacheable:                      # record on miss: a recorded result is reused
+        if tool.cacheable and cassette.active():   # test mode only; record on miss reuses a recorded result
             hit = cassette.lookup("tool", key_req, dir=cassette_dir)
             if hit is not None:
                 res = ToolResult(name=name, ok=bool(hit.get("ok", True)), value=hit.get("value"),
                                  error=hit.get("error"), evidence_ids=list(hit.get("evidence_ids", [])),
                                  search_queries=int(hit.get("search_queries", 0)), from_cassette=True)
         if res is None:
-            if tool.cacheable and cassette.test_mode() and not cassette.recording():
+            if tool.cacheable and cassette.active() and not cassette.recording():
                 res = ToolResult(name=name, ok=False, error="hermetic: no cassette for this call")
             else:
                 try:
@@ -199,7 +199,7 @@ class ToolRegistry:
                     res.name = name
                 except Exception as e:  # noqa: BLE001 - a tool never raises into the loop
                     res = ToolResult(name=name, ok=False, error=f"{type(e).__name__}: {str(e)[:200]}")
-                if tool.cacheable and cassette.recording() and res.ok:
+                if tool.cacheable and cassette.active() and cassette.recording() and res.ok:
                     cassette.save("tool", key_req, {"ok": res.ok, "value": res.value, "error": res.error,
                                                      "evidence_ids": res.evidence_ids,
                                                      "search_queries": res.search_queries}, dir=cassette_dir)

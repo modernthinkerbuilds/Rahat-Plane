@@ -11,10 +11,16 @@ base is not cassetted (replay runs against the same migrated base).
 Modes:
     replay    RAHAT_TEST_MODE=1 and a cassette dir: a hit is served, a
               miss returns None and the caller decides (a hermetic test
-              fails closed; a live run goes to the wire).
-    record    RAHAT_FIXTURE_RECORD=1: the wire is called and the response
-              saved. Recording does not require test mode.
-    off       no dir: nothing is read or written.
+              fails closed).
+    record    RAHAT_TEST_MODE=1 and RAHAT_FIXTURE_RECORD=1: a miss goes
+              to the wire and the response is saved; a hit is reused
+              (record on miss, so a long recording run resumes).
+    off       outside test mode, or no dir: nothing is read or written.
+
+Cassettes are a test device (2026-10-04): outside RAHAT_TEST_MODE,
+`lookup` returns None and `save` writes nothing, whatever the
+environment says about a cassette directory or recording, so a
+production process can never answer from a recording.
 
 Directory: the `dir` argument, else RAHAT_CASSETTE_DIR, else
 LLM_FIXTURE_DIR (the older model-only variable), else none.
@@ -43,6 +49,11 @@ def recording() -> bool:
 
 def test_mode() -> bool:
     return _truthy(os.getenv("RAHAT_TEST_MODE"))
+
+
+def active() -> bool:
+    """True only under RAHAT_TEST_MODE: the one place cassettes exist."""
+    return test_mode()
 
 
 def directory(explicit: str | Path | None = None) -> Path | None:
@@ -79,7 +90,10 @@ def reset_episodes() -> None:
 
 
 def lookup(kind: str, request: Any, *, dir: str | Path | None = None) -> dict | None:
-    """The recorded response for this exact request (this recurrence), or None."""
+    """The recorded response for this exact request (this recurrence), or
+    None. Always None outside test mode."""
+    if not active():
+        return None
     d = directory(dir)
     if d is None:
         return None
@@ -101,6 +115,9 @@ def lookup(kind: str, request: Any, *, dir: str | Path | None = None) -> dict | 
 
 def save(kind: str, request: Any, response: Any, *, dir: str | Path | None = None,
          now: datetime | None = None) -> Path | None:
+    """Write one recording. A no-op outside test mode."""
+    if not active():
+        return None
     d = directory(dir)
     if d is None:
         return None
