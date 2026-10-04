@@ -183,8 +183,16 @@ def run(tenant: Tenant, text: str, *, chat_id: str, now: datetime, serve_mode: s
                     if frame2 is not None:
                         frame = frame2
         result.cost_usd += cost
+        if frame is not None and frame_override is None and hasattr(tenant, "refine_frame"):
+            # The tenant's deterministic reading rules: a follow-up keeps what it doesn't change (U7),
+            # and a style reference is never an exclusion.
+            frame, refine_notes = tenant.refine_frame(frame, ctx)
+            if refine_notes:
+                result.steps.append({"step": "refine", "notes": refine_notes[:8]})
         result.frame = frame
         result.frame_problems = problems
+        if frame is not None:
+            ctx["frame"] = frame             # the tools read the reading they serve (e.g. no verdict on a style reference)
         s.output = frame.header() if frame else {"problems": problems, "error": err}
         s.cost_usd = cost
     result.steps.append({"step": "understand", "ok": frame is not None, "cost_usd": cost, "error": err})

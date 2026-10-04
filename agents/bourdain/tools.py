@@ -586,6 +586,22 @@ def build_registry(ctx: dict, *, allow: list[str] | None = None) -> ToolRegistry
 
     @reg.tool("record_verdict", "Store a household verdict on a place or a class of places (chain, reported score, price, room, boring, loved, chosen...).", args=VerdictArgs, kind="write")
     def record_verdict(a: VerdictArgs, c):
+        frame = c.get("frame")
+        ref = getattr(getattr(frame, "reference_place", None), "name", None)
+        if ref and a.kind in ("style", "boring", "rejected"):
+            target = kb.norm_name(ref)
+            named = kb.norm_name(a.text or "") + " " + kb.norm_name(a.class_target or "")
+            if a.place_id:
+                pc = _con(c)
+                try:
+                    row = query.place(pc, a.place_id) or {}
+                finally:
+                    pc.close()
+                named += " " + kb.norm_name(row.get("name", ""))
+            if target and target in named:
+                # LIVE 2026-10-04: "nothing the style of Lantern House but cozy?" became two standing
+                # verdicts against the very place the household was holding up as the model.
+                return {"recorded": None, "skipped": f"{ref} is the style reference of this ask, not a verdict"}
         con = _con(c)
         try:
             con.execute("INSERT INTO kb_verdict (place_id, class_target, member_id, kind, value_json, text, at, scope, trace_id) "

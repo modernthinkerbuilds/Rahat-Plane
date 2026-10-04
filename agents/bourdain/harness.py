@@ -31,7 +31,7 @@ from core.harness import render as hrender
 from core.harness.answer import Answer
 from core.harness.contract import Contract, load_library
 from core.harness.evidence import Evidence
-from core.harness.frame import Frame, frame_json_schema
+from core.harness.frame import Frame, ReferencePlace, frame_json_schema
 from core.harness.run import RunResult
 from core.kb import query, schema as kb
 from core.tools import ToolRegistry
@@ -64,11 +64,23 @@ class BourdainTenant:
         return self._profile if self._profile is not None else cprofile.load()
 
     def speaker_for(self, chat_id: str) -> str:
+        """Which member is asking. The chat configured as BOURDAIN_PRIMARY_CHAT
+        is the profile's primary, and the household's other adult chat is the
+        spouse. The household registry (shared with Genie) records the order
+        the chats joined in — the first adult in is "primary" — not who the
+        profile's members are: LIVE 2026-10-04 it named the owner "spouse", so
+        every "I" was read as the spouse, with the spouse's rules and words."""
+        cid = str(chat_id)
+        primary = (os.getenv("BOURDAIN_PRIMARY_CHAT") or "").strip()
+        if primary and cid == primary:
+            return "primary"
         try:
             from agents.bourdain import state as old_state
-            role = old_state.household_role_for(chat_id)
+            role = old_state.household_role_for(cid)
         except Exception:  # noqa: BLE001 - the household registry is optional here
             role = None
+        if primary and role in ("primary", "spouse"):
+            return "spouse"                    # the household's other adult
         return ROLE_TO_MEMBER.get(role or "", "primary")
 
     def build_ctx(self, chat_id: str, now: datetime, text: str, *, db_path: str | None, cassette_dir: str | None,
@@ -149,6 +161,66 @@ class BourdainTenant:
         except ValueError:
             return None
         return {"fact_id": row[0], "issued": v.get("issued"), "hazards": v.get("hazards") or [], "observed_at": row[2]}
+
+    # ── the reading, made consistent ─────────────────────────────────────
+    _WHAT = ("meal", "cuisines", "dishes", "formats", "attributes", "reference_place")
+
+    def refine_frame(self, frame: Frame, ctx: dict) -> tuple[Frame, list[str]]:
+        """Deterministic rules on the model's reading.
+
+        * A follow-up that refers to the last answer and says no "what" of
+          its own ("other options please", "check across the whole area", "I
+          can travel 60 minutes, expand the search") keeps the last ask's
+          what, and its where unless it changes the where (outcome U7).
+          LIVE 2026-10-04: every refinement of a coffee ask lost "coffee",
+          "cozy", "a place to sit", and the searches came back empty.
+        * A place named as a style reference ("nothing the style of Lantern House
+          but cozy?") is not a verdict on it and not a standing exclusion:
+          it is left out of this answer only. The same morning that read
+          became a session-long exclusion of the very place being praised.
+        """
+        notes: list[str] = []
+        upd: dict = {}
+        last = (ctx.get("last_answer") or {}).get("frame") or {}
+        has_what = any(getattr(frame, k) for k in self._WHAT)
+        if frame.refers_to_last_answer and last and not has_what:
+            for k in self._WHAT:
+                if last.get(k):
+                    upd[k] = last[k]
+            if not frame.radius and not frame.area:
+                for k in ("radius", "area"):
+                    if last.get(k):
+                        upd[k] = last[k]
+            if upd:
+                notes.append("kept from the last ask: " + ", ".join(sorted(upd)))
+        ref = frame.reference_place
+        if ref is None and upd.get("reference_place"):
+            ref = ReferencePlace.model_validate(upd["reference_place"])
+        if ref:
+            target = kb.norm_name(ref.name)
+
+            def same(name: str | None) -> bool:
+                n = kb.norm_name(name or "")
+                return bool(n) and (n == target or n in target or target in n)
+
+            exclusions = []
+            for e in frame.exclusions:
+                if e.kind == "place" and same(e.value) and e.scope != "turn":
+                    e = e.model_copy(update={"scope": "turn"})
+                    notes.append(f"{ref.name}: a style reference is left out of this answer only")
+                exclusions.append(e)
+            verdicts = [v for v in frame.verdicts
+                        if not (v.place and same(v.place) and v.kind in ("style", "rejected", "boring"))]
+            if len(verdicts) != len(frame.verdicts):
+                notes.append(f"{ref.name}: a style reference is not a verdict")
+            upd["exclusions"], upd["verdicts"] = exclusions, verdicts
+            if "eat" not in frame.intents:
+                upd["intents"] = list(frame.intents) + ["eat"]
+        if not upd:
+            return frame, notes
+        data = frame.model_dump()
+        data.update(upd)
+        return Frame.model_validate(data), notes
 
     # ── prompts ───────────────────────────────────────────────────────────
     def understand_prompt(self, text: str, ctx: dict, *, problems: list[str] | None = None) -> str:
