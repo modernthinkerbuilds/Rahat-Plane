@@ -27,7 +27,11 @@ SEED = Path("private/prds/bourdain/seed_nyc_boston.json")
 CASSETTES = Path("private/cassettes/bourdain")
 MANIFEST = cmanifest.load("bourdain")
 SETS = [Path(p) for p in MANIFEST.golden_sets]
-STUB_FLOOR = 50          # 54/59 on the first stub run against the household profile (2026-10-04); the rest are real catches
+# Sets added after the manifest's (quality pass 2026-10-04: golden_home_2026-10.jsonl, the asks of
+# Oct 3–4) run AFTER them, in name order, in the same chat — appended, never interleaved, so a
+# recording of the earlier cases stays valid. Listed in the manifest once the platform lane adds them.
+EXTRA_SETS = sorted(p for p in Path("private/prds/bourdain/evals").glob("golden_*.jsonl") if p not in SETS)
+STUB_FLOOR = 0.85        # 54/59 on the first stub run (2026-10-04); the stub picker ignores the diet/price/rating rules
 
 pytestmark = pytest.mark.skipif(not (SEED.exists() and all(p.exists() for p in SETS)),
                                 reason="private golden sets not present")
@@ -35,7 +39,7 @@ pytestmark = pytest.mark.skipif(not (SEED.exists() and all(p.exists() for p in S
 
 @pytest.fixture
 def sandbox(tmp_path, monkeypatch):
-    cases = [c for p in SETS for c in ev.load_golden(p)]
+    cases = [c for p in SETS + EXTRA_SETS for c in ev.load_golden(p)]
     db = tmp_path / "golden.db"
     ev.prepare_db(SEED, db_path=db, now=ev.when_of(cases[0]))
     from core import io as cio
@@ -58,11 +62,11 @@ def test_every_private_case_runs_in_stub_mode(sandbox):
     rep = ev.run_set(sandbox["tenant"], sandbox["cases"], mode="stub", db_path=sandbox["db"], cassette_dir=None,
                      profile=sandbox["profile"])
     print(rep.render())
-    assert rep.total == len(sandbox["cases"]) == 59
+    assert rep.total == len(sandbox["cases"]) >= 59
     errors = [(c.id, c.error) for c in rep.cases if c.error]
     assert errors == []
     assert all(c.musts for c in rep.cases)
-    assert rep.passed >= STUB_FLOOR   # the stub picker's floor (a smoke check); the model runs are the gate
+    assert rep.passed >= STUB_FLOOR * rep.total   # the stub picker's floor (a smoke check); the model runs are the gate
 
 
 @pytest.mark.skipif(not CASSETTES.exists(), reason="no recorded cassettes (run scripts/eval_outcomes.py --mode live with RAHAT_FIXTURE_RECORD=1)")
