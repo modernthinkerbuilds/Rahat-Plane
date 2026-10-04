@@ -30,7 +30,7 @@ from core.harness import control as ccontrol
 from core.harness import execute as cexecute
 from core.harness import record as crecord
 from core.harness.answer import Answer
-from core.harness.contract import Contract, OutcomeLibrary, assemble
+from core.harness.contract import Contract, OutcomeLibrary, assemble, complete_for_answer
 from core.harness.evidence import Evidence
 from core.harness.frame import Frame, FrameError, parse_frame
 from core.harness.render import Rendered
@@ -242,12 +242,18 @@ def run(tenant: Tenant, text: str, *, chat_id: str, now: datetime, serve_mode: s
     evidence = tenant.evidence(ctx)
     vreg = cverify.for_agent(tenant.name)
 
+    def full_contract(answer: Answer) -> Contract:
+        # An answer that names places is held to the names_places set whatever the frame said.
+        # Sets only accumulate: a repaired or dropped pick never shrinks what the ask was checked against.
+        result.contract = complete_for_answer(result.contract or contract, tenant.library, frame, answer)
+        return result.contract
+
     def verify_for(answer: Answer) -> cverify.VerifyContext:
-        return tenant.verify_context(frame, contract, answer, ctx, evidence)
+        return tenant.verify_context(frame, full_contract(answer), answer, ctx, evidence)
 
     def judge_for(answer: Answer) -> cjudge.JudgeReport:
         with step("judge", None) as s:
-            rep = cjudge.judge(tenant.name, ask=text, frame=frame, contract=contract, answer=answer,
+            rep = cjudge.judge(tenant.name, ask=text, frame=frame, contract=full_contract(answer), answer=answer,
                                evidence=evidence.for_judge(answer.pick_ids()[:4]), checklist=tenant.checklist,
                                library_texts=texts, config=tenant.judge_config, now=now, trace_id=tid, db_path=db_path,
                                cassette_dir=cassette_dir, mode=mode)

@@ -183,3 +183,37 @@ def assemble(frame: Frame, library: OutcomeLibrary, *,
     ordered = sorted(chosen.values(), key=lambda c: (c.priority != "must", c.id))
     return Contract(library_version=library.version, frame_schema_version=frame.schema_version,
                     outcomes=ordered)
+
+
+def complete_for_answer(contract: Contract, library: OutcomeLibrary, frame: Frame, answer) -> Contract:
+    """The mandatory sets follow what the answer does, not only how the
+    frame read the message (ADR-018 §2.2: mandatory sets can't be
+    deselected). An answer that names places — picks, plan slots with a
+    place, a none-claim's nearest place — carries the names_places set even
+    when the frame read the message as a verdict or a question; an answer
+    that is a plan carries the day_plan set. Pure; returns the same
+    contract when nothing is missing."""
+    ids = library.by_id()
+    have = {o.id for o in contract.outcomes}
+    wanted: list[tuple[str, str]] = []
+    names_places = (bool(getattr(answer, "picks", None))
+                    or any(getattr(s, "place_id", None) for s in getattr(answer, "plan", []) or [])
+                    or bool(getattr(answer, "none_claim", None) and answer.none_claim.nearest_place_id))
+    if names_places:
+        wanted += [(oid, "mandatory:names_places (the answer names places)")
+                   for oid in library.mandatory.get("names_places", [])]
+    if getattr(answer, "kind", "") == "plan" or getattr(answer, "plan", None):
+        wanted += [(oid, "mandatory:day_plan (the answer is a plan)") for oid in library.mandatory.get("day_plan", [])]
+    added: list[ContractOutcome] = []
+    for oid, reason in wanted:
+        if oid in have or oid not in ids:
+            continue
+        o = ids[oid]
+        added.append(ContractOutcome(id=oid, check=o.check, priority=o.priority, params=_params(o, frame),
+                                     conditional=APPLIES[o.applies](frame) is None, reason=reason))
+        have.add(oid)
+    if not added:
+        return contract
+    ordered = sorted(list(contract.outcomes) + added, key=lambda c: (c.priority != "must", c.id))
+    return Contract(library_version=contract.library_version, frame_schema_version=contract.frame_schema_version,
+                    outcomes=ordered)
