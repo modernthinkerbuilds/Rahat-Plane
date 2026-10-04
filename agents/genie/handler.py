@@ -943,9 +943,14 @@ def handle_whats_on(*, now: datetime | None = None, llm=None,
     if not (_live_plan_enabled() and location
             and (llm is not None or not _hermetic())):
         if inventory_lines or commitment_lines:
+            # Legacy Markdown has no nesting, and the "_" inside
+            # `/weekend_plan` closed the italic early: Telegram refused every
+            # /whatson reply with a 400 and the family got the plain-text
+            # retry, symbols and all (LIVE BUG 2026-10-04). The command sits
+            # outside the italic.
             return _inventory_reply(
                 "_Live search is offline — this is the verified feed "
-                "inventory. `/weekend_plan` for a plan._")
+                "inventory._ `/weekend_plan` for a plan.")
         return ("I need a home area to look things up — set "
                 "RAHAT_GENIE_LOCATION in .env (e.g. \"San Jose, CA\"), "
                 "then ask me again. `/weekend_plan` works offline.")
@@ -971,8 +976,8 @@ def handle_whats_on(*, now: datetime | None = None, llm=None,
         if inventory_lines or commitment_lines:
             return _inventory_reply(
                 "_Live search is unavailable right now (the AI lookup "
-                "failed) — this is the verified feed inventory. "
-                "`/weekend_plan` for a plan._")
+                "failed) — this is the verified feed inventory._ "
+                "`/weekend_plan` for a plan.")
         return ("Couldn't reach live listings just now, and the feeds have "
                 "nothing verified for this weekend yet — try again after "
                 "the next feed refresh (7:00, 12:30, 18:00), or "
@@ -1000,13 +1005,15 @@ def handle_whats_on(*, now: datetime | None = None, llm=None,
             day_lines.append(f"  • {o.render()}")
         if day_lines:
             lines += ["", f"*{day_name}*"] + day_lines
+    window = "today" if saturday == sunday else "next weekend"
     if len(seen) == 0 and not commitment_lines:
-        return ("Nothing solid found for next weekend — try again later, "
+        return (f"Nothing solid found for {window} — try again later, "
                 "or `/weekend_plan` for the offline plan.")
     if aud_note:
         lines += ["", aud_note]
-    lines += ["", "_Scope: next weekend, family-friendly, near "
-                  f"{location}. Say `/weekend_plan` for a sequenced plan._"]
+    near = re.sub(r"[_*`\[\]]", "", location)     # inside an italic: no escaping in legacy Markdown
+    lines += ["", f"_Scope: {window}, family-friendly, near "
+                  f"{near}._ Say `/weekend_plan` for a sequenced plan."]
     return "\n".join(lines)
 
 

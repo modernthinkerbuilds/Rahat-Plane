@@ -35,6 +35,7 @@ import logging
 import os
 import re
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
@@ -122,10 +123,22 @@ def _discovery_prompt(*, location: str, sat_iso: str, sun_iso: str,
    stroller-friendly options when a toddler or newborn is listed.
    ORDER each day's list best-fit first — the first item is the one
    that gets planned."""
+    if sat_iso == sun_iso:
+        # One day (a Sunday ask: Saturday is gone). LIVE BUG 2026-10-04: the
+        # prompt said "Saturday 2026-10-04 and Sunday 2026-10-04", a date that
+        # is a Sunday called a Saturday; the model sometimes answered with no
+        # options at all, and Genie said live search was unavailable.
+        name = _weekday(sun_iso) or "Sunday"
+        key = "saturday" if name == "Saturday" else "sunday"
+        other = "sunday" if key == "saturday" else "saturday"
+        dates = (f"Date: {name} {sun_iso}, this one day only. Put every option "
+                 f'under "{key}" and leave "{other}" empty; weather for "{key}" only.')
+    else:
+        dates = f"Dates: Saturday {sat_iso} and Sunday {sun_iso}"
     return f"""You research REAL, current weekend options for one household. Use web search.
 
 Location: {location}
-Dates: Saturday {sat_iso} and Sunday {sun_iso}
+{dates}
 Household attending: {role_line} (energy budget: {energy})
 Constraints: {cons_line}
 
@@ -150,6 +163,35 @@ Return STRICT JSON only — no prose, no markdown fences:
 Only include options you actually found via search. If you cannot find
 real options, return {{"weather": {{...}}, "options": {{"saturday": [],
 "sunday": []}}}}."""
+
+
+_WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+
+
+def _weekday(iso: str) -> str | None:
+    try:
+        return _WEEKDAYS[datetime.strptime(str(iso), "%Y-%m-%d").weekday()]
+    except (TypeError, ValueError):
+        return None
+
+
+def _day_key(key: Any, sat_iso: str, sun_iso: str) -> str | None:
+    """'saturday' / 'sunday' for a key the model used for a day: the day
+    name in any case, its short form, or the ISO date; for a one-day ask
+    also 'day' / 'today'."""
+    k = str(key or "").strip().lower()
+    one_day = sat_iso == sun_iso
+    if k in ("saturday", "sat"):
+        return "saturday"
+    if k in ("sunday", "sun"):
+        return "sunday"
+    if one_day and k in ("day", "today", "options", (_weekday(sun_iso) or "").lower()):
+        return "sunday"
+    if k.startswith(str(sun_iso)):
+        return "sunday"
+    if k.startswith(str(sat_iso)):
+        return "saturday"
+    return None
 
 
 def _parse_json_block(text: str) -> dict | None:
@@ -177,7 +219,8 @@ def _clean(s: Any, cap: int = _MAX_FIELD) -> str:
 def _coerce_option(raw: Any) -> LiveOption | None:
     if not isinstance(raw, dict):
         return None
-    activity = _clean(raw.get("activity"), _FIELD_CAPS["activity"])
+    activity = _clean(raw.get("activity") or raw.get("title") or raw.get("name") or raw.get("event"),
+                      _FIELD_CAPS["activity"])
     if not activity:
         return None
     time = _clean(raw.get("time")).lower()
@@ -188,7 +231,8 @@ def _coerce_option(raw: Any) -> LiveOption | None:
     # Take the first comma segment, drop any parenthetical, and if what
     # remains still looks like a street address (leading house number),
     # it isn't a venue name at all — drop it.
-    place = _clean(raw.get("place"), _FIELD_CAPS["place"]).split(",")[0]
+    place = _clean(raw.get("place") or raw.get("venue") or raw.get("location"),
+                   _FIELD_CAPS["place"]).split(",")[0]
     place = re.sub(r"\(.*?\)", "", place).strip()
     if re.match(r"^\d+\s", place):
         place = ""
@@ -209,6 +253,11 @@ def discover_options(*, location: str, sat_iso: str, sun_iso: str,
     budget-gated spend chokepoint — with search grounding ON.
     `mode`: "family" (default) or "couple_evening" (J2 date-night).
 
+    A grounded answer that comes back unusable (no JSON, or no options)
+    is asked once more: the model varies run to run, and one more call
+    (≈2¢) beats telling the family live search is down (LIVE BUG
+    2026-10-04). A failed call (budget, quota, wire) is not retried.
+
     Returns None on ANY failure so the caller falls back to the static
     offline plan. Never raises.
     """
@@ -216,43 +265,72 @@ def discover_options(*, location: str, sat_iso: str, sun_iso: str,
                                sun_iso=sun_iso, energy=energy,
                                roles=roles, constraints=constraints,
                                mode=mode)
-    try:
-        if llm is not None:
-            text = llm(prompt) or ""
-        else:
-            from core import llm as _llm
-            # Model pin (2026-08-09): use the SAME flash id the runner
-            # validated at boot (NEW_MIYA_MODEL_FLASH) rather than the
-            # core picker — the picker's auto-upgrade once selected
-            # `gemini-omni-flash-preview`, which 400s on grounded calls,
-            # and the whole live path silently fell back to offline.
-            model = os.getenv("NEW_MIYA_MODEL_FLASH", "gemini-2.5-flash")
-            usage = _llm.generate("genie", "genie.live_plan.discovery",
-                                  prompt=prompt, model=model, search=True)
-            if usage.error:
-                logger.warning("genie live discovery LLM error "
-                               "(falling back to offline plan): %s",
-                               usage.error)
-                return None
-            text = usage.text
-    except Exception as e:  # noqa: BLE001 — incl. BudgetExceeded; fallback
-        logger.warning("genie live discovery failed (%s: %s) — offline "
-                       "fallback", type(e).__name__, e)
-        return None
+    attempts = 2
+    for attempt in range(1, attempts + 1):
+        try:
+            if llm is not None:
+                text = llm(prompt) or ""
+            else:
+                from core import llm as _llm
+                # Model pin (2026-08-09): use the SAME flash id the runner
+                # validated at boot (NEW_MIYA_MODEL_FLASH) rather than the
+                # core picker — the picker's auto-upgrade once selected
+                # `gemini-omni-flash-preview`, which 400s on grounded calls,
+                # and the whole live path silently fell back to offline.
+                model = os.getenv("NEW_MIYA_MODEL_FLASH", "gemini-2.5-flash")
+                usage = _llm.generate("genie", "genie.live_plan.discovery",
+                                      prompt=prompt, model=model, search=True)
+                if usage.error:
+                    logger.warning("genie live discovery LLM error "
+                                   "(falling back to offline plan): %s",
+                                   usage.error)
+                    return None
+                text = usage.text
+        except Exception as e:  # noqa: BLE001 — incl. BudgetExceeded; fallback
+            logger.warning("genie live discovery failed (%s: %s) — offline "
+                           "fallback", type(e).__name__, e)
+            return None
+        disc, why = _discovery_from_text(text, sat_iso=sat_iso, sun_iso=sun_iso)
+        if disc is not None:
+            return disc
+        logger.warning("genie live discovery returned %s (attempt %d of %d)%s",
+                       why, attempt, attempts,
+                       " — asking once more" if attempt < attempts else " — offline fallback")
+    return None
 
+
+def _discovery_from_text(text: str, *, sat_iso: str, sun_iso: str) -> tuple[LiveDiscovery | None, str]:
+    """(the discovery, "") or (None, why it is unusable). Lenient about
+    the shape: day keys in any case or as ISO dates, an options list
+    whose items carry a day or date, and common field-name variants."""
     obj = _parse_json_block(text)
     if obj is None:
-        logger.warning("genie live discovery returned unparseable output "
-                       "(%d chars) — offline fallback", len(text or ""))
-        return None
-    weather = obj.get("weather") if isinstance(obj.get("weather"), dict) else {}
-    options = obj.get("options") if isinstance(obj.get("options"), dict) else {}
+        return None, f"unparseable output ({len(text or '')} chars)"
+    by_day: dict[str, list] = {"saturday": [], "sunday": []}
+    options = obj.get("options")
+    if isinstance(options, dict):
+        for k, v in options.items():
+            day = _day_key(k, sat_iso, sun_iso)
+            if day and isinstance(v, list):
+                by_day[day].extend(v)
+    elif isinstance(options, list):
+        for item in options:
+            if not isinstance(item, dict):
+                continue
+            day = (_day_key(item.get("day") or item.get("date"), sat_iso, sun_iso)
+                   or ("sunday" if sat_iso == sun_iso else None))
+            if day:
+                by_day[day].append(item)
+    weather_raw = obj.get("weather") if isinstance(obj.get("weather"), dict) else {}
+    weather: dict[str, Any] = {}
+    for k, v in weather_raw.items():
+        day = _day_key(k, sat_iso, sun_iso)
+        if day and day not in weather:
+            weather[day] = v
 
     def _day(key: str) -> list[LiveOption]:
-        raw = options.get(key)
-        items = raw if isinstance(raw, list) else []
         out = []
-        for r in items[:_MAX_CANDIDATES]:
+        for r in by_day[key][:_MAX_CANDIDATES]:
             o = _coerce_option(r)
             if o is not None:
                 out.append(o)
@@ -265,8 +343,10 @@ def discover_options(*, location: str, sat_iso: str, sun_iso: str,
         sunday=_day("sunday"),
     )
     if not disc.saturday and not disc.sunday:
-        return None    # discovery found nothing usable — fall back
-    return disc
+        shape = (sorted(map(str, options)) if isinstance(options, dict)
+                 else f"a list of {len(options)}" if isinstance(options, list) else type(options).__name__)
+        return None, f"no usable options (options: {shape})"
+    return disc, ""
 
 
 # ─────────────────────── deterministic sequencing ───────────────────────
