@@ -14,10 +14,13 @@ eval run) into service levels against declared budgets:
   * delivery— replies Telegram refused as Markdown (the family got raw
               symbols) and sends that failed outright;
   * cost    — from a saved eval report: per-case cost against the per-ask
-              brake.
+              brake;
+  * feeds   — when the Watch export last reached the Mac (vault/vitals.log)
+              and every silence over a day; what Huberman's 9:30 pm
+              autorun believed about each day (miya_v2.log).
 
     python -m tests.quality_gate.service_levels vault/bourdain_bot.log vault/genie_bot.log \
-        vault/miya_v2.log --since 2026-09-04 [--eval vault/eval_runs/bourdain_latest.json]
+        vault/miya_v2.log vault/vitals.log --since 2026-09-04 [--eval vault/eval_runs/bourdain_latest.json]
 
 Read-only: it reads text logs and JSON, never a database. Hermetic tests
 over synthetic lines: tests/quality_gate/test_service_levels.py.
@@ -239,6 +242,67 @@ def nudge_line(agent: str, nudges: list[Nudge]) -> str:
             + f" · {len(lost)} never arrived" + (f" ({', '.join(f'{n.name} {n.at:%m-%d %H:%M}' for n in lost)})" if lost else ""))
 
 
+_HAE = re.compile(r"hae: (\d+) points, (\d+) sleep, (\d+) workouts")
+_AUTOCOOL = re.compile(r"\[autocool\] fired \((.*)\)\s*$")
+
+
+def parse_feed(path: str | Path, *, since: str = "") -> list[datetime]:
+    """When the Watch export (Health Auto Export -> bridges/healthkit) reached
+    the Mac: one time per `hae:` line in vault/vitals.log. Kobe's calorie
+    checks and Huberman's autorun read what this feed writes, and nothing
+    says when it goes quiet (QA-2026-10-04-21)."""
+    out: list[datetime] = []
+    for raw in Path(path).read_text(encoding="utf-8", errors="replace").splitlines():
+        m = _LINE.match(raw)
+        if m and m.group(1) >= since and _HAE.search(m.group(4)):
+            out.append(datetime.strptime(m.group(1), "%Y-%m-%d %H:%M:%S"))
+    return out
+
+
+def feed_gaps(times: list[datetime], *, until: datetime | None = None,
+              hours: float = 24.0) -> list[tuple[datetime, datetime]]:
+    """Stretches of more than `hours` with nothing from the Watch, oldest
+    first. With `until`, a silence still running at that moment counts."""
+    ts = sorted(times)
+    if until is not None and ts:
+        ts.append(until)
+    return [(a, b) for a, b in zip(ts, ts[1:]) if (b - a).total_seconds() > hours * 3600]
+
+
+def feed_line(times: list[datetime], *, until: datetime | None = None, hours: float = 24.0) -> str:
+    if not times:
+        return "watch feed: nothing received"
+    gaps = feed_gaps(times, until=until, hours=hours)
+    days = len({t.date() for t in times})
+    desc = ", ".join(f"{a:%m-%d %H:%M} to {b:%m-%d %H:%M} ({(b - a).total_seconds() / 86400:.1f} d)"
+                     for a, b in gaps)
+    return (f"watch feed: {len(times)} deliveries on {days} days · last {max(times):%m-%d %H:%M}"
+            f" · {len(gaps)} silences over {hours:g} h" + (f": {desc}" if gaps else ""))
+
+
+def autocool_line(path: str | Path, *, since: str = "") -> str | None:
+    """What Huberman's 9:30 pm autorun believed about each day, from its own
+    log line: a workout's name (it saw one), "programmed WOD, Watch unsynced"
+    (assumed from the gym's synced WOD), or "rest day" (nothing synced)."""
+    labels: list[str] = []
+    prev = None
+    for raw in Path(path).read_text(encoding="utf-8", errors="replace").splitlines():
+        if raw == prev:
+            continue
+        prev = raw
+        m = _LINE.match(raw)
+        if m and m.group(1) >= since:
+            a = _AUTOCOOL.search(m.group(4))
+            if a:
+                labels.append(a.group(1))
+    if not labels:
+        return None
+    rest = sum(1 for x in labels if x == "rest day")
+    assumed = sum(1 for x in labels if x.startswith("programmed WOD"))
+    return (f"huberman autorun: {len(labels)} nights · {len(labels) - rest - assumed} saw a workout"
+            f" · {assumed} assumed from the gym's WOD · {rest} 'rest day'")
+
+
 def eval_cost_levels(report: dict, manifest: dict | None) -> str:
     """Cost per case from a saved eval report against the per-ask brake."""
     budgets = (manifest or {}).get("budgets") or {}
@@ -261,6 +325,9 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
     root = Path(__file__).resolve().parents[2]
     for log in args.logs:
+        if Path(log).name.startswith("vitals"):
+            print(feed_line(parse_feed(log, since=args.since), until=datetime.now()))
+            continue
         agent = agent_of(log)
         mpath = root / "agents" / agent / "manifest.json"
         manifest = json.loads(mpath.read_text()) if mpath.exists() else None
@@ -272,6 +339,9 @@ def main(argv: list[str] | None = None) -> int:
         nudges = parse_nudges(log, since=args.since)
         if nudges:
             print(nudge_line(agent, nudges))
+        autorun = autocool_line(log, since=args.since)
+        if autorun:
+            print(autorun)
     if args.eval:
         rep = json.loads(Path(args.eval).read_text())
         mpath = root / "agents" / rep.get("agent", "bourdain") / "manifest.json"

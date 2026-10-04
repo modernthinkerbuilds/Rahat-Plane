@@ -92,3 +92,57 @@ def test_the_cli_reads_logs_and_prints_one_line_per_agent(tmp_path, capsys):
     assert sl.main([str(b), str(m), "--examples"]) == 0
     out = capsys.readouterr().out
     assert out.startswith("bourdain: 4 asks") and "miya nudges: 3 logged as sent" in out
+
+
+_VITALS_LOG = """\
+INFO:     192.0.2.10:54720 - "POST /hae HTTP/1.1" 200 OK
+2026-09-20 23:56:00,000 INFO healthkit_bridge :: hae: 7000 points, 1 sleep, 3 workouts (skipped 0) [active_calories]
+2026-09-21 04:07:00,000 INFO healthkit_bridge :: hae: 6000 points, 1 sleep, 3 workouts (skipped 0) [active_calories]
+2026-09-28 00:47:00,000 INFO healthkit_bridge :: hae: 2163 points, 1 sleep, 0 workouts (skipped 0) [active_calories]
+2026-09-28 00:52:00,000 INFO healthkit_bridge :: hae: 0 points, 0 sleep, 3 workouts (skipped 0) []
+2026-10-03 09:01:00,000 INFO healthkit_bridge :: hae: 7298 points, 1 sleep, 0 workouts (skipped 0) [active_calories]
+INFO:     Shutting down
+"""
+
+_AUTORUN_LOG = """\
+2026-09-04 21:30:05,000 INFO huberman :: [autocool] fired (programmed WOD, Watch unsynced)
+2026-09-05 21:30:05,000 INFO huberman :: [autocool] fired (rest day)
+2026-09-05 21:30:05,000 INFO huberman :: [autocool] fired (rest day)
+2026-09-06 21:30:05,000 INFO huberman :: [autocool] fired (Cross Training)
+2026-10-02 21:00:06,035 INFO new_miya_runner :: [nudge] sent recovery_nudge (len=168)
+2026-10-02 21:30:14,454 INFO huberman :: [autocool] fired (rest day)
+"""
+
+
+def test_the_watch_feed_and_its_silences(tmp_path):
+    """Live (vault/vitals.log): nothing from the Watch from Sep 21 04:07 to
+    Sep 28 00:47, and again from Sep 28 00:52 to Oct 3 09:01, with no alert."""
+    times = sl.parse_feed(_write(tmp_path, "vitals.log", _VITALS_LOG))
+    assert len(times) == 5
+    gaps = sl.feed_gaps(times)
+    assert [(f"{a:%m-%d %H:%M}", f"{b:%m-%d %H:%M}") for a, b in gaps] == [
+        ("09-21 04:07", "09-28 00:47"), ("09-28 00:52", "10-03 09:01")]
+    line = sl.feed_line(times)
+    assert "5 deliveries on 4 days" in line and "last 10-03 09:01" in line and "2 silences over 24 h" in line
+    assert "09-21 04:07 to 09-28 00:47 (6.9 d), 09-28 00:52 to 10-03 09:01 (5.3 d)" in line
+    # A silence still running counts once a moment to measure it to is given.
+    from datetime import datetime
+    assert len(sl.feed_gaps(times, until=datetime(2026, 10, 5, 12, 0))) == 3
+    assert sl.feed_line([]) == "watch feed: nothing received"
+    assert sl.parse_feed(_write(tmp_path, "vitals2.log", _VITALS_LOG), since="2026-09-28")[0].day == 28
+
+
+def test_what_the_autorun_believed_about_each_day(tmp_path):
+    line = sl.autocool_line(_write(tmp_path, "miya_v2.log", _AUTORUN_LOG))
+    assert line == ("huberman autorun: 4 nights · 1 saw a workout · 1 assumed from the gym's WOD"
+                    " · 2 'rest day'")            # the doubled line is read once
+    assert sl.autocool_line(_write(tmp_path, "genie_bot.log", _GENIE_LOG)) is None
+
+
+def test_the_cli_prints_the_feed_and_the_autorun(tmp_path, capsys):
+    v = _write(tmp_path, "vitals.log", _VITALS_LOG)
+    m = _write(tmp_path, "miya_v2.log", _MIYA_LOG + _AUTORUN_LOG)
+    assert sl.main([str(m), str(v)]) == 0
+    out = capsys.readouterr().out
+    assert "huberman autorun: 4 nights" in out
+    assert "watch feed: 5 deliveries on 4 days" in out and "silences over 24 h" in out
