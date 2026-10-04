@@ -298,6 +298,17 @@ def chat(*,
 
     cost = ccost.cost_usd(model_id, tokens_in=tokens_in, tokens_out=tokens_out)
 
+    # ADR-018 §2.9: every billable call writes one ledger row. Additive;
+    # the reasoner's behavior is unchanged and a ledger failure never
+    # fails a call. The actor is the reasoner's only caller today.
+    try:
+        from core import ledger as _ledger
+        _ledger.record(agent=os.getenv("RAHAT_REASONER_ACTOR", "the_scientist"), event_type="model",
+                       kind="reasoner.chat", model=model_id, tokens_in=tokens_in, tokens_out=tokens_out,
+                       cost_usd=cost)
+    except Exception:  # pragma: no cover
+        pass
+
     return Usage(
         text="".join(text_parts),
         function_calls=fcalls,

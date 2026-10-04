@@ -13,7 +13,9 @@ from core import ledger  # noqa: E402
 NOW = datetime(2026, 10, 3, 19, 0, 0)
 
 
-def test_cost_command_answers_from_the_ledger():
+def test_cost_command_answers_from_the_ledger(sandbox_db):
+    # `sandbox_db` gives this test its own ledger: the process-wide test
+    # DB is shared with every other test that records spend.
     ledger.record(agent="bourdain", event_type="model", cost_usd=0.03, search_queries=2, now=NOW)
     reply = handler.route("/cost", chat_id="1", now=NOW)
     assert reply.startswith("Cost") and "bourdain $0.03" in reply and "Searches this month: 2 of 5000 free" in reply

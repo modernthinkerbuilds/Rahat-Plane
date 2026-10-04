@@ -76,10 +76,13 @@ def expiry_for(scope: str, now: datetime, *, session_hours: float = 12.0,
 
 def put(agent: str, owner: str, key: str, value: Any, *, scope: str, now: datetime,
         source_trace: str | None = None, replace: bool = False,
-        trip_end: datetime | None = None, db_path: str | Path | None = None) -> int:
+        trip_end: datetime | None = None, expires_in_hours: float | None = None,
+        db_path: str | Path | None = None) -> int:
     """Write one fact in a scope. `replace=True` withdraws earlier live
     rows with the same key and scope first (the last answer, a location
-    override); the default appends (overrides and exclusions stack)."""
+    override); the default appends (overrides and exclusions stack).
+    `expires_in_hours` overrides the scope's default expiry (a location
+    override lives three hours inside a session)."""
     con = _connect(db_path)
     try:
         if replace:
@@ -90,7 +93,8 @@ def put(agent: str, owner: str, key: str, value: Any, *, scope: str, now: dateti
             "INSERT INTO state_scoped (agent, owner, key, scope, value_json, created_at, expires_at, "
             "source_trace) VALUES (?,?,?,?,?,?,?,?)",
             (agent, owner, key, scope, json.dumps(value, ensure_ascii=False, default=str),
-             _fmt(now), expiry_for(scope, now, trip_end=trip_end), source_trace))
+             _fmt(now), (_fmt(now + timedelta(hours=expires_in_hours)) if expires_in_hours
+                         else expiry_for(scope, now, trip_end=trip_end)), source_trace))
         con.commit()
         return int(cur.lastrowid)
     finally:

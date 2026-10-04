@@ -366,8 +366,13 @@ def generate(actor: str, kind: str,
     return usage
 
 
+# ADR-018 §2.3: the native wire (system prompt, function declarations,
+# grounding, JSON schema) lives in core.llm_chat; re-exported here so
+# callers import one module. generate() above is unchanged.
+from core.llm_chat import chat, structured, ChatResult, Citation  # noqa: E402,F401
+
 __all__ = [
-    "BudgetExceeded", "generate",
+    "BudgetExceeded", "generate", "chat", "structured", "ChatResult", "Citation",
     "ENV_VAR_FIXTURE_DIR", "ENV_VAR_FIXTURE_RECORD",
     "_fixture_key", "_load_fixture", "_save_fixture", "_is_recording",
     "record_tool_call",

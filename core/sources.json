@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "notes": "The source registry (ADR-018 §2.7). policy: allowed | blocked | link_only | api. An unknown host is checked against robots.txt once and recorded in vault/robots_cache.json. Blocked means dropped: no mirror, cache, scrape or proxy.",
+  "default_policy": "check_robots",
+  "user_agent": "RahatBot/1.0 (household assistant; respects robots.txt)",
+  "hosts": {
+    "yelp.com":            {"policy": "link_only", "trust_tier": "household_ground_truth", "notes": "robots-blocked; the household's bar; a link on every pick, never a quoted score"},
+    "www.yelp.com":        {"policy": "link_only", "trust_tier": "household_ground_truth"},
+    "m.yelp.com":          {"policy": "link_only", "trust_tier": "household_ground_truth"},
+    "api.weather.gov":     {"policy": "api", "trust_tier": "official", "notes": "free government API; identify with the User-Agent; forecasts carry issuance times"},
+    "forecast.weather.gov":{"policy": "check_robots", "trust_tier": "official"},
+    "nominatim.openstreetmap.org": {"policy": "api", "trust_tier": "open_data", "rate_limit_per_s": 1, "notes": "geocoding only; attribution required; one request per second"},
+    "www.tripadvisor.com": {"policy": "check_robots", "trust_tier": "aggregator"},
+    "www.restaurantji.com":{"policy": "check_robots", "trust_tier": "aggregator"},
+    "wanderlog.com":       {"policy": "check_robots", "trust_tier": "aggregator"},
+    "www.opentable.com":   {"policy": "check_robots", "trust_tier": "aggregator"},
+    "www.theinfatuation.com": {"policy": "check_robots", "trust_tier": "critic"},
+    "www.eater.com":       {"policy": "check_robots", "trust_tier": "critic"},
+    "www.bostonglobe.com": {"policy": "check_robots", "trust_tier": "critic"},
+    "www.sfchronicle.com": {"policy": "check_robots", "trust_tier": "critic"},
+    "www.kqed.org":        {"policy": "check_robots", "trust_tier": "critic"},
+    "www.bostonmagazine.com": {"policy": "check_robots", "trust_tier": "critic"},
+    "guide.michelin.com":  {"policy": "check_robots", "trust_tier": "critic"},
+    "en.wikipedia.org":    {"policy": "allowed", "trust_tier": "reference"},
+    "maps.google.com":     {"policy": "link_only", "trust_tier": "link"},
+    "www.google.com":      {"policy": "link_only", "trust_tier": "link"},
+    "maps.app.goo.gl":     {"policy": "link_only", "trust_tier": "link"}
+  }
+}

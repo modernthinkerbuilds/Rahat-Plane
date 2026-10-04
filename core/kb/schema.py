@@ -120,7 +120,8 @@ CREATE TABLE IF NOT EXISTS kb_fact (
 CREATE INDEX IF NOT EXISTS kb_fact_subject ON kb_fact(subject_type, subject_id, claim_type, observed_at DESC);
 
 CREATE TABLE IF NOT EXISTS kb_hours (
-    fact_id INTEGER PRIMARY KEY,
+    hours_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    fact_id INTEGER NOT NULL,
     place_id TEXT NOT NULL,
     weekday INTEGER NOT NULL,                   -- 0 = Monday
     open_min INTEGER, close_min INTEGER,
@@ -318,7 +319,27 @@ def connect(db_path: str | Path | None = None) -> sqlite3.Connection:
     return con
 
 
+def _migrate(con: sqlite3.Connection) -> None:
+    """Schema v1 → v1.1 (2026-10-04): kb_hours gained its own row id so one
+    hours fact can project to seven weekday rows. The old table was never
+    populated by the seed migration, so an empty old-shape table is
+    simply recreated."""
+    cols = [r[1] for r in con.execute("PRAGMA table_info(kb_hours)")]
+    if cols and "hours_id" not in cols:
+        n = con.execute("SELECT COUNT(*) FROM kb_hours").fetchone()[0]
+        if n == 0:
+            con.execute("DROP TABLE kb_hours")
+        else:  # keep the rows: rename, recreate, copy
+            con.execute("ALTER TABLE kb_hours RENAME TO kb_hours_v1")
+            con.executescript(_DDL)
+            con.execute("INSERT INTO kb_hours (fact_id, place_id, weekday, open_min, close_min, last_seating_min, "
+                        "kitchen_close_min, service, note) SELECT fact_id, place_id, weekday, open_min, close_min, "
+                        "last_seating_min, kitchen_close_min, service, note FROM kb_hours_v1")
+            con.execute("DROP TABLE kb_hours_v1")
+
+
 def ensure_schema(con: sqlite3.Connection) -> None:
+    _migrate(con)
     con.executescript(_DDL)
     con.execute("INSERT OR IGNORE INTO kb_meta (key, value) VALUES ('schema_version', ?)",
                 (str(SCHEMA_VERSION),))
@@ -348,8 +369,9 @@ def add_fact(con: sqlite3.Connection, *, subject_type: str, subject_id: str,
             value_text = str(value["value"])
     else:
         value_json, value_text = None, (None if value is None else str(value))
-    # Freshness is a read-time policy (it differs by trip vs home), so a
-    # fact stores a window only when the writer set one explicitly.
+    # Freshness is a read-time policy (FRESHNESS_HOURS by mode). A window is
+    # stored only when the source itself states one (a forecast's next
+    # issuance, say), so a trip read and a home read of one fact may differ.
     fh = freshness_hours_
     if fh == float("inf"):
         fh = None

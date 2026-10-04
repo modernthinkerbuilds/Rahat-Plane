@@ -96,6 +96,16 @@ class ReferencePlace(BaseModel):
     features: list[str] = Field(default_factory=list)
 
 
+class FieldConfidence(BaseModel):
+    field: str
+    score: float
+
+
+class Resolution(BaseModel):
+    heard: str                       # "Dan B"
+    meant: str                       # "Danbi"
+
+
 class Frame(BaseModel):
     schema_version: str = FRAME_SCHEMA_VERSION
     speaker: str                                          # member id: primary | spouse | guest:<label>
@@ -123,13 +133,13 @@ class Frame(BaseModel):
     plan_edits: list[str] = Field(default_factory=list)
     refers_to_last_answer: bool = False
     weather_hazard: bool = False
-    dictation: dict[str, str] = Field(default_factory=dict)  # "Dan B" → "Danbi"
+    dictation: list[Resolution] = Field(default_factory=list)   # what was heard → what was meant
     assumptions: list[str] = Field(default_factory=list)
     question: str | None = None                           # at most one
-    confidence: dict[str, float] = Field(default_factory=dict)
+    confidence: list[FieldConfidence] = Field(default_factory=list)   # per frame field, 0–1
 
     def low_confidence(self, floor: float = 0.6) -> list[str]:
-        return sorted(k for k, v in self.confidence.items() if v < floor)
+        return sorted(c.field for c in self.confidence if c.score < floor)
 
     def header(self) -> str:
         """The compressed reading shown at the top of a reply."""
@@ -145,7 +155,7 @@ class Frame(BaseModel):
             parts.append(f"{', '.join(o.who)}: {o.rule}" + (" (withdrawn)" if o.withdraw else " today"))
         if self.origin and self.origin.label:
             parts.append(f"from {self.origin.label}")
-        if self.area and self.area.label:
+        if self.area and self.area.label and not (self.origin and self.area.label == self.origin.label):
             parts.append(f"in {self.area.label}")
         if self.route and self.route.to:
             parts.append("to " + (" or " if self.route.either else " then ").join(self.route.to))

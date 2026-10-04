@@ -28,7 +28,8 @@ def test_minimal_frame_validates_and_renders_a_header():
 
 
 def test_frame_from_json_string_and_low_confidence():
-    f = parse_frame('{"speaker": "spouse", "intents": ["plan"], "confidence": {"origin": 0.4, "meal": 0.9}}')
+    f = parse_frame('{"speaker": "spouse", "intents": ["plan"], '
+                    '"confidence": [{"field": "origin", "score": 0.4}, {"field": "meal", "score": 0.9}]}')
     assert f.low_confidence() == ["origin"]
 
 

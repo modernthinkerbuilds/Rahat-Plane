@@ -1,0 +1,13 @@
+{
+  "agent": "bademiya",
+  "version": "0.1",
+  "prompt_version": "v1",
+  "status": "criteria only (ADR-018 §2.8): the front door's judged outcomes; examples arrive with its first labeled cases",
+  "criteria": [
+    {"outcome": "FD1", "text": "Right agent: the message went to the agent whose domain it names (food to Bourdain, training to the Scientist, the calendar and household to Genie, recovery to Huberman); a mixed message is split, not guessed."},
+    {"outcome": "FD2", "text": "Coherent merge: when two agents answer one message, the relay reads as one reply with no contradiction and no repeated line."},
+    {"outcome": "FD3", "text": "Faithful relay: the agent's answer is passed through whole; no fact added, no caveat dropped, no number rounded."},
+    {"outcome": "FD4", "text": "Clarification rules: a question back is asked only when no agent can act, it is one question, and it names what is missing."},
+    {"outcome": "FD5", "text": "Safety rules fire from this path: the context the rules read (hrv_today, sleep, pain) is the context the front door passes."}
+  ]
+}
