@@ -43,6 +43,19 @@ class Reply:
     work_orders: list[dict] = field(default_factory=list)
 
 
+def reply_text(result: Any) -> str:
+    """What a person reads from an agent's route() result: a str as it
+    is, a Reply's .text, "" for nothing. QA-2026-10-04-04: an explicit
+    "@fraser …" sent str(Reply(...)) — the household would have read
+    'Reply(text="…", confidence=1.0, work_orders=[])'."""
+    if isinstance(result, str):
+        return result
+    text = getattr(result, "text", None)
+    if isinstance(text, str):
+        return text
+    return "" if result is None else str(result)
+
+
 class Agent:
     """Base class for all Rahat agents.
 

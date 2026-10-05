@@ -297,18 +297,11 @@ def miya(tmp_path, monkeypatch, kobe):
     return lambda text: handle(Turn(user_message=text, chat_id="c1"))
 
 
-_FRASER_REPR = pytest.mark.xfail(strict=True, reason=(
-    "LATENT since 2026-06-21 (never used in the last 30 days): an explicit '@fraser …' goes to "
-    "native_client.fraser_route, which sends str(Reply(...)) — the household would read "
-    "'Reply(text=\"…\", confidence=1.0, work_orders=[])'. Fix QA-2026-10-04-04: send reply.text. "
-    "Delete this mark when it passes."))
-
-
 @pytest.mark.parametrize("ask,path", [
     pytest.param("/week", "kobe_route", id="kobe-week"),
     pytest.param("what is the wod on friday", "kobe_route", id="kobe-wod-lookup"),
     pytest.param("give me a good cool down", "huberman_route", id="huberman-cooldown"),
-    pytest.param("@fraser deadlifts instead of rows today", "fraser_route", id="fraser-explicit", marks=_FRASER_REPR),
+    pytest.param("@fraser deadlifts instead of rows today", "fraser_route", id="fraser-explicit"),
 ])
 def test_miya_delegation_paths_send_valid_text(miya, ask, path):
     r = miya(ask)

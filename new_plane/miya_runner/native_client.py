@@ -234,12 +234,13 @@ def fraser_route(message: str, chat_id: str | None = None,
     tid = _trace(trace_id)
     try:
         from agents.fraser import handler as fraser_handler
-        text = fraser_handler.route(message, chat_id=chat_id)
-        # fraser.handler.route returns Any (could be a Card object); normalize.
-        if isinstance(text, str):
-            payload = {"text": text}
-        else:
-            payload = {"text": str(text), "raw": text}
+        from core.agent import reply_text
+        out = fraser_handler.route(message, chat_id=chat_id)
+        # fraser.handler.route returns a core.agent.Reply (or a str): the
+        # household gets its text, never its repr.
+        payload = {"text": reply_text(out)}
+        if not isinstance(out, str):
+            payload["raw"] = out
         return _ok(tid, payload)
     except Exception as e:
         return _err(tid, e, where="fraser_route")

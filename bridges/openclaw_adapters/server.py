@@ -329,9 +329,8 @@ def kobe_route(req: _RouteReq) -> dict:
 def fraser_route(req: _RouteReq) -> dict:
     try:
         from agents.fraser import handler as fraser_handler
-        text = fraser_handler.route(req.message, chat_id=req.chat_id)
-        if not isinstance(text, str):
-            text = str(text)
+        from core.agent import reply_text
+        text = reply_text(fraser_handler.route(req.message, chat_id=req.chat_id))
         return {"trace_id": _trace(req),
                 "result": {"text": text, "path": "fraser_route"}}
     except Exception as e:
