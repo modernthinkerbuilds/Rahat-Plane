@@ -31,6 +31,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from core import cassette
 from core import fetch as cfetch
 from core import geocode as cgeo
 from core import hours as chours
@@ -539,11 +540,14 @@ def build_registry(ctx: dict, *, allow: list[str] | None = None) -> ToolRegistry
             results = [one(*centers[0])]
         else:
             # A slow area doesn't hold the rest: past MAPS_AREA_WAIT_S the areas still out are left for next time.
+            # Never while recording or replaying: a dropped area would still be recorded a moment later, the
+            # replay would then see it, and every later step of that case would miss its cassette.
+            limit = None if cassette.active() else MAPS_AREA_WAIT_S
             ex = ThreadPoolExecutor(max_workers=len(centers))
             futs = [ex.submit(one, *wc) for wc in centers]
-            wait(futs, timeout=MAPS_AREA_WAIT_S)
+            wait(futs, timeout=limit)
             if not any(f.done() for f in futs):
-                wait(futs, timeout=MAPS_AREA_WAIT_S, return_when=FIRST_COMPLETED)
+                wait(futs, timeout=limit, return_when=FIRST_COMPLETED)
             ex.shutdown(wait=False)
             results = [f.result() if f.done() else llm_chat.ChatResult(error=f"timeout: no answer in {MAPS_AREA_WAIT_S:.0f}s")
                        for f in futs]
