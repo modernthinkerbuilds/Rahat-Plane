@@ -17,7 +17,7 @@ Design rules encoded here:
     from state.recent_drills) and rotates deterministically.
   * INJURY TAGS ARE HARD FILTERS. A drill tagged with a contraindication
     the profile currently carries (e.g. "trochanter_compression" while
-    the right-hip GTPS episode finishes resolving) is NEVER emitted,
+    a matching injury resolves) is NEVER emitted,
     LLM or fallback. Tendon-friendly isometrics/stretch stay available.
   * Times INCLUDE transitions. Each drill's `minutes` budgets setup +
     the work, so the rendered session honestly fits the requested slot.

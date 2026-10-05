@@ -58,10 +58,10 @@ COOLDOWN_RE = re.compile(r"\b(" + _COOLDOWN_NOUN + r")\b", re.I)
 # A cooldown REQUEST — request verb, then at most five words that are
 # NOT a workout noun, then a cooldown noun. Consulted by the delegate
 # classifier AHEAD of the design-preempt and pain rungs (2026-09-02
-# live misroute: "I did today's WOD and my right hip feels sore at the
-# catch, give me a good Streching routine" → "give me a" + "WOD"
-# tripped design-preempt → orchestrate → the WOD lookup dumped the
-# day's programming instead of a stretch). The no-workout-noun-between
+# live misroute: "I did today's WOD and <a joint> feels sore, give me a
+# good stretching routine" → "give me a" + "WOD" tripped design-preempt
+# → orchestrate → the WOD lookup dumped the day's programming instead
+# of a stretch). The no-workout-noun-between
 # guard keeps "design me a workout with stretching at the end" on the
 # Fraser side, and the request verb keeps bare pain reports ("my hip
 # hurts when stretching") on Kobe's.
