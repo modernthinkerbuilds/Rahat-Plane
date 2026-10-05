@@ -60,6 +60,18 @@ WIDE_WORDS = re.compile(r"\b(options|choices|alternatives|ideas|list|anywhere|th
                         r"wider|widen|expand|a few|several|other places|more places)\b", re.I)
 WIDE_MAX_CHARS = 3000          # five picks don't fit the one-screen 1800; Telegram's own limit is 4096
 
+# Words that say who is eating. Without one, the household's usual party stands (BR-P4): "near me" is a
+# place, "I can drive" is a driver, and neither is a party (QA-2026-10-04-09).
+PARTY_WORDS = re.compile(
+    r"\b(just|only)\s+(me|myself|us|the two of us|my (wife|husband|partner)|him|her|the baby)\b"
+    r"|\b(alone|solo|by myself|on my own|for myself|table for one|party of one)\b"
+    r"|\bfor (my )?(wife|husband|partner|him|her|the two of us|us two)\b"
+    r"|\bwithout (the )?(baby|kids?|wife|husband|partner)\b"
+    r"|\b(date night|just us|the two of us|me and (my )?(wife|husband|partner)|my (wife|husband|partner) and (i|me))\b"
+    r"|\bwith (a |my |our )?(friends?|colleagues?|guests?|mom|dad|parents|in-laws|family|kids?|baby)\b"
+    r"|\b(i'?m|i am) (the )?(wife|husband|spouse)\b", re.I)
+_SOLO_ASSUMPTION = re.compile(r"\b(solo|alone|just you|by yourself|on your own|only you)\b", re.I)
+
 
 class BourdainTenant:
     name = AGENT
@@ -127,7 +139,7 @@ class BourdainTenant:
         exclusions = [r["value"] | {"scope": r["scope"], "until": r["expires_at"]}
                       for r in ss.get_all(AGENT, chat, "exclusion", now=now, db_path=db_path)]
         return {
-            "now": now, "chat_id": chat, "db_path": db_path, "trace_id": trace_id,
+            "now": now, "chat_id": chat, "db_path": db_path, "trace_id": trace_id, "ask": text,
             "cassette_dir": cassette_dir or os.getenv("RAHAT_CASSETTE_DIR") or self.manifest.cassette_dir, "profile": prof,
             "leg": leg, "mode": "trip" if leg.get("kind") == "trip" else "home",
             "origin_latlng": origin, "origin_label": origin_label,
@@ -197,10 +209,26 @@ class BourdainTenant:
           but cozy?") is not a verdict on it and not a standing exclusion:
           it is left out of this answer only. The same morning that read
           became a session-long exclusion of the very place being praised.
+        * Who is eating: a message that names no one keeps the household's
+          usual party. The model read "coffee and pastries near me" and "I
+          can drive 50 minutes" as the speaker alone, and the other adult's
+          diet rules dropped out of every check (QA-2026-10-04-09). A party
+          word ("just me", "for my wife", "with friends") or a follow-up of
+          an ask that had narrowed it keeps the narrower party.
         """
         notes: list[str] = []
         upd: dict = {}
         last = (ctx.get("last_answer") or {}).get("frame") or {}
+        usual = [d for d in (ctx.get("diners") or [])]
+        narrowed = bool(usual) and set(frame.diners) < set(usual) and not frame.guests
+        kept_narrow = bool(frame.refers_to_last_answer and last.get("diners")
+                           and set(last.get("diners")) < set(usual) and set(frame.diners) == set(last.get("diners")))
+        if narrowed and not kept_narrow and not PARTY_WORDS.search(ctx.get("ask") or ""):
+            upd["diners"] = usual
+            dropped = [a for a in frame.assumptions if _SOLO_ASSUMPTION.search(a)]
+            if dropped:
+                upd["assumptions"] = [a for a in frame.assumptions if a not in dropped]
+            notes.append("the message names no one: the household's usual party")
         has_what = any(getattr(frame, k) for k in self._WHAT)
         if frame.refers_to_last_answer and last and not has_what:
             for k in self._WHAT:

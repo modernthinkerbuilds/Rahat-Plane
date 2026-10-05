@@ -31,14 +31,6 @@ from tests.test_harness_loop import FRAME, NOW, Wire, _wire, world  # noqa: E402
 
 SOLO = dict(FRAME, diners=["primary"], meal="coffee", cuisines=[], assumptions=[])
 
-_PARTY = pytest.mark.xfail(strict=True, reason=(
-    "QA-2026-10-04-09: the harness keeps the model's narrowing of the party even when the message names no one "
-    "('near me' is a place). Fix: in BourdainTenant.refine_frame, restore ctx['diners'] (the household default) "
-    "unless the message has a party word (just me, for my wife, for him, alone, with <guest>…) or the last ask "
-    "narrowed it. Delete this mark when it passes."))
-
-
-@_PARTY
 def test_near_me_is_a_place_not_a_party(world, monkeypatch):
     _wire(monkeypatch, Wire(frame=SOLO, rounds=[[]], answers=[{"kind": "none", "none_claim": {
         "area": "the stay", "hours": "10:48", "searched": ["the knowledge base"]}}]))
