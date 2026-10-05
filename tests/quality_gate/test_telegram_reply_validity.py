@@ -97,23 +97,13 @@ def genie(tmp_path, monkeypatch):
     return gbot
 
 
-_PRIMARY_HOUSEHOLD = pytest.mark.xfail(strict=True, reason=(
-    "LIVE (vault/genie_bot.log 2026-08-09 09:43, the chat Genie enrolled as primary): '/household' "
-    "→ HTTP 400 — '_Primary can `/household remove <chat_id>`._' (the '_' in <chat_id> closes the "
-    "italic early). Fix QA-2026-10-04-02: take the command out of the italic. Delete this mark when it passes."))
-_DEFAULT_FAMILY = pytest.mark.xfail(strict=True, reason=(
-    "LATENT (any household without vault/family_profile.json — a fresh install of this public repo): "
-    "'/family' → 'edit vault/family_profile.json' — a bare '_' Telegram refuses. "
-    "Fix QA-2026-10-04-02: put the path in a code span. Delete this mark when it passes."))
-
 GENIE_FLOWS = [
     pytest.param([], ("999", "/weekend_plan"), id="stranger"),
     pytest.param([], ("999", "/join wrong"), id="wrong-code"),
     pytest.param([], ("111", "/start"), id="start"),
     pytest.param([], ("111", "/help"), id="help"),
     pytest.param([("111", "/genie")], ("222", "/join sesame42"), id="spouse-joins"),
-    pytest.param([("111", "/genie"), ("222", "/join sesame42")], ("111", "/household"), id="household-primary",
-                 marks=_PRIMARY_HOUSEHOLD),
+    pytest.param([("111", "/genie"), ("222", "/join sesame42")], ("111", "/household"), id="household-primary"),
     pytest.param([("111", "/genie"), ("222", "/join sesame42")], ("222", "/household"), id="household-spouse"),
     pytest.param([], ("111", "/weekend_plan"), id="weekend-plan"),
     pytest.param([], ("111", "/weekend_plan options"), id="weekend-plan-options"),
@@ -123,7 +113,7 @@ GENIE_FLOWS = [
     pytest.param([], ("111", "/calendar"), id="calendar-empty"),
     pytest.param([], ("111", "we have lunch at a friend's place Saturday at noon"), id="calendar-capture"),
     pytest.param([("111", "we have lunch at a friend's place Saturday at noon")], ("111", "/calendar"), id="calendar-one"),
-    pytest.param([], ("111", "/family"), id="family-default-profile", marks=_DEFAULT_FAMILY),
+    pytest.param([], ("111", "/family"), id="family-default-profile"),
     pytest.param([], ("111", "/family_log infant: naps 1-3pm"), id="family-log"),
     pytest.param([], ("111", "why not the farmers market"), id="why-not"),
     pytest.param([], ("111", "swap in the farmers market"), id="swap-in"),
@@ -265,16 +255,10 @@ def test_kobe_deterministic_replies_are_valid(kobe, ask):
 
 
 # ── Miya's nudges, each branch of each template ──────────────────────
-_RECOVERY_CF = pytest.mark.xfail(strict=True, reason=(
-    "LIVE (vault/miya_v2.log, 21:00 on every CrossFit day since at least 2026-09-07): the recovery "
-    "nudge's 'log it to workout_log' has a bare '_' → HTTP 400, then the plain-text retry. "
-    "Fix QA-2026-10-04-02: 'log it to `workout_log`'. Delete this mark when it passes."))
-
-
 @pytest.mark.parametrize("name,when", [
     pytest.param("maybe_morning_briefing", _real_datetime(2026, 10, 5, 8, 0), id="morning-on-track-monday"),
     pytest.param("maybe_morning_briefing", _real_datetime(2026, 10, 7, 8, 0), id="morning-behind-with-missed-days"),
-    pytest.param("maybe_recovery_nudge", _real_datetime(2026, 10, 5, 21, 0), id="recovery-crossfit-day", marks=_RECOVERY_CF),
+    pytest.param("maybe_recovery_nudge", _real_datetime(2026, 10, 5, 21, 0), id="recovery-crossfit-day"),
     pytest.param("maybe_recovery_nudge", _real_datetime(2026, 10, 6, 21, 0), id="recovery-rest-day"),
     pytest.param("maybe_recovery_nudge", _real_datetime(2026, 10, 10, 21, 0), id="recovery-zone2-day"),
     pytest.param("maybe_walk_nudge", _real_datetime(2026, 10, 5, 14, 0), id="walk-training-day"),

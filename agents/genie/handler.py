@@ -633,7 +633,7 @@ def handle_family_show() -> str:
             pass
     else:
         lines.append("  ⚠ Using the default profile — edit "
-                     "vault/family_profile.json to make it yours.")
+                     "`vault/family_profile.json` to make it yours.")
     return "\n".join(lines)
 
 

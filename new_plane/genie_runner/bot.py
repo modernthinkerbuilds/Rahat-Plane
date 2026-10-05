@@ -142,7 +142,7 @@ def _handle_household(chat_id: str, text: str, role: str) -> str:
         you = "  ← you" if cid == chat_id else ""
         lines.append(f"  • {meta.get('role', '?')}: `{cid}`{you}")
     if role == "primary":
-        lines.append("_Primary can `/household remove <chat_id>`._")
+        lines.append("Primary can remove a member: `/household remove <chat_id>`")
     return "\n".join(lines)
 
 

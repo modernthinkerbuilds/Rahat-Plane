@@ -3416,7 +3416,8 @@ def maybe_recovery_nudge() -> str | None:
                         "walk + 10 min thoracic mobility.")
     else:
         prescription = ("Add a 20-min Zone-2 walk + 100 air squats, or "
-                        "log it to workout_log if you trained off-watch.")
+                        "tell me the workout and its calories if you "
+                        "trained off-watch.")
     return (
         f"🌙 9pm check — {kind} day. Today: {fmt_kcal(today_burn)} / "
         f"{fmt_kcal(target)} ({fmt_kcal(deficit)} short).\n"
