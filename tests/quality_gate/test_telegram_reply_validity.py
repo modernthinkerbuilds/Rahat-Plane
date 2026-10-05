@@ -349,14 +349,6 @@ class _FakeTelegram:
         return {"ok": True, "result": {"message_id": len(self.calls)}}
 
 
-_TRANSPORT = pytest.mark.xfail(strict=True, reason=(
-    "LIVE: TelegramClient.send_message sends the text as Markdown first and retries as plain text "
-    "after Telegram's 400, so a refused reply reaches the household with its raw symbols (every "
-    "/whatson Aug 11 → Oct 4; the recovery nudge nightly). Fix QA-2026-10-04-01: check the reply "
-    "before the first send and escape or strip what Telegram would refuse. Delete this mark when it passes."))
-
-
-@_TRANSPORT
 def test_the_client_never_sends_a_message_telegram_will_refuse(monkeypatch):
     from new_plane.miya_runner.telegram import TelegramClient
     tg = TelegramClient("t0k3n")

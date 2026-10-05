@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import time
 from dataclasses import dataclass
 from typing import Any, Callable, Iterator, Optional
@@ -111,14 +112,22 @@ class TelegramClient:
         multiple sends — mirrors the old-plane `_split_for_telegram`.
         """
         for chunk in _split_for_telegram(text):
+            body = chunk
+            if parse_mode == "Markdown":
+                # QA-2026-10-04-01: check the chunk the way Telegram will
+                # and escape what it would refuse, so one send goes out
+                # with its formatting instead of a 400 and a raw retry.
+                body, escaped = repair_legacy_markdown(chunk)
+                if escaped:
+                    logger.info("telegram sendMessage chat=%s markdown_repaired=1 escaped=%d",
+                                chat_id, escaped)
             resp = self._http_post(
                 "sendMessage",
-                {"chat_id": chat_id, "text": chunk, "parse_mode": parse_mode},
+                {"chat_id": chat_id, "text": body, "parse_mode": parse_mode},
             )
             if not resp.get("ok") and parse_mode:
-                # Markdown parse errors — retry as plain text. Telegram's
-                # Markdown parser is finicky; falling back to plain on
-                # parse failure is what the live bot does too.
+                # Still refused (a rule the repair does not know) — the
+                # chunk as written, as plain text, beats nothing.
                 resp = self._http_post(
                     "sendMessage",
                     {"chat_id": chat_id, "text": chunk},
@@ -158,6 +167,79 @@ def parse_update(up: dict[str, Any]) -> TelegramUpdate | None:
         text=txt,
         raw=up,
     )
+
+
+_MD_MARKERS = "_*`["
+_BARE_URL = re.compile(r"https?://[^\s]+", re.I)
+
+
+def repair_legacy_markdown(text: str) -> tuple[str, int]:
+    """`text` as a message Telegram's legacy Markdown accepts, changed as
+    little as possible. Returns (text, how many markers were escaped).
+
+    The Bot API's parse_mode="Markdown" reads _ * ` [ as entity openers.
+    An entity runs to the next same marker (``` for a pre block; ] and then
+    an optional (url) for a link), everything inside one is plain text, and
+    a backslash escapes a marker only outside one. An opener that never
+    closes gets the whole message refused (HTTP 400); the old answer, a
+    plain-text retry, showed the household every raw * and [here](…).
+
+    This walks the text the way the parser does and escapes only:
+      • an opener that never closes;
+      • an underscore inside a word (workout_log) and any marker inside a
+        bare link (…?type=for_time_high): never an intended italic, and
+        left alone it pairs with the next underscore and garbles the line.
+    Whatever parses keeps its formatting. The reference rules are
+    tests/telegram_checks.legacy_markdown_problems."""
+    text = text or ""
+    out: list[str] = []
+    i, n, escaped = 0, len(text), 0
+    while i < n:
+        c = text[i]
+        if c == "\\" and i + 1 < n and text[i + 1] in _MD_MARKERS:
+            out.append(text[i:i + 2])
+            i += 2
+            continue
+        if c in "hH" and (i == 0 or not text[i - 1].isalnum()):
+            m = _BARE_URL.match(text, i)
+            if m:
+                url = m.group(0)
+                fixed = re.sub(r"(?<!\\)([_*`\[])", r"\\\1", url)   # not twice
+                escaped += len(fixed) - len(url)
+                out.append(fixed)
+                i = m.end()
+                continue
+        if c not in _MD_MARKERS:
+            out.append(c)
+            i += 1
+            continue
+        if text.startswith("```", i):
+            j = text.find("```", i + 3)
+            if j >= 0:
+                out.append(text[i:j + 3])
+                i = j + 3
+            else:
+                out.append("\\`\\`\\`")
+                escaped += 3
+                i += 3
+            continue
+        if c == "_" and 0 < i < n - 1 and text[i - 1].isalnum() and text[i + 1].isalnum():
+            out.append("\\_")                     # inside a word: never an italic
+            escaped += 1
+            i += 1
+            continue
+        end = text.find("]" if c == "[" else c, i + 1)
+        if end >= 0 and c == "[" and end + 1 < n and text[end + 1] == "(":
+            close = text.find(")", end + 2)
+            end = close if close >= 0 else -1      # a link whose URL never closes
+        if end < 0:
+            out.append("\\" + c)                  # an opener that never closes
+            escaped += 1
+            i += 1
+            continue
+        out.append(text[i:end + 1])
+        i = end + 1
+    return "".join(out), escaped
 
 
 _MAX_TG_LEN = 4000  # 4096 is the hard limit; leave headroom for formatting
