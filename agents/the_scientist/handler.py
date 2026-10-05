@@ -1632,10 +1632,45 @@ def handle_today_target() -> str:
             f"*{fmt_kcal(row['target_kcal'])}*.")
 
 
-def _extract_wod_summary(body: str, max_workouts: int = 2) -> str:
+_GYM_KEEP = re.compile(
+    r"\[[^\[\]\n]+\]\(https?://[^\s()]+\)"   # a whole [text](https://…) link
+    r"|\*[^*\n]*[^*\s\n]\*")                  # a *bold* pair on one line
+_MD_MARK = re.compile(r"([_*`\[])")
+
+
+def _gym_md(text: str) -> str:
+    """The gym's own text, made safe for Telegram's legacy Markdown.
+
+    SugarWOD writes its own *bold* headers, footnote asterisks ("*Both
+    hands must …"), links with underscores (…&type=for_time_high), demo
+    links ([Double Unders](https://…)) and [brackets]. A whole link and a
+    *bold* pair on one line are kept as they are (inside an entity every
+    character is plain text); every other * _ ` [ is escaped.
+    LIVE (2026-10-05): a Monday WOD's stray asterisk made Kobe's "WOD for
+    tomorrow" reply one Telegram refuses (the quality gate's
+    test_kobe_deterministic_replies_are_valid, on the owner's Mac)."""
+    text = text or ""
+    out, last = [], 0
+    for m in _GYM_KEEP.finditer(text):
+        out.append(_MD_MARK.sub(r"\\\1", text[last:m.start()]))
+        out.append(m.group(0))
+        last = m.end()
+    out.append(_MD_MARK.sub(r"\\\1", text[last:]))
+    return "".join(out)
+
+
+def _md_plain(text: str) -> str:
+    """Text that goes inside one of our own entities: there nothing can be
+    escaped, so the markers are dropped."""
+    return re.sub(r"[_*`\[]", "", text or "")
+
+
+def _extract_wod_summary(body: str, max_workouts: int = 2, telegram: bool = True) -> str:
     """Pull the strength + main metcon out of a SugarWOD day body, skipping
     Levels / Reset / Accessory / Optional / Primer / Warm-up sections.
-    Returns a short multi-line summary suitable for a Telegram message."""
+    Returns a short multi-line summary suitable for a Telegram message;
+    `telegram=False` gives the gym's text as written (a tool result for
+    the model, not a message)."""
     chunks = re.split(r"^0 results\s*$", body, flags=re.MULTILINE)
     important = []
     skip_titles_re = re.compile(
@@ -1657,7 +1692,9 @@ def _extract_wod_summary(body: str, max_workouts: int = 2) -> str:
             break
     if not important:
         return ""
-    return "\n\n".join(f"*{t}*\n{b}" for t, b in important)
+    if not telegram:
+        return "\n\n".join(f"*{t}*\n{b}" for t, b in important)
+    return "\n\n".join(f"*{_md_plain(t)}*\n{_gym_md(b)}" for t, b in important)
 
 
 def handle_workout_on(idx: int) -> str:
@@ -1781,7 +1818,7 @@ def _one_line_gym_summary(day) -> str:
         if len(p) > 80:
             p = p[:80].rstrip() + "..."
         capped.append(p)
-    return " + ".join(capped)
+    return _gym_md(" + ".join(capped))
 
 
 # ── Deterministic WOD scaling (Bug 2026-06-14) ────────────────────────
@@ -1887,15 +1924,17 @@ def _render_gym_day(match, name: str) -> str:
         "_(WOD details not available — check SugarWOD app)_"
     scaled = _scale_wod_for_profile(match.body)
 
+    label = _md_plain(match.label)
     if match.blockers:
-        blockers_str = ", ".join(match.blockers)
-        return (f"*{name}: {match.label}* — ⚠️ blacklist hit\n"
+        blockers_str = _md_plain(", ".join(match.blockers))
+        first = _md_plain(match.blockers[0].split(' (')[0])
+        return (f"*{name}: {label}* — ⚠️ blacklist hit\n"
                 f"Blockers: _{blockers_str}_\n\n"
                 f"{body_summary}{scaled}\n\n"
                 f"_Tolerate to keep this day in scope: "
-                f"`tolerate {match.blockers[0].split(' (')[0]}`._")
+                f"`tolerate {first}`._")
 
-    return (f"*{name}: {match.label}*\n\n"
+    return (f"*{name}: {label}*\n\n"
             f"{body_summary}{scaled}")
 
 

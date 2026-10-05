@@ -124,7 +124,7 @@ def get_today_target() -> dict:
             wd = sci.WEEKDAY_NAME[today["weekday"]][:3]
             body = next((d.body for d in sci.parse_gym_plan()
                          if d.weekday[:3] == wd), "")
-            out["wod_summary"] = sci._extract_wod_summary(body, max_workouts=2)
+            out["wod_summary"] = sci._extract_wod_summary(body, max_workouts=2, telegram=False)
         except Exception:
             out["wod_summary"] = ""
     return out
