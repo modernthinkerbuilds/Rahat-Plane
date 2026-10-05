@@ -160,6 +160,16 @@ def _h_gym_wod_on_day(msg: str, match: re.Match) -> str:
     return _kobe.handle_gym_wod_on(idx)
 
 
+def _kobe_now():
+    """Kobe's own clock: "tomorrow" and "yesterday" are days on the clock his
+    handlers read, so a test that freezes Kobe's clock moves them too.
+    Bug 2026-10-05: they read the real clock, so the quality gate's
+    "WOD for tomorrow" checked whatever tomorrow the machine had (it failed
+    only on a Sunday, when tomorrow's real WOD had a stray asterisk)."""
+    from agents.the_scientist import handler as _kobe
+    return _kobe.datetime.now()
+
+
 def _h_gym_wod_relative(msg: str, match: re.Match) -> str:
     """Gym WOD lookup for a RELATIVE day (tomorrow / yesterday). Resolves
     the token to a weekday index and calls the same handle_gym_wod_on as
@@ -169,7 +179,7 @@ def _h_gym_wod_relative(msg: str, match: re.Match) -> str:
     2026-05-23 (#41): named-day routes only matched explicit weekdays, so
     relative days fell through to Fraser. "today"/"tonight" are handled by
     Fraser (daily-driver design), so they are NOT routed here."""
-    from datetime import datetime, timedelta
+    from datetime import timedelta
     from agents.the_scientist import handler as _kobe
     rel = match.group("rel").lower()
     # Typo-tolerant: tomorrow / tommorow / tomorow / tmrw / tmr → +1.
@@ -182,7 +192,7 @@ def _h_gym_wod_relative(msg: str, match: re.Match) -> str:
     # DATE-aware: a relative day has an unambiguous date, so resolve to the
     # gym WOD for that DATE (not just the weekday — which returns the first
     # matching day in the synced blob and crosses week boundaries wrong).
-    target = datetime.now() + timedelta(days=offset)
+    target = _kobe_now() + timedelta(days=offset)
     return _kobe.handle_gym_wod_on_date(target)
 
 
@@ -299,9 +309,9 @@ def _h_daily_burn(msg: str, match: re.Match) -> str:
     (the legacy YEST_RE rung the reasoner was pre-empting) already
     answers this correctly; it just needed a route in front of the LLM.
     """
-    from datetime import datetime, timedelta
+    from datetime import timedelta
     from agents.the_scientist import handler as _kobe
-    when = datetime.now()
+    when = _kobe_now()
     if re.search(r"\byesterday\b", msg, re.I):
         when -= timedelta(days=1)
     return _kobe.handle_daily_burn(when)
