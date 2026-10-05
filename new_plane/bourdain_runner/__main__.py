@@ -31,7 +31,7 @@ if os.getenv("RAHAT_TEST_MODE") != "1":
     load_dotenv(Path(_REPO_ROOT) / ".env")
 
 from new_plane.miya_runner.telegram import (  # noqa: E402
-    TelegramClient, TelegramConflictError, parse_update,
+    TelegramClient, TelegramConflictError, delivered, parse_update,
 )
 from new_plane.bourdain_runner.bot import process_message  # noqa: E402
 
@@ -93,8 +93,7 @@ def cmd_serve() -> int:
                 reply = process_message(
                     tu.chat_id, tu.text,
                     send=lambda t, _cid=tu.chat_id: tg.send_message(_cid, t))
-                tg.send_message(tu.chat_id, reply)
-                logger.info("[out] chat=%s len=%d", tu.chat_id, len(reply))
+                _log_out(tu.chat_id, reply, tg.send_message(tu.chat_id, reply))
             consecutive_errors = 0
             conflict_errors = 0
             time.sleep(0.5)
@@ -115,6 +114,16 @@ def cmd_serve() -> int:
                            type(e).__name__, e, wait)
             time.sleep(wait)
     return 0
+
+
+def _log_out(chat_id, reply: str, resp) -> None:
+    """The [out] line says whether Telegram took the reply
+    (QA-2026-10-04-03); the "[out] chat=… len=…" prefix is what the
+    service-level report reads."""
+    if delivered(resp):
+        logger.info("[out] chat=%s len=%d delivered=True", chat_id, len(reply))
+    else:
+        logger.warning("[out] chat=%s len=%d delivered=False", chat_id, len(reply))
 
 
 if __name__ == "__main__":

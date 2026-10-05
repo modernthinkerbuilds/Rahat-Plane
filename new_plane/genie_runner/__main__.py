@@ -38,7 +38,7 @@ if os.getenv("RAHAT_TEST_MODE") != "1":
     load_dotenv(Path(_REPO_ROOT) / ".env")
 
 from new_plane.miya_runner.telegram import (  # noqa: E402
-    TelegramClient, TelegramConflictError, parse_update,
+    TelegramClient, TelegramConflictError, delivered, parse_update,
 )
 from new_plane.genie_runner.bot import (  # noqa: E402
     maybe_send_digest, process_message,
@@ -110,8 +110,7 @@ def cmd_serve() -> int:
                 last_id = max(last_id, tu.update_id)
                 logger.info("[in] chat=%s text=%r", tu.chat_id, tu.text[:200])
                 reply = process_message(tu.chat_id, tu.text)
-                tg.send_message(tu.chat_id, reply)
-                logger.info("[out] chat=%s len=%d", tu.chat_id, len(reply))
+                _log_out(tu.chat_id, reply, tg.send_message(tu.chat_id, reply))
 
             # ── Friday planning nudge (PRD §6.6) — flag-gated, default
             # OFF. Propose-never-auto-act: one line, once per week, only
@@ -130,13 +129,14 @@ def cmd_serve() -> int:
                         if data.get("last_nudge") != marker:
                             data["last_nudge"] = marker
                             _gs._write_store(data)
-                            for cid in _gs.list_household_chats():
-                                tg.send_message(
-                                    cid,
-                                    "Weekend's coming — want a plan? "
-                                    "`/weekend_plan` (or `/weekend_plan "
-                                    "options` for an A/B choice).")
-                            logger.info("Friday nudge sent")
+                            chats = list(_gs.list_household_chats())
+                            got = sum(delivered(tg.send_message(
+                                cid,
+                                "Weekend's coming — want a plan? "
+                                "`/weekend_plan` (or `/weekend_plan "
+                                "options` for an A/B choice).")) for cid in chats)
+                            logger.info("Friday nudge delivered to %d of %d chat(s)",
+                                        got, len(chats))
 
             # ── Daily weekend digest (owner request 2026-08-10) —
             # default ON. All firing logic (flag, hour, once-per-day
@@ -172,6 +172,16 @@ def cmd_serve() -> int:
                            type(e).__name__, e, wait)
             time.sleep(wait)
     return 0
+
+
+def _log_out(chat_id, reply: str, resp) -> None:
+    """The [out] line says whether Telegram took the reply
+    (QA-2026-10-04-03); the "[out] chat=… len=…" prefix is what the
+    service-level report reads."""
+    if delivered(resp):
+        logger.info("[out] chat=%s len=%d delivered=True", chat_id, len(reply))
+    else:
+        logger.warning("[out] chat=%s len=%d delivered=False", chat_id, len(reply))
 
 
 if __name__ == "__main__":

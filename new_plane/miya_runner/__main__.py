@@ -38,6 +38,7 @@ from new_plane.miya_runner.orchestrator import Turn, handle
 from new_plane.miya_runner.telegram import (
     TelegramClient,
     TelegramConflictError,
+    delivered,
     parse_update,
 )
 
@@ -166,7 +167,28 @@ def cmd_once(args: list[str]) -> int:
     return 0
 
 
-def _fire_nudges(tg: "TelegramClient", chat_id: str) -> None:
+# A nudge Telegram did not take is sent again on the next ticks (its own
+# function will not fire it again: its marker is written) until it goes out
+# or this many minutes pass. QA-2026-10-04-03: on Sep 28 three nudges were
+# lost to a DNS outage and logged as sent.
+NUDGE_RETRY_MINUTES = 30
+
+
+def _send_nudge(tg, chat_id: str, name: str, text: str, *, retry: bool = False) -> bool:
+    try:
+        resp = tg.send_message(chat_id, text)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("nudge %s send failed: %s: %s", name, type(e).__name__, e)
+        resp = {}
+    if delivered(resp):
+        logger.info("[nudge] sent %s (len=%d)%s", name, len(text), " on retry" if retry else "")
+        return True
+    logger.warning("[nudge] NOT delivered %s (len=%d) — will try again next minute", name, len(text))
+    return False
+
+
+def _fire_nudges(tg: "TelegramClient", chat_id: str,
+                 undelivered: dict | None = None) -> None:
     """Run old Kobe's per-minute nudge functions and send any output.
 
     Per ADR-013 Phase C. Imports the existing functions from
@@ -175,8 +197,19 @@ def _fire_nudges(tg: "TelegramClient", chat_id: str) -> None:
     two planes coordinate via the marker even during transition).
 
     Best-effort. Logs but doesn't raise on failure — never let a buggy
-    nudge tick crash the user-message loop.
+    nudge tick crash the user-message loop. `undelivered` (name → (text,
+    first failure time)) is the loop's memory of nudges Telegram did not
+    take; they go first, once per tick, for NUDGE_RETRY_MINUTES.
     """
+    undelivered = {} if undelivered is None else undelivered
+    for name, (text, since) in list(undelivered.items()):
+        if _send_nudge(tg, chat_id, name, text, retry=True):
+            undelivered.pop(name, None)
+        elif time.time() - since > NUDGE_RETRY_MINUTES * 60:
+            undelivered.pop(name, None)
+            logger.error("[nudge] dropped %s — not delivered for %d minutes",
+                         name, NUDGE_RETRY_MINUTES)
+
     try:
         from agents.the_scientist.handler import (
             maybe_morning_briefing, maybe_weekly_reset,
@@ -211,13 +244,8 @@ def _fire_nudges(tg: "TelegramClient", chat_id: str) -> None:
             logger.warning("nudge %s raised: %s: %s",
                            name, type(e).__name__, e)
             continue
-        if text:
-            try:
-                tg.send_message(chat_id, text)
-                logger.info("[nudge] sent %s (len=%d)", name, len(text))
-            except Exception as e:
-                logger.warning("nudge %s send failed: %s: %s",
-                               name, type(e).__name__, e)
+        if text and not _send_nudge(tg, chat_id, name, text):
+            undelivered[name] = (text, undelivered.get(name, (text, time.time()))[1])
 
 
 def cmd_serve(_args: list[str]) -> int:
@@ -293,6 +321,7 @@ def cmd_serve(_args: list[str]) -> int:
     consecutive_errors = 0
     conflict_errors = 0
     last_tick_minute = -1
+    undelivered_nudges: dict = {}
     while _RUNNING:
         try:
             updates = tg.get_updates(offset=last_id + 1)
@@ -316,12 +345,14 @@ def cmd_serve(_args: list[str]) -> int:
                                     f"{type(e).__name__}: {e}")
                     continue
                 if resp.sent:
-                    tg.send_message(tu.chat_id, resp.text)
-                    logger.info("[out] trace=%s model=%s tools=%s arbitration=%s",
-                                resp.trace_id,
-                                resp.routing.get("model"),
-                                resp.used_tools,
-                                resp.arbitration_rule)
+                    ok = delivered(tg.send_message(tu.chat_id, resp.text))
+                    (logger.info if ok else logger.warning)(
+                        "[out] trace=%s model=%s tools=%s arbitration=%s delivered=%s",
+                        resp.trace_id,
+                        resp.routing.get("model"),
+                        resp.used_tools,
+                        resp.arbitration_rule,
+                        ok)
                 else:
                     logger.warning("charter-veto for trace=%s: %s",
                                    resp.trace_id, resp.veto_reason)
@@ -336,7 +367,7 @@ def cmd_serve(_args: list[str]) -> int:
                 _now = __import__("datetime").datetime.now()
                 if _now.minute != last_tick_minute:
                     last_tick_minute = _now.minute
-                    _fire_nudges(tg, expected_chat_id)
+                    _fire_nudges(tg, expected_chat_id, undelivered_nudges)
 
             consecutive_errors = 0
             conflict_errors = 0

@@ -204,12 +204,24 @@ def maybe_send_digest(send, now=None) -> bool:
     if not chats:
         logger.info("digest built but no household chats enrolled yet")
         return False
+    from new_plane.miya_runner.telegram import delivered
+    got = 0
     for cid in chats:
         try:
-            send(cid, text)
+            got += delivered(send(cid, text))
         except Exception as e:  # noqa: BLE001 — one bad chat ≠ no digest
             logger.warning("digest send to %s failed: %s", cid, e)
-    logger.info("weekend digest sent to %d household chat(s)", len(chats))
+    if not got:
+        # QA-2026-10-04-03: nobody got it (the network was down) — clear
+        # today's marker so the next minute of the digest hour tries again.
+        data = state._read_store()
+        if data.get("last_digest") == marker:
+            data.pop("last_digest")
+            state._write_store(data)
+        logger.warning("weekend digest NOT delivered to any of %d household chat(s) — "
+                       "trying again next minute", len(chats))
+        return False
+    logger.info("weekend digest delivered to %d of %d household chat(s)", got, len(chats))
     return True
 
 

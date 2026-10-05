@@ -20,7 +20,7 @@ from tests.telegram_checks import legacy_markdown_problems
 
 class _Telegram:
     """Refuses invalid legacy Markdown the way Telegram does (the client's
-    _http_post returns {} on the HTTP 400)."""
+    _http_post hands back Telegram's HTTP 400 answer)."""
 
     def __init__(self, refuse_markdown: bool = False):
         self.calls, self.refuse_markdown = [], refuse_markdown
@@ -28,7 +28,7 @@ class _Telegram:
     def post(self, method, body):
         self.calls.append(dict(body))
         if body.get("parse_mode") == "Markdown" and (self.refuse_markdown or legacy_markdown_problems(body["text"])):
-            return {}
+            return {"ok": False, "error_code": 400, "description": "Bad Request: can't parse entities"}
         return {"ok": True, "result": {"message_id": len(self.calls)}}
 
 

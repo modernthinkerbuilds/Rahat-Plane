@@ -106,11 +106,20 @@ class TelegramClient:
 
     def send_message(self, chat_id: str, text: str, *,
                      parse_mode: str = "Markdown") -> dict[str, Any]:
-        """sendMessage with Markdown by default. Returns the API JSON.
+        """sendMessage with Markdown by default. Returns the last chunk's
+        API JSON; its "ok" is true only when EVERY chunk was delivered, so
+        a caller can log what happened (`delivered(resp)`) instead of
+        assuming (QA-2026-10-04-03: the logs said "sent" for nudges that
+        never arrived).
 
         Splits messages > 4096 chars (Telegram's hard limit) across
         multiple sends — mirrors the old-plane `_split_for_telegram`.
+        Per chunk: no answer at all (a network blip) → the same send once
+        more; Telegram refused the Markdown → the chunk as written, as
+        plain text; any other refusal (blocked, rate-limited) stands.
         """
+        resp: dict[str, Any] = {}
+        all_ok = True
         for chunk in _split_for_telegram(text):
             body = chunk
             if parse_mode == "Markdown":
@@ -121,20 +130,28 @@ class TelegramClient:
                 if escaped:
                     logger.info("telegram sendMessage chat=%s markdown_repaired=1 escaped=%d",
                                 chat_id, escaped)
-            resp = self._http_post(
-                "sendMessage",
-                {"chat_id": chat_id, "text": body, "parse_mode": parse_mode},
-            )
-            if not resp.get("ok") and parse_mode:
+            payload = {"chat_id": chat_id, "text": body, "parse_mode": parse_mode}
+            resp = self._http_post("sendMessage", payload)
+            if not resp:
+                resp = self._http_post("sendMessage", payload)
+            elif not resp.get("ok") and parse_mode and resp.get("error_code") in (None, 400):
                 # Still refused (a rule the repair does not know) — the
                 # chunk as written, as plain text, beats nothing.
+                logger.warning("telegram sendMessage chat=%s refused as %s — sent as plain text",
+                               chat_id, parse_mode)
                 resp = self._http_post(
                     "sendMessage",
                     {"chat_id": chat_id, "text": chunk},
                 )
-        return resp  # last chunk's response
+            all_ok = all_ok and bool(resp.get("ok"))
+        if not all_ok and resp.get("ok"):
+            resp = {**resp, "ok": False}          # an earlier chunk was lost
+        return resp
 
     def _http_post(self, method: str, body: dict[str, Any]) -> dict[str, Any]:
+        """POST to the bot API. Returns Telegram's JSON — on a refusal too
+        ({"ok": false, "error_code": 400, "description": …}) — or {} when
+        nothing answered (DNS, timeout, a dropped connection)."""
         url = self._url(method)
         data = json.dumps(body).encode("utf-8")
         req = _urlreq.Request(url, data=data,
@@ -143,9 +160,29 @@ class TelegramClient:
             with _urlreq.urlopen(req, timeout=15) as resp:
                 raw = resp.read().decode("utf-8", errors="replace")
             return json.loads(raw)
+        except _urlerr.HTTPError as e:
+            # Telegram answered and said no. HTTPError is a URLError, so it
+            # is caught first; its body says why.
+            try:
+                answer = json.loads(e.read().decode("utf-8", errors="replace"))
+            except Exception:  # noqa: BLE001 — a body that is not JSON
+                answer = {}
+            answer = answer if isinstance(answer, dict) else {}
+            answer["ok"] = False
+            answer.setdefault("error_code", e.code)
+            logger.warning("telegram %s failed: HTTPError: HTTP Error %s: %s", method, e.code,
+                           str(answer.get("description") or e.reason)[:200])
+            return answer
         except (_urlerr.URLError, TimeoutError, OSError, ValueError) as e:
             logger.warning("telegram %s failed: %s: %s", method, type(e).__name__, e)
             return {}
+
+
+def delivered(resp: Any) -> bool:
+    """Whether a send_message result says Telegram took the message. Only
+    an API answer can say no: anything else (None from a dev print, a
+    test double's return) counts as delivered, as before."""
+    return not isinstance(resp, dict) or bool(resp.get("ok"))
 
 
 # ─── Helpers ───────────────────────────────────────────────────────────

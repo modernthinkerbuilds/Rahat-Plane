@@ -344,14 +344,6 @@ def test_the_client_never_sends_a_message_telegram_will_refuse(monkeypatch):
     assert len(fake.calls) == 1, "one send, not a refused send and a plain-text retry"
 
 
-_NUDGE_SENT = pytest.mark.xfail(strict=True, reason=(
-    "LIVE (vault/miya_v2.log 2026-09-28 08:00, 15:00, 21:00): both sends failed (DNS) and the log "
-    "still said '[nudge] sent'; the nudge's own marker was already written, so it never went out. "
-    "Fix QA-2026-10-04-03: log the failure and clear the marker so the next tick retries. "
-    "Delete this mark when it passes."))
-
-
-@_NUDGE_SENT
 def test_a_nudge_that_was_not_delivered_is_not_logged_as_sent(monkeypatch, caplog):
     import agents.the_scientist.handler as sci
     for fn in ("maybe_morning_briefing", "maybe_weekly_reset", "maybe_walk_nudge"):
@@ -372,13 +364,6 @@ def test_a_nudge_that_was_not_delivered_is_not_logged_as_sent(monkeypatch, caplo
         [r.getMessage() for r in caplog.records]
 
 
-_OUT_LINE = pytest.mark.xfail(strict=True, reason=(
-    "LIVE: the Bourdain and Genie loops log '[out] chat=… len=…' whatever Telegram answered, so the "
-    "log cannot tell a delivered reply from a lost one or a plain-text retry. "
-    "Fix QA-2026-10-04-03: log the send result on the [out] line. Delete this mark when it passes."))
-
-
-@_OUT_LINE
 @pytest.mark.parametrize("runner,token_var", [("new_plane.bourdain_runner.__main__", "BOURDAIN_TELEGRAM_TOKEN"),
                                               ("new_plane.genie_runner.__main__", "GENIE_TELEGRAM_TOKEN")])
 def test_a_reply_that_was_not_delivered_is_not_logged_as_out(monkeypatch, caplog, runner, token_var):
