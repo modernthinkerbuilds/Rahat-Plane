@@ -134,78 +134,94 @@ def _fmt_one(row: dict) -> str:
 
 
 def execute(commands: list[Command], *, now: datetime,
-            store_path: str | None = None, llm=None
+            store_path: str | None = None, llm=None, by: str = ""
             ) -> tuple[list[str], list[tuple[str, object]]]:
     """Run commands in order. Returns (result lines, attachments) for
-    the single ack email. Every command produces exactly one line."""
+    the single ack email. Every command produces exactly one line, and
+    one INFO log line — sender, command, job id, outcome (T4: the only
+    command she ever sent, Aug 27, cannot be read back from the log)."""
     from agents.benji import state as bstate
     from bridges.jobsearch import store
 
     results: list[str] = []
     attachments: list[tuple[str, object]] = []
     for cmd in commands:
-        if cmd.verb in ("applied", "skip"):
-            status = "applied" if cmd.verb == "applied" else "skipped"
-            ok, reason = bstate.gated_set_status(
-                cmd.job_id, status, note=cmd.arg, by="co-owner",
-                now=now, store_path=store_path)
-            results.append(f"[{cmd.job_id}] → {status}"
-                           + ("" if ok else f" FAILED: {reason}"))
-        elif cmd.verb == "snooze":
-            days = max(1, min(60, int(cmd.arg)))
-            until = (now + timedelta(days=days)).strftime("%Y-%m-%d")
-            ok, reason = bstate.gated_set_status(
-                cmd.job_id, "snoozed", note=f"until:{until}",
-                by="co-owner", now=now, store_path=store_path)
-            results.append(f"[{cmd.job_id}] → snoozed until {until}"
-                           + ("" if ok else f" FAILED: {reason}"))
-        elif cmd.verb == "kit":
-            from agents.benji.generation import generate_package
-            r = generate_package(cmd.job_id, llm=llm, now=now,
-                                 store_path=store_path, on_request=True)
-            if r.get("ok"):
-                attachments += r["files"]
-                results.append(f"[{cmd.job_id}] package attached "
-                               f"({r['story']}, "
-                               f"{int(r['coverage'] * 100)}% coverage"
-                               + (" — under the floor, built because you "
-                                  "asked; the kit opens with the gaps)"
-                                  if r.get("below_floor") else ")"))
-            else:
-                results.append(f"[{cmd.job_id}] no package: "
-                               f"{r.get('refusal')}")
-        elif cmd.verb == "threshold":
-            n = int(cmd.arg)
-            if not 45 <= n <= 95:
-                results.append(f"threshold {n} out of range (45–95) — "
-                               "unchanged")
-            else:
-                ok, msg = _update_preference("apply_threshold", n,
-                                             now=now)
-                results.append(f"threshold: {msg}")
-        elif cmd.verb in ("pause", "resume"):
-            store.meta_set("digests_paused",
-                           "1" if cmd.verb == "pause" else "0",
-                           path=store_path)
-            results.append("digests paused — ingest keeps running; "
-                           "reply `resume` to restart"
-                           if cmd.verb == "pause" else "digests resumed")
-        elif cmd.verb == "status":
-            lines = [f"  {s['source']}: {s['state']}, "
-                     f"{s['last_count']} @ {s['last_run']}"
-                     for s in store.source_ledger(path=store_path)]
-            open_rows = store.queue_rows(path=store_path)
-            results.append(f"queue: {len(open_rows)} open role(s); "
-                           f"{len(lines)} sources — ledger attached")
-            attachments.append(("source_ledger.md",
-                                "# Source ledger\n" + "\n".join(lines)))
-        elif cmd.verb == "expand":
-            rows = sorted(store.queue_rows(path=store_path),
-                          key=lambda r: -(r.get("score") or 0))
-            body = "\n".join(_fmt_one(r) for r in rows) or "queue empty"
-            attachments.append(("all_open_roles.md",
-                                "# Every open role\n" + body))
-            results.append(f"full list attached ({len(rows)} roles)")
-        elif cmd.verb == "help":
-            results.append(GRAMMAR_HELP)
+        _execute_one(cmd, results, attachments, now=now,
+                     store_path=store_path, llm=llm, bstate=bstate,
+                     store=store)
+        outcome = (results[-1] if len(results) else "").splitlines()[0]
+        logger.info("command from %s: %s %s → %s", by or "?", cmd.verb,
+                    cmd.job_id if cmd.job_id is not None else "-",
+                    outcome[:160])
     return results, attachments
+
+
+def _execute_one(cmd: Command, results: list[str],
+                 attachments: list[tuple[str, object]], *, now: datetime,
+                 store_path, llm, bstate, store) -> None:
+    if cmd.verb in ("applied", "skip"):
+        status = "applied" if cmd.verb == "applied" else "skipped"
+        ok, reason = bstate.gated_set_status(
+            cmd.job_id, status, note=cmd.arg, by="co-owner",
+            now=now, store_path=store_path)
+        results.append(f"[{cmd.job_id}] → {status}"
+                       + ("" if ok else f" FAILED: {reason}"))
+    elif cmd.verb == "snooze":
+        days = max(1, min(60, int(cmd.arg)))
+        until = (now + timedelta(days=days)).strftime("%Y-%m-%d")
+        ok, reason = bstate.gated_set_status(
+            cmd.job_id, "snoozed", note=f"until:{until}",
+            by="co-owner", now=now, store_path=store_path)
+        results.append(f"[{cmd.job_id}] → snoozed until {until}"
+                       + ("" if ok else f" FAILED: {reason}"))
+    elif cmd.verb == "kit":
+        from agents.benji.generation import generate_package
+        r = generate_package(cmd.job_id, llm=llm, now=now,
+                             store_path=store_path, on_request=True)
+        if r.get("ok"):
+            attachments += r["files"]
+            results.append(f"[{cmd.job_id}] package attached "
+                           f"({r['story']}, "
+                           f"{int(r['coverage'] * 100)}% coverage"
+                           + (" — under the floor, built because you "
+                              "asked; the kit opens with the gaps)"
+                              if r.get("below_floor") else ")"))
+        else:
+            results.append(f"[{cmd.job_id}] no package: "
+                           f"{r.get('refusal')}")
+    elif cmd.verb == "threshold":
+        n = int(cmd.arg)
+        if not 45 <= n <= 95:
+            results.append(f"threshold {n} out of range (45–95) — "
+                           "unchanged")
+        else:
+            ok, msg = _update_preference("apply_threshold", n,
+                                         now=now)
+            results.append(f"threshold: {msg}")
+    elif cmd.verb in ("pause", "resume"):
+        store.meta_set("digests_paused",
+                       "1" if cmd.verb == "pause" else "0",
+                       path=store_path)
+        results.append("digests paused — ingest keeps running; "
+                       "reply `resume` to restart"
+                       if cmd.verb == "pause" else "digests resumed")
+    elif cmd.verb == "status":
+        lines = [f"  {s['source']}: {s['state']}, "
+                 f"{s['last_count']} @ {s['last_run']}"
+                 for s in store.source_ledger(path=store_path)]
+        open_rows = store.queue_rows(path=store_path)
+        results.append(f"queue: {len(open_rows)} open role(s); "
+                       f"{len(lines)} sources — ledger attached")
+        attachments.append(("source_ledger.md",
+                            "# Source ledger\n" + "\n".join(lines)))
+    elif cmd.verb == "expand":
+        rows = sorted(store.queue_rows(path=store_path),
+                      key=lambda r: -(r.get("score") or 0))
+        body = "\n".join(_fmt_one(r) for r in rows) or "queue empty"
+        attachments.append(("all_open_roles.md",
+                            "# Every open role\n" + body))
+        results.append(f"full list attached ({len(rows)} roles)")
+    elif cmd.verb == "help":
+        results.append(GRAMMAR_HELP)
+    else:
+        results.append(f"didn't understand: {cmd.verb}")

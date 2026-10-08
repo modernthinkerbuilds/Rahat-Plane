@@ -185,7 +185,8 @@ def poll_inbox(*, messages: list[dict] | None = None,
             ignored += 1
             continue
         results, attachments = execute(parsed.commands, now=now,
-                                       store_path=store_path, llm=llm)
+                                       store_path=store_path, llm=llm,
+                                       by=sender)
         lines: list[str] = []
         if results:
             lines += results
@@ -196,13 +197,29 @@ def poll_inbox(*, messages: list[dict] | None = None,
             lines.append(GRAMMAR_HELP)
         subject = ("Benji ✓ " + (f"{len(results)} command(s)"
                                  if results else "didn't catch that"))
-        sent, reason = send_email(subject=subject,
-                                  body="\n".join(lines),
-                                  attachments=attachments,
-                                  in_reply_to=mid or None,
-                                  transport=transport, now=now)
-        if not sent:
+        kits = [c.job_id for c, r in zip(parsed.commands, results)
+                if c.verb == "kit" and "package attached" in r]
+        try:
+            sent, reason = send_email(subject=subject,
+                                      body="\n".join(lines),
+                                      attachments=attachments,
+                                      in_reply_to=mid or None,
+                                      transport=transport, now=now)
+        except Exception as e:              # noqa: BLE001 — SMTP down
+            sent, reason = False, f"{type(e).__name__}: {e}"
+        if sent:
+            # T4: every ack and every kit sent is a digest_log row.
+            store.log_digest("ack", now=now, path=store_path,
+                             meta={"sender": sender, "subject": subject,
+                                   "commands": [c.verb for c in parsed.commands],
+                                   "kits": kits})
+            for job_id in kits:
+                store.log_digest("kit", now=now, path=store_path,
+                                 meta={"job_id": job_id, "sender": sender})
+        else:
             logger.error("inbox ack NOT sent: %s", reason)
+            store.record_failure("inbox ack", reason, now=now,
+                                 path=store_path)
         if mid:
             store.mail_mark(mid, now=now, path=store_path)
         handled += 1

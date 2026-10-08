@@ -84,6 +84,14 @@ def _connect(path: str | None = None) -> sqlite3.Connection:
         key TEXT PRIMARY KEY, value TEXT)""")
     con.execute("""CREATE TABLE IF NOT EXISTS processed_mail (
         message_id TEXT PRIMARY KEY, processed_at TEXT)""")
+    # 2026-10-07 (T5): when a source entered its current state, so "in
+    # error for 3+ days" can be told from "failed once this morning".
+    cols = {r[1] for r in con.execute("PRAGMA table_info(source_state)")}
+    if "state_since" not in cols:
+        con.execute("ALTER TABLE source_state ADD COLUMN state_since TEXT")
+        con.execute("UPDATE source_state SET state_since=last_run "
+                    "WHERE state_since IS NULL")
+        con.commit()
     return con
 
 
@@ -199,23 +207,28 @@ def record_source_run(source: str, count: int, *, now: datetime,
     (the Filter Config rule: raise a flag, not fail silently)."""
     con = _connect(path)
     try:
-        row = con.execute("SELECT consecutive_empty, cold_started FROM "
-                          "source_state WHERE source=?", (source,)).fetchone()
+        row = con.execute("SELECT consecutive_empty, cold_started, state, "
+                          "state_since FROM source_state WHERE source=?",
+                          (source,)).fetchone()
         empty = (row["consecutive_empty"] if row else 0)
         cold_started = (row["cold_started"] if row else 0)
         empty = empty + 1 if (count == 0 and state == "ok") else 0
         if empty >= 3:
             state, note = "dead-feed?", note or "empty 3 consecutive runs"
+        since = (row["state_since"] if row and row["state"] == state
+                 and row["state_since"] else _iso(now))
         con.execute(
             """INSERT INTO source_state
                  (source, last_run, last_count, consecutive_empty, state,
-                  note, cold_started)
-               VALUES (?,?,?,?,?,?,?)
+                  note, cold_started, state_since)
+               VALUES (?,?,?,?,?,?,?,?)
                ON CONFLICT(source) DO UPDATE SET last_run=excluded.last_run,
                  last_count=excluded.last_count,
                  consecutive_empty=excluded.consecutive_empty,
-                 state=excluded.state, note=excluded.note""",
-            (source, _iso(now), count, empty, state, note, cold_started))
+                 state=excluded.state, note=excluded.note,
+                 state_since=excluded.state_since""",
+            (source, _iso(now), count, empty, state, note, cold_started,
+             since))
         con.commit()
         return {"source": source, "state": state, "consecutive_empty": empty}
     finally:
@@ -412,6 +425,53 @@ def last_digest(kind: str, path: str | None = None) -> str | None:
         return row["sent_at"] if row else None
     finally:
         con.close()
+
+
+def first_digest(kind: str, path: str | None = None) -> str | None:
+    con = _connect(path)
+    try:
+        row = con.execute(
+            "SELECT sent_at FROM digest_log WHERE kind=? "
+            "ORDER BY sent_at ASC LIMIT 1", (kind,)).fetchone()
+        return row["sent_at"] if row else None
+    finally:
+        con.close()
+
+
+def digest_rows(kind: str, *, limit: int = 30, since: datetime | None = None,
+                path: str | None = None) -> list[dict]:
+    """The latest `limit` ledger rows of one kind, newest first, with
+    their meta decoded (digest_log holds every send: morning, evening,
+    ack, kit, health, and every recorded failure)."""
+    con = _connect(path)
+    try:
+        q = "SELECT kind, sent_at, meta FROM digest_log WHERE kind=?"
+        args: list = [kind]
+        if since is not None:
+            q += " AND sent_at >= ?"
+            args.append(_iso(since))
+        q += " ORDER BY sent_at DESC LIMIT ?"
+        args.append(limit)
+        out = []
+        for r in con.execute(q, args).fetchall():
+            try:
+                meta = json.loads(r["meta"] or "{}")
+            except ValueError:
+                meta = {}
+            out.append({"kind": r["kind"], "sent_at": r["sent_at"],
+                        "meta": meta if isinstance(meta, dict) else {}})
+        return out
+    finally:
+        con.close()
+
+
+def record_failure(where: str, error: str, *, now: datetime,
+                   path: str | None = None) -> None:
+    """A send that did not go out or a run that died: one ledger row
+    (kind "failure"), so the health check can see what the log alone
+    could not (T5)."""
+    log_digest("failure", now=now, path=path,
+               meta={"where": where, "error": str(error)[:300]})
 
 
 def meta_get(key: str, default: str = "", path: str | None = None) -> str:

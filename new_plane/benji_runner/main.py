@@ -127,16 +127,17 @@ def cmd_digest(which: str | None, *, preview: bool = False) -> int:
             print(f"\n--- attachment: {name} ({len(content)} bytes) ---")
         return 0
 
+    recipient = (os.getenv("BENJI_DELIVERY_EMAIL") or "").strip()
     sent, reason = send_email(subject=subject, body=body, html=html,
                               attachments=attachments, now=now)
     if sent:
         store.log_digest(which, now=now,
-                         meta={"subject": subject,
+                         meta={"subject": subject, "to": recipient,
                                "attachments": [n for n, _ in attachments],
                                **stats})
-        logger.info("digest sent: %s", subject)
+        logger.info("digest sent to %s: %s", recipient, subject)
         return 0
-    logger.error("digest NOT sent: %s", reason)
+    logger.error("digest NOT sent to %s: %s", recipient, reason)
     return 1
 
 
@@ -162,6 +163,12 @@ def cmd_kit(display_id: int, *, preview: bool = False) -> int:
         subject=f"Benji · kit [{display_id}] {job.get('org')}",
         body=head + result["review_md"], attachments=result["files"],
         now=now)
+    if sent:
+        from bridges.jobsearch import store
+        store.log_digest("kit", now=now, meta={"job_id": display_id,
+                                               "sender": "cli"})
+        logger.info("kit [%s] sent to %s", display_id,
+                    (os.getenv("BENJI_DELIVERY_EMAIL") or "").strip())
     print(f"[{display_id}] {'sent' if sent else 'NOT sent'}: {reason}")
     return 0 if sent else 1
 
