@@ -146,7 +146,10 @@ def test_skills_reorder_never_adds(env):
 
 
 # ─────────────────── coverage floor refusal (Tara #3) ─────────────────
-def test_kit_refuses_below_coverage_floor_with_unmatched_list(env):
+def test_auto_build_refuses_below_coverage_floor_with_unmatched_list(env):
+    """The floor still decides what Benji builds ON ITS OWN (the
+    morning's apply-band packages). A kit she asks for is T2's case:
+    test_2026_10_07_benji_kit_on_request_ships_under_the_floor.py."""
     from bridges.jobsearch import store
     store.upsert_batch([job_row(2, jd=ALIEN_JD, title="Program Officer, "
                                 "Quantum", org="Alien Fund")], now=NOW)

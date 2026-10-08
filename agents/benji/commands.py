@@ -162,12 +162,15 @@ def execute(commands: list[Command], *, now: datetime,
         elif cmd.verb == "kit":
             from agents.benji.generation import generate_package
             r = generate_package(cmd.job_id, llm=llm, now=now,
-                                 store_path=store_path)
+                                 store_path=store_path, on_request=True)
             if r.get("ok"):
                 attachments += r["files"]
                 results.append(f"[{cmd.job_id}] package attached "
                                f"({r['story']}, "
-                               f"{int(r['coverage'] * 100)}% coverage)")
+                               f"{int(r['coverage'] * 100)}% coverage"
+                               + (" — under the floor, built because you "
+                                  "asked; the kit opens with the gaps)"
+                                  if r.get("below_floor") else ")"))
             else:
                 results.append(f"[{cmd.job_id}] no package: "
                                f"{r.get('refusal')}")

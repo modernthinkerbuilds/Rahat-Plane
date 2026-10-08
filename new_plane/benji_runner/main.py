@@ -148,7 +148,7 @@ def cmd_kit(display_id: int, *, preview: bool = False) -> int:
     from new_plane.benji_runner.emailer import send_email
 
     now = datetime.now()
-    result = generate_package(display_id, now=now)
+    result = generate_package(display_id, now=now, on_request=True)
     if not result.get("ok"):
         print(f"[{display_id}] no package: {result.get('refusal')}")
         return 1

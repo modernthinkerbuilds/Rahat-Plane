@@ -15,10 +15,15 @@ reframe, it may not add. Enforced structurally, not aspirationally:
   * JD text is untrusted input: it reaches the LLM as quoted material
     for vocabulary, and whatever comes back still faces the gate.
 
-Coverage floor (PRD precedence, Tara #3): below 60% this module REFUSES
-to generate — even on an explicit kit request — and returns the
-unmatched list instead, since that's exactly the case where something
-real may be missing from CLEAN v3.
+Coverage floor (PRD precedence, Tara #3; narrowed 2026-10-07, T2): below
+60% this module refuses to AUTO-build a package — the morning's own
+packages for the apply band — and returns the unmatched list instead,
+since that's exactly the case where something real may be missing from
+CLEAN v3. A kit she ASKS for (`kit N`, the CLI) always ships: real
+coverage runs at a median of 38%, so the floor refused 98.6% of her
+requests. Under the floor the kit's first two lines state the coverage
+and the unmatched keywords; the "reframe, never add" gate is unchanged
+and still blocks content.
 """
 from __future__ import annotations
 
@@ -319,11 +324,55 @@ def cfg_sources_lookup(job: dict, *, load_filter: bool = False):
                                             else "")
 
 
+def coverage_banner(cov: CoverageReport) -> str:
+    """The two lines that open a requested kit built under the floor."""
+    return (f"Keyword coverage: {int(cov.coverage * 100)}% — below the "
+            f"{int(COVERAGE_FLOOR * 100)}% floor Benji needs before it "
+            "builds a package on its own; this one is here because you "
+            "asked.\n"
+            "Unmatched (weight order): "
+            + (", ".join(cov.unmatched[:15]) or "none")
+            + " — address a gap honestly or leave it; never invent.")
+
+
+def _with_banner(files: list[tuple[str, object]], banner: str
+                 ) -> list[tuple[str, object]]:
+    """Every text deliverable (the kit, review.md, prompt.md) opens with
+    the banner; the rendered documents are left as they are."""
+    out: list[tuple[str, object]] = []
+    for name, content in files:
+        if isinstance(content, str):
+            content = banner + "\n\n" + content
+        out.append((name, content))
+    return out
+
+
 def generate_package(display_id: int, *, llm=None,
                      now: datetime | None = None,
-                     store_path: str | None = None) -> dict:
+                     store_path: str | None = None,
+                     on_request: bool = False) -> dict:
     """Build the full package for one role. Returns
-    {ok, refusal?, files[(name, bytes|str)], gate, review_md}."""
+    {ok, refusal?, files[(name, bytes|str)], gate, review_md}.
+    `on_request=True` is a kit she asked for: the coverage floor does not
+    refuse it (T2); below the floor every text file opens with the
+    coverage banner and the result carries `below_floor=True`."""
+    result = _generate_package(display_id, llm=llm, now=now,
+                               store_path=store_path, on_request=on_request)
+    if result.get("ok") and result.get("below_floor"):
+        banner = coverage_banner(result["cov"])
+        result["files"] = _with_banner(result["files"], banner)
+        result["review_md"] = banner + "\n\n" + result["review_md"]
+        result.setdefault("flags", []).append(
+            f"coverage {int(result['coverage'] * 100)}% is under the "
+            f"{int(COVERAGE_FLOOR * 100)}% floor — built on request")
+    result.pop("cov", None)
+    return result
+
+
+def _generate_package(display_id: int, *, llm=None,
+                      now: datetime | None = None,
+                      store_path: str | None = None,
+                      on_request: bool = False) -> dict:
     from agents.benji.protocols import (load_candidate_source,
                                         load_preferences)
     now = now or datetime.now()
@@ -339,9 +388,10 @@ def generate_package(display_id: int, *, llm=None,
     jdless = not (job.get("jd_text") or "").strip()
     cov = coverage(job.get("jd_text", ""), src_text,
                    job_title=job.get("title", ""))
-    if cov.coverage < COVERAGE_FLOOR and not jdless:
-        # PRD precedence: the floor beats everything, including an
-        # explicit kit request. The unmatched list IS the useful output.
+    below_floor = cov.coverage < COVERAGE_FLOOR and not jdless
+    if below_floor and not on_request:
+        # PRD precedence for packages Benji builds on its own: the floor
+        # beats the band. The unmatched list IS the useful output.
         return {"ok": False, "files": [], "refusal": (
             f"coverage {int(cov.coverage * 100)}% is below the 60% "
             f"floor — no package, by your own rule (Generation Spec "
@@ -425,7 +475,7 @@ JD EXCERPT: {(job.get('jd_text') or '')[:1200]}"""
                           ("review.md", review)],
                 "gate": GateReport(), "review_md": review,
                 "story": story, "coverage": cov.coverage, "job": job,
-                "flags": flags}
+                "flags": flags, "below_floor": below_floor, "cov": cov}
 
 
     roles_out = []
@@ -529,4 +579,4 @@ JD EXCERPT: {(job.get('jd_text') or '')[:1200]}"""
                                    now=now, store_path=store_path)
     return {"ok": True, "files": files, "gate": gate, "review_md": review,
             "story": story, "coverage": cov.coverage, "job": job,
-            "flags": flags}
+            "flags": flags, "below_floor": below_floor, "cov": cov}
