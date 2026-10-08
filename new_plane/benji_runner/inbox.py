@@ -16,6 +16,11 @@ Security posture (PRD §2/§7):
 
 Hermetic: the IMAP client refuses to construct under RAHAT_TEST_MODE=1
 — tests inject `messages=[...]` directly into poll_inbox().
+
+Never crashes (T3, 2026-10-07): the mailbox is reached with three
+tries, 10 s then 30 s apart; a third failure is ONE warning naming the
+exception class, and the poll returns normally (46 tracebacks on
+Sep 28, all socket.gaierror from a DNS outage, each a crashed poll).
 """
 from __future__ import annotations
 
@@ -23,6 +28,7 @@ import email
 import email.utils
 import logging
 import os
+import time
 from datetime import datetime
 
 from agents.benji.commands import (
@@ -44,6 +50,29 @@ def _allowed_senders() -> set[str]:
             if addr:
                 out.add(addr)
     return out
+
+
+IMAP_TRIES = 3
+IMAP_BACKOFF_S = (10, 30)       # waits before the second and third try
+
+
+def _imap_fetch_with_retry(*, fetch=None, sleep=None) -> list[dict]:
+    """`_imap_fetch_recent`, up to IMAP_TRIES times. Raises the last
+    error after the last try; the caller turns that into one warning."""
+    fetch = fetch or _imap_fetch_recent
+    sleep = sleep or time.sleep
+    for attempt in range(IMAP_TRIES):
+        try:
+            return fetch()
+        except Exception as e:              # noqa: BLE001 — see module doc
+            if attempt + 1 >= IMAP_TRIES:
+                raise
+            wait = IMAP_BACKOFF_S[min(attempt, len(IMAP_BACKOFF_S) - 1)]
+            logger.info("inbox: mailbox unreachable (%s) — try %d of %d "
+                        "in %ds", type(e).__name__, attempt + 2,
+                        IMAP_TRIES, wait)
+            sleep(wait)
+    return []                               # unreachable
 
 
 def _imap_fetch_recent() -> list[dict]:
@@ -103,11 +132,22 @@ def _imap_fetch_recent() -> list[dict]:
 def poll_inbox(*, messages: list[dict] | None = None,
                now: datetime | None = None,
                store_path: str | None = None,
-               transport=None, llm=None) -> dict:
-    """One poll cycle. Returns counts for the log/ledger."""
+               transport=None, llm=None, fetch=None,
+               sleep=None) -> dict:
+    """One poll cycle. Returns counts for the log/ledger; when the
+    mailbox could not be reached, {"handled": 0, "ignored": 0,
+    "total": 0, "error": "<exception class>"} and ONE warning — never
+    a traceback, never a non-zero exit (the next poll is in 15 min)."""
     now = now or datetime.now()
     if messages is None:
-        messages = _imap_fetch_recent()
+        try:
+            messages = _imap_fetch_with_retry(fetch=fetch, sleep=sleep)
+        except Exception as e:              # noqa: BLE001 — see module doc
+            logger.warning("inbox: mailbox unreachable after %d tries "
+                           "(%s) — nothing read; next poll in 15 min",
+                           IMAP_TRIES, type(e).__name__)
+            return {"handled": 0, "ignored": 0, "total": 0,
+                    "error": type(e).__name__}
     allowed = _allowed_senders()
     handled = ignored = 0
 
