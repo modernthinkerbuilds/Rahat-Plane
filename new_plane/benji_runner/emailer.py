@@ -72,13 +72,15 @@ def _chunk_attachments(attachments: list[tuple[str, object]],
 def send_email(*, subject: str, body: str, html: str | None = None,
                attachments: list[tuple[str, object]] | None = None,
                in_reply_to: str | None = None,
-               transport=None, now: datetime | None = None
-               ) -> tuple[bool, str]:
-    """Charter-gated send to the configured co-owner address.
+               transport=None, now: datetime | None = None,
+               to: str | None = None) -> tuple[bool, str]:
+    """Charter-gated send to the configured co-owner address — or, with
+    `to`, to another allowlisted address (the owner's health line,
+    BENJI_OWNER_EMAIL; the policy vetoes anything else).
 
     Returns (sent, reason). A veto is a NORMAL outcome (logged, ledgered)
     — never an exception; the runner reports it in the next digest."""
-    recipient = (os.getenv("BENJI_DELIVERY_EMAIL") or "").strip()
+    recipient = (to or os.getenv("BENJI_DELIVERY_EMAIL") or "").strip()
     attachments = attachments or []
     prefs, _ = load_preferences()
 

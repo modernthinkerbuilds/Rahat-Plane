@@ -27,7 +27,8 @@ config warnings; Sundays add the 20-item seeded rejects sample.
 """
 from __future__ import annotations
 
-from datetime import datetime
+import re
+from datetime import datetime, timedelta
 
 from agents.benji.protocols import (
     APPLY_THRESHOLD_DEFAULT,
@@ -44,6 +45,15 @@ from bridges.jobsearch import store
 
 BEST_COUNT = 5
 _SOURCE_TROUBLE = ("error", "parse_failed", "dead-feed?", "vetoed")
+
+# The health line (T5, the platform's D6 rule: only when something is
+# wrong, at most once a day). Benji ran seven weeks delivering nothing
+# and nobody was told.
+HEALTH_EMPTY_MORNINGS = 7
+HEALTH_SILENT_DAYS = 14
+HEALTH_SOURCE_ERROR_DAYS = 3
+HEALTH_FAILURE_HOURS = 24
+_OLD_SUBJECT_BAND = re.compile(r"(\d+) in the apply band")
 
 
 def _days_ago(posted: str | None, now: datetime) -> str:
@@ -349,3 +359,84 @@ def build_evening(*, now: datetime, store_path: str | None = None,
         return subject, "\n".join(body), render_evening_html(
             now=now, rows=hot, org_types=org_types)
     return subject, "\n".join(body)
+
+
+
+# ─────────────────────────── health (T5) ──────────────────────────────
+def _apply_band_of(row: dict) -> int | None:
+    """How many roles a logged morning had in the apply band: the row's
+    own count since 2026-10-08, the subject's "N in the apply band"
+    before that, None when neither is there (counted as not empty)."""
+    meta = row.get("meta") or {}
+    if isinstance(meta.get("apply_band"), int):
+        return meta["apply_band"]
+    m = _OLD_SUBJECT_BAND.search(str(meta.get("subject") or ""))
+    return int(m.group(1)) if m else None
+
+
+def _parse_iso(text: str | None) -> datetime | None:
+    try:
+        return datetime.strptime(text or "", "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return None
+
+
+def health_problems(*, now: datetime, store_path: str | None = None
+                    ) -> list[str]:
+    """What is wrong with Benji this morning, one line each; [] when
+    nothing is. Read at the end of every morning digest run."""
+    problems: list[str] = []
+
+    mornings = store.digest_rows("morning", limit=HEALTH_EMPTY_MORNINGS,
+                                 path=store_path)
+    bands = [_apply_band_of(m) for m in mornings]
+    if len(bands) >= HEALTH_EMPTY_MORNINGS and all(b == 0 for b in bands):
+        problems.append(
+            f"{HEALTH_EMPTY_MORNINGS} straight mornings with an empty "
+            "apply band — her bar or the scoring needs a look "
+            "(`threshold N` by reply lowers the bar)")
+
+    first = _parse_iso(store.first_digest("morning", path=store_path))
+    if first and now - first >= timedelta(days=HEALTH_SILENT_DAYS):
+        last_ack = _parse_iso(store.last_digest("ack", path=store_path))
+        if last_ack is None or now - last_ack >= timedelta(
+                days=HEALTH_SILENT_DAYS):
+            problems.append(
+                f"no reply from her in {HEALTH_SILENT_DAYS} days ("
+                + (f"last on {last_ack.strftime('%b %-d')}" if last_ack
+                   else "none on record")
+                + ") — ask whether the digest is still useful")
+
+    for src in store.source_ledger(path=store_path):
+        if src.get("state") not in ("error", "parse_failed"):
+            continue
+        since = _parse_iso(src.get("state_since"))
+        if since and now - since >= timedelta(days=HEALTH_SOURCE_ERROR_DAYS):
+            note = (src.get("note") or "")[:60]
+            problems.append(
+                f"source {src['source']} in {src['state']} since "
+                f"{since.strftime('%b %-d')}" + (f" ({note})" if note else ""))
+
+    fails = store.digest_rows("failure", limit=10,
+                              since=now - timedelta(hours=HEALTH_FAILURE_HOURS),
+                              path=store_path)
+    if fails:
+        what = "; ".join(f"{f['meta'].get('where', '?')}: "
+                         f"{str(f['meta'].get('error', ''))[:80]}"
+                         for f in fails[:3])
+        problems.append(f"{len(fails)} failure(s) in the last "
+                        f"{HEALTH_FAILURE_HOURS} h — {what}")
+    return problems
+
+
+def health_sent_today(*, now: datetime, store_path: str | None = None
+                      ) -> bool:
+    rows = store.digest_rows("health", limit=1, path=store_path)
+    return bool(rows) and rows[0]["sent_at"][:10] == now.strftime("%Y-%m-%d")
+
+
+def owner_section(problems: list[str]) -> str:
+    """The plain-text block appended to the morning digest when there
+    is no BENJI_OWNER_EMAIL to send the health line to."""
+    return "\n".join(["", "FOR THE OWNER — Benji needs a look:",
+                       *[f"  • {p}" for p in problems]])

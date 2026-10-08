@@ -194,3 +194,13 @@ def render_evening_html(*, now: datetime, rows: list[dict],
             "they'll be in tomorrow's queue too. Reply `kit ID` for a "
             "package now.</p>"
             + _table(rows, now, org_types) + "</div>")
+
+
+
+def owner_section_html(problems: list[str]) -> str:
+    return (f'<h3 style="{FONT}font-size:13px;color:#b00;margin:16px 0 '
+            '2px 0;">For the owner — Benji needs a look</h3>'
+            f'<ul style="margin:4px 0;">'
+            + "".join(f'<li style="{FONT}font-size:12px;color:#b00;">'
+                      f"{escape(p)}</li>" for p in problems)
+            + "</ul>")

@@ -6,9 +6,11 @@ them), NOT from core/charter.py — S1's zero-shared-files rule. The
 runner and every test that imports agents.benji get the policy armed.
 
 THE policy (PRD §2/§7, enforced not conventional): Benji may only email
-the co-owner. The allowlist lives in the environment (.env), never in
-code; empty allowlist → veto everything (fail closed — an unconfigured
-Benji cannot send email at all, to anyone).
+the co-owner — and, since 2026-10-07 (T5), the owner's own address for
+the health line (BENJI_OWNER_EMAIL). The allowlist lives in the
+environment (.env), never in code; empty allowlist → veto everything
+(fail closed — an unconfigured Benji cannot send email at all, to
+anyone).
 """
 from __future__ import annotations
 
@@ -21,7 +23,8 @@ from agents.benji.protocols import KIND_EMAIL_SEND  # noqa: F401  (doc)
 
 def _allowlist() -> set[str]:
     out: set[str] = set()
-    for var in ("BENJI_DELIVERY_EMAIL", "BENJI_ALLOWED_RECIPIENTS"):
+    for var in ("BENJI_DELIVERY_EMAIL", "BENJI_ALLOWED_RECIPIENTS",
+                "BENJI_OWNER_EMAIL"):
         for addr in (os.getenv(var) or "").split(","):
             addr = addr.strip().lower()
             if addr:

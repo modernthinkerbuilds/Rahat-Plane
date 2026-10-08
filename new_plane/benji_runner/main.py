@@ -119,6 +119,21 @@ def cmd_digest(which: str | None, *, preview: bool = False) -> int:
         subject, body, html = result
         attachments = []
 
+    # T5: the health line. With no owner address it rides inside the
+    # morning digest under "For the owner"; with one it is its own
+    # plain-text email after the send (so a failed send counts too).
+    owner = (os.getenv("BENJI_OWNER_EMAIL") or "").strip()
+    problems: list[str] = []
+    if which == "morning" and not preview and not dg.health_sent_today(now=now):
+        problems = dg.health_problems(now=now)
+        if problems and not owner:
+            body += "\n" + dg.owner_section(problems)
+            if html:
+                from agents.benji.digest_html import owner_section_html
+                cut = html.rfind("</div>")        # inside the outer block
+                html = (html[:cut] + owner_section_html(problems) + html[cut:]
+                        if cut >= 0 else html + owner_section_html(problems))
+
     if preview:
         # Reads only: nothing is marked digested, demoted or logged
         # (2026-10-07: a preview used to consume the 7:30 queue).
@@ -128,17 +143,55 @@ def cmd_digest(which: str | None, *, preview: bool = False) -> int:
         return 0
 
     recipient = (os.getenv("BENJI_DELIVERY_EMAIL") or "").strip()
-    sent, reason = send_email(subject=subject, body=body, html=html,
-                              attachments=attachments, now=now)
+    try:
+        sent, reason = send_email(subject=subject, body=body, html=html,
+                                  attachments=attachments, now=now)
+    except Exception as e:                      # noqa: BLE001 — SMTP down
+        sent, reason = False, f"{type(e).__name__}: {e}"
     if sent:
         store.log_digest(which, now=now,
                          meta={"subject": subject, "to": recipient,
                                "attachments": [n for n, _ in attachments],
                                **stats})
+        if problems and not owner:
+            store.log_digest("health", now=now,
+                             meta={"to": "digest", "problems": problems})
         logger.info("digest sent to %s: %s", recipient, subject)
-        return 0
-    logger.error("digest NOT sent to %s: %s", recipient, reason)
-    return 1
+        rc = 0
+    else:
+        logger.error("digest NOT sent to %s: %s", recipient, reason)
+        store.record_failure(f"{which} digest", reason, now=now)
+        rc = 1
+
+    if which == "morning" and owner and not dg.health_sent_today(now=now):
+        problems = dg.health_problems(now=now)       # includes a send that just failed
+        if problems:
+            _send_health_line(owner, problems, now=now)
+    return rc
+
+
+def _send_health_line(owner: str, problems: list[str], *, now) -> None:
+    """One plain-text email to the owner, at most once a day."""
+    from bridges.jobsearch import store
+    from new_plane.benji_runner.emailer import send_email
+    subject = f"Benji · health: {len(problems)} thing(s) need a look"
+    body = "\n".join(["Benji needs a look:", "",
+                       *[f"  • {p}" for p in problems], "",
+                       "(sent at most once a day, only when something is "
+                       "wrong — BENJI_OWNER_EMAIL in .env)"])
+    try:
+        sent, reason = send_email(subject=subject, body=body, now=now,
+                                  to=owner)
+    except Exception as e:                      # noqa: BLE001
+        sent, reason = False, f"{type(e).__name__}: {e}"
+    if sent:
+        store.log_digest("health", now=now,
+                         meta={"to": "owner", "problems": problems})
+        logger.info("health line sent to %s: %d problem(s)", owner,
+                    len(problems))
+    else:
+        logger.error("health line NOT sent to %s: %s", owner, reason)
+        store.record_failure("health line", reason, now=now)
 
 
 def cmd_kit(display_id: int, *, preview: bool = False) -> int:
@@ -193,6 +246,25 @@ def cmd_status() -> int:
 
 def main(argv: list[str] | None = None) -> int:
     _configure_runtime()
+    try:
+        return _main(argv)
+    except SystemExit:
+        raise
+    except Exception as e:                      # noqa: BLE001
+        # T5: a run that dies is recorded where the health check reads,
+        # with its traceback in the log, and the process exits cleanly.
+        logger.exception("benji run failed: %s: %s", type(e).__name__, e)
+        try:
+            from bridges.jobsearch import store
+            store.record_failure(" ".join(argv or sys.argv[1:]) or "run",
+                                 f"{type(e).__name__}: {e}",
+                                 now=datetime.now())
+        except Exception:                       # noqa: BLE001
+            pass
+        return 1
+
+
+def _main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="benji_runner")
     ap.add_argument("--ingest", action="store_true")
     ap.add_argument("--digest", nargs="?", const="auto",
