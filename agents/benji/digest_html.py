@@ -79,13 +79,44 @@ def _table(rows: list[dict], now: datetime, org_types: dict) -> str:
             f"<tr>{head}</tr>{body}</table>")
 
 
+def _best_table(best: list[tuple[dict, str]], now: datetime) -> str:
+    head = "".join(f'<th style="{TH}">{h}</th>' for h in
+                   ("#", "Role", "Org", "Score", "Why"))
+    rows = []
+    for r, why in best:
+        title = escape(r.get("title") or "")
+        url = escape(r.get("canonical_url") or "", quote=True)
+        title_cell = (f'<a href="{url}" style="color:#1a56b0;'
+                      f'text-decoration:none;">{title}</a>' if url else title)
+        rows.append(
+            "<tr>"
+            f'<td style="{TD}color:#999;">{r["id"]}</td>'
+            f'<td style="{TD}">{title_cell}</td>'
+            f'<td style="{TD}">{escape(r.get("org") or "")}</td>'
+            f'<td style="{TD}text-align:right;font-weight:600;">'
+            f'{r.get("score") or "—"}</td>'
+            f'<td style="{TD}color:#555;">{escape(why)}</td>'
+            "</tr>")
+    return (f'<table style="border-collapse:collapse;width:100%;'
+            f'margin:4px 0 14px 0;"><tr>{head}</tr>{"".join(rows)}</table>')
+
+
+def render_nothing_new_html(*, now: datetime, line: str) -> str:
+    return (f'<div style="{FONT}max-width:860px;">'
+            f'<h2 style="{FONT}font-size:17px;margin:0 0 2px 0;">'
+            f'Benji — morning queue · {now.strftime("%a %Y-%m-%d")}</h2>'
+            f'<p style="{FONT}font-size:13px;">{escape(line)}</p></div>')
+
+
 def render_morning_html(*, now: datetime, bands: dict, seen_count: int,
                         flagged: list[dict], sample: list[dict],
                         ledger: list[dict], warnings: list[str],
                         org_types: dict, first_morning: bool,
                         overflow_count: int,
                         package_names: list[str] | None,
-                        kit_only: bool = False) -> str:
+                        kit_only: bool = False,
+                        best: list[tuple[dict, str]] | None = None,
+                        labels: dict | None = None) -> str:
     parts = [f'<div style="{FONT}max-width:860px;">',
              f'<h2 style="{FONT}font-size:17px;margin:0 0 2px 0;">'
              f'Benji — morning queue · {now.strftime("%a %Y-%m-%d")}'
@@ -95,6 +126,11 @@ def render_morning_html(*, now: datetime, bands: dict, seen_count: int,
                      f'margin:2px 0;">first run: top roles below; '
                      f'{overflow_count} more in initial_backlog.md '
                      "(attached)</p>")
+    if best:
+        parts.append(f'<h3 style="{FONT}font-size:13px;color:#1a56b0;'
+                     f'margin:14px 0 2px 0;">BEST TODAY — top {len(best)} '
+                     "by score, whatever the band</h3>")
+        parts.append(_best_table(best, now))
     for band in ("apply", "worth_a_look", "maybe"):
         rows = bands.get(band) or []
         if not rows:
@@ -102,6 +138,8 @@ def render_morning_html(*, now: datetime, bands: dict, seen_count: int,
         color, label = BAND_STYLES[band]
         if band == "apply" and kit_only:
             label = "APPLY — reply `kit ID` for the package"
+        if labels and labels.get(band):
+            label = f"{label} ({labels[band]})"
         extra = ""
         if band == "apply" and package_names:
             extra = (f' · {len(package_names)} package(s) attached: '

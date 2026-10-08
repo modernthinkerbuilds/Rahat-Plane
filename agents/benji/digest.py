@@ -1,6 +1,7 @@
 """benji.digest — render the morning queue, evening delta and Sunday
 rejects sample as email-ready text. Pure render: reads the store, never
-writes except to mark rows digested / demote cold-start overflow.
+writes except to mark rows digested / demote cold-start overflow (and
+not even that for a preview: commit=False).
 
 Her display contract (Scoring Rules v2, verbatim shape):
 
@@ -8,10 +9,14 @@ Her display contract (Scoring Rules v2, verbatim shape):
          Foundation · Cluster A · 84% match · $120–140K · posted 2d ago
          Package ready.
 
-Bands decide how much gets written: 75+ full lines (packages attach
-once S2 generation ships — the digest says so honestly rather than
-pretending), 60–74 two lines on why, 45–59 one line grouped, <45 a
-collapsed count. Everything is visible; only the top band costs work.
+The email opens with BEST TODAY (2026-10-07, B2): the five highest
+scores of the day, one line each with the score and a two-to-five-word
+why, whatever their band — so every digest carries something worth
+reading and the subject names the best role. Then the bands, which
+decide how much gets written: the apply band (her `apply_threshold`,
+default 75) full lines, 60 up to the bar two lines on why, 45–59 one
+line grouped, <45 a collapsed count. Everything is visible; only the
+top band costs work. A day with nothing new is one line.
 
 Cold start (Tara #1): the FIRST morning is capped at 30 by score; the
 remainder is rendered into initial_backlog.md (returned as an
@@ -25,6 +30,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from agents.benji.protocols import (
+    APPLY_THRESHOLD_DEFAULT,
     BAND_APPLY,
     BAND_MAYBE,
     BAND_SEEN,
@@ -33,8 +39,11 @@ from agents.benji.protocols import (
     load_filter_config,
     load_preferences,
 )
-from agents.benji.scoring import sort_key
+from agents.benji.scoring import _norm_org, sort_key
 from bridges.jobsearch import store
+
+BEST_COUNT = 5
+_SOURCE_TROUBLE = ("error", "parse_failed", "dead-feed?", "vetoed")
 
 
 def _days_ago(posted: str | None, now: datetime) -> str:
@@ -45,6 +54,47 @@ def _days_ago(posted: str | None, now: datetime) -> str:
         return "posted today" if d <= 0 else f"posted {d}d ago"
     except ValueError:
         return "date unknown"
+
+
+def apply_threshold(prefs: dict) -> int:
+    """Her apply bar, clamped to the range `threshold N` accepts."""
+    try:
+        return max(45, min(95, int(prefs.get("apply_threshold",
+                                              APPLY_THRESHOLD_DEFAULT))))
+    except (TypeError, ValueError):
+        return APPLY_THRESHOLD_DEFAULT
+
+
+def band_labels(threshold: int) -> dict[str, str]:
+    """The score ranges each band header prints, for her bar."""
+    return {BAND_APPLY: f"{threshold}+",
+            BAND_WORTH_A_LOOK: f"60–{threshold - 1}",
+            BAND_MAYBE: f"45–{min(59, threshold - 1)}"}
+
+
+def why_line(row: dict, *, org_types: dict, dream_orgs: set[str]) -> str:
+    """Two to five words on why a role ranks where it does: org type,
+    title cluster, dream org — the three things the score rewards most."""
+    bits: list[str] = []
+    org_type = (org_types.get(row.get("org", "")) or "").replace("_", " ")
+    if org_type:
+        bits.append(org_type)
+    if row.get("title_cluster"):
+        bits.append(f"cluster {row['title_cluster']}")
+    if _norm_org(row.get("org", "")) in dream_orgs:
+        bits.append("dream org")
+    if not bits:
+        for b in (row.get("rationale") or "").split(" · "):
+            b = b.strip()
+            if b and "% match" not in b:
+                bits.append(b)
+                break
+    return " · ".join(bits[:3]) or "new role"
+
+
+def _fmt_best(row: dict, why: str) -> str:
+    return (f"[{row['id']}] {row['title']} — {row['org']} "
+            f"({row.get('score')}) · {why}")
 
 
 def _fmt_full(row: dict, now: datetime, *, org_types: dict) -> str:
@@ -97,20 +147,52 @@ def _ledger_footer(store_path, warnings: list[str]) -> str:
     return "\n".join(lines)
 
 
+def _subject(now: datetime, rows: list[dict]) -> str:
+    """`Benji · Thu 10-08 · best: <org> — <title> (<score>) · <n> new`,
+    or `… · nothing new`. Never a band count: fifty-one mornings of
+    "0 in the apply band" in the subject taught her not to open it."""
+    day = now.strftime("%a %m-%d")
+    if not rows:
+        return f"Benji · {day} · nothing new"
+    best = rows[0]
+    title = (best.get("title") or "").strip()
+    if len(title) > 48:
+        title = title[:47].rstrip() + "…"
+    return (f"Benji · {day} · best: {best.get('org')} — {title} "
+            f"({best.get('score')}) · {len(rows)} new")
+
+
+def _nothing_new_line(store_path) -> str:
+    ledger = store.source_ledger(path=store_path)
+    trouble = sum(1 for s in ledger if s.get("state") in _SOURCE_TROUBLE)
+    checked = sum(1 for s in ledger if s.get("state") != "manual")
+    return (f"No new roles today — {checked} feed(s) checked"
+            + (f", {trouble} in error" if trouble else "")
+            + "; reply `status` for the ledger.")
+
+
 def build_morning(*, now: datetime, store_path: str | None = None,
                   warnings: list[str] | None = None,
                   package_names: list[str] | None = None,
-                  with_html: bool = False):
+                  with_html: bool = False, commit: bool = True,
+                  stats: dict | None = None):
     """Returns (subject, body, attachments[(filename, text)]) — plus a
     4th element, the HTML alternative, when with_html=True (the runner
     passes it; pins keep the stable 3-tuple).
     `package_names`: names of S2 packages the runner built for the
-    apply band — mentioned in the body; the runner attaches the files."""
+    apply band — mentioned in the body; the runner attaches the files.
+    `commit=False` renders without marking anything digested or demoted
+    (a preview must leave the 7:30 queue intact — 2026-10-07).
+    `stats`, when given, receives {"new", "apply_band", "best"} for the
+    runner's ledger row and the health check."""
     cfg, cfg_w = load_filter_config()
     prefs, pref_w = load_preferences()
     warnings = [*(warnings or []), *cfg_w, *pref_w]
     org_types = {s.get("org"): s.get("org_type", "")
                  for s in cfg.get("sources", [])}
+    dream_orgs = {_norm_org(d) for d in cfg.get("dream_orgs", [])}
+    threshold = apply_threshold(prefs)
+    labels = band_labels(threshold)
 
     first_morning = store.last_digest("morning", path=store_path) is None
     rows = store.queue_rows(statuses=("new",), only_undigested=True,
@@ -130,23 +212,51 @@ def build_morning(*, now: datetime, store_path: str | None = None,
             back += [_fmt_one_line(r) + f"  {r.get('canonical_url', '')}"
                      for r in overflow]
             attachments.append(("initial_backlog.md", "\n".join(back)))
-            store.demote_to_backlog([r["id"] for r in overflow], now=now,
-                                    path=store_path)
+            if commit:
+                store.demote_to_backlog([r["id"] for r in overflow],
+                                        now=now, path=store_path)
 
     bands: dict[str, list[dict]] = {BAND_APPLY: [], BAND_WORTH_A_LOOK: [],
                                     BAND_MAYBE: [], BAND_SEEN: []}
     for r in rows:
-        bands[band_for(r.get("score") or 0)].append(r)
+        bands[band_for(r.get("score") or 0, threshold)].append(r)
+    best = [(r, why_line(r, org_types=org_types, dream_orgs=dream_orgs))
+            for r in rows[:BEST_COUNT]]
+    subject = _subject(now, rows)
+    if stats is not None:
+        stats.update({"new": len(rows), "apply_band": len(bands[BAND_APPLY]),
+                      "best": [r["id"] for r, _ in best],
+                      "threshold": threshold})
 
     body: list[str] = [f"Benji — morning queue · "
                        f"{now.strftime('%a %Y-%m-%d')}"]
+    if not rows and now.weekday() != 6:
+        # One line, and stop: a "nothing new" day earns nothing more
+        # than the subject already said. (A Sunday keeps its rejects
+        # sample below — the weekly filter calibration does not depend
+        # on new roles.)
+        line = _nothing_new_line(store_path)
+        if with_html:
+            from agents.benji.digest_html import render_nothing_new_html
+            return (subject, line, attachments,
+                    render_nothing_new_html(now=now, line=line))
+        return subject, line, attachments
+
     if first_morning:
         body.append(f"(first run: showing top {len(rows)}; "
                     f"{len(overflow)} more in initial_backlog.md)")
     body.append("")
+    if best:
+        body.append(f"BEST TODAY — top {len(best)} by score, whatever "
+                    "the band")
+        body += [_fmt_best(r, why) for r, why in best]
+    else:
+        body.append(_nothing_new_line(store_path))
+    body.append("")
 
     if bands[BAND_APPLY]:
-        body.append(f"APPLY — {len(bands[BAND_APPLY])} role(s), 75+")
+        body.append(f"APPLY — {len(bands[BAND_APPLY])} role(s), "
+                    f"{labels[BAND_APPLY]}")
         body += [_fmt_full(r, now, org_types=org_types)
                  for r in bands[BAND_APPLY]]
         if package_names:
@@ -162,20 +272,17 @@ def build_morning(*, now: datetime, store_path: str | None = None,
         body.append("")
     if bands[BAND_WORTH_A_LOOK]:
         body.append(f"WORTH A LOOK — {len(bands[BAND_WORTH_A_LOOK])} "
-                    "role(s), 60–74")
+                    f"role(s), {labels[BAND_WORTH_A_LOOK]}")
         body += [_fmt_two_line(r, now) for r in bands[BAND_WORTH_A_LOOK]]
         body.append("")
     if bands[BAND_MAYBE]:
-        body.append(f"MAYBE — {len(bands[BAND_MAYBE])} role(s), 45–59")
+        body.append(f"MAYBE — {len(bands[BAND_MAYBE])} role(s), "
+                    f"{labels[BAND_MAYBE]}")
         body += [_fmt_one_line(r) for r in bands[BAND_MAYBE]]
         body.append("")
     if bands[BAND_SEEN]:
         body.append(f"SEEN — {len(bands[BAND_SEEN])} role(s) under 45 "
                     "(reply `expand` for the list)")
-        body.append("")
-    if not any(bands.values()):
-        body.append("No new roles since the last morning queue — feeds "
-                    "were checked; the ledger below says when.")
         body.append("")
 
     flagged = [r for r in rows if r.get("filter_result") == "flag"]
@@ -197,11 +304,10 @@ def build_morning(*, now: datetime, store_path: str | None = None,
         body.append("")
 
     body.append(_ledger_footer(store_path, warnings))
-    store.mark_digested([r["id"] for r in rows], now=now, path=store_path)
+    if commit:
+        store.mark_digested([r["id"] for r in rows], now=now,
+                            path=store_path)
 
-    n_top = len(bands[BAND_APPLY])
-    subject = (f"Benji · {now.strftime('%a %m-%d')} · "
-               f"{len(rows)} new, {n_top} in the apply band")
     if with_html:
         from agents.benji.digest_html import render_morning_html
         html = render_morning_html(
@@ -214,7 +320,8 @@ def build_morning(*, now: datetime, store_path: str | None = None,
             warnings=warnings, org_types=org_types,
             first_morning=first_morning, overflow_count=len(overflow),
             package_names=package_names,
-            kit_only=int(prefs.get("morning_package_cap", 5)) <= 0)
+            kit_only=int(prefs.get("morning_package_cap", 5)) <= 0,
+            best=best, labels=labels)
         return subject, "\n".join(body), attachments, html
     return subject, "\n".join(body), attachments
 

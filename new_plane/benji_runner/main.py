@@ -85,12 +85,12 @@ def cmd_digest(which: str | None, *, preview: bool = False) -> int:
 
         prefs, _ = load_preferences()
         cap = int(prefs.get("morning_package_cap", 5))
-        if cap <= 0:
+        if cap <= 0 or preview:
             candidates = []      # kits on request only (her preference)
         else:
             candidates = [
                 r for r in store.queue_rows(only_undigested=True)
-                if (r.get("score") or 0) >= 75
+                if (r.get("score") or 0) >= dg.apply_threshold(prefs)
                 and (r.get("coverage") or 0) >= COVERAGE_FLOOR
                 and (r.get("jd_text") or "").strip()]
         candidates.sort(key=lambda r: -(r.get("score") or 0))
@@ -104,10 +104,13 @@ def cmd_digest(which: str | None, *, preview: bool = False) -> int:
             else:
                 logger.warning("package for [%s] not built: %s", r["id"],
                                result.get("refusal"))
+        stats: dict = {}
         subject, body, attachments, html = dg.build_morning(
-            now=now, package_names=pkg_names or None, with_html=True)
+            now=now, package_names=pkg_names or None, with_html=True,
+            commit=not preview, stats=stats)
         attachments = attachments + pkg_files
     else:
+        stats = {}
         result = dg.build_evening(now=now, with_html=True)
         if result is None:
             logger.info("evening delta: nothing ≥60 since morning — "
@@ -117,6 +120,8 @@ def cmd_digest(which: str | None, *, preview: bool = False) -> int:
         attachments = []
 
     if preview:
+        # Reads only: nothing is marked digested, demoted or logged
+        # (2026-10-07: a preview used to consume the 7:30 queue).
         print(f"SUBJECT: {subject}\n\n{body}")
         for name, content in attachments:
             print(f"\n--- attachment: {name} ({len(content)} bytes) ---")
@@ -127,7 +132,8 @@ def cmd_digest(which: str | None, *, preview: bool = False) -> int:
     if sent:
         store.log_digest(which, now=now,
                          meta={"subject": subject,
-                               "attachments": [n for n, _ in attachments]})
+                               "attachments": [n for n, _ in attachments],
+                               **stats})
         logger.info("digest sent: %s", subject)
         return 0
     logger.error("digest NOT sent: %s", reason)

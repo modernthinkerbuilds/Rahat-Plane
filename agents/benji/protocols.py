@@ -52,8 +52,16 @@ BAND_MAYBE = "maybe"            # 45–59  one line, grouped
 BAND_SEEN = "seen"              # <45   collapsed count
 
 
-def band_for(score: int) -> str:
-    if score >= 75:
+APPLY_THRESHOLD_DEFAULT = 75
+
+
+def band_for(score: int, threshold: int = APPLY_THRESHOLD_DEFAULT) -> str:
+    """The band a score falls in. `threshold` is her apply bar (the
+    `apply_threshold` preference, `threshold N` by reply); the digest
+    passes it, scoring keeps the 75 default. Below the bar the fixed
+    60 / 45 lines stand, so a bar under 60 simply has no WORTH A LOOK
+    band (2026-10-07: the preference existed but nothing read it)."""
+    if score >= threshold:
         return BAND_APPLY
     if score >= 60:
         return BAND_WORTH_A_LOOK

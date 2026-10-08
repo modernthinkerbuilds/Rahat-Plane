@@ -127,7 +127,8 @@ def test_first_digest_caps_at_30_and_emails_the_backlog(env, monkeypatch):
     name, content = attachments[0]
     assert name == "initial_backlog.md"
     listed = [ln for ln in body.splitlines() if ln.startswith("[")]
-    assert len(listed) <= 30
+    # (BEST TODAY repeats five of the capped rows — count roles, not lines)
+    assert len({ln.split("]")[0] for ln in listed}) <= 30
     assert "10 roles beyond" in content or "10 roles" in content
     # Overflow rows demoted: the SECOND morning is pure delta (empty).
     _, body2, att2 = dg.build_morning(now=NOW)
