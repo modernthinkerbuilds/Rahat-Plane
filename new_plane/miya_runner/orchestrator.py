@@ -83,9 +83,22 @@ def _validation_enabled() -> bool:
     return os.getenv("NEW_MIYA_VALIDATE", "1") == "1"
 
 
+_SHORT_REPLY_WORDS = 8
+
+
+def _is_short_reply(msg: str) -> bool:
+    """A message short enough to be the answer to a question: up to
+    eight words, not a slash command."""
+    words = (msg or "").split()
+    return 0 < len(words) <= _SHORT_REPLY_WORDS and not msg.lstrip().startswith("/")
+
+
 def _validate_outbound(text: str, *,
-                       arbitration: dict[str, str] | None) -> tuple[str, list[Any]]:
-    """Run cross-validation. Never raises. Returns (text, issues)."""
+                       arbitration: dict[str, str] | None,
+                       wrote: bool | None = None) -> tuple[str, list[Any]]:
+    """Run cross-validation. Never raises. Returns (text, issues).
+    `wrote=False` says this turn ran no write tool, so any claim that
+    something "is set" or "is now" is false and gets corrected."""
     if not _validation_enabled():
         return text, []
     try:
@@ -95,7 +108,7 @@ def _validate_outbound(text: str, *,
         profile = None
     try:
         corrected, issues = validator.validate_and_enforce(
-            text, arbitration=arbitration, profile=profile,
+            text, arbitration=arbitration, profile=profile, wrote=wrote,
         )
         if issues:
             logger.info("validator caught %d contradiction(s): %s",
@@ -673,6 +686,17 @@ def handle(turn: Turn) -> Response:
     # natively. The orchestrator's lookup/design/synth flow is for
     # open-ended coaching queries only.
     delegation_path, stripped_msg = classify_delegation(turn.user_message)
+    if delegation_path == "orchestrate" and _is_short_reply(turn.user_message):
+        # Continuation (2026-10-09): Kobe asked something and this is the
+        # answer ("Yes", "187 by thanksgiving"). The synthesizer has no
+        # tools — it once replied that a goal "is set" which nothing had
+        # written. Back to the agent that asked, whose reasoner carries
+        # its own last turns and can act.
+        open_q = adapter.kobe_open_question()
+        if open_q:
+            logger.info("continuation → kobe_route (Kobe asked: %r)",
+                        open_q[:80])
+            delegation_path, stripped_msg = "kobe_route", turn.user_message
     if delegation_path == "kobe_route":
         r = adapter.kobe_route(stripped_msg,
                                 chat_id=turn.chat_id or None,
@@ -1024,6 +1048,7 @@ def handle(turn: Turn) -> Response:
     if charter_ok and text:
         text, _orch_validation_issues = _validate_outbound(
             text, arbitration=verdict if verdict else None,
+            wrote=False,            # the synth path never writes
         )
 
     # Record bot reply to chat_memory (if enabled). Done here at the end

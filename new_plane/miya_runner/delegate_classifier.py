@@ -112,6 +112,31 @@ _BURN_LOG_RE = re.compile(
     r"\b(crossfit|cf|run|wod|workout|z2|zone\s*2)\s+\d{3,4}\s*(cal|kcal)",
     re.I,
 )
+# 2026-10-09 (live, 08:07–08:26): three Kobe writes that fell to the
+# synthesizer, which has no tools — it then said a goal "is set" that was
+# never written. (a) a statement of his typical burns per day type;
+# (b) a weekly target; (c) a goal "<weight> by <date>". Coarse on purpose:
+# kobe_route runs the precise dispatcher gates, and anything that slips
+# past them reaches Kobe's reasoner, which has the tools these need.
+_TYPICAL_BURN_RE = re.compile(
+    r"(?=.*\b(?:crossfit|cross\s*fit|cf|wod|zone\s*-?\s*(?:2|two|to)|z2|10\s*k|run|rest)\b)"
+    r"(?=.*(?<![\d,.])\d{1,2},?\d{3}(?!\d))"
+    r".*(?:\bi\s+burn\b|\bburns?\s+(?:about|around|roughly|~)?\s*\d|\btypically\b|"
+    r"\busually\b|\bon\s+average\b|\b(?:crossfit|cf|wod|z2|zone\s*2|rest)\s+\d{3,4}\b.*"
+    r"\b(?:crossfit|cf|wod|z2|zone\s*2|rest|run)\s+\d{3,4}\b)",
+    re.I | re.S,
+)
+_WEEKLY_TARGET_RE = re.compile(
+    r"^(?!\s*(?:how|what|why|when|where|am|is|are|do|does|did)\b)"
+    r"(?:.*\b(?:weekly|week'?s?|per[\s-]week)\s+(?:active[\s-]|burn[\s-]|calorie[\s-]|kcal[\s-])?"
+    r"(?:target|goal)\b.{0,40}?(?<![\d,.])(?:\d{1,2},\d{3}|\d{4,5})(?!\d)"
+    r"|.*(?<![\d,.])(?:\d{1,2},\d{3}|\d{4,5})(?!\d)\s*(?:k?cal(?:orie)?s?)?\s*(?:a|per|/|each|every)\s+week\b)",
+    re.I | re.S,
+)
+_GOAL_STATEMENT_RE = re.compile(
+    r"(?<![\d.])\b\d{2,3}(?:\.\d)?\s*(?:lbs?|pounds?|kgs?|kilos?)?\s+by\s+(?:[a-z]|\d)",
+    re.I,
+)
 _TIER_RE = re.compile(
     r"\b(tier|recovery\s+tier)\s*:?\s*(green|yellow|red|gold|silver|bronze)\b|"
     r"\bset\s+tier\s+(green|yellow|red|gold|silver|bronze)\b",
@@ -364,6 +389,13 @@ def classify_delegation(msg: str) -> tuple[str, str]:
     # 4. State logs → Kobe (deterministic dispatcher handlers).
     if (_WEIGHT_LOG_RE.search(text) or _HRV_LOG_RE.search(text)
             or _BURN_LOG_RE.search(text) or _TIER_RE.search(text)):
+        return ("kobe_route", text)
+
+    # 4a. His numbers (2026-10-09): typical burns per day type, the
+    #     weekly target, a goal "<weight> by <date>" — writes Kobe owns.
+    #     COORDINATION: shared file — one additive rung.
+    if (_TYPICAL_BURN_RE.search(text) or _WEEKLY_TARGET_RE.search(text)
+            or _GOAL_STATEMENT_RE.search(text)):
         return ("kobe_route", text)
 
     # 4b. EXPLICIT DESIGN INTENT preempts every deterministic Kobe READ

@@ -798,9 +798,10 @@
   "text": "I can only burn 6000 calories per week",
   "first_seen": "2026-05-25",
   "occurrences": 1,
-  "expected_agent": "miya",
-  "expected_path": "orchestrate",
-  "intent": "open_coaching"
+  "expected_agent": "kobe",
+  "expected_path": "kobe_route",
+  "intent": "goal_or_target_set",
+  "note": "2026-10-09: a weekly-capacity statement and a goal are Kobe writes (deterministic weekly target; commit_goal), not open coaching — the synthesizer has no tools and once replied that a goal 'is set' which nothing had written."
  },
  {
   "text": "I couldn’t do this in the morning after the run, I am cooling down now. So give the cooldown accordingly",
@@ -966,9 +967,10 @@
   "text": "Ok, I need to get to 196 by 06/06",
   "first_seen": "2026-05-25",
   "occurrences": 1,
-  "expected_agent": "miya",
-  "expected_path": "orchestrate",
-  "intent": "open_coaching"
+  "expected_agent": "kobe",
+  "expected_path": "kobe_route",
+  "intent": "goal_or_target_set",
+  "note": "2026-10-09: a weekly-capacity statement and a goal are Kobe writes (deterministic weekly target; commit_goal), not open coaching — the synthesizer has no tools and once replied that a goal 'is set' which nothing had written."
  },
  {
   "text": "Outline a quick dynamic warm up routine for the run tommorow",

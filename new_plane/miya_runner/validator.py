@@ -446,15 +446,55 @@ def _check_movement_constraints(text: str,
 
 # ─── Top-level API ─────────────────────────────────────────────────────
 
+# ─── Action claims on a turn that wrote nothing ────────────────────────
+# 2026-10-09 (live, 08:12): "Understood. Your new active sprint goal is
+# set at 187 lbs by Thanksgiving 2026, and your weekly burn target is now
+# 7000 kcal." The synthesizer has no write tools; nothing was written.
+_ACTION_CLAIM_RE = re.compile(
+    r"\b(?:is|are|has\s+been|have\s+been)\s+(?:now\s+|officially\s+)?"
+    r"(?:set|updated|changed|confirmed|locked(?:\s+in)?|logged|recorded|saved|"
+    r"committed|adjusted|raised|lowered|applied|activated)\b"
+    r"|\b(?:i(?:'ve|\s+have)|we(?:'ve|\s+have))\s+(?:now\s+|just\s+)?"
+    r"(?:set|updated|changed|logged|recorded|saved|committed|adjusted|locked|"
+    r"raised|lowered|moved|applied|activated)\b"
+    r"|\b(?:goal|target|plan|tier|threshold|cadence)\s+(?:is\s+)?now\s+"
+    r"(?:\d|set\b|confirmed\b|updated\b|locked\b|at\b)"
+    r"|\bnow\s+(?:set|confirmed|updated|locked(?:\s+in)?)\s+(?:to|at|as)\b"
+    r"|\byour\s+new\s+(?:[a-z-]+\s+){0,3}(?:goal|target|plan|tier)\s+is\b",
+    re.I,
+)
+_NO_WRITE_CORRECTION = (
+    "(Correction: nothing was changed — I can only report here. To set a goal "
+    "or target, say it as one message, e.g. “187 by Nov 26” or “weekly target "
+    "7000”, and Kobe will confirm what was written.)")
+
+
+def _check_action_claims(text: str) -> list[Contradiction]:
+    m = _ACTION_CLAIM_RE.search(text or "")
+    if not m:
+        return []
+    return [Contradiction(kind="action_claim",
+                          detail="the reply claims a change on a turn that wrote nothing",
+                          quoted=m.group(0), expected="nothing was changed")]
+
+
 def validate(text: str, *,
              facts: dict[str, Any] | None = None,
              arbitration: dict[str, str] | None = None,
-             profile: Any = None) -> list[Contradiction]:
-    """Run all detectors. Returns a (possibly empty) list of issues."""
+             profile: Any = None,
+             wrote: bool | None = None) -> list[Contradiction]:
+    """Run all detectors. Returns a (possibly empty) list of issues.
+    `wrote=False`: this turn ran no write tool, so an action claim in the
+    text is a contradiction (None = unknown, the check is skipped)."""
     if not text:
         return []
 
     issues: list[Contradiction] = []
+    if wrote is False:
+        try:
+            issues.extend(_check_action_claims(text))
+        except Exception as e:
+            logger.warning("action-claim validator failed: %s", e)
 
     profile_1rms = {}
     active_target = None
@@ -536,7 +576,43 @@ def enforce(text: str, issues: list[Contradiction]) -> str:
         prefix = f"(Correction: you are {verdict}.)\n\n"
         corrected = prefix + corrected
 
+    # An action claimed on a turn that wrote nothing: the honest line
+    # comes first, and the claim is softened to what it was — a
+    # description ("is set" → "would be set").
+    if any(i.kind == "action_claim" for i in issues):
+        corrected = _ACTION_CLAIM_RE.sub(_soften_claim, corrected)
+        corrected = _NO_WRITE_CORRECTION + "\n\n" + corrected
+
     return corrected
+
+
+def _soften_claim(m: re.Match) -> str:
+    """"is now set" → "would be set"; "I've updated" → "I would update";
+    "is now 7000" → "would be 7000"; "your new goal is" → "your new goal
+    would be". Keeps the sentence readable without the false claim."""
+    phrase = m.group(0)
+    low = phrase.lower()
+    if low.startswith(("i've", "i have", "we've", "we have")):
+        verb = low.split()[-1]
+        return "I would " + {"set": "set", "updated": "update", "changed": "change",
+                             "logged": "log", "recorded": "record", "saved": "save",
+                             "committed": "commit", "adjusted": "adjust", "locked": "lock",
+                             "raised": "raise", "lowered": "lower", "moved": "move",
+                             "applied": "apply", "activated": "activate"}.get(verb, verb)
+    if low.startswith("your new"):
+        return phrase[:-len(" is")] + " would be" if low.endswith(" is") else phrase
+    if re.match(r"(?:goal|target|plan|tier|threshold|cadence)\s", low):
+        head = phrase.split()[0]
+        tail = phrase[len(head):].strip()
+        tail = re.sub(r"^(?:is\s+)?now\s+", "", tail, flags=re.I)
+        if re.match(r"(?:set|confirmed|updated|locked)\b", tail, flags=re.I):
+            return f"{head} not yet {tail}"          # "goal now confirmed" → "goal not yet confirmed"
+        return f"{head} would be {tail}"
+    if low.startswith("now "):
+        return "would be " + phrase.split(None, 1)[1].split(None, 1)[0] + " " + phrase.split()[-1]
+    # "is/are/has been/have been (now) <verb>" → "would be <verb>"
+    verb = phrase.split()[-1]
+    return f"would be {verb}"
 
 
 def validate_and_enforce(text: str, **kw) -> tuple[str, list[Contradiction]]:

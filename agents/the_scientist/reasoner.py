@@ -158,6 +158,21 @@ def _load_recent_history(*, actor: str, db_path: str | None = None,
     return history
 
 
+def open_question(*, max_minutes: int = 30,
+                  db_path: str | None = None) -> str | None:
+    """The question Kobe's reasoner asked last, when its latest reply
+    within `max_minutes` ends with one; else None. The orchestrator
+    routes a short answer ("Yes", "187 by thanksgiving") back here
+    instead of to a model that cannot act on it (2026-10-09)."""
+    history = _load_recent_history(actor="scientist", db_path=db_path,
+                                   max_turns=1, max_minutes=max_minutes)
+    replies = [h["content"] for h in history if h.get("role") == "assistant"]
+    if not replies:
+        return None
+    last = (replies[-1] or "").strip()
+    return last if last.endswith("?") else None
+
+
 def reason(msg: str, *, trace_id: str | None = None,
            db_path: str | None = None) -> str:
     """Run the tool-using agent loop until the model emits end_turn or

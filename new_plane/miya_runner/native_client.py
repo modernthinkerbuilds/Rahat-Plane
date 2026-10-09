@@ -223,6 +223,17 @@ def kobe_route(message: str, chat_id: str | None = None,
         return _err(tid, e, where="kobe_route")
 
 
+def kobe_open_question() -> str | None:
+    """The question Kobe's reasoner asked in the last 30 minutes, if its
+    last reply ended with one (continuation routing, 2026-10-09).
+    Never raises."""
+    try:
+        from agents.the_scientist import reasoner
+        return reasoner.open_question()
+    except Exception:                               # noqa: BLE001
+        return None
+
+
 def fraser_route(message: str, chat_id: str | None = None,
                  trace_id: str | None = None) -> AdapterResult:
     """Call agents.fraser.handler.route() directly.
