@@ -91,9 +91,16 @@ def test_a_day_with_nothing_new_is_one_line(env):
     assert atts == [] and "No new roles today" in html
 
 
-def test_a_preview_leaves_the_morning_queue_untouched(env, capsys):
+class _Thursday(datetime):
+    @classmethod
+    def now(cls, tz=None):
+        return NOW
+
+
+def test_a_preview_leaves_the_morning_queue_untouched(env, capsys, monkeypatch):
     from agents.benji import digest as dg
     from new_plane.benji_runner import main as runner
+    monkeypatch.setattr(runner, "datetime", _Thursday)        # the runner reads the clock
     store = env["store"]
     _seed(store)
     assert runner.cmd_digest("morning", preview=True) == 0
