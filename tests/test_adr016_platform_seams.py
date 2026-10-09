@@ -176,6 +176,9 @@ def test_existing_routes_still_match_after_agent_field(monkeypatch):
         "pre_fuel": "what should i eat before",
         "post_recovery": "cool-down",
         "plan_mutation": "Wed rest",
+        # 2026-10-09: his own numbers — typical burns per day type, the weekly target.
+        "day_burns": "on crossfit days I burn about 1150, zone 2 1400, rest 550",
+        "weekly_target_set": "weekly target 7000",
     }
     # Every route name in the table must be covered by a sample so this
     # test fails loudly if a route is added without a backward-compat case.

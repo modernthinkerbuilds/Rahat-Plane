@@ -107,6 +107,9 @@ __all__ = [
     "compute_week_recalibration",
     "current_plan",
     "day_type_target",
+    "get_day_burns",
+    "set_day_burns",
+    "retarget_remaining_days",
     "expected_week_burn_to_date",
     "detect_missed_workouts",
     "get_active_intent",
@@ -767,11 +770,115 @@ def nudge_count(kind: str, day: str) -> int:
 # send(), not pure compute. It moves with the other handlers in
 # Step 2b.
 
+# ─── the user's own per-day-type burns (2026-10-09) ───────────────────
+# "On a CrossFit day I burn about 1,150; a Zone-2 10K 1,400; a rest day
+# 500–600." These are the per-day TRUTHS the plan's ideals come from
+# once he has stated them — they replace the tier template's guesses and
+# are never rescaled to a weekly number (the owner's 2026-06-18 model:
+# fixed per-day ideals, the goal drives pace feedback). Stored in
+# user_state as burn_cf / burn_z2 / burn_rest.
+BURN_PROFILE_KEYS = {"cf": "burn_cf", "z2": "burn_z2", "rest": "burn_rest"}
+BURN_RANGE = (100, 3000)
+
+
+def get_day_burns() -> dict[str, int]:
+    """{day_type: kcal} for the day types he has stated; {} when none."""
+    out: dict[str, int] = {}
+    for day_type, key in BURN_PROFILE_KEYS.items():
+        raw = state_get(key)
+        try:
+            val = int(float(raw)) if raw not in (None, "") else None
+        except ValueError:
+            val = None
+        if val and BURN_RANGE[0] <= val <= BURN_RANGE[1]:
+            out[day_type] = val
+    return out
+
+
+def set_day_burns(burns: dict[str, int]) -> dict[str, int]:
+    """Store the stated burns (any subset of cf / z2 / rest); returns
+    the full profile afterwards. Out-of-range values are ignored."""
+    for day_type, val in burns.items():
+        key = BURN_PROFILE_KEYS.get(day_type)
+        if key and BURN_RANGE[0] <= int(val) <= BURN_RANGE[1]:
+            state_set(key, str(int(val)))
+    return get_day_burns()
+
+
 def day_type_target(day_type: str, tier: str | None = None) -> int:
-    """DB-coupled: reads `recovery_tier` from user_state if no tier given.
+    """The ideal burn for a day of this type: the user's own stated burn
+    when he has given one (get_day_burns), else the tier template.
+    DB-coupled: reads `recovery_tier` from user_state if no tier given.
     Pure-math equivalent in protocols.DAY_TYPE_BY_TIER."""
+    own = get_day_burns().get(day_type)
+    if own:
+        return own
     tier = tier or state_get("recovery_tier", DEFAULT_TIER)
     return DAY_TYPE_BY_TIER.get(tier, DAY_TYPE_BY_TIER[DEFAULT_TIER]).get(day_type, 0)
+
+
+def retarget_remaining_days(now: datetime | None = None) -> list[dict]:
+    """Re-derive the ideals of today and the days still to come in this
+    week from the CURRENT per-day truths (his stated burns, else the tier
+    template) — the day types, gym picks and past days stay as they are.
+    Called after anything that changes what a day is worth: his burns,
+    the tier, the weekly target. Returns the week's plan afterwards.
+
+    2026-10-09 live: the weekly target moved to 7,000 at 08:07 and the
+    plan's days still summed to the 6,000 they were built for; the only
+    code that reshaped ideals was replan_week, which never runs mid-week.
+    Weeks with no stated burns and an explicit weekly commitment keep
+    replan_week's proportional rescale; with stated burns the days are
+    not scaled — a 1,150 CrossFit day is 1,150 whatever the week's
+    target, and the gap shows up as pace feedback instead."""
+    now = now or datetime.now()
+    monday, _ = week_bounds(now)
+    week_key = monday.strftime("%Y-%m-%d")
+    plan = current_plan(monday)
+    today_idx = now.weekday()
+    prefs = get_prefs(monday)
+    unavailable = set(prefs["unavailable_days"])
+    own = get_day_burns()
+    committed = _active_weekly_commitment()
+    con = _db()
+    try:
+        for row in plan:
+            if row["weekday"] < today_idx:
+                continue
+            if row["weekday"] in unavailable:
+                target = 0
+            else:
+                target = day_type_target(row["day_type"])
+            row["target_kcal"] = target
+        if committed is not None and not own:
+            # No stated burns: keep replan_week's rule — the days still
+            # to come are scaled so the whole week sums to the commitment
+            # (past days keep the ideals they were judged against).
+            past = sum(r["target_kcal"] for r in plan
+                       if r["weekday"] < today_idx)
+            future = [r for r in plan
+                      if r["weekday"] >= today_idx and r["target_kcal"] > 0]
+            base = sum(r["target_kcal"] for r in future)
+            want = max(committed - past, 0.0)
+            if future and base > 0:
+                scale = want / base
+                for r in future:
+                    r["target_kcal"] = max(
+                        0, int(round(r["target_kcal"] * scale / 25.0)) * 25)
+                drift = int(round(want)) - sum(r["target_kcal"] for r in future)
+                if drift:
+                    biggest = max(future, key=lambda r: r["target_kcal"])
+                    biggest["target_kcal"] = max(0, biggest["target_kcal"] + drift)
+        for row in plan:
+            if row["weekday"] >= today_idx:
+                con.execute(
+                    "UPDATE weekly_plan SET target_kcal=? WHERE week_start=? "
+                    "AND weekday=?",
+                    (row["target_kcal"], week_key, row["weekday"]))
+        con.commit()
+    finally:
+        con.close()
+    return plan
 
 
 def _spaced_pick(candidates: list[int], n: int) -> list[int]:
@@ -1017,6 +1124,11 @@ def replan_week(monday: datetime, *, force: bool = False) -> list[dict]:
         # the documented tier template untouched.
         committed = _active_weekly_commitment()
         effective_weekly = committed
+        if get_day_burns():
+            # 2026-10-09: his stated per-day burns are the ideals as they
+            # are; the weekly commitment drives pace feedback, not a
+            # rescale (the owner's 2026-06-18 model).
+            effective_weekly = None
         if effective_weekly is not None:
             nonzero = [r for r in plan if r["target_kcal"] > 0]
             base_sum = sum(r["target_kcal"] for r in nonzero)

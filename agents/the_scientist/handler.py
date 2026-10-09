@@ -157,7 +157,7 @@ def eligible_cf_days(days=None):
     return _proto_eligible_cf_days(days)
 
 
-__all__ = ['API_KEY', 'FIX_BURN_RE', 'HOME', 'MODEL_ID', 'PLAN_PATH', 'SLASH_COMMANDS', '_active_model', '_extract_wod_summary', '_internal_safety_downgrade', '_is_workout_on_day_query', '_legacy_route', '_n', '_parse_date', '_prorated_day_target', '_prorated_week_target', '_slash_help', '_split_for_telegram', '_try_slash_command', '_which_monday', 'client', 'daily_target', 'eligible_cf_days', 'handle_breathing', 'handle_clear_prefs', 'handle_current_weight', 'handle_daily_burn', 'handle_daily_burn_breakdown', 'handle_decision_run_or_wod', 'handle_dislike_movement', 'handle_drop_dislike', 'handle_filter', 'handle_fix_burn', 'handle_gym_wod_on', 'handle_gym_wod_on_date', 'handle_hrv', 'handle_last_week', 'handle_list_dislikes', 'handle_manual_burn', 'handle_next_week_target', 'handle_next_workout', 'handle_pace', 'handle_pick_days', 'handle_post_recovery', 'handle_pre_fuel', 'handle_recalibrate', 'handle_replan', 'handle_scheduling_help', 'handle_set_tier', 'handle_show_plan', 'handle_split_target', 'handle_swap', 'handle_today_target', 'handle_tolerate', 'handle_unavailable', 'handle_weekly_remaining', 'handle_weighin_when', 'handle_weight', 'handle_weight_timeline', 'handle_workout_on', 'handle_workout_today', 'latest_hrv', 'llm_coach', 'maybe_morning_briefing', 'maybe_recovery_nudge', 'maybe_walk_nudge', 'maybe_weekly_reset', 'parse_gym_plan', 'route', 'send', 'start']
+__all__ = ['API_KEY', 'FIX_BURN_RE', 'HOME', 'MODEL_ID', 'PLAN_PATH', 'SLASH_COMMANDS', '_active_model', '_extract_wod_summary', '_internal_safety_downgrade', '_is_workout_on_day_query', '_legacy_route', '_n', '_parse_date', '_prorated_day_target', '_prorated_week_target', '_slash_help', '_split_for_telegram', '_try_slash_command', '_which_monday', 'client', 'daily_target', 'eligible_cf_days', 'handle_breathing', 'handle_clear_prefs', 'handle_current_weight', 'handle_daily_burn', 'handle_daily_burn_breakdown', 'handle_day_burns', 'handle_set_weekly_target', 'parse_day_burns', 'is_day_burns_statement', '_rest_of_week_block', 'handle_decision_run_or_wod', 'handle_dislike_movement', 'handle_drop_dislike', 'handle_filter', 'handle_fix_burn', 'handle_gym_wod_on', 'handle_gym_wod_on_date', 'handle_hrv', 'handle_last_week', 'handle_list_dislikes', 'handle_manual_burn', 'handle_next_week_target', 'handle_next_workout', 'handle_pace', 'handle_pick_days', 'handle_post_recovery', 'handle_pre_fuel', 'handle_recalibrate', 'handle_replan', 'handle_scheduling_help', 'handle_set_tier', 'handle_show_plan', 'handle_split_target', 'handle_swap', 'handle_today_target', 'handle_tolerate', 'handle_unavailable', 'handle_weekly_remaining', 'handle_weighin_when', 'handle_weight', 'handle_weight_timeline', 'handle_workout_on', 'handle_workout_today', 'latest_hrv', 'llm_coach', 'maybe_morning_briefing', 'maybe_recovery_nudge', 'maybe_walk_nudge', 'maybe_weekly_reset', 'parse_gym_plan', 'route', 'send', 'start']
 
 
 def handle_recalibrate() -> str:
@@ -524,6 +524,10 @@ def handle_set_tier(tier: str) -> str:
         opts = ", ".join(TIERS.keys())
         return f"Unknown tier '{tier}'. Pick: {opts}."
     state_set("recovery_tier", tier)
+    try:
+        retarget_remaining_days(datetime.now())     # the tier's ideals apply from today
+    except Exception as e:                          # noqa: BLE001
+        print(f"[handle_set_tier] retarget failed: {e}")
     t = TIERS[tier]
     return (
         f"✅ Tier set to *{tier}*.\n"
@@ -531,6 +535,184 @@ def handle_set_tier(tier: str) -> str:
         f"Per-session cap: {fmt_kcal(t['cap'])}\n"
         f"_{t['note']}_"
     )
+
+
+# ─── his own per-day burns and the weekly target (2026-10-09) ─────────
+# Live, 08:26: "On a CrossFit workout I burn 1150 cal, on a Zone-2 run
+# 1400, a rest day 500 to 600. Update my targets for the rest of the week
+# based on my calorie target." Nothing could take that: the plan's ideals
+# came from a tier template, the weekly target moved at 08:07 without the
+# days moving, and the message went to a model that could only advise
+# (and read Friday's CrossFit as a rest day). These two handlers set the
+# per-day truths and the weekly target deterministically and answer with
+# the rest of the week as it now stands.
+_BURN_TYPE_RE = re.compile(
+    r"(?P<cf>\bcross\s*-?\s*fit\b|\bcf\b|\bwod\b|\bgym\s+(?:day|session|workout)\b)"
+    r"|(?P<z2>\bzone\s*-?\s*(?:2|two|to)\b|\bz2\b|\b10\s*k\b|\brun(?:ning)?\b|\bjog\b)"
+    r"|(?P<rest>\b(?:active\s+)?rest(?:\s+day)?\b|\boff\s+day\b|\bday\s+off\b)",
+    re.I)
+_BURN_NUMBER_RE = re.compile(
+    r"(?<![\d,.])(?P<lo>\d{1,2}(?:,\d{3})?|\d{3,4})\s*(?:to|-|–|and)\s*(?P<hi>\d{3,4})(?!\d)"
+    r"|(?<![\d,.])(?P<n>\d{1,2},\d{3}|\d{3,4})(?!\d)",
+    re.I)
+_BURN_LEAD_RE = re.compile(r"\b(?:burn(?:s|ing)?|about|around|roughly|~)\s*(?:about|around|roughly|~)?\s*$", re.I)
+_BURN_PREP_RE = re.compile(r"^\s*(?:k?cal(?:orie)?s?)?\s*(?:on|for|during|per|at|in)\b", re.I)
+_BURN_PRESENT_RE = re.compile(
+    r"\b(?:i\s+)?burn(?:s)?\b|\btypically\b|\busually\b|\bnormally\b|\bon\s+average\b",
+    re.I)
+_BURN_LOG_WORDS_RE = re.compile(r"\b(?:burned|burnt|did|logged|finished)\b|\b(?:today|yesterday)\b", re.I)
+
+
+def parse_day_burns(text: str) -> dict[str, int]:
+    """{'cf'|'z2'|'rest': kcal} from a statement of typical burns. Each
+    number pairs with a day-type word near it: the nearest one before it
+    (within 80 characters) when the number follows "burn"/"about" — the
+    "on a CrossFit day I burn 1,150" shape, even when the next clause's
+    "on a run" trails it — else the one a preposition links after it
+    ("1,150 on CF"); a type already taken yields to the other side.
+    "5 to 600" reads as 500–600 (dictation drops the hundreds); a range
+    is its midpoint. Pure."""
+    text = (text or "").replace("’", "'")
+    types = [(m.start(), m.end(), m.lastgroup) for m in _BURN_TYPE_RE.finditer(text)]
+    out: dict[str, int] = {}
+    for m in _BURN_NUMBER_RE.finditer(text):
+        if m.group("n"):
+            val = int(m.group("n").replace(",", ""))
+        else:
+            lo, hi = int(m.group("lo").replace(",", "")), int(m.group("hi"))
+            if lo < 100 <= hi:
+                lo = lo * 100 if lo * 100 <= hi else lo * 10      # "5 to 600" → 500
+            val = int(round((lo + hi) / 2.0 / 10.0)) * 10
+        if not 100 <= val <= 3000:
+            continue
+        before = [t[2] for t in types if t[1] <= m.start() and m.start() - t[1] <= 80]
+        after = [t[2] for t in types if t[0] >= m.end() and t[0] - m.end() <= 40]
+        before_type = before[-1] if before else None
+        after_type = (after[0] if after and _BURN_PREP_RE.match(text[m.end():])
+                      else None)
+        led = bool(_BURN_LEAD_RE.search(text[max(0, m.start() - 16):m.start()]))
+        pick = None
+        if before_type and before_type not in out and (led or not after_type):
+            pick = before_type
+        elif after_type and after_type not in out:
+            pick = after_type
+        elif before_type and before_type not in out:
+            pick = before_type
+        if pick:
+            out[pick] = val
+    return out
+
+
+def is_day_burns_statement(text: str) -> bool:
+    """A statement of typical burns per day type, not a log of today's
+    workout: present-tense "burn" (or typically/usually), at least one
+    number paired with a day type, and no burned/did/today words — or
+    two or more pairs, which no single log carries."""
+    pairs = parse_day_burns(text)
+    if not pairs:
+        return False
+    if len(pairs) >= 2:
+        return True
+    return bool(_BURN_PRESENT_RE.search(text)) and not _BURN_LOG_WORDS_RE.search(text)
+
+
+def _rest_of_week_block(now: datetime | None = None) -> str:
+    """Today and the days still to come, with their ideals, the sum against
+    what the weekly target still needs, and the one swap that would close
+    a real gap — from the deterministic recalibration, never a guess."""
+    now = now or datetime.now()
+    monday, _ = week_bounds(now)
+    plan = current_plan(monday)
+    today_idx = now.weekday()
+    burned, _ = burn_this_week()
+    target = weekly_target()
+    lines = [f"Rest of the week — burned {fmt_kcal(burned)} of {fmt_kcal(target)}:"]
+    planned = 0.0
+    for row in plan:
+        if row["weekday"] < today_idx:
+            continue
+        marker = "▶" if row["weekday"] == today_idx else " "
+        gym = f" ({row['gym_label']})" if row.get("gym_label") else ""
+        lines.append(f"{marker} {WEEKDAY_NAME[row['weekday']]}: "
+                     f"{DAY_TYPE_LABEL[row['day_type']]}{gym} → "
+                     f"{fmt_kcal(row['target_kcal'])}")
+        planned += float(row["target_kcal"] or 0)
+    needed = max(target - burned, 0.0)
+    gap = needed - planned
+    tol = target * 0.10
+    if gap <= 0:
+        verdict = (f"Planned {fmt_kcal(planned)} vs {fmt_kcal(needed)} needed "
+                   f"— covered, {fmt_kcal(-gap)} to spare.")
+    elif gap <= tol:
+        verdict = (f"Planned {fmt_kcal(planned)} vs {fmt_kcal(needed)} needed "
+                   f"— {fmt_kcal(gap)} short, within tolerance. On track.")
+    else:
+        verdict = (f"Planned {fmt_kcal(planned)} vs {fmt_kcal(needed)} needed "
+                   f"— *{fmt_kcal(gap)} short*.")
+        try:
+            rc = compute_week_recalibration(now=now)
+            for pr in rc.get("proposal") or []:
+                verdict += (f"\n↳ {pr.get('reason') or ''}".rstrip()
+                            if pr.get("reason") else "")
+            if rc.get("proposal"):
+                names = " ".join(p["weekday_name"] for p in rc["proposal"]
+                                 if p.get("weekday_name"))
+                if names:
+                    verdict += f"\n_Apply with `pick {names} for crossfit`._"
+        except Exception as e:                      # noqa: BLE001
+            print(f"[rest_of_week] recalibration failed: {e}")
+    lines.append(verdict)
+    return "\n".join(lines)
+
+
+def handle_day_burns(text: str) -> str | None:
+    """"On a CrossFit day I burn 1,150; Zone-2 1,400; rest 550" → those
+    are the ideals from now on, and this week's remaining days are
+    re-targeted. None when the message is not such a statement (the
+    dispatcher falls through)."""
+    pairs = parse_day_burns(text)
+    if not pairs:
+        return None
+    profile = set_day_burns(pairs)
+    retarget_remaining_days(datetime.now())
+    shown = " · ".join(f"{DAY_TYPE_LABEL[k]} *{fmt_kcal(v)}*"
+                       for k, v in (("cf", profile.get("cf")),
+                                    ("z2", profile.get("z2")),
+                                    ("rest", profile.get("rest"))) if v)
+    missing = [DAY_TYPE_LABEL[k] for k in ("cf", "z2", "rest") if k not in profile]
+    head = f"✅ Day burns set: {shown}."
+    if missing:
+        head += f" ({', '.join(missing)}: still the tier template.)"
+    return head + "\n" + _rest_of_week_block(datetime.now())
+
+
+def handle_set_weekly_target(kcal: float) -> str:
+    """Commit a weekly active-burn target (the memory commitment every
+    pace calculation reads) and re-target this week's remaining days."""
+    kcal = int(round(float(kcal)))
+    if not 1500 <= kcal <= 12000:
+        return (f"A weekly target of {fmt_kcal(kcal)} is outside 1,500–12,000 "
+                "kcal — unchanged.")
+    before = weekly_target()
+    try:
+        from core import memory as _mem
+        for ent in _mem.list_entities("scientist", type="commitment"):
+            if (ent.get("payload") or {}).get("kind") == "weekly_target":
+                _mem.supersede_entity(ent["entity_id"],
+                                      reason=f"replaced by weekly target {kcal}")
+        payload = {"kind": "weekly_target", "value": kcal,
+                   "valid_until_iso": None,
+                   "rationale": "user set the weekly active-burn target in chat"}
+        eid = _mem.put_entity("scientist", "commitment", payload,
+                              rationale=payload["rationale"],
+                              supersede_existing=False)
+        _mem.add_event("scientist", "commitment.made",
+                       payload={"entity_id": eid, "commitment": payload})
+    except Exception as e:                          # noqa: BLE001
+        return f"Couldn't save the weekly target ({type(e).__name__}) — unchanged."
+    retarget_remaining_days(datetime.now())
+    return (f"✅ Weekly target set to *{fmt_kcal(kcal)}* (was {fmt_kcal(before)}).\n"
+            + _rest_of_week_block(datetime.now()))
 
 
 def handle_manual_burn(kcal: float, kind: str = "manual") -> str:

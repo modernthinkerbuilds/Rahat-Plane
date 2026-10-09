@@ -643,6 +643,47 @@ def set_recovery_tier(tier: str) -> dict:
             "charter_reason": reason}
 
 
+def set_day_burns(cf_kcal: int | None = None, z2_kcal: int | None = None,
+                  rest_kcal: int | None = None) -> dict:
+    """Tool: his typical burns per day type → the plan's ideals (2026-10-09).
+    Charter-gated. Values outside 100–3000 are refused."""
+    sci = _sci()
+    burns = {k: int(v) for k, v in (("cf", cf_kcal), ("z2", z2_kcal),
+                                    ("rest", rest_kcal)) if v is not None}
+    if not burns:
+        return {"ok": False, "reason": "give at least one of cf_kcal, z2_kcal, rest_kcal"}
+    bad = {k: v for k, v in burns.items() if not 100 <= v <= 3000}
+    if bad:
+        return {"ok": False, "reason": f"out of range (100–3000): {bad}"}
+    ok, reason = _charter_check("set_day_burns", burns)
+    if not ok:
+        return {"ok": False, "reason": reason}
+    profile = sci.set_day_burns(burns)
+    sci.retarget_remaining_days(datetime.now())
+    return {"ok": True, "day_burns": profile,
+            "result_text": sci._rest_of_week_block(datetime.now()),
+            "charter_reason": reason}
+
+
+def set_weekly_target(weekly_kcal: int) -> dict:
+    """Tool: the weekly active-burn commitment (2026-10-09). Charter-gated;
+    1500–12000. The handler supersedes the previous weekly_target
+    commitment and re-targets this week's remaining days."""
+    sci = _sci()
+    try:
+        kcal = int(weekly_kcal)
+    except (TypeError, ValueError):
+        return {"ok": False, "reason": f"weekly_kcal must be a number, got {weekly_kcal!r}"}
+    if not 1500 <= kcal <= 12000:
+        return {"ok": False, "reason": f"weekly_kcal out of range (1500–12000): {kcal}"}
+    ok, reason = _charter_check("set_weekly_target", {"weekly_kcal": kcal})
+    if not ok:
+        return {"ok": False, "reason": reason}
+    text = sci.handle_set_weekly_target(kcal)
+    return {"ok": text.startswith("✅"), "weekly_kcal": kcal, "result_text": text,
+            "charter_reason": reason}
+
+
 def commit_goal(target_lbs: float,
                 target_date_iso: str,
                 daily_intake_kcal: int | None = None,
@@ -2242,6 +2283,42 @@ SCHEMAS: list[dict] = [
         },
     },
     {
+        "name": "set_day_burns",
+        "description": (
+            "Record the user's TYPICAL active burn per day type — what a "
+            "CrossFit day, a Zone-2 run day and a rest day are worth for "
+            "him ('on a CrossFit day I burn about 1,150; a Z2 run 1,400; "
+            "a rest day 500-600'). These become the plan's per-day ideals "
+            "from now on and this week's remaining days are re-targeted. "
+            "NOT a workout log (use log_workout for 'I burned 850 today'). "
+            "Charter-gated. Returns the rest of the week as it now stands."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "cf_kcal": {"type": "integer", "description": "typical CrossFit day burn"},
+                "z2_kcal": {"type": "integer", "description": "typical Zone-2 run day burn"},
+                "rest_kcal": {"type": "integer", "description": "typical rest day burn (midpoint of a range)"},
+            },
+        },
+    },
+    {
+        "name": "set_weekly_target",
+        "description": (
+            "Set the user's weekly active-burn target in kcal ('update my "
+            "weekly target to 7000'). This is the commitment every pace "
+            "calculation reads; this week's remaining days are re-targeted. "
+            "Charter-gated. Returns the rest of the week as it now stands."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "weekly_kcal": {"type": "integer", "description": "1500-12000"},
+            },
+            "required": ["weekly_kcal"],
+        },
+    },
+    {
         "name": "log_workout",
         "description": (
             "Record a workout the user just did. Use when the user says "
@@ -2548,6 +2625,8 @@ _DISPATCH: dict[str, Callable[..., Any]] = {
     "log_hrv":                             log_hrv,
     "swap_day":                            swap_day,
     "set_recovery_tier":                   set_recovery_tier,
+    "set_day_burns":                       set_day_burns,
+    "set_weekly_target":                   set_weekly_target,
     # Day-8 (ADR-006 / ADR-007): cross-agent delegation. The reasoner
     # calls this when the user asks about Fraser's or Huberman's
     # territory instead of hallucinating an answer in-domain.
@@ -2600,4 +2679,5 @@ def to_json(obj: Any) -> str:
 # Names of write tools — for charter logging + safety filtering.
 WRITE_TOOLS = {"commit_picks", "commit_goal", "tolerate_movement",
                "log_weight", "log_workout", "log_hrv",
-               "swap_day", "set_recovery_tier"}
+               "swap_day", "set_recovery_tier",
+               "set_day_burns", "set_weekly_target"}

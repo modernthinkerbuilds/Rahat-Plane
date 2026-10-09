@@ -221,6 +221,56 @@ def _h_hrv_log(msg: str, match: re.Match) -> str:
     return _kobe.handle_hrv(float(match.group(1)))
 
 
+class _Predicate:
+    """A route gate that is a function, not a regex: `.search(msg)` is a
+    truthy match when the predicate holds. The handler ignores the match.
+    Used where a regex cannot tell a statement from a log (2026-10-09)."""
+
+    def __init__(self, fn):
+        self._fn = fn
+
+    def search(self, msg: str):
+        try:
+            return True if self._fn(msg) else None
+        except Exception:                           # noqa: BLE001
+            return None
+
+
+def _is_day_burns_statement(msg: str) -> bool:
+    from agents.the_scientist import handler as _kobe
+    return _kobe.is_day_burns_statement(msg)
+
+
+def _h_day_burns(msg: str, match) -> str | None:
+    """"On a CrossFit day I burn 1,150; a Zone-2 run 1,400; rest 500–600"
+    — his per-day truths, applied to this week's remaining days. Live
+    2026-10-09 08:26: the message went to a model that could only advise."""
+    from agents.the_scientist import handler as _kobe
+    return _kobe.handle_day_burns(msg)
+
+
+# "Can you update my weekly target to 7000 kcal" / "weekly target 7000" /
+# "7,000 a week". Needs a set-verb (or the bare short form) so a pace
+# question that mentions the target ("to reach my weekly target of 7,000")
+# is not a write; a read with no number never matches.
+_WEEKLY_TARGET_SET_RE = re.compile(
+    r"^(?!\s*(?:how|what|why|when|where|am|is|are|do|does|did)\b)"
+    r"(?=.*\b(?:set|update|change|make|commit|bump|raise|lower|increase|"
+    r"decrease|move|switch|put|adjust|go\s+(?:up|down)|want|do)\b|^\s*(?:\S+\s+){0,5}\S+\s*$)"
+    r"(?:.*?\b(?:weekly|week'?s?|per[\s-]week)\s+(?:active[\s-]|burn[\s-]|calorie[\s-]|kcal[\s-])?"
+    r"(?:target|goal)\b.{0,40}?(?<![\d,.])(?P<kcal>\d{1,2},\d{3}|\d{4,5})(?!\d)"
+    r"|.*?(?<![\d,.])(?P<kcal2>\d{1,2},\d{3}|\d{4,5})(?!\d)\s*(?:k?cal(?:orie)?s?)?"
+    r"\s*(?:a|per|/|each|every)\s+week\b)",
+    re.I | re.S,
+)
+
+
+def _h_set_weekly_target(msg: str, match: re.Match) -> str:
+    from agents.the_scientist import handler as _kobe
+    raw = match.group("kcal") or match.group("kcal2")
+    return _kobe.handle_set_weekly_target(float(raw.replace(",", "")))
+
+
 def _h_set_tier(msg: str, match: re.Match) -> str:
     from agents.the_scientist import handler as _kobe
     return _kobe.handle_set_tier(match.group(1))
@@ -654,6 +704,13 @@ ROUTES: list[Route] = [
     Route("bare_wod_rel", _BARE_WOD_REL_RE, _h_gym_wod_relative),
     Route("bare_wod_day_after", _BARE_WOD_DAY_AFTER_RE, _h_gym_wod_on_day),
     Route("bare_wod_day_before", _BARE_WOD_DAY_BEFORE_RE, _h_gym_wod_on_day),
+
+    # 2b. His own numbers (2026-10-09): typical burns per day type, and
+    # the weekly target. Before the numeric mutators and every read: a
+    # burns statement carries words the plan-mutation and weekly-
+    # remaining routes would otherwise claim ("rest", "remaining…week").
+    Route("day_burns", _Predicate(_is_day_burns_statement), _h_day_burns),
+    Route("weekly_target_set", _WEEKLY_TARGET_SET_RE, _h_set_weekly_target),
 
     # 3. Numeric mutators — unambiguous.
     Route("weight_log", _WEIGHT_LOG_RE, _h_weight_log),

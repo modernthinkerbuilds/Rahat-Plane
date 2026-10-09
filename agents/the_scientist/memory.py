@@ -322,6 +322,15 @@ def extract_state(user_msg: str, bot_reply: str,
                       payload={"entity_id": eid, "commitment": c},
                       trace_id=trace_id, db_path=db_path)
         written["commitments"] += 1
+        if c.get("kind") == "weekly_target" and not db_path:
+            # 2026-10-09: the target moved at 08:07 and the week's days
+            # stayed at the sum they were built for. Re-target now.
+            try:
+                from agents.the_scientist import state as _st
+                _st.retarget_remaining_days(datetime.now())
+                written["retargeted"] = True
+            except Exception as e:                  # noqa: BLE001
+                print(f"[extractor] retarget after weekly_target failed: {e}")
 
     # New plan
     p = parsed.get("new_plan")
