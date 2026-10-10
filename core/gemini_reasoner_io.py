@@ -79,7 +79,8 @@ def client():
         from google import genai
     except ImportError:
         return None
-    _CLIENT = genai.Client(api_key=_GEMINI_API_KEY)
+    from core import io as _cio
+    _CLIENT = genai.Client(api_key=_GEMINI_API_KEY, http_options=_cio.gemini_http_options())
     return _CLIENT
 
 

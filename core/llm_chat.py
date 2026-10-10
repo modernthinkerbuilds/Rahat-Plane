@@ -310,7 +310,9 @@ def _call_wire(request: dict) -> dict:
     return _serialize_response(resp)
 
 
-TRANSIENT = ("503", "UNAVAILABLE", "429", "RESOURCE_EXHAUSTED", "DEADLINE_EXCEEDED", "502", "504", "overloaded")
+TRANSIENT = ("503", "UNAVAILABLE", "429", "RESOURCE_EXHAUSTED", "DEADLINE_EXCEEDED", "502", "504", "overloaded",
+             # the client's own timeout (core.io.GEMINI_TIMEOUT_S) and a dropped connection
+             "Timeout", "timed out", "ConnectError", "RemoteProtocolError", "ConnectionReset")
 RETRY_DELAYS_S = (2.0, 5.0)
 
 

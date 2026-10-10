@@ -240,6 +240,7 @@ def run(tenant: Tenant, text: str, *, chat_id: str, now: datetime, serve_mode: s
     time_budget = float(getattr(latency, "answer_s_trip" if mode == "trip" else "answer_s_home", 60.0)) \
         if time_budget_s is None else float(time_budget_s)
     holding_s = float(getattr(latency, "holding_line_s", 5.0))
+    slow_s = float(getattr(latency, "slow_line_s", 75.0))
 
     _ev: dict[str, Evidence] = {}
 
@@ -252,8 +253,8 @@ def run(tenant: Tenant, text: str, *, chat_id: str, now: datetime, serve_mode: s
         with step("execute" if prior is None else "repair", {"hints": hints[:6]}) as s:
             res = cexecute.execute(tenant.name, system=tenant.system_prompt, prompt=prompt, registry=registry, ctx=ctx,
                                    brake=brake, now=now, prior=prior, hints=hints, holding_line=holding_line,
-                                   holding_line_s=holding_s, trace_id=tid, db_path=db_path,
-                                   cassette_dir=cassette_dir, mode=mode)
+                                   holding_line_s=holding_s, started_at=t0, slow_line_s=slow_s,
+                                   trace_id=tid, db_path=db_path, cassette_dir=cassette_dir, mode=mode)
             s.output = {"rounds": res.rounds, "tool_calls": res.tool_calls, "ok": res.ok, "error": res.error,
                         "problems": res.problems[:3]}
             s.cost_usd = res.cost_usd

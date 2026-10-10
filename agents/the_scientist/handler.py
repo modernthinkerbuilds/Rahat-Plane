@@ -88,7 +88,7 @@ if not os.getenv("RAHAT_TEST_MODE"):   # hermetic under test: the owner's .env n
     load_dotenv()
 
 API_KEY = os.getenv("GEMINI_API_KEY")
-client = genai.Client(api_key=API_KEY) if API_KEY else None
+client = genai.Client(api_key=API_KEY, http_options=cio.gemini_http_options()) if API_KEY else None
 
 # Telegram credentials — duplicated from main.py for the same reason
 # client / API_KEY are: handler.py can't import from main.py without a

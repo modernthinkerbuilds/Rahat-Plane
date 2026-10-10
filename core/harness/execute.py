@@ -50,6 +50,7 @@ class ExecResult:
     brake_tripped: str | None = None
     history: list[dict] = field(default_factory=list)
     holding_line_sent: bool = False
+    slow_line_sent: bool = False
     latency_ms: int = 0
     calls: list[dict] = field(default_factory=list)        # the tool trajectory (diagnostics)
 
@@ -120,6 +121,9 @@ ANSWER_INSTRUCTION = (
 )
 
 
+SLOW_TEXT = "Still checking — the connection is slow tonight. The answer comes as soon as the checks finish."
+
+
 def _tool_turn(results: list[tuple[str, dict]]) -> dict:
     bounded = []
     for name, payload in results:
@@ -135,14 +139,21 @@ def execute(agent: str, *, system: str, prompt: str, registry: ToolRegistry, ctx
             max_rounds: int = MAX_ROUNDS, holding_line: Callable[[str], None] | None = None,
             holding_line_s: float = 5.0, holding_text: str = "Checking hours and menus — a minute.",
             trace_id: str | None = None, db_path: str | None = None, cassette_dir: str | None = None,
-            mode: str = "", model: str | None = None, thinking_budget: int | None = None) -> ExecResult:
+            mode: str = "", model: str | None = None, thinking_budget: int | None = None,
+            started_at: float | None = None, slow_line_s: float = 75.0,
+            slow_text: str = SLOW_TEXT) -> ExecResult:
     """Run the tool loop and the final schema-bound call. With `prior`,
-    continue that history (a repair round) with `hints` appended."""
+    continue that history (a repair round) with `hints` appended.
+    `started_at` is the ask's own clock (time.monotonic at the start of
+    the run), so the "still checking" line counts from the ask, not from
+    this round."""
     t0 = time.monotonic()
+    ask_t0 = started_at if started_at is not None else t0
     res = ExecResult()
     if prior is not None and prior.history:
         history = list(prior.history)
         res.holding_line_sent = prior.holding_line_sent
+        res.slow_line_sent = prior.slow_line_sent
         history.append(llm_chat.user_text(
             "The verifier found problems with that answer. Fix every one (call tools where needed), then reply "
             f"{READY}:\n- " + "\n- ".join(hints or ["(none listed)"])))
@@ -187,6 +198,16 @@ def execute(agent: str, *, system: str, prompt: str, registry: ToolRegistry, ctx
             except Exception:  # noqa: BLE001 - a failed holding line never fails the ask
                 pass
             res.holding_line_sent = True
+        elif (holding_line is not None and res.holding_line_sent and not res.slow_line_sent
+              and (time.monotonic() - ask_t0) > slow_line_s):
+            # 2026-10-09 19:20 (live): "a minute" and then nine minutes of
+            # nothing while one model call stalled. Once, when the ask has
+            # run past slow_line_s, say so.
+            try:
+                holding_line(slow_text)
+            except Exception:  # noqa: BLE001
+                pass
+            res.slow_line_sent = True
 
     # The answer: a schema-bound call over the same history, one validation retry.
     final_history = history + [llm_chat.user_text(ANSWER_INSTRUCTION)]

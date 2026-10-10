@@ -58,6 +58,7 @@ class Budgets(BaseModel):
 
 class Latency(BaseModel):
     holding_line_s: float = 5.0
+    slow_line_s: float = 75.0        # "Still checking…" once an ask has run this long (2026-10-09)
     answer_s_trip: float = 60.0
     answer_s_home: float = 30.0
 

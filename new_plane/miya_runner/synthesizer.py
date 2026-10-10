@@ -88,7 +88,8 @@ def _client():
         return None
     try:
         from google import genai  # local import per `core.io.llm_client`
-        _GEMINI_CLIENT = genai.Client(api_key=key)
+        from core import io as _cio
+        _GEMINI_CLIENT = genai.Client(api_key=key, http_options=_cio.gemini_http_options())
         return _GEMINI_CLIENT
     except Exception as e:
         logger.warning("gemini client unavailable: %s: %s", type(e).__name__, e)

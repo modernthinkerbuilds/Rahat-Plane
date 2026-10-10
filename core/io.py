@@ -160,6 +160,21 @@ _LLM_CLIENT = None
 _LLM_MODEL_ID = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
 
+# Every Gemini call ends. 2026-10-09 19:22 (live): one generateContent call
+# on a flaky connection took 5 min 40 s to come back; the SDK's default is
+# no timeout at all, so Bourdain's single-threaded loop sat on "Checking
+# hours and menus — a minute" for nine minutes with nothing it could do.
+# Milliseconds for the SDK; seconds here. A Maps-grounded call runs 5–25 s,
+# a long synthesis under a minute: 90 s is slack for a healthy connection
+# and a bounded wait for a dead one (llm_chat retries a timeout once more).
+GEMINI_TIMEOUT_S = float(os.getenv("RAHAT_GEMINI_TIMEOUT_S", "90"))
+
+
+def gemini_http_options() -> dict:
+    """The http_options every Gemini client in this repo is built with."""
+    return {"timeout": int(GEMINI_TIMEOUT_S * 1000)}
+
+
 def llm_client():
     """Return the singleton Gemini client. None if no API key configured."""
     global _LLM_CLIENT
@@ -168,7 +183,7 @@ def llm_client():
     if not _GEMINI_API_KEY:
         return None
     from google import genai  # local import — keeps eval stubbing easy
-    _LLM_CLIENT = genai.Client(api_key=_GEMINI_API_KEY)
+    _LLM_CLIENT = genai.Client(api_key=_GEMINI_API_KEY, http_options=gemini_http_options())
     return _LLM_CLIENT
 
 

@@ -128,7 +128,7 @@ def eligible_cf_days(days: list[GymDay] | None = None) -> list[GymDay]:
 # live in agents/the_scientist/protocols.py — imported above. Remove
 # duplicate definitions here to prevent silent drift.
 
-client = genai.Client(api_key=API_KEY) if API_KEY else None
+client = genai.Client(api_key=API_KEY, http_options=cio.gemini_http_options()) if API_KEY else None
 
 
 def _active_model() -> str:
