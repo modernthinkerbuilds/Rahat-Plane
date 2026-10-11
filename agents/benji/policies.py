@@ -32,6 +32,11 @@ def _allowlist() -> set[str]:
     return out
 
 
+def recipient_allowed(address: str) -> bool:
+    """Would the charter let Benji email this address?"""
+    return (address or "").strip().lower() in _allowlist()
+
+
 @policy("benji.email.send", name="benji_email_recipient_allowlist")
 def email_recipient_allowlist(wo, ctx):
     """Veto any outbound email whose recipient is not the co-owner.

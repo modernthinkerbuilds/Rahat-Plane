@@ -28,6 +28,7 @@ import email
 import email.utils
 import logging
 import os
+import re
 import time
 from datetime import datetime
 
@@ -75,6 +76,44 @@ def _imap_fetch_with_retry(*, fetch=None, sleep=None) -> list[dict]:
     return []                               # unreachable
 
 
+def _imap_account() -> tuple[str, str]:
+    """The mailbox her replies land in: BENJI_IMAP_USER /
+    BENJI_IMAP_APP_PASSWORD (2026-10-11 — Benji may send from her own
+    address, and that inbox is never Benji's to read); without them, the
+    sending account, as before."""
+    user = (os.getenv("BENJI_IMAP_USER") or "").strip()
+    password = os.getenv("BENJI_IMAP_APP_PASSWORD", "")
+    if not user:
+        user = os.getenv("BENJI_SMTP_USER", "")
+        password = os.getenv("BENJI_SMTP_APP_PASSWORD", "")
+    if not user or not password:
+        raise RuntimeError("BENJI_IMAP_USER / BENJI_IMAP_APP_PASSWORD "
+                           "unset — cannot poll inbox")
+    return user, password
+
+
+def _ack_html(lines: list[str]) -> str:
+    """The ack as HTML: a line that carries its own HTML (expand's table
+    of links) uses it; any other line is escaped, its URLs made links."""
+    from html import escape
+    from agents.benji.digest_html import FONT
+    parts = [f'<div style="{FONT}max-width:860px;">']
+    for line in lines:
+        rich = getattr(line, "html", "")
+        if rich:
+            parts.append(rich)
+            continue
+        text = _URL.sub(lambda m: f'<a href="{m.group(0)}">{m.group(0)}</a>',
+                        escape(str(line)))
+        parts.append(f'<p style="{FONT}font-size:13px;margin:4px 0;'
+                     f'white-space:pre-wrap;">{text or "&nbsp;"}</p>')
+    parts.append("</div>")
+    return "".join(parts)
+
+
+_URL = re.compile(r"https?://[^\s<>\"']+")
+
+
 def _imap_fetch_recent() -> list[dict]:
     """Production IMAP path. Returns [{message_id, sender, subject,
     body, x_benji}]. Refuses to exist under test mode (inject instead).
@@ -92,11 +131,7 @@ def _imap_fetch_recent() -> list[dict]:
     import imaplib
     from datetime import datetime as _dt, timedelta as _td
 
-    user = os.getenv("BENJI_SMTP_USER", "")
-    password = os.getenv("BENJI_SMTP_APP_PASSWORD", "")
-    if not user or not password:
-        raise RuntimeError("BENJI_SMTP_USER / BENJI_SMTP_APP_PASSWORD "
-                           "unset — cannot poll inbox")
+    user, password = _imap_account()
     host = os.getenv("BENJI_IMAP_HOST", "imap.gmail.com")
     since = (_dt.now() - _td(days=3)).strftime("%d-%b-%Y")
     out: list[dict] = []
@@ -199,12 +234,19 @@ def poll_inbox(*, messages: list[dict] | None = None,
                                  if results else "didn't catch that"))
         kits = [c.job_id for c, r in zip(parsed.commands, results)
                 if c.verb == "kit" and "package attached" in r]
+        # 2026-10-11: the answer goes back to the address that asked (she
+        # wrote `expand` from her job-search mailbox and the list went to
+        # another inbox) — when the charter allows that address.
+        from agents.benji.policies import recipient_allowed
+        reply_to = sender if recipient_allowed(sender) else None
         try:
             sent, reason = send_email(subject=subject,
                                       body="\n".join(lines),
+                                      html=_ack_html(lines),
                                       attachments=attachments,
                                       in_reply_to=mid or None,
-                                      transport=transport, now=now)
+                                      transport=transport, now=now,
+                                      to=reply_to)
         except Exception as e:              # noqa: BLE001 — SMTP down
             sent, reason = False, f"{type(e).__name__}: {e}"
         if sent:

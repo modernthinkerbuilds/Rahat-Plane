@@ -15,7 +15,10 @@ every state change through the charter gates in benji.state.
                                 through the charter)
     pause / resume            → digests off/on (ingest continues)
     status                    → source-ledger + queue-count email
-    expand                    → every open role, one line each
+    expand                    → every open role, best first, in the
+                                email itself with each title a link
+                                (2026-10-11: was an attachment she
+                                could not click through)
     help                      → the grammar
 """
 from __future__ import annotations
@@ -37,13 +40,26 @@ GRAMMAR_HELP = """Benji's reply grammar — one command per line:
   threshold 80          change the apply-band threshold
   pause / resume        digests off / on (ingest keeps running)
   status                source health + queue counts
-  expand                every open role, one line each
+  expand                every open role, best first, with links
   help                  this message"""
 
 # Quoted-reply tails: everything after "On … wrote:" or "> " lines is
 # the OLD message — never parsed as commands.
 _QUOTE_START = re.compile(r"^\s*(on .{4,80} wrote:|-{2,}\s*forwarded|"
                           r"from:\s)", re.I)
+
+
+class RichLine(str):
+    """A result line that also carries HTML for the ack email (expand's
+    table of links). Everything that treats results as text — the plain
+    part, the log line, the pins — keeps working on the str."""
+
+    html: str = ""
+
+    def __new__(cls, text: str, html: str = ""):
+        obj = super().__new__(cls, text)
+        obj.html = html
+        return obj
 
 
 @dataclass
@@ -215,12 +231,19 @@ def _execute_one(cmd: Command, results: list[str],
         attachments.append(("source_ledger.md",
                             "# Source ledger\n" + "\n".join(lines)))
     elif cmd.verb == "expand":
-        rows = sorted(store.queue_rows(path=store_path),
-                      key=lambda r: -(r.get("score") or 0))
-        body = "\n".join(_fmt_one(r) for r in rows) or "queue empty"
-        attachments.append(("all_open_roles.md",
-                            "# Every open role\n" + body))
-        results.append(f"full list attached ({len(rows)} roles)")
+        from agents.benji.digest_html import expand_html
+        from agents.benji.scoring import sort_key
+        rows = store.queue_rows(statuses=("new", "backlog"), path=store_path)
+        rows.sort(key=lambda r: sort_key(r, now=now))
+        if not rows:
+            results.append("queue empty — no open roles")
+        else:
+            head = (f"Every open role — {len(rows)}, best first. Each title "
+                    "is a link; reply `kit <id>` for a package or "
+                    "`skip <id>` to drop one.")
+            results.append(RichLine(
+                "\n".join([head, *(_fmt_one(r) for r in rows)]),
+                expand_html(rows, now=now, head=head)))
     elif cmd.verb == "help":
         results.append(GRAMMAR_HELP)
     else:

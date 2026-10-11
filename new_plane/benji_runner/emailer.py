@@ -17,7 +17,7 @@ import os
 import smtplib
 from datetime import datetime
 from email.message import EmailMessage
-from email.utils import format_datetime, make_msgid
+from email.utils import format_datetime, formataddr, make_msgid
 
 from agents.benji.protocols import KIND_EMAIL_SEND, load_preferences
 from agents.benji.state import _charter_gate
@@ -95,12 +95,18 @@ def send_email(*, subject: str, body: str, html: str | None = None,
 
     send = transport or _smtp_transport()
     sender = os.getenv("BENJI_SMTP_USER", "benji@localhost")
+    # 2026-10-11: the account Benji sends from and the mailbox it reads
+    # her replies in can differ (it sends from her own address into her
+    # job-search mailbox). Replies go to the mailbox Benji reads.
+    reader = (os.getenv("BENJI_IMAP_USER") or "").strip()
     chunks = _chunk_attachments(attachments,
                                 float(prefs.get("email_max_mb", 15)))
     total = len(chunks) if attachments else 1
     for i, chunk in enumerate(chunks if attachments else [[]], start=1):
         msg = EmailMessage()
-        msg["From"], msg["To"] = sender, recipient
+        msg["From"], msg["To"] = formataddr(("Benji", sender)), recipient
+        if reader and reader.lower() != sender.lower():
+            msg["Reply-To"] = reader
         msg["X-Benji-Agent"] = "1"   # inbox loop-guard: Benji never
         #                              parses its own mail (see inbox.py)
         # Deliverability (found live 2026-08-24: digests "sent" daily

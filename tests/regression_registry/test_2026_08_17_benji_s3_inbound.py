@@ -182,13 +182,17 @@ def test_pause_stops_digests_resume_restarts(env, monkeypatch):
 
 
 def test_status_and_expand_attach_reports(env):
+    """`status` attaches the ledger. `expand` used to attach the role list
+    too; since 2026-10-11 (owner: "return email with links, not a doc")
+    the list is in the email itself — pinned in
+    test_2026_10_11_benji_mail_goes_where_she_reads.py."""
     from bridges.jobsearch import store
     store.record_source_run("ExampleFoundation", 12, now=NOW)
     sent = []
     _poll([_msg("status\nexpand")], sent)
     names = [p.get_filename() for p in sent[0].iter_attachments()]
     assert "source_ledger.md" in names
-    assert "all_open_roles.md" in names
+    assert "all_open_roles.md" not in names
 
 
 def test_imap_client_refuses_wire_under_test_mode(env):
