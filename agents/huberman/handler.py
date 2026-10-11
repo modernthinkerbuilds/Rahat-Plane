@@ -81,6 +81,26 @@ AUTOCOOL_FLAG = "HUBERMAN_AUTOCOOL"
 AUTOCOOL_HOUR = 21          # fire window 21:30–21:59
 AUTOCOOL_MINUTE = 30
 
+# QA-20 (2026-10-11): on a CrossFit-plan day with nothing synced, the
+# autorun says it cannot tell and asks "Trained?". For OFFER_HOURS a short
+# reply answers it: training words or a bare yes → the post-workout
+# version, a no → the rest-day session stands.
+OFFER_HOURS = 3
+_TRAINED_RE = re.compile(
+    r"\b(?:did|done|finished|crushed|smashed|hit)\b.{0,20}?"
+    r"\b(?:wod|workout|crossfit|class|session)\b"
+    r"|\btrained\b|\bworked\s+out\b|\bwent\s+to\s+(?:the\s+)?(?:gym|box|class)\b"
+    r"|\bafter\s+(?:the\s+|my\s+|today'?s\s+)?(?:wod|workout|session|class)\b"
+    r"|\bpost[\s-]?(?:workout|wod|session)\b", re.I)
+_RESTED_RE = re.compile(
+    r"\b(?:didn'?t|did\s+not|not|never|skipped|missed)\b.{0,12}?"
+    r"\b(?:train(?:ed)?|go|went|wod|workout|crossfit|class|gym)\b"
+    r"|\bno\s+(?:workout|wod|training|crossfit|class|gym)\b"
+    r"|\brest(?:ed)?\b|\bskipped\b", re.I)
+_YES_RE = re.compile(r"^\s*(?:yes|yep|yeah|yup|ya|y|sure|done|i\s+did|did\s+it)\b[\s.!]*$", re.I)
+_NO_RE = re.compile(r"^\s*(?:no|nope|nah|n|not\s+today)\b[\s.!]*$", re.I)
+REST_ACK = "Rest day, then. Tonight's session above stands. 🌙"
+
 
 def autocool_enabled() -> bool:
     """Default ON — the 9:30 PM autorun is the feature the owner asked
@@ -102,17 +122,68 @@ def _minutes_from(message: str) -> float | None:
     return None
 
 
+def _says_trained(text: str) -> bool:
+    return bool(_TRAINED_RE.search(text)) and not _RESTED_RE.search(text)
+
+
+def offer_reply(message: str, now: datetime | None = None) -> str | None:
+    """How a reply answers tonight's open "Trained?" (QA-20): "specific"
+    when it names training either way ("did the WOD", "didn't train"),
+    "generic" for a bare yes or no, None when no offer is open or the
+    reply is about something else. Never raises."""
+    try:
+        from agents.huberman import state
+        if not state.offer_open(now or datetime.now(), OFFER_HOURS):
+            return None
+    except Exception:  # noqa: BLE001 — no state → no offer
+        return None
+    text = (message or "").strip()
+    if _RESTED_RE.search(text) or _TRAINED_RE.search(text):
+        return "specific"
+    if _YES_RE.match(text) or _NO_RE.match(text):
+        return "generic"
+    return None
+
+
+def _answer_offer(text: str, now: datetime, trace_id: str | None) -> str:
+    from agents.huberman import coach, state
+    state.close_offer()
+    if _RESTED_RE.search(text) or _NO_RE.match(text):
+        logger.info("[autocool] answered: rest day")
+        return REST_ACK
+    logger.info("[autocool] answered: trained — the post-workout version")
+    return coach.generate_cooldown(minutes=_minutes_from(text),
+                                   steering="post-workout: they trained today",
+                                   now=now, trace_id=trace_id, trained=True)
+
+
 def route(message: str, now: datetime | None = None,
           trace_id: str | None = None) -> str | None:
-    """Answer cooldown-shaped asks; None hands everything else back to
-    the caller's fallback (Kobe mesh, for recovery-status questions)."""
+    """Answer cooldown-shaped asks, and a reply to tonight's "Trained?";
+    None hands everything else back to the caller's fallback (Kobe mesh,
+    for recovery-status questions)."""
     text = (message or "").strip()
-    if not text or not wants_cooldown(text):
+    if not text:
+        return None
+    now = now or datetime.now()
+    if offer_reply(text, now):
+        return _answer_offer(text, now, trace_id)
+    if not wants_cooldown(text):
         return None
     from agents.huberman import coach
     return coach.generate_cooldown(minutes=_minutes_from(text),
                                    steering=text, now=now,
-                                   trace_id=trace_id)
+                                   trace_id=trace_id,
+                                   trained=_says_trained(text))
+
+
+def _with_offer(text: str) -> str:
+    """The honest line leads (the model path may not say it) and the
+    question closes the message."""
+    from agents.huberman.coach import OFFER_LINE, UNSURE_LINE
+    if "nothing has synced" not in text.lower():
+        text = f"_{UNSURE_LINE}_\n\n{text}"
+    return f"{text}\n\n{OFFER_LINE}"
 
 
 def maybe_autocool(now: datetime | None = None) -> str | None:
@@ -145,15 +216,27 @@ def maybe_autocool(now: datetime | None = None) -> str | None:
     # the Watch export hasn't run (the 09-02 "No workout logged" night),
     # context carries trained_today/assumed_from_plan and the coach
     # frames it honestly as the programmed WOD.
+    unsure = bool(ctx.get("plan_unsynced"))
     if not workouts and not ctx.get("trained_today"):
         steering = ("rest day — no training logged today, so skip the "
                     "post-workout framing: make this a maintenance "
                     "mobility session on the chronic hotspots, ending "
                     "in down-regulation for sleep")
+        if unsure:                      # QA-20: the plan said CrossFit
+            steering = ("the plan says CrossFit but nothing has synced from "
+                        "the Watch or the gym, so you cannot tell whether "
+                        "they trained: make this the rest-day maintenance "
+                        "session on the chronic hotspots, ending in "
+                        "down-regulation for sleep, and do not say they rested")
     text = coach.generate_cooldown(now=now, steering=steering)
+    if unsure:
+        text = _with_offer(text)
+        state.open_offer(now)
     state.mark_autocool(today)
     logger.info("[autocool] fired (%s)",
                 ", ".join(w["name"] for w in cf)
                 or ("programmed WOD, Watch unsynced"
-                    if ctx.get("assumed_from_plan") else "rest day"))
+                    if ctx.get("assumed_from_plan")
+                    else "plan CrossFit, nothing synced — asked whether trained"
+                    if unsure else "rest day"))
     return text

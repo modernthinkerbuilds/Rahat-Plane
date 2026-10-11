@@ -57,12 +57,6 @@ def _autorun():
     return handler.maybe_autocool(now=now)
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "LIVE (vault/miya_v2.log Sep 4 to Oct 3): 29 of 30 autoruns logged 'rest day', including all 12 "
-    "CrossFit-plan nights; with nothing synced from the Watch or the gym the household gets the "
-    "rest-day routine and no word that the autorun could not tell. Fix QA-2026-10-04-20 (decision): "
-    "say the plan said CrossFit, that nothing has synced, and offer the post-workout version. "
-    "Delete this mark when it passes."))
 def test_a_crossfit_plan_day_with_nothing_synced_says_it_cannot_tell(env, monkeypatch):
     _kobe_says(monkeypatch, None, "cf")
     out = _autorun()

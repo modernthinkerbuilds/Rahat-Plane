@@ -215,6 +215,11 @@ def kobe_open_question() -> str | None:
     return None
 
 
+def huberman_offer_reply(message: str) -> str | None:
+    """Not served over HTTP; the native client reads Huberman's state."""
+    return None
+
+
 def fraser_route(message: str, chat_id: str | None = None,
                  trace_id: str | None = None) -> AdapterResult:
     return post("/fraser/route", {"message": message, "chat_id": chat_id},

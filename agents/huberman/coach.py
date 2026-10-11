@@ -23,6 +23,12 @@ from agents.huberman import protocols, state
 
 logger = logging.getLogger("huberman")
 
+# QA-20 (2026-10-11): what the autorun says on a CrossFit-plan day when
+# nothing has synced from the Watch or the gym, and what it offers.
+UNSURE_LINE = ("Plan says CrossFit today, but nothing has synced from the "
+               "Watch or the gym, so this is the rest-day version.")
+OFFER_LINE = "Trained? Reply *did the WOD* and I'll send the post-workout one."
+
 SYSTEM = """You are Huberman — the athlete's mobility & down-regulation coach.
 Voice: a world-class mobility coach in the Kelly Starrett mold — direct,
 positional, mechanical. Cue positions ("squeeze the down-leg glute",
@@ -119,10 +125,18 @@ def _context_block(ctx: dict) -> str:
             bits.append(f"{w['distance_km']} km")
         lines.append("  Workout: " + ", ".join(str(b) for b in bits))
     if not (ctx.get("workouts") or []):
-        if ctx.get("assumed_from_plan"):
+        if ctx.get("athlete_trained"):
+            lines.append("  Nothing has synced, but the athlete says they "
+                         "trained today: coach it as post-workout.")
+        elif ctx.get("assumed_from_plan"):
             lines.append("  Watch has NOT synced today's session yet, but "
                          "the plan says CrossFit and a WOD is programmed "
                          "— coach the WOD below as done.")
+        elif ctx.get("plan_unsynced"):
+            lines.append("  The plan says CrossFit, but nothing has synced "
+                         "from the Watch or the gym: you cannot tell whether "
+                         "they trained. Make it the rest-day version and do "
+                         "not say they rested.")
         else:
             lines.append("  (no workout data synced)")
     if ctx.get("gym_wod_today"):
@@ -227,8 +241,10 @@ def fallback(profile: dict, minutes: float, recent: set[str],
                    + (" (Watch not synced yet — coaching the programmed "
                       "WOD)" if ctx.get("assumed_from_plan") else "")
                    + "._")
-    elif ctx.get("crossfit_today"):
+    elif ctx.get("crossfit_today") or ctx.get("athlete_trained"):
         preface = "_Post-session — no movement detail synced; hotspots lead._"
+    elif ctx.get("plan_unsynced"):
+        preface = f"_{UNSURE_LINE}_"
     else:
         preface = "_No workout logged; hitting hotspots._"
     # Assessment-driven profile: bracket the session with its test so
@@ -247,15 +263,21 @@ def fallback(profile: dict, minutes: float, recent: set[str],
 def generate_cooldown(minutes: float | None = None,
                       steering: str | None = None,
                       now: datetime | None = None,
-                      trace_id: str | None = None) -> str:
+                      trace_id: str | None = None,
+                      trained: bool = False) -> str:
     """The one entry point handler.py uses. LLM first, deterministic
-    floor second; either way the used drills are recorded for variety."""
+    floor second; either way the used drills are recorded for variety.
+    `trained`: the athlete says they trained; with nothing synced, their
+    word beats the missing sync (QA-20)."""
     from agents.huberman import context as hctx
     now = now or datetime.now()
     profile = state.load_profile()
     if minutes is None:
         minutes = float(profile.get("default_minutes", 15) or 15)
     ctx = hctx.gather(now)
+    if trained and not ctx.get("crossfit_today"):
+        ctx = {**ctx, "athlete_trained": True, "plan_unsynced": False,
+               "trained_today": True}
     recent = state.recent_drills(now=now)
 
     text = ""

@@ -692,11 +692,20 @@ def handle(turn: Turn) -> Response:
         # tools — it once replied that a goal "is set" which nothing had
         # written. Back to the agent that asked, whose reasoner carries
         # its own last turns and can act.
-        open_q = adapter.kobe_open_question()
+        # 2026-10-11 (QA-20): Huberman's 9:30 autorun may have asked
+        # "Trained?". A reply that names training goes to Huberman even
+        # when Kobe asked something; a bare yes or no answers Kobe first.
+        offer_reply = getattr(adapter, "huberman_offer_reply", None)
+        offer = offer_reply(turn.user_message) if offer_reply else None
+        open_q = None if offer == "specific" else adapter.kobe_open_question()
         if open_q:
             logger.info("continuation → kobe_route (Kobe asked: %r)",
                         open_q[:80])
             delegation_path, stripped_msg = "kobe_route", turn.user_message
+        elif offer:
+            logger.info("continuation → huberman_route (the 9:30 autorun "
+                        "asked whether they trained)")
+            delegation_path, stripped_msg = "huberman_route", turn.user_message
     if delegation_path == "kobe_route":
         r = adapter.kobe_route(stripped_msg,
                                 chat_id=turn.chat_id or None,

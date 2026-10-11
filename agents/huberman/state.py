@@ -184,6 +184,29 @@ def mark_autocool(date_str: str) -> None:
     _save_store(store)
 
 
+def open_offer(at: datetime) -> None:
+    """The autorun asked whether they trained (QA-20, 2026-10-11)."""
+    store = _load_store()
+    store["autocool_offer"] = at.isoformat(timespec="minutes")
+    _save_store(store)
+
+
+def offer_open(now: datetime, hours: float) -> bool:
+    """True while that question is unanswered and under `hours` old."""
+    at = _load_store().get("autocool_offer")
+    try:
+        asked = datetime.fromisoformat(at) if at else None
+    except (TypeError, ValueError):
+        return False
+    return asked is not None and timedelta(0) <= now - asked <= timedelta(hours=hours)
+
+
+def close_offer() -> None:
+    store = _load_store()
+    if store.pop("autocool_offer", None) is not None:
+        _save_store(store)
+
+
 # ── reference corpus ──────────────────────────────────────────────────
 
 def corpus_excerpt(max_chars: int = 6000) -> str:

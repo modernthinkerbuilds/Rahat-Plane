@@ -234,6 +234,17 @@ def kobe_open_question() -> str | None:
         return None
 
 
+def huberman_offer_reply(message: str) -> str | None:
+    """How a short reply answers Huberman's open 9:30 "Trained?", if one
+    is open: "specific" | "generic" | None (continuation routing, QA-20,
+    2026-10-11). Never raises."""
+    try:
+        from agents.huberman import handler as hub_handler
+        return hub_handler.offer_reply(message)
+    except Exception:                               # noqa: BLE001
+        return None
+
+
 def fraser_route(message: str, chat_id: str | None = None,
                  trace_id: str | None = None) -> AdapterResult:
     """Call agents.fraser.handler.route() directly.

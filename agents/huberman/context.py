@@ -133,6 +133,10 @@ def gather(now: datetime | None = None) -> dict:
     # session, or — the 09-02 gap — when the plan says CrossFit and a
     # WOD is programmed but the Watch export simply hasn't run yet.
     assumed = (not workouts and day_type == "cf" and wod is not None)
+    # QA-20 (2026-10-11): the plan says CrossFit and nothing has synced
+    # from the Watch or the gym, so whether they trained can't be told.
+    # The autorun says so instead of calling it a rest day.
+    unsynced = (not workouts and day_type == "cf" and wod is None)
     return {
         "date": day,
         "workouts": workouts,
@@ -142,6 +146,7 @@ def gather(now: datetime | None = None) -> dict:
         "loaded": loaded_areas(wod),
         "trained_today": bool(cf_synced) or assumed,
         "assumed_from_plan": assumed,
+        "plan_unsynced": unsynced,
         "active_kcal_today": active_kcal,
         "hrv_ms": round(hrv) if hrv else None,
         "resting_hr": round(rhr) if rhr else None,
