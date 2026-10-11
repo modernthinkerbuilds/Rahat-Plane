@@ -1577,12 +1577,19 @@ def _try_plan_mutation(msg: str) -> str | None:
         return handle_clear_prefs(next_week=next_week_q)
     if TOLERATE_RE.search(m):
         return handle_tolerate(m, next_week=next_week_q)
+    # A question is not an edit (2026-10-11): "should I skip Friday?",
+    # "is it ok to skip the WOD today?" and "do you think I should move
+    # Friday's session to Saturday?" each marked the day off or swapped
+    # it, and replanned. Swaps and days off now take the guard rest days
+    # and picks already had; a question goes to the reasoner, which
+    # answers it (and has the swap and pick tools if it is a request).
+    asked = _looks_like_question(m)
     # SWAP before UNAVAILABLE/PICK — "prefer Mon over Sun" names two days.
-    if SWAP_RE.search(m) and len(parse_weekdays(m)) >= 2:
+    if SWAP_RE.search(m) and len(parse_weekdays(m)) >= 2 and not asked:
         return handle_swap(m, next_week=next_week_q)
-    if REST_RE.search(m) and parse_weekdays(m) and not _looks_like_question(m):
+    if REST_RE.search(m) and parse_weekdays(m) and not asked:
         return handle_rest_day(m, next_week=next_week_q)
-    if UNAVAILABLE_RE.search(m) and parse_weekdays(m):
+    if UNAVAILABLE_RE.search(m) and parse_weekdays(m) and not asked:
         return handle_unavailable(m, next_week=next_week_q)
     # Pick: explicit "pick…" verb, OR the bare "<day> for crossfit" form
     # (but not a question like "is Tuesday good for crossfit?").
