@@ -65,11 +65,6 @@ def test_who_states_the_party_the_harness_uses(tmp_path, monkeypatch):
 
 
 # ── Miya: a hypothetical that needs arithmetic is not a status report ──
-@pytest.mark.xfail(strict=True, reason=(
-    "LIVE (vault/miya_v2.log 2026-10-03 20:07): 'If I were to hit … calories a day how much should I burn?' "
-    "→ kobe_route → dispatcher 'weekly_remaining' → the canned 'Week so far' report. QA-2026-10-04-11: "
-    "hypothetical / planning phrasings ('if I were to', 'if I need to … from here on') go to the orchestrator "
-    "(the model, with Kobe's facts), not a lookup. Delete this mark when it passes."))
 @pytest.mark.parametrize("ask", [
     "If I were to average 900 calories a day, how much should I burn?",
     "If I need to burn an average of 950 calories a day this year, how many should I burn a day from here on?",

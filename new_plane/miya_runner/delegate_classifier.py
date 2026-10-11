@@ -133,6 +133,27 @@ _WEEKLY_TARGET_RE = re.compile(
     r"|.*(?<![\d,.])(?:\d{1,2},\d{3}|\d{4,5})(?!\d)\s*(?:k?cal(?:orie)?s?)?\s*(?:a|per|/|each|every)\s+week\b)",
     re.I | re.S,
 )
+# A hypothetical or planning question about his numbers (QA-2026-10-04-11).
+# LIVE (vault/miya_v2.log 2026-10-03 20:07): "If I were to hit … calories a
+# day, how much should I burn?" matched STATUS and got the canned "Week so
+# far" report. The same shapes reach the goal rung further down ("how much
+# should I burn to reach 187 by Thanksgiving" read as a goal to write).
+# Asking is not doing: the orchestrator answers with Kobe's facts (goal,
+# week, gap) and writes nothing. Needs both a what-if marker and his
+# numbers, so "what if it rains Saturday" stays Genie's.
+_HYPOTHETICAL_RE = re.compile(
+    r"\bif\s+i\s+(?:were|was)\s+to\b"
+    r"|\bwhat\s+if\b"
+    r"|\bsuppos(?:e|ing)\b|\bhypothetical(?:ly)?\b"
+    r"|\bif\s+i\s+(?:need|want|have|had)\s+to\b.*\b(?:from\s+(?:here|now)\s+on|going\s+forward"
+    r"|rest\s+of\s+the\s+(?:week|month|year))\b"
+    r"|\bhow\s+(?:much|many)\b.*\b(?:should|would|do|must)\s+i\b.*\bto\s+(?:reach|hit|get\s+to|make)\b",
+    re.I,
+)
+_NUMBERS_TALK_RE = re.compile(
+    r"\b(?:burn\w*|calori\w*|kcal|cals?|lbs?|pounds?|weigh\w*|target|goal|pace|deficit|intake)\b",
+    re.I,
+)
 _GOAL_STATEMENT_RE = re.compile(
     r"(?<![\d.])\b\d{2,3}(?:\.\d)?\s*(?:lbs?|pounds?|kgs?|kilos?)?\s+by\s+(?:[a-z]|\d)",
     re.I,
@@ -381,6 +402,14 @@ def classify_delegation(msg: str) -> tuple[str, str]:
     # 2. Slash commands always go to Kobe.
     if _SLASH_RE.match(text):
         return ("kobe_route", text)
+
+    # 2b. A what-if about his numbers → orchestrate (QA-2026-10-04-11):
+    #     the model answers with Kobe's facts; no lookup, no write. Before
+    #     the plan, log and goal rungs, which would act on it; after slash
+    #     commands and @-addresses, which say where to go.
+    #     COORDINATION: shared file — one additive rung.
+    if _HYPOTHETICAL_RE.search(text) and _NUMBERS_TALK_RE.search(text):
+        return ("orchestrate", text)
 
     # 3. Plan mutations → Kobe (he handles the mutation + replan + render).
     if _PLAN_MUTATION_RE.search(text):
