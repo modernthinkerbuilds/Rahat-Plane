@@ -169,8 +169,14 @@ def _fetch_page(source: dict, today: datetime,
             return []            # hermetic: no wire without a seam
         from core import llm as _llm
         model = os.getenv("NEW_MIYA_MODEL_FLASH", "gemini-2.5-flash")
+        # thinking_budget=0 (2026-10-11): the page kind was missed on
+        # 2026-09-19. It is copying dated events out of a page into JSON,
+        # yet each call thought for ~9,300 tokens: 72% of its cost, and the
+        # page kind was the household's largest standing model spend
+        # ($3.78 of $5.92 in the ledger, Oct 3–11).
         usage = _llm.generate("events", "events.ingest.page",
-                              prompt=prompt, model=model)
+                              prompt=prompt, model=model,
+                              thinking_budget=0)
         if usage.error:
             logger.warning("ingest page-extract failed for %s: %s",
                            source["id"], usage.error)
