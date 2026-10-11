@@ -258,34 +258,72 @@ def fetch_npag(http, *, include_detail: bool = True) -> list[dict]:
     return entries
 
 
-MICROSOFT_URL = ("https://gcsservices.careers.microsoft.com/search/api/"
-                 "v1/search?q={query}&l=en_us&pg=1&pgSz=50")
+# Microsoft careers (B14, 2026-10-11). The old search API host
+# (gcsservices.careers.microsoft.com) stopped resolving; the Microsoft
+# source sat in `error` on every run since launch (Aug 17, QA-15) and
+# never fetched a role. The careers site now runs on this search API.
+MICROSOFT_BASE = "https://apply.careers.microsoft.com"
+MICROSOFT_URL = (MICROSOFT_BASE + "/api/pcsx/search?domain=microsoft.com"
+                 "&query={query}&start={start}")
+MICROSOFT_PAGE = 10           # the API's fixed page size
+MICROSOFT_MAX_PAGES = 5       # the query narrows the global firehose; 50 is plenty
+_MS_WORK_MODES = {"remote": "remote", "hybrid": "hybrid", "onsite": "onsite"}
 WORKDAY_URL = ("https://{tenant}.{host}.myworkdayjobs.com/wday/cxs/"
                "{tenant}/{site}/jobs")
 
 
+def _ms_location(raw: str) -> tuple[str, str]:
+    """('United States, California, Mountain View') → ('Mountain View,
+    California, United States', 'United States')."""
+    parts = [x.strip() for x in str(raw or "").split(",") if x.strip()]
+    if not parts:
+        return "", ""
+    return ", ".join(reversed(parts)), parts[0]
+
+
 def fetch_microsoft(token: str, http) -> list[dict]:
-    """Microsoft careers JSON (Tara #2: Microsoft Philanthropies posts on
-    the parent board). `token` is the search query — the collapse rule's
-    keyword tag. The big-tech mission-word-in-title gate still applies
-    downstream; this query just narrows the firehose."""
+    """Microsoft careers search (Tara #2: Microsoft Philanthropies posts
+    on the parent board). `token` is the search query; the big-tech
+    mission-word-in-title gate still applies downstream.
+
+    The listing is global and names each location's country; her search
+    is in the US, so a position with no US location is not returned.
+    Every US office is kept in one location string (a Bay Area office
+    among them is what the location filter accepts). The listing carries
+    no job description, as with Workday: the title gate and the
+    mission words in the title do the work."""
     from urllib.parse import quote
 
-    data = http("GET", MICROSOFT_URL.format(query=quote(token)))
-    jobs = (((data or {}).get("operationResult") or {}).get("result")
-            or {}).get("jobs", []) if isinstance(data, dict) else []
-    out = []
-    for j in jobs:
-        props = j.get("properties") or {}
-        locs = props.get("locations") or []
-        out.append({
-            "title": (j.get("title") or "").strip(),
-            "location": (locs[0] if locs else ""),
-            "canonical_url": ("https://jobs.careers.microsoft.com/"
-                              f"global/en/job/{j.get('jobId', '')}"),
-            "posted_date": _date10(j.get("postingDate")),
-            "jd_text": strip_html(props.get("description") or ""),
-        })
+    out: list[dict] = []
+    for page in range(MICROSOFT_MAX_PAGES):
+        data = http("GET", MICROSOFT_URL.format(query=quote(token),
+                                                start=page * MICROSOFT_PAGE))
+        body = (data or {}).get("data") if isinstance(data, dict) else None
+        if not isinstance(body, dict):
+            if page == 0:
+                raise ParseFailed("microsoft search returned no data block")
+            break
+        positions = body.get("positions") or []
+        for j in positions:
+            places = [_ms_location(x) for x in (j.get("locations") or [])]
+            us = [loc for loc, country in places if country == "United States"]
+            if not us:
+                continue
+            ts = j.get("postedTs") or j.get("creationTs")
+            posted = (datetime.fromtimestamp(int(ts), tz=timezone.utc)
+                      .strftime("%Y-%m-%d") if ts else None)
+            url = j.get("positionUrl") or f"/careers/job/{j.get('id', '')}"
+            out.append({
+                "title": (j.get("name") or "").strip(),
+                "location": "; ".join(us),
+                "work_mode": _MS_WORK_MODES.get(str(j.get("workLocationOption") or "").lower(), ""),
+                "canonical_url": url if url.startswith("http") else MICROSOFT_BASE + url,
+                "posted_date": posted,
+                "jd_text": "",
+            })
+        count = int(body.get("count") or 0)
+        if not positions or (page + 1) * MICROSOFT_PAGE >= count:
+            break
     return out
 
 

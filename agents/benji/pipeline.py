@@ -156,8 +156,14 @@ def run_cycle(*, http, now: datetime | None = None,
                 name, 0, now=now, state="manual",
                 note=f"no stable feed — check {src.get('url', '')}",
                 path=store_path)
+            # A feed that became a manual check (B14, 2026-10-11: two job
+            # boards were taken down) leaves open rows nobody can verify,
+            # with links that likely no longer work. They close, as a
+            # role that leaves its feed does; seen again, a row reopens.
+            closed = store.mark_missing_closed(name, [], now=now,
+                                               path=store_path)
             summary.append({"source": name, "state": "manual",
-                            "count": 0})
+                            "count": 0, "closed": closed})
             continue
         try:
             if src["platform"] == "npag":
