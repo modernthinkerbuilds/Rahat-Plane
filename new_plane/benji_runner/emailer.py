@@ -25,12 +25,31 @@ from agents.benji.state import _charter_gate
 logger = logging.getLogger(__name__)
 
 
+def sending_account(recipient: str) -> tuple[str, str, bool]:
+    """(address, app password, alternate) of the account a message to
+    `recipient` goes out from. Mail an account sends to itself arrives
+    already read, with no alert (2026-10-11: her digests did exactly
+    that), so a message to the sending account itself goes out from the
+    mailbox Benji reads when that is a different account — the owner's
+    health line, once Benji sends from the owner's address."""
+    smtp = (os.getenv("BENJI_SMTP_USER") or "").strip()
+    imap = (os.getenv("BENJI_IMAP_USER") or "").strip()
+    imap_pw = os.getenv("BENJI_IMAP_APP_PASSWORD", "")
+    if (recipient and recipient.strip().lower() == smtp.lower()
+            and imap and imap_pw and imap.lower() != smtp.lower()):
+        return imap, imap_pw, True
+    return smtp, os.getenv("BENJI_SMTP_APP_PASSWORD", ""), False
+
+
 def _smtp_transport():
+    return _smtp_transport_for(os.getenv("BENJI_SMTP_USER", ""),
+                               os.getenv("BENJI_SMTP_APP_PASSWORD", ""))
+
+
+def _smtp_transport_for(user: str, password: str):
     if os.getenv("RAHAT_TEST_MODE") == "1":
         raise RuntimeError("no wire under RAHAT_TEST_MODE=1 — inject a "
                            "transport (mirrors the core.llm hermetic rule)")
-    user = os.getenv("BENJI_SMTP_USER", "")
-    password = os.getenv("BENJI_SMTP_APP_PASSWORD", "")
     if not user or not password:
         raise RuntimeError("BENJI_SMTP_USER / BENJI_SMTP_APP_PASSWORD "
                            "unset — Benji cannot send email")
@@ -93,8 +112,14 @@ def send_email(*, subject: str, body: str, html: str | None = None,
         logger.warning("benji email vetoed: %s", verdict.reason)
         return False, f"vetoed: {verdict.reason}"
 
-    send = transport or _smtp_transport()
-    sender = os.getenv("BENJI_SMTP_USER", "benji@localhost")
+    account, password, alternate = sending_account(recipient)
+    if transport is not None:
+        send = transport
+    elif alternate:
+        send = _smtp_transport_for(account, password)
+    else:
+        send = _smtp_transport()
+    sender = account or "benji@localhost"
     # 2026-10-11: the account Benji sends from and the mailbox it reads
     # her replies in can differ (it sends from her own address into her
     # job-search mailbox). Replies go to the mailbox Benji reads.
