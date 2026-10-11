@@ -40,14 +40,15 @@ SESSION = """Here is your 75-minute session.
 - 2 rounds: 10 goblet squats with plates under the heels, 15 band pass-throughs
 
 ## Part 2: Strength (20 min)
-A. Strict Press — 5 sets x 4 reps @ 75%: 35.5 kg (78 lb) of your 47.5 kg 1RM. Tempo 20X1.
+A. Strict Press — 5 sets x 4 reps @ 75%: 37.5 kg (83 lb) of a 50 kg 1RM. Tempo 20X1.
+   - *Squeeze the glutes, ribs down, exhale through the press.*
 
 ## Part 3: Metcon (30 min)
 "Engine Room" — EMOM 30 (6 rounds):
 - Min 1: 14 cal row
-- Min 2: 12 dumbbell push press @ 15 kg (35 lb)
+- Min 2: 12 dumbbell push press @ 15 kg (35 lb) — *dip, drive through the heels, lock out.*
 - Min 3: 12 cal bike
-- Min 4: 12 alternating dumbbell lunges @ 15 kg (35 lb)
+- Min 4: 12 alternating dumbbell lunges @ 15 kg (35 lb) — *tall chest, back knee to the floor.*
 - Min 5: rest
 
 ## Part 4: Recovery & CNS Down-Regulation (13 min)
@@ -56,7 +57,10 @@ A. Strict Press — 5 sets x 4 reps @ 75%: 35.5 kg (78 lb) of your 47.5 kg 1RM. 
 - Hamstring floss 3 min
 
 ### Coach's Note
-75 minutes, about 800–900 kcal. The week still needs 1,949 kcal, so about 1,100 carries into next week.
+75 minutes of steady work; keep every rep breathing.
+Estimated burn: 800–900 kcal
+
+Plates or lifting shoes for the heels today?
 """
 
 
@@ -122,19 +126,27 @@ def test_the_coachs_session_goes_out_as_written(miya):
     r = miya["ask"]("Close the calorie gap for the week, look at my workouts for next week and design a 75 min workout today")
     assert miya["seen"]["fraser"] and miya["seen"]["synth"] == []
     assert r.routing.get("path") == "design"
-    assert "35.5 kg (78 lb)" in r.text and "Tempo 20X1" in r.text and "## Part 4" in r.text
-    assert "1,949 kcal" in r.text
+    assert "37.5 kg (83 lb)" in r.text and "Tempo 20X1" in r.text and "## Part 4" in r.text
+    # The week's numbers are Kobe's, under the estimate, with the arithmetic done in code.
+    assert ("Estimated burn: 800–900 kcal\n🔥 Week: 1,949 kcal to go today, the last day of the week (the /week "
+            "number). This session ≈ 800–900. After it ≈ 1,049–1,149 still to go before the week resets at "
+            "midnight.") in r.text
+    assert "Not verified" not in r.text
 
 
 def test_the_coach_saw_the_week_and_the_gyms_next_session(miya):
     miya["ask"]("Close the calorie gap for the week and design a 75 min workout today")
     prompt = miya["seen"]["prompts"][0]
-    assert "Still needed this week: 1,949 kcal with 1 day left" in prompt
+    assert "The week: 1,949 kcal still to go, 1 day left, today included." in prompt
+    assert "Size THIS session to burn about 825 kcal" in prompt          # "close the gap": the week, at a realistic rate
+    assert "End the Coach's Note with this line, for this session only: Estimated burn: A–B kcal" in prompt
     assert "MON 12 (tomorrow): burpee, deadlift, farmers carry, kettlebell swing, run" in prompt
-    assert "DO NOT program these today, in any block: burpee, deadlift, farmers carry, kettlebell swing" in prompt
+    assert ("Do NOT program these in today's strength block, metcon or accessory: burpee, deadlift, farmers carry, "
+            "kettlebell swing.") in prompt
     never = re.search(r"Never use: ([^\n]+)", prompt).group(1)
     assert "Total length: 75 min" in prompt
-    assert all(w in never for w in ("double under", "handstand", "wall ball", "pull-up", "deadlift", "burpee"))
+    assert all(w in never for w in ("double under", "handstand", "wall ball", "pull-up"))
+    assert "step by step" in prompt and "No single EMOM or AMRAP block longer than 35 minutes." in prompt
 
 
 @pytest.mark.parametrize("followup", [
@@ -161,8 +173,9 @@ def test_the_constraints_accumulate_and_an_allow_lifts_the_profile(miya):
     miya["ask"]("No push up, air bike , burpees in the WOD, I can do chin-ups for Emom")
     prompt = miya["seen"]["prompts"][-1]
     never = re.search(r"Never use: ([^\n]+)", prompt).group(1)
-    assert "wall ball" in never and "push-up" in never and "bike" in never and "pull-up" in never
-    assert "chin-up" not in never and "Allowed, whatever the profile says: chin-up" in prompt
+    assert "wall ball" in never and "pull-up" in never and "push-up" not in never
+    assert "Not in the metcon (the warm-up may use them): bike, burpee, push-up." in prompt
+    assert "chin-up" not in never and "Allowed, whatever the profile or the gym's week says: chin-up" in prompt
     assert "Place: office gym" in prompt and "Total length: 75 min" in prompt
 
 

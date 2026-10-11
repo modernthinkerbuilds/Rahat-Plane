@@ -69,10 +69,13 @@ class TestUnifiedConversation:
         # No rigid 4-section wrapping/validation any more — the model's
         # output is the athlete's reply. Since 2026-10-11 the contract may
         # put one "⚠️ Not verified" line before a session that fails it
-        # (this skeleton does); the session itself is untouched.
+        # (this skeleton does) and adds Kobe's week line; the session
+        # itself is untouched.
+        from agents.fraser import contract
         out = composer.design_session("design a session", chat_id=CID)
         assert "schema validation failed" not in out
-        assert out.endswith(_FULL_SESSION)
+        assert _FULL_SESSION.strip() in out
+        assert contract.strip_marks(out) == _FULL_SESSION.strip()
 
     def test_reset_intent_clears_memory_before_prompt(self, bootstrap_substrate,
                                                       fake_llm):

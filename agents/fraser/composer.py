@@ -32,7 +32,7 @@ import logging
 import os
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from agents.fraser import contract
 from core import (
@@ -211,38 +211,44 @@ def build_design_prompt(req: SessionRequest,
 
 
 def _week_block(c: "contract.Constraints") -> str:
-    """Kobe's week, so the design closes the right number."""
-    if not c.week_remaining and not c.today_target:
-        return ""
-    lines = ["═══ THIS WEEK (Kobe's numbers — use these, not your own) ═══"]
+    """The calories: Kobe's week (the /week numbers), what THIS session
+    should burn, and the one line the model writes about it. The model
+    never writes the week's numbers; the composer adds them under the
+    session (contract.week_line), so they always match /week."""
+    target = contract.session_target(c)
+    top = contract.realistic_max(c)
+    lines = ["═══ THE CALORIES (Kobe's numbers; the athlete sees the same on /week) ═══"]
     if c.week_remaining is not None:
         days = c.week_days_left or 1
-        lines.append(f"Still needed this week: {c.week_remaining:,} kcal with {days} day"
-                     f"{'s' if days != 1 else ''} left, today included.")
+        lines.append(f"The week: {c.week_remaining:,} kcal still to go, {days} day{'s' if days != 1 else ''} "
+                     f"left, today included.")
     if c.today_target:
-        lines.append(f"Today's planned burn: {c.today_target:,} kcal.")
-    if c.kcal:
-        lines.append(f"The athlete's own target for this session: {c.kcal:,} kcal in "
-                     f"{c.minutes or 'the asked'} min.")
-    lines.append("In the Coach's Note, state what THIS session burns (a range is fine) and what the "
-                 "week still needs after it. Never invent a different gap.")
+        lines.append(f"Today's planned burn in Kobe's plan: {c.today_target:,} kcal.")
+    if c.kcal and c.minutes and c.kcal > top:
+        lines.append(f"The athlete asked for {c.kcal:,} kcal in {c.minutes} min; about {top:,} is realistic. "
+                     f"Design for ~{top:,} and say so in one line.")
+    elif target:
+        lines.append(f"Size THIS session to burn about {target:,} kcal: extend or add engine work to get there.")
+    if c.week_remaining is not None:
+        lines.append("Do NOT write the week's numbers, a \"gap\" or what is left after the session: a line with "
+                     "/week's numbers is added under your session.")
+    lines.append("End the Coach's Note with this line, for this session only: Estimated burn: A–B kcal")
     return "\n".join(lines)
 
 
 def _next_gym_block(c: "contract.Constraints") -> str:
-    """The gym's next sessions: their movements are off today's menu."""
+    """The gym's coming sessions: their movements stay out of today's work."""
     if not c.next_gym:
         return ""
-    lines = ["═══ THE GYM'S NEXT SESSIONS (synced SugarWOD) ═══"]
-    avoid: set[str] = set()
+    lines = ["═══ THE GYM'S COMING SESSIONS (synced SugarWOD) ═══"]
     for day, moves in c.next_gym.items():
         named = sorted(contract.LABEL.get(m, m) for m in moves)
         lines.append(f"{day}: " + (", ".join(named) if named else "nothing parsed"))
-        avoid |= {m for m in moves if m not in contract.MONOSTRUCTURAL}
-    if avoid:
-        lines.append("DO NOT program these today, in any block: "
-                     + ", ".join(sorted(contract.LABEL.get(m, m) for m in avoid))
-                     + ". Running, rowing and biking are fine.")
+    keep_out = c.programmed()
+    if keep_out:
+        lines.append("Do NOT program these in today's strength block, metcon or accessory: "
+                     + ", ".join(sorted(contract.LABEL.get(m, m) for m in keep_out))
+                     + ". Warm-up drills, running, rowing and biking are fine.")
     return "\n".join(lines)
 
 
@@ -250,16 +256,27 @@ def _constraints_block(c: "contract.Constraints") -> str:
     lines = ["═══ THE CONTRACT FOR THIS DESIGN (checked mechanically after you answer) ═══"]
     if c.minutes:
         lines.append(f"Total length: {c.minutes} min; the blocks' minutes must add up to it (±10).")
-    lines.append("Warm-up 8+ min and cool-down 8+ min; the cool-down has the neck/trap release and a breathing drill.")
-    lines.append("Every strength lift carries a load in kg AND lb (from the 1RMs on file). Never "
-                 "\"pick a moderate weight\".")
-    lines.append("No single EMOM or AMRAP block longer than 30 minutes.")
+    lines.append("Warm-up 8+ min and cool-down 8+ min; the cool-down has the trap/neck release and a breathing drill.")
+    lines.append("Every strength lift carries its working weight in kg AND lb (from the 1RMs on file). Every loaded "
+                 "movement in the metcon carries its weight too, on its line or as a \"Dumbbells: 2 x 15 kg (35 lb)\" "
+                 "line. Never \"pick a moderate weight\".")
+    lines.append("Every movement in the strength block and the metcon gets its how-to, step by step: one line of "
+                 "setup → execution → breathing cues in *italics*, on its line or right under it (e.g. \"*hinge, DB "
+                 "between the feet, drive the hips, punch to lockout, exhale up*\").")
+    lines.append(f"No single EMOM or AMRAP block longer than {contract.block_cap(c)} minutes.")
     lines.append("A movement in the strength block does not reappear in the metcon.")
+    if c.formats:
+        lines.append("The metcon has: " + " and ".join(contract.FORMAT_LABEL[f] for f in sorted(c.formats))
+                     + " (the athlete asked).")
     excluded = sorted(contract.LABEL.get(m, m) for m in c.excluded())
     if excluded:
         lines.append("Never use: " + ", ".join(excluded) + ".")
+    scoped = sorted(contract.LABEL.get(m, m) for m in (c.metcon_avoid - c.allow - c.avoid))
+    if scoped:
+        lines.append("Not in the metcon (the warm-up may use them): " + ", ".join(scoped) + ".")
     if c.allow:
-        lines.append("Allowed, whatever the profile says: " + ", ".join(sorted(contract.LABEL.get(m, m) for m in c.allow)) + ".")
+        lines.append("Allowed, whatever the profile or the gym's week says: "
+                     + ", ".join(sorted(contract.LABEL.get(m, m) for m in c.allow)) + ".")
     if c.place:
         lines.append(f"Place: {c.place} — only what is there.")
     if c.style == "prvn":
@@ -316,10 +333,10 @@ def design_session(msg: str,
         c.avoid |= contract.profile_exclusions(athlete_profile.get()) - c.allow
     except Exception:  # noqa: BLE001 — no profile, no exclusions
         pass
-    c.next_gym = _next_gym_movements(now)
+    c.next_gym = _next_gym_movements(now, days=c.gym_days or 2)
     _fill_week(c)
     prompt = build_design_prompt(req, db_path=db_path, chat_id=chat_id, constraints=c,
-                                 prior_text=(prior or {}).get("text"))
+                                 prior_text=contract.strip_marks((prior or {}).get("text") or "") or None)
 
     text, err = _generate(prompt, llm)
     if err or not text:
@@ -343,6 +360,10 @@ def design_session(msg: str,
             f2 = contract.verify(again, c, strength_expected=_strength_expected(msg, c))
             if len(f2) < len(findings):
                 text, findings, repaired = again, f2, True
+    # The week's numbers are Kobe's, under the session, with the arithmetic
+    # done here: the live session said "523 kcal gap" while /week said 1,949.
+    text = contract.with_week_line(contract.strip_marks(text),
+                                   contract.week_line(c, contract.session_estimate(text)))
     if findings:
         logger.warning("design still unverified after repair: %s", [str(f) for f in findings])
         text = contract.unverified_line(findings) + "\n\n" + text
@@ -379,8 +400,9 @@ def _strength_expected(msg: str, c: "contract.Constraints") -> bool:
 
 
 def _fill_week(c: "contract.Constraints") -> None:
-    """Kobe's week into the constraints: what is still needed, days left,
-    today's planned burn. Quiet when Kobe has nothing."""
+    """Kobe's week into the constraints: what is still needed (the /week
+    number), days left, today's planned burn, the tier's per-session cap.
+    Quiet when Kobe has nothing."""
     try:
         from agents.the_scientist import state as kstate
         r = kstate.compute_week_recalibration()
@@ -394,11 +416,20 @@ def _fill_week(c: "contract.Constraints") -> None:
             c.today_target = int(t.kcal_target) or None
     except Exception:  # noqa: BLE001
         pass
+    try:
+        from agents.the_scientist.protocols import DEFAULT_TIER, TIERS
+        from agents.the_scientist.state import state_get
+        tier = state_get("recovery_tier", DEFAULT_TIER) or DEFAULT_TIER
+        c.session_cap = int(TIERS.get(tier, TIERS[DEFAULT_TIER])["cap"])
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _next_gym_movements(now: datetime, days: int = 2) -> dict[str, set[str]]:
-    """The movements the gym programs in the next `days` days, by day
-    label ("Mon 12 (tomorrow)"), from the synced SugarWOD plan."""
+    """The movements the gym programs in the next `days` days, by day label
+    ("MON 12 (tomorrow)"), from the synced SugarWOD plan. A day whose date
+    is not the coming one (Saturday reading last week's "MON 12") is
+    skipped: the plan is a week old there."""
     try:
         from agents.the_scientist.handler import parse_gym_plan
         gym_days = parse_gym_plan() or []
@@ -410,11 +441,13 @@ def _next_gym_movements(now: datetime, days: int = 2) -> dict[str, set[str]]:
         wd = (d.weekday or "").strip()[:3].lower()
         if wd not in names:
             continue
-        ahead = (names.index(wd) - now.weekday()) % 7
-        if 1 <= ahead <= days:
+        num = re.search(r"\b(\d{1,2})\b", d.label or "")
+        for ahead in range(1, days + 1):
+            day = now + timedelta(days=ahead)
+            if day.weekday() != names.index(wd) or (num and int(num.group(1)) != day.day):
+                continue
             when = "tomorrow" if ahead == 1 else f"in {ahead} days"
-            label = f"{(d.label or wd).strip()} ({when})"
-            out[label] = contract.movements_in((d.strength or "") + "\n" + (d.body or ""))
+            out[f"{(d.label or wd).strip()} ({when})"] = contract.movements_in((d.strength or "") + "\n" + (d.body or ""))
     return out
 
 
@@ -492,7 +525,8 @@ def _record_outcomes(chat_id, msg: str, text: str, c: "contract.Constraints", fi
     try:
         from core import decisions
         from core.harness import record as crecord
-        ids = ("sections", "warm_up", "cool_down", "loads", "duration", "excluded", "overlap", "distinct", "calories")
+        ids = ("sections", "warm_up", "cool_down", "loads", "cues", "duration", "excluded", "overlap", "distinct",
+               "calories")
         failed = {f.id for f in findings}
         outcomes = {i: ("fail" if i in failed else "pass") for i in ids}
         crecord.record_run(trace_id=decisions.new_trace(), agent="fraser", chat_id=str(chat_id or ""),
@@ -585,7 +619,8 @@ CORE RULES:
 
 6. SIZE THE SESSION TO KOBE'S REMAINING KCAL TARGET. If Kobe says today is
    1,300 kcal and the athlete has burned 240, design for ~1,060. If you must
-   come in under, say so and explain why (HRV red, active pain, etc.).
+   come in under, say so and explain why (HRV red, active pain, etc.). When
+   THE CALORIES block gives a size for this session, that number wins.
 
 7. ADDRESS BASELINE CONSTRAINTS IN EVERY SESSION:
    - Cardio-caution flag: exhale forcefully on every concentric, never hold
