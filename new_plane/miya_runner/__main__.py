@@ -236,6 +236,15 @@ def _fire_nudges(tg: "TelegramClient", chat_id: str,
     except Exception as e:
         logger.warning("huberman autocool import failed: %s: %s",
                        type(e).__name__, e)
+    # D6 (2026-10-11): the platform's health line — 08:15, once a day,
+    # only when something is broken (core/health.py).
+    # COORDINATION: shared file — additive tick entry only.
+    try:
+        from core.health import maybe_health_line
+        nudge_fns.append(("health_line", maybe_health_line))
+    except Exception as e:
+        logger.warning("health line import failed: %s: %s",
+                       type(e).__name__, e)
 
     for name, fn in nudge_fns:
         try:
