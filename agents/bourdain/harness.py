@@ -74,9 +74,12 @@ _SOLO_ASSUMPTION = re.compile(r"\b(solo|alone|just you|by yourself|on your own|o
 # "places that match my wife's profile" asks for the partner's rules, and only theirs (the trip's T08 and
 # T11, 2026-09-21/22: the reading kept or put back the whole party, so his own rule ranked her lunch). A
 # message that also says the whole party eats ("for all of us") keeps everyone.
-PARTNER_RULES = re.compile(r"\bmy\s+(?:wife|husband|partner|spouse)'?s\s+(?:profile|diet(?:ary\s+\w+)?|preferences|rules"
-                           r"|restrictions|needs)\b", re.I)
-WHOLE_PARTY = re.compile(r"\b(?:for us|for all of us|both of us|all of us|all three|the (?:whole )?family|everyone)\b", re.I)
+PARTNER_RULES = re.compile(r"\bmy\s+(?:wife|husband|partner|spouse)['\u2019]?s\s+(?:profile|diet(?:ary\s+\w+)?|preferences"
+                           r"|rules|restrictions|needs)\b", re.I)
+# Phones type a curly apostrophe; "me and my wife's profiles" (live, Oct 9) is both adults, not her alone.
+WHOLE_PARTY = re.compile(r"\b(?:for us|for all of us|both of us|all of us|all three|the (?:whole )?family|everyone"
+                         r"|me and my (?:wife|husband|partner|spouse)|my (?:wife|husband|partner|spouse) and (?:i|me)"
+                         r"|our)\b", re.I)
 
 
 class BourdainTenant:
