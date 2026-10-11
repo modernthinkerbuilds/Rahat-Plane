@@ -196,8 +196,14 @@ def handle_weekend_plan(*, now: datetime | None = None,
                         energy_override: str | None = None,
                         audience_text: str = "",
                         want_options: bool = False,
+                        next_weekend: bool = False,
                         llm=None) -> str:
     """Propose a household weekend plan.
+
+    The window follows the digest's and /whatson's rule: Monday to
+    Saturday it is the coming (or current) Saturday and Sunday; on a
+    Sunday, Saturday is gone and it is today alone (QA-2026-10-04-07).
+    `next_weekend` ("/weekend_plan next") plans the following weekend.
 
     PRD-shaped inputs (J1/J2):
       * `audience_text` — free text carrying "who is this outing for?"
@@ -230,8 +236,19 @@ def handle_weekend_plan(*, now: datetime | None = None,
     if override not in _VALID_ENERGY:
         override = None
     energy = override or profile_energy
-    saturday = _next_saturday(now)
-    sunday = saturday + timedelta(days=1)
+    # On a Sunday the plan is today alone. It is still keyed by the
+    # weekend's Saturday (yesterday): a plan saved earlier in the week and
+    # the family's own proposal for this weekend live under that date,
+    # and /replan_day reads today as its Sunday.
+    now = now or datetime.now()
+    one_day = now.weekday() == 6 and not next_weekend
+    if one_day:
+        sunday = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        saturday = sunday - timedelta(days=1)
+    else:
+        saturday = _next_saturday(now)
+        sunday = saturday + timedelta(days=1)
+    first_day = sunday if one_day else saturday
     roles = [s.role for s in (attending or subjects)]
 
     # ── Household calendar: hard commitments this weekend are
@@ -242,7 +259,7 @@ def handle_weekend_plan(*, now: datetime | None = None,
     try:
         from agents.genie.state import calendar_entries as _cal_entries
         weekend_commits = [
-            c for c in _cal_entries(saturday.strftime("%Y-%m-%d"),
+            c for c in _cal_entries(first_day.strftime("%Y-%m-%d"),
                                     sunday.strftime("%Y-%m-%d"))
             if c.get("kind") != "wishlist"]
     except Exception:  # noqa: BLE001 — calendar optional
@@ -282,34 +299,42 @@ def handle_weekend_plan(*, now: datetime | None = None,
                 f"will be there; do not propose overlapping activities")
         disc, live_failure = lp.discover(
             location=location,
-            sat_iso=saturday.strftime("%Y-%m-%d"),
+            sat_iso=first_day.strftime("%Y-%m-%d"),
             sun_iso=sunday.strftime("%Y-%m-%d"),
             energy=energy, roles=roles, constraints=constraints,
             llm=llm,
             mode="couple_evening" if evening_mode else "family")
         if disc is not None:
-            live_sat, alt_sat, vio_sat = lp.sequence_day(
-                disc.saturday, energy=energy, protect_nap=protect_nap)
-            live_sun, alt_sun, vio_sun = lp.sequence_day(
-                disc.sunday, energy=energy, protect_nap=protect_nap)
+            if one_day:                 # every find is today's, whichever key it came under
+                live_sat, alt_sat, vio_sat = None, [], []
+                live_sun, alt_sun, vio_sun = lp.sequence_day(
+                    disc.saturday + disc.sunday, energy=energy,
+                    protect_nap=protect_nap)
+            else:
+                live_sat, alt_sat, vio_sat = lp.sequence_day(
+                    disc.saturday, energy=energy, protect_nap=protect_nap)
+                live_sun, alt_sun, vio_sun = lp.sequence_day(
+                    disc.sunday, energy=energy, protect_nap=protect_nap)
             violations = vio_sat + vio_sun
             # Alternates: over-cap finds are CHOICES, not failures (PRD
             # J1 — the humans decide). Compact: name (+source), day-tagged.
             for day, alts in (("Sat", alt_sat), ("Sun", alt_sun)):
                 for o in alts:
                     label = o.activity + (f" ({o.source})" if o.source else "")
-                    alternates.append(f"{day}: {label}")
+                    alternates.append(label if one_day else f"{day}: {label}")
                     typed_alternates.append({
                         "day": day, "time": o.time, "activity": o.activity,
                         "place": o.place, "why": o.why, "source": o.source})
-            if disc.weather_sat or disc.weather_sun:
+            if one_day and (disc.weather_sun or disc.weather_sat):
+                weather_line = f"Weather today: {disc.weather_sun or disc.weather_sat}"
+            elif disc.weather_sat or disc.weather_sun:
                 weather_line = (f"Weather: Sat — {disc.weather_sat or '?'}; "
                                 f"Sun — {disc.weather_sun or '?'}")
             # J1 option sets: build B from the pool A didn't use —
             # a genuinely different weekend, not a variant of A.
             if want_options and (alt_sat or alt_sun):
-                b_sat, _, bv_sat = lp.sequence_day(
-                    alt_sat, energy=energy, protect_nap=protect_nap)
+                b_sat, _, bv_sat = (([], [], []) if one_day else lp.sequence_day(
+                    alt_sat, energy=energy, protect_nap=protect_nap))
                 b_sun, _, bv_sun = lp.sequence_day(
                     alt_sun, energy=energy, protect_nap=protect_nap)
                 option_b = {"saturday": b_sat, "sunday": b_sun,
@@ -343,7 +368,8 @@ def handle_weekend_plan(*, now: datetime | None = None,
 
     plan = WeekendPlan(
         weekend_of=saturday.strftime("%Y-%m-%d"),
-        saturday=_day_items(live_sat, _static(_SATURDAY_BY_ENERGY)),
+        saturday=([] if one_day else
+                  _day_items(live_sat, _static(_SATURDAY_BY_ENERGY))),
         sunday=_day_items(live_sun, _static(_SUNDAY_BY_ENERGY)),
         subjects=roles,
         energy=energy,
@@ -354,9 +380,12 @@ def handle_weekend_plan(*, now: datetime | None = None,
              f"(energy: {energy})." if attending and
              len(attending) < len(subjects)
              else f"For: {family_context_line(subjects)} (energy: {energy}).")
-    header = f"*Weekend plan — week of {plan.weekend_of}*"
+    today = f"Sunday {sunday.strftime('%Y-%m-%d')}"
+    header = (f"*Weekend plan — {today} (today)*" if one_day
+              else f"*Weekend plan — week of {plan.weekend_of}*")
     if evening_mode:
-        header = f"*Date night — weekend of {plan.weekend_of}*"
+        header = (f"*Date night — {today} (tonight)*" if one_day
+                  else f"*Date night — weekend of {plan.weekend_of}*")
     if live:
         header += f" · live options for {location}"
     lines = [header, scope]
@@ -405,14 +434,12 @@ def handle_weekend_plan(*, now: datetime | None = None,
 
     # ── J1 option sets: two distinct candidates, human decides ──
     if want_options and option_b and live:
-        lines += ["", "*Option A — closest fit*", "*Saturday*"]
-        lines += live_sat or ["  • (home day)"]
-        lines += ["*Sunday*"]
-        lines += live_sun or ["  • (home day)"]
-        lines += ["", "*Option B — change of pace*", "*Saturday*"]
-        lines += option_b["saturday"] or ["  • (home day)"]
-        lines += ["*Sunday*"]
-        lines += option_b["sunday"] or ["  • (home day)"]
+        def _option(sat_lines, sun_lines) -> list[str]:
+            days = [] if one_day else ["*Saturday*", *(sat_lines or ["  • (home day)"])]
+            return days + ["*Sunday*", *(sun_lines or ["  • (home day)"])]
+        lines += ["", "*Option A — closest fit*", *_option(live_sat, live_sun)]
+        lines += ["", "*Option B — change of pace*",
+                  *_option(option_b["saturday"], option_b["sunday"])]
         lines += _childcare_block(subjects, attending_roles)
         lines += ["", "Reply `go with A` or `go with B` to save one."]
         plan_a = plan.to_dict()
@@ -444,14 +471,16 @@ def handle_weekend_plan(*, now: datetime | None = None,
                     "full list, or leave it free"]
         return [f"  • {a}" for a in static_items]
 
-    lines += ["", "*Saturday*"]
-    lines += _day_render(live_sat, plan.saturday)
+    if not one_day:
+        lines += ["", "*Saturday*"]
+        lines += _day_render(live_sat, plan.saturday)
     lines += ["", "*Sunday*"]
     lines += _day_render(live_sun, plan.sunday)
     lines += _childcare_block(subjects, attending_roles)
     if alternates:
         shown = alternates[:4]
-        lines += ["", "*Also good this weekend* — swap any in:"]
+        lines += ["", ("*Also good today*" if one_day else "*Also good this weekend*")
+                  + " — swap any in:"]
         lines += [f"  • {a}" for a in shown]
         extra = len(alternates) - len(shown)
         if extra > 0:
@@ -462,6 +491,9 @@ def handle_weekend_plan(*, now: datetime | None = None,
     if not live and _live_plan_enabled() and not location and not _hermetic():
         lines += ["", "_Offline plan — set RAHAT_GENIE_LOCATION in .env "
                       "(e.g. \"San Jose, CA\") to get real local options._"]
+    if one_day:
+        lines += ["", "_It's Sunday, so this plans today._ "
+                      "`/weekend_plan next` plans next weekend."]
     lines += ["", f"_{plan.notes}_"]
 
     saved = latest_weekend_plan() if commit and live_failure else None
@@ -521,7 +553,8 @@ def handle_go_with(choice: str) -> str:
     except Exception:  # noqa: BLE001
         pass
     out = [f"✅ Option {choice} saved — here's the weekend:", ""]
-    out += ["*Saturday*"] + [f"  • {ln}" for ln in plan.saturday]
+    if plan.saturday:                   # a plan made on a Sunday is today alone
+        out += ["*Saturday*"] + [f"  • {ln}" for ln in plan.saturday]
     out += ["*Sunday*"] + [f"  • {ln}" for ln in plan.sunday]
     out += ["", "`swap in <name>` still works if you change your mind."]
     return "\n".join(out)
@@ -1387,6 +1420,7 @@ from agents.genie.intents import (  # noqa: E402
     REPLAN_TODAY_RE as _REPLAN_TODAY_RE,
     GO_WITH_RE as _GO_WITH_RE,
     OPTIONS_ARG_RE as _OPTIONS_ARG_RE,
+    NEXT_WEEKEND_ARG_RE as _NEXT_WEEKEND_ARG_RE,
     COUPLE_ONLY_RE as _COUPLE_ONLY_RE,
     EVENING_HINT_RE as _EVENING_HINT_RE,
     COMMITMENT_NL_RE as _COMMITMENT_NL_RE,
@@ -1415,7 +1449,8 @@ def _genie_subcommand(rest: str) -> str | None:
     if not rest:
         return None
     if _WEEKEND_PLAN_TOKEN_RE.search(rest):
-        return handle_weekend_plan(energy_override=_energy_arg(rest))
+        return handle_weekend_plan(energy_override=_energy_arg(rest),
+                                   next_weekend=bool(_NEXT_WEEKEND_ARG_RE.search(rest)))
     if _FAMILY_LOG_TOKEN_RE.search(rest):
         return _FAMILY_LOG_USAGE
     return None
@@ -1463,7 +1498,8 @@ def _try_slash_command(msg: str,
         return handle_weekend_plan(
             energy_override=_energy_arg(rest),
             audience_text=rest,
-            want_options=bool(_OPTIONS_ARG_RE.search(rest)))
+            want_options=bool(_OPTIONS_ARG_RE.search(rest)),
+            next_weekend=bool(_NEXT_WEEKEND_ARG_RE.search(rest)))
 
     # /whatson — J5 raw list; "/whatson 09/13" / "/whatson sunday" →
     # that day's full list (LIVE BUG 2026-09-13: the argument was
@@ -1619,7 +1655,8 @@ def route(msg: str, *, chat_id: str | int | None = None) -> str:
         return handle_weekend_plan(
             energy_override=_energy_arg(low),
             audience_text=msg,
-            want_options=bool(_OPTIONS_ARG_RE.search(low)))
+            want_options=bool(_OPTIONS_ARG_RE.search(low)),
+            next_weekend=bool(_NEXT_WEEKEND_ARG_RE.search(low)))
     if _FAMILY_LOG_TOKEN_RE.search(low) or _FAMILY_NL_RE.search(low):
         return _FAMILY_LOG_USAGE
 

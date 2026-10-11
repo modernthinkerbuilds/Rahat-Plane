@@ -41,6 +41,8 @@ def genie(tmp_path, monkeypatch):
     importlib.reload(state)
     importlib.reload(handler)
     importlib.reload(concierge)
+    from tests.datefreeze import off_sunday
+    off_sunday(monkeypatch)           # a weekday-shaped pin (QA-2026-10-04-07)
     return handler
 
 

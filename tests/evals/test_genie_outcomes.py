@@ -66,10 +66,6 @@ SUNDAY = ["2026-10-04", "2026-10-04"]
 NEXT_WEEKEND = ["2026-10-10", "2026-10-11"]
 WHATSON = ["W1", "W2", "W3", "W4", "W5", "W6", "W7"]
 
-_SUNDAY_PLAN = pytest.mark.xfail(strict=True, reason=(
-    "DECISION NEEDED (QA-2026-10-04-07): on a Sunday /weekend_plan plans the next weekend (6 days out) while "
-    "/whatson and the digest show today. If next weekend is intended, the reply should say so and this case "
-    "changes; if today is intended, _next_saturday needs the Sunday rule. Delete this mark when decided."))
 
 CASES = [
     pytest.param({"id": "GT01", "when": "2026-10-04T08:59", "surface": "whatson", "inventory": INVENTORY,
@@ -123,7 +119,7 @@ CASES = [
     pytest.param({"id": "GT11", "when": "2026-10-04T09:00", "surface": "weekend_plan",
                   "live": {"mode": "answers", "answers": [_GOOD_SUN]},
                   "expect": {"window": SUNDAY, "outcomes": ["W1", "W3"]}},
-                 id="sunday-weekend-plan", marks=_SUNDAY_PLAN),
+                 id="sunday-weekend-plan"),
     pytest.param({"id": "GT12", "when": "2026-10-07T08:00", "surface": "digest", "inventory": INVENTORY,
                   "commitments": [{"title": "Lunch with friends", "date": "2026-10-10", "start": "12:00", "end": "13:30",
                                    "where": "their place", "kind": "commitment"}],

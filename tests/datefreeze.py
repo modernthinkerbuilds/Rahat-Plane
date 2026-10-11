@@ -76,3 +76,34 @@ def freeze(monkeypatch, fixed: _dt.date, *,
         if hasattr(mod, "datetime"):
             monkeypatch.setattr(mod, "datetime", fake, raising=False)
     return fake
+
+
+def off_sunday(monkeypatch, modules=("agents.genie.handler",)):
+    """On a Sunday, give `modules` Monday's clock (same time); any other day, nothing.
+
+    WHY (2026-10-11, QA-2026-10-04-07). On a Sunday Genie's /weekend_plan
+    plans today alone, as /whatson and the digest do. The Genie pins of
+    June to August were written for the two-day plan (both day headers,
+    "week of", Saturday's menu) and read the real clock, so on a Sunday
+    they would meet the other shape. Monday's coming weekend is the one
+    their own date arithmetic expects. The Sunday shape has its own pin.
+    """
+    now = _dt.datetime.now()
+    if now.weekday() != 6:
+        return None
+    monday = now + _dt.timedelta(days=1)
+
+    class _Monday(_dt.datetime):
+        @classmethod
+        def now(cls, tz=None):  # noqa: D102
+            return monday if tz is None else monday.replace(tzinfo=tz)
+
+        @classmethod
+        def today(cls):  # noqa: D102
+            return monday
+
+    for modname in modules:
+        mod = sys.modules.get(modname) or importlib.import_module(modname)
+        if hasattr(mod, "datetime"):
+            monkeypatch.setattr(mod, "datetime", _Monday, raising=False)
+    return _Monday

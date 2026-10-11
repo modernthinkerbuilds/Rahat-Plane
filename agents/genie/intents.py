@@ -132,6 +132,9 @@ GO_WITH_RE = re.compile(r"^\s*(?:/)?go\s+with\s+(?:option\s+)?([ab])\b", re.I)
 
 # ─── "give me options" (J1: 2 distinct option sets) ───────────────────
 OPTIONS_ARG_RE = re.compile(r"\b(options?|choices)\b", re.I)
+# "/weekend_plan next": on a Sunday the plan is today; this asks for the
+# following weekend (QA-2026-10-04-07).
+NEXT_WEEKEND_ARG_RE = re.compile(r"\bnext\b", re.I)
 
 # ─── attendee scope ("who is this outing for?" — required J1 input) ───
 COUPLE_ONLY_RE = re.compile(
