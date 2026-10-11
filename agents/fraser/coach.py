@@ -29,8 +29,11 @@ FLAG = "RAHAT_COACH_GEMINI_STYLE"
 
 
 def gemini_style_enabled() -> bool:
-    """Default OFF. A new LLM *style* on prod ships opt-in."""
-    return os.getenv(FLAG, "0").lower().strip() in ("1", "true", "yes", "on")
+    """Default ON since 2026-10-11: the owner asked for "the format and
+    guidelines I have … as per the Gemini threads", and the compact
+    four-section style had shipped sessions with no loads. Set
+    RAHAT_COACH_GEMINI_STYLE=0 for the compact style."""
+    return os.getenv(FLAG, "1").lower().strip() in ("1", "true", "yes", "on")
 
 
 # ── The house-style system directive ──────────────────────────────────
@@ -114,8 +117,9 @@ omit a section only if it doesn't apply):
    - Add only if needed to hit the calorie/strength goal.
 
 ## Part 6: Recovery & CNS Down-Regulation (X min)
-   - MANDATORY. Trap/neck release + thoracic opener + a long-exhale
-     breathing drill (e.g. 4-8). Tie it to their HRV / cardio recovery.
+   - Always included, 8+ min. Trap/neck release + thoracic opener + a
+     long-exhale breathing drill (e.g. 4-8). Tie it to their HRV / cardio
+     recovery.
 
 End with ONE short coach question (the house style), not a wall of text.
 If a calorie target was requested, include a one-line burn estimate."""
@@ -127,3 +131,25 @@ def build_coach_prompt(directive_parts: list[str]) -> str:
     last), join them. Kept as a thin seam so the composer owns context
     gathering and this module owns style only."""
     return "\n".join(directive_parts)
+
+
+# ── PRVN notation ──────────────────────────────────────────────────────
+# The athlete's gym programs in PRVN's notation (SugarWOD). When he asks for
+# "the standard PRVN style", the Parts above keep their order and each block
+# is written the way the gym writes it.
+PRVN_NOTATION = """NOTATION — write every block the way the athlete's gym (PRVN) does:
+  • Strength: the lift on its own line, then the format ("Take 15:00 to
+    Establish a 3RM", "Every 2:30 x 5 Sets", "5x5"), then the loading
+    ladder as reps @ % with the kg (lb) for THIS athlete, e.g.
+      5 Reps @ 50% — 100 kg (220 lb)
+      3 Reps @ 70% — 140 kg (309 lb)
+  • Metcon: a name in quotes, the format line ("For Time", "AMRAP 20",
+    "EMOM 20", "3 Rounds For Time"), rounds, then one movement per line as
+    reps + movement, loads on their own lines ("Dumbbells: 2x22.5/15kg",
+    "Kettlebell: 24/16kg"), then "Time Cap: 15:00" and "Score = Time".
+  • A Primer before the metcon: one short set at light load to confirm
+    loads and pace.
+  • Movement standards in one line each ("Burpee to Plate: step up, find
+    the rhythm").
+"""
+

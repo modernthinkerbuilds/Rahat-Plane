@@ -215,6 +215,12 @@ def kobe_open_question() -> str | None:
     return None
 
 
+def fraser_design_open(chat_id: str | None) -> bool:
+    """HTTP adapter: no design memory is read over the wire; the
+    continuation rule only runs native (2026-10-11)."""
+    return False
+
+
 def huberman_offer_reply(message: str) -> str | None:
     """Not served over HTTP; the native client reads Huberman's state."""
     return None

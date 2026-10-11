@@ -234,6 +234,20 @@ def kobe_open_question() -> str | None:
         return None
 
 
+def fraser_design_open(chat_id: str | None) -> bool:
+    """Whether this chat is refining a workout design (one is remembered
+    within the last 12 hours): a message that is not Kobe's goes back to
+    the coach, not to the synthesizer (continuation routing, 2026-10-11).
+    Never raises."""
+    if not chat_id:
+        return False
+    try:
+        from agents.fraser import composer
+        return composer.last_design(str(chat_id)) is not None
+    except Exception:                               # noqa: BLE001
+        return False
+
+
 def huberman_offer_reply(message: str) -> str | None:
     """How a short reply answers Huberman's open 9:30 "Trained?", if one
     is open: "specific" | "generic" | None (continuation routing, QA-20,

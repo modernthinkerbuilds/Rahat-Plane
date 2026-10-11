@@ -33,10 +33,14 @@ def test_coach_schema_has_house_section_structure():
         assert header in s, f"missing house-style section: {header}"
 
 
-def test_flag_default_off():
+def test_flag_default_on():
+    """Default ON since 2026-10-11: the owner asked for sessions in the
+    format of his Gemini threads, and the compact style had shipped
+    sessions with no loads. RAHAT_COACH_GEMINI_STYLE=0 keeps the compact
+    style available."""
     import os
     os.environ.pop(coach.FLAG, None)
-    assert coach.gemini_style_enabled() is False
+    assert coach.gemini_style_enabled() is True
 
 
 def test_flag_on_off(monkeypatch):
@@ -82,6 +86,8 @@ def test_design_session_uses_one_llm_call_with_coach_prompt(monkeypatch, sandbox
 
     out = composer.design_session("design me a 75 min session burn 800 cal",
                                   db_path=str(sandbox_db))
-    assert seen["calls"] == 1                              # exactly one call
+    # One design call, plus at most one repair when the session fails the
+    # athlete's contract (2026-10-11) — this stub's one-line session does.
+    assert seen["calls"] <= 2
     assert "NON-NEGOTIABLE SAFETY GUARDRAILS" in seen["prompt"]  # coach prompt used
     assert "Thermal Cash-In" in out

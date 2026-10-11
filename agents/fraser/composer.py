@@ -28,9 +28,13 @@ test case for this composer.
 """
 from __future__ import annotations
 
+import logging
 import os
+import re
 from dataclasses import dataclass
+from datetime import datetime
 
+from agents.fraser import contract
 from core import (
     athlete_profile,
     chat_memory,
@@ -38,6 +42,17 @@ from core import (
     kobe_bridge,
     pain_state,
 )
+
+logger = logging.getLogger(__name__)
+
+# The contract (2026-10-11): what the composer checks every design against
+# before it goes out. agents/fraser/contract.py has the rules; the
+# constraints come from the request, the athlete's profile, Kobe's week and
+# the gym's next sessions. One repair pass; then the athlete is told what is
+# still unverified.
+DESIGN_KEY = "last_design"
+STYLE_KEY = "style"
+DESIGN_HOURS = 12.0
 
 
 @dataclass
@@ -123,7 +138,10 @@ def parse_request(msg: str) -> SessionRequest:
 
 def build_design_prompt(req: SessionRequest,
                         db_path: str | None = None,
-                        chat_id: str | None = None) -> str:
+                        chat_id: str | None = None,
+                        *,
+                        constraints: "contract.Constraints | None" = None,
+                        prior_text: str | None = None) -> str:
     """Build the structured LLM prompt with all four context blocks +
     the user's request + the output schema instructions.
 
@@ -148,8 +166,11 @@ def build_design_prompt(req: SessionRequest,
     # directive + schema. Default OFF; opt in with RAHAT_COACH_GEMINI_STYLE=1.
     from agents.fraser import coach as _coach
     _gemini_style = _coach.gemini_style_enabled()
-    _directive = _coach.COACH_SYSTEM if _gemini_style else _SYSTEM_DIRECTIVE
-    _schema = _coach.COACH_SCHEMA if _gemini_style else _OUTPUT_SCHEMA
+    # The house style is additive (2026-10-11): its voice, guardrails and
+    # Parts on top of the composer's own rules (conversation, precedence,
+    # never assume, loads) and shape rules, which it used to replace.
+    _directive = (_coach.COACH_SYSTEM + "\n" + _SYSTEM_RULES) if _gemini_style else _SYSTEM_DIRECTIVE
+    _schema = ("═══ OUTPUT ═══\n" + _coach.COACH_SCHEMA + "\n" + _OUTPUT_ADAPT) if _gemini_style else _OUTPUT_SCHEMA
 
     parts = [
         _directive,
@@ -166,63 +187,322 @@ def build_design_prompt(req: SessionRequest,
         parts.extend([pain_block, ""])
     if history_block:
         parts.extend([history_block, ""])
+    if constraints is not None:
+        week = _week_block(constraints)
+        if week:
+            parts.extend([week, ""])
+        nxt = _next_gym_block(constraints)
+        if nxt:
+            parts.extend([nxt, ""])
+    if prior_text:
+        parts.extend(["═══ THE SESSION UNDER DISCUSSION (your last design, in full) ═══",
+                      prior_text.strip(),
+                      "═══", ""])
     parts.extend([
         _user_request_block(req),
         "",
-        _schema,
     ])
+    if constraints is not None:
+        parts.extend([_constraints_block(constraints), ""])
+    parts.append(_schema)
+    if constraints is not None and constraints.style == "prvn":
+        parts.extend(["", _coach.PRVN_NOTATION])
     return "\n".join(parts)
+
+
+def _week_block(c: "contract.Constraints") -> str:
+    """Kobe's week, so the design closes the right number."""
+    if not c.week_remaining and not c.today_target:
+        return ""
+    lines = ["═══ THIS WEEK (Kobe's numbers — use these, not your own) ═══"]
+    if c.week_remaining is not None:
+        days = c.week_days_left or 1
+        lines.append(f"Still needed this week: {c.week_remaining:,} kcal with {days} day"
+                     f"{'s' if days != 1 else ''} left, today included.")
+    if c.today_target:
+        lines.append(f"Today's planned burn: {c.today_target:,} kcal.")
+    if c.kcal:
+        lines.append(f"The athlete's own target for this session: {c.kcal:,} kcal in "
+                     f"{c.minutes or 'the asked'} min.")
+    lines.append("In the Coach's Note, state what THIS session burns (a range is fine) and what the "
+                 "week still needs after it. Never invent a different gap.")
+    return "\n".join(lines)
+
+
+def _next_gym_block(c: "contract.Constraints") -> str:
+    """The gym's next sessions: their movements are off today's menu."""
+    if not c.next_gym:
+        return ""
+    lines = ["═══ THE GYM'S NEXT SESSIONS (synced SugarWOD) ═══"]
+    avoid: set[str] = set()
+    for day, moves in c.next_gym.items():
+        named = sorted(contract.LABEL.get(m, m) for m in moves)
+        lines.append(f"{day}: " + (", ".join(named) if named else "nothing parsed"))
+        avoid |= {m for m in moves if m not in contract.MONOSTRUCTURAL}
+    if avoid:
+        lines.append("DO NOT program these today, in any block: "
+                     + ", ".join(sorted(contract.LABEL.get(m, m) for m in avoid))
+                     + ". Running, rowing and biking are fine.")
+    return "\n".join(lines)
+
+
+def _constraints_block(c: "contract.Constraints") -> str:
+    lines = ["═══ THE CONTRACT FOR THIS DESIGN (checked mechanically after you answer) ═══"]
+    if c.minutes:
+        lines.append(f"Total length: {c.minutes} min; the blocks' minutes must add up to it (±10).")
+    lines.append("Warm-up 8+ min and cool-down 8+ min; the cool-down has the neck/trap release and a breathing drill.")
+    lines.append("Every strength lift carries a load in kg AND lb (from the 1RMs on file). Never "
+                 "\"pick a moderate weight\".")
+    lines.append("No single EMOM or AMRAP block longer than 30 minutes.")
+    lines.append("A movement in the strength block does not reappear in the metcon.")
+    excluded = sorted(contract.LABEL.get(m, m) for m in c.excluded())
+    if excluded:
+        lines.append("Never use: " + ", ".join(excluded) + ".")
+    if c.allow:
+        lines.append("Allowed, whatever the profile says: " + ", ".join(sorted(contract.LABEL.get(m, m) for m in c.allow)) + ".")
+    if c.place:
+        lines.append(f"Place: {c.place} — only what is there.")
+    if c.style == "prvn":
+        lines.append("Style: PRVN notation (below).")
+    return "\n".join(lines)
 
 
 def design_session(msg: str,
                    db_path: str | None = None,
-                   chat_id: str | None = None) -> str:
+                   chat_id: str | None = None,
+                   *,
+                   llm=None,
+                   now: datetime | None = None) -> str:
     """The main entry point. Reply to the athlete as their coach.
 
     ONE unified path (ADR-011, deterministic shell / LLM core). The LLM
-    gets the full context — profile, Kobe's plan, Huberman state, active
-    pain, the recent conversation, real local time, and the athlete's
-    latest message — and decides for itself whether to design a fresh
-    session, refine the prior one, or answer a question about it. There is
-    NO deterministic 'is this a follow-up?' gate and NO mandatory output
-    shape: the model resolves intent and honors the request (movements,
-    duration, format) because the prompt tells it to.
+    gets the full context — profile, Kobe's plan and week, the gym's next
+    sessions, Huberman state, active pain, the recent conversation, the
+    session under discussion, real local time, and the athlete's latest
+    message — and decides for itself whether to design a fresh session,
+    refine the prior one, or answer a question about it.
 
-    `chat_id` enables conversational memory: recent (user, bot) pairs are
-    injected into the prompt, and this turn's pair is appended after. A
-    reset intent ("start over") clears memory first.
+    The shell around it (2026-10-11, the design contract):
+      * the constraints accumulate across the conversation: "no wall
+        balls" in one message still holds three messages later; "I can do
+        chin-ups" lifts a profile rule; a style ("PRVN") is remembered;
+      * the design is verified mechanically (agents/fraser/contract.py);
+        one repair pass fixes what failed; what still fails is said in a
+        first line rather than shipped as if it were fine;
+      * the design is kept for 12 hours so a refinement sees all of it,
+        not the 600-character snippet chat memory carries.
 
+    `llm` is the test seam (prompt → text); default is core.io.llm_generate.
     Returns Telegram-ready text. On LLM failure, returns a structured
     fallback — never a stub.
     """
+    now = now or datetime.now()
     req = parse_request(msg)
-
-    # If the user signaled a fresh start, wipe chat memory BEFORE building
-    # the prompt so the recent-conversation block is empty for this turn.
-    if chat_id and chat_memory.is_reset_intent(msg):
+    reset = bool(chat_id and chat_memory.is_reset_intent(msg))
+    if reset:
         chat_memory.clear(chat_id, db_path=db_path)
+        forget_design(chat_id, now=now, db_path=db_path)
 
-    prompt = build_design_prompt(req, db_path=db_path, chat_id=chat_id)
-
+    asked = contract.read_request(msg)
+    prior = None if reset else (last_design(chat_id, now=now, db_path=db_path) if chat_id else None)
+    base = contract.Constraints.from_dict(prior["constraints"]) if prior else contract.Constraints()
+    c = base.merged_with(asked)
+    if chat_id:
+        if asked.style:
+            remember_style(chat_id, asked.style, now=now, db_path=db_path)
+        elif not c.style:
+            c.style = standing_style(chat_id, now=now, db_path=db_path)
     try:
+        c.avoid |= contract.profile_exclusions(athlete_profile.get()) - c.allow
+    except Exception:  # noqa: BLE001 — no profile, no exclusions
+        pass
+    c.next_gym = _next_gym_movements(now)
+    _fill_week(c)
+    prompt = build_design_prompt(req, db_path=db_path, chat_id=chat_id, constraints=c,
+                                 prior_text=(prior or {}).get("text"))
+
+    text, err = _generate(prompt, llm)
+    if err or not text:
+        out = _fallback_no_llm(req, err or "LLM unavailable")
+        _record_turn(chat_id, msg, out, db_path=db_path)
+        return out
+
+    if not contract.sections(text):
+        # An answer about the session ("what weights for the cleans?" → two
+        # lines), not a session: no contract to hold it to, and the design
+        # under discussion stays the one it was.
+        _record_turn(chat_id, msg, text, db_path=db_path)
+        return text
+
+    findings = contract.verify(text, c, strength_expected=_strength_expected(msg, c))
+    repaired = False
+    if findings:
+        again, err2 = _generate(prompt + "\n\n" + contract.repair_note(findings)
+                                + "\n\nYOUR PREVIOUS SESSION:\n" + text, llm)
+        if again and not err2:
+            f2 = contract.verify(again, c, strength_expected=_strength_expected(msg, c))
+            if len(f2) < len(findings):
+                text, findings, repaired = again, f2, True
+    if findings:
+        logger.warning("design still unverified after repair: %s", [str(f) for f in findings])
+        text = contract.unverified_line(findings) + "\n\n" + text
+    if chat_id:
+        remember_design(chat_id, text, c, findings, now=now, db_path=db_path)
+    _record_outcomes(chat_id, msg, text, c, findings, repaired=repaired, now=now, db_path=db_path)
+    _record_turn(chat_id, msg, text, db_path=db_path)
+    return text
+
+
+def _generate(prompt: str, llm=None) -> tuple[str, str | None]:
+    """(text, error). The seam for tests; the budgeted chokepoint in production."""
+    try:
+        if llm is not None:
+            return (llm(prompt) or "").strip(), None
         from core import io as cio
-        response = cio.llm_generate(prompt)
-    except Exception as e:
-        out = _fallback_no_llm(req, str(e))
-        _record_turn(chat_id, msg, out, db_path=db_path)
-        return out
-
-    response = (response or "").strip()
+        response = (cio.llm_generate(prompt) or "").strip()
+    except Exception as e:  # noqa: BLE001
+        return "", str(e)
     if not response or response == "[LLM-FALLBACK]":
-        out = _fallback_no_llm(req, "LLM unavailable")
-        _record_turn(chat_id, msg, out, db_path=db_path)
-        return out
+        return "", "LLM unavailable"
+    return response, None
 
-    # No rigid shape gate — the prompt instructs the model on structure
-    # (full session vs compact vs a short answer), and we trust its
-    # judgment. Anything non-empty is the athlete's reply.
-    _record_turn(chat_id, msg, response, db_path=db_path)
-    return response
+
+_CARDIO_ONLY_RE = re.compile(r"\b(no strength|just (?:a |an )?(?:metcon|conditioning|cardio|engine)|cardio only"
+                             r"|conditioning only|only (?:a )?metcon|skip (?:the )?strength)\b", re.I)
+
+
+def _strength_expected(msg: str, c: "contract.Constraints") -> bool:
+    """A full session has a strength block; a short or cardio-only ask does not."""
+    if _CARDIO_ONLY_RE.search(msg or ""):
+        return False
+    return c.minutes is None or c.minutes >= 45
+
+
+def _fill_week(c: "contract.Constraints") -> None:
+    """Kobe's week into the constraints: what is still needed, days left,
+    today's planned burn. Quiet when Kobe has nothing."""
+    try:
+        from agents.the_scientist import state as kstate
+        r = kstate.compute_week_recalibration()
+        c.week_remaining = int(round(float(r.get("remaining_to_goal") or 0))) or None
+        c.week_days_left = 7 - int(r.get("today_idx", 0))
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        t = kobe_bridge.today_target()
+        if t is not None:
+            c.today_target = int(t.kcal_target) or None
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _next_gym_movements(now: datetime, days: int = 2) -> dict[str, set[str]]:
+    """The movements the gym programs in the next `days` days, by day
+    label ("Mon 12 (tomorrow)"), from the synced SugarWOD plan."""
+    try:
+        from agents.the_scientist.handler import parse_gym_plan
+        gym_days = parse_gym_plan() or []
+    except Exception:  # noqa: BLE001
+        return {}
+    names = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+    out: dict[str, set[str]] = {}
+    for d in gym_days:
+        wd = (d.weekday or "").strip()[:3].lower()
+        if wd not in names:
+            continue
+        ahead = (names.index(wd) - now.weekday()) % 7
+        if 1 <= ahead <= days:
+            when = "tomorrow" if ahead == 1 else f"in {ahead} days"
+            label = f"{(d.label or wd).strip()} ({when})"
+            out[label] = contract.movements_in((d.strength or "") + "\n" + (d.body or ""))
+    return out
+
+
+# ── the session under discussion ──────────────────────────────────────
+# Chats this process remembered a design for, with the DB it went to —
+# so a test process can start every test with nothing under discussion.
+_REMEMBERED: set[tuple[str, str | None]] = set()
+
+
+def forget_remembered_designs(*, now: datetime | None = None) -> None:
+    """Withdraw every design this process remembered (test isolation)."""
+    for chat_id, db_path in list(_REMEMBERED):
+        forget_design(chat_id, now=now, db_path=db_path)
+    _REMEMBERED.clear()
+
+
+def last_design(chat_id: str, *, now: datetime | None = None, db_path: str | None = None) -> dict | None:
+    """The design this chat is refining, within DESIGN_HOURS: {"text",
+    "constraints", "findings", "at"}; None when there is none."""
+    try:
+        from core import state_scopes as ss
+        return ss.get("fraser", str(chat_id), DESIGN_KEY, now=now or datetime.now(), db_path=db_path)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def remember_design(chat_id: str, text: str, c: "contract.Constraints", findings: list, *,
+                    now: datetime | None = None, db_path: str | None = None) -> None:
+    try:
+        from core import state_scopes as ss
+        now = now or datetime.now()
+        ss.put("fraser", str(chat_id), DESIGN_KEY,
+               {"text": text, "constraints": c.as_dict(), "findings": [str(f) for f in findings],
+                "at": now.strftime("%Y-%m-%d %H:%M")},
+               scope="session", now=now, replace=True, expires_in_hours=DESIGN_HOURS, db_path=db_path)
+        _REMEMBERED.add((str(chat_id), str(db_path) if db_path else None))
+    except Exception as e:  # noqa: BLE001
+        logger.warning("could not remember the design: %s", e)
+
+
+def forget_design(chat_id: str, *, now: datetime | None = None, db_path: str | None = None) -> None:
+    try:
+        from core import state_scopes as ss
+        now = now or datetime.now()
+        for row in ss.get_all("fraser", str(chat_id), DESIGN_KEY, now=now, db_path=db_path):
+            ss.withdraw(int(row["row_id"]), now=now, db_path=db_path)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def standing_style(chat_id: str, *, now: datetime | None = None, db_path: str | None = None) -> str | None:
+    try:
+        from core import state_scopes as ss
+        v = ss.get("fraser", str(chat_id), STYLE_KEY, now=now or datetime.now(), db_path=db_path)
+        return (v or {}).get("style") if isinstance(v, dict) else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def remember_style(chat_id: str, style: str, *, now: datetime | None = None, db_path: str | None = None) -> None:
+    """"Use the PRVN style" is a standing preference, not a promise."""
+    try:
+        from core import state_scopes as ss
+        ss.put("fraser", str(chat_id), STYLE_KEY, {"style": style}, scope="standing",
+               now=now or datetime.now(), replace=True, db_path=db_path)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("could not remember the style: %s", e)
+
+
+def _record_outcomes(chat_id, msg: str, text: str, c: "contract.Constraints", findings: list, *,
+                     repaired: bool, now: datetime, db_path: str | None) -> None:
+    """One row per contract outcome in harness_outcomes, agent "fraser",
+    so the weekly report and the judge's label machinery see designs the
+    way they see Bourdain's asks."""
+    try:
+        from core import decisions
+        from core.harness import record as crecord
+        ids = ("sections", "warm_up", "cool_down", "loads", "duration", "excluded", "overlap", "distinct", "calories")
+        failed = {f.id for f in findings}
+        outcomes = {i: ("fail" if i in failed else "pass") for i in ids}
+        crecord.record_run(trace_id=decisions.new_trace(), agent="fraser", chat_id=str(chat_id or ""),
+                           mode="design", serve_mode="serve", ask=msg, header=f"design · {c.minutes or '?'} min",
+                           kind="design", picks=[], musts_total=len(ids), musts_failed=len(failed),
+                           repairs=1 if repaired else 0, dropped=0, tool_calls=0, search_queries=0, cost_usd=0.0,
+                           latency_ms=None, floor_used=False, error=None, outcomes=outcomes, now=now,
+                           db_path=db_path)
+    except Exception as e:  # noqa: BLE001
+        logger.debug("design outcomes not recorded: %s", e)
 
 
 def _record_turn(chat_id: str | None, user_msg: str, bot_reply: str,
@@ -244,14 +524,15 @@ def _record_turn(chat_id: str | None, user_msg: str, bot_reply: str,
 # ─────────────────────────── Prompt building blocks ─────────────────
 
 
-_SYSTEM_DIRECTIVE = """You are Fraser, a world-class CrossFit coach and mobility
+_SYSTEM_INTRO = """You are Fraser, a world-class CrossFit coach and mobility
 specialist embedded in a multi-agent system called Rahat. You take the athlete's
 stable profile (1RMs, equipment, blacklist, mobility, health), Kobe's plan for
 today (day type, kcal target, synced gym WOD if available), Huberman's recovery
 read (HRV, sleep, soreness — IF REPORTED), any active pain, the RECENT
 CONVERSATION, and the athlete's latest message — and reply as their coach.
+"""
 
-CONVERSATION — read the latest message IN CONTEXT of the recent conversation:
+_SYSTEM_RULES = """CONVERSATION — read the latest message IN CONTEXT of the recent conversation:
   • If it REFINES a session you already gave ("shorter", "under 30 min", "swap
     the burpees", "make the cleans heavier"), return the MODIFIED session and
     keep every other number consistent with what you already prescribed.
@@ -329,6 +610,8 @@ CORE RULES:
     Every output is a complete, ready-to-execute session.
 """
 
+_SYSTEM_DIRECTIVE = _SYSTEM_INTRO + "\n" + _SYSTEM_RULES
+
 
 def _local_time_block() -> str:
     """Real local time so the model never guesses the time of day (the
@@ -378,6 +661,7 @@ ADAPT THE SHAPE TO THE REQUEST (precedence over the default):
 End with ONE short forward-looking question.
 NO STUBS, NO ENUM ECHOES — every reply is real, ready-to-use coaching.
 """
+_OUTPUT_ADAPT = _OUTPUT_SCHEMA[_OUTPUT_SCHEMA.index("ADAPT THE SHAPE"):]
 
 
 # ─────────────────────────── Fallbacks ──────────────────────────────
@@ -460,4 +744,9 @@ __all__ = [
     "parse_request",
     "build_design_prompt",
     "design_session",
+    "last_design",
+    "remember_design",
+    "forget_design",
+    "standing_style",
+    "remember_style",
 ]

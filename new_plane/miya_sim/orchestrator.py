@@ -80,6 +80,18 @@ class Response:
 # ─── intent classifier (mirrors TS) ───────────────────────────────────────
 # DESIGN: explicit ask for Fraser to invent/scale a workout.
 _DESIGN_RE = re.compile(r"\b(design|create|invent|scale|substitute|sub\s*in|swap)\b", re.I)
+# The household's other ways of asking for one (2026-10-11: "Give me the
+# workout", "I need to burn 800 calories in 75 min" and "design a 75 min
+# workout today" went to the synthesizer, which improvised a session with
+# no loads and a 60-minute EMOM). A request verb with a session noun, a
+# session for now, a burn in a time window, or a session's parts named.
+_DESIGN_ASK_RE = re.compile(
+    r"\b(?:give me|i need|i want|build|program|put together|write|plan me|make me)\b[^.?!\n]{0,40}?"
+    r"\b(?:workout|session|wod|metcon|amrap|emom)\b"
+    r"|\b(?:workout|session|wod)\b[^.?!\n]{0,25}\b(?:today|tonight|now|this (?:morning|afternoon|evening))\b"
+    r"|\bburn\s+\d{3,4}\s*(?:k?cal(?:orie)?s?)\b[^.?!\n]{0,40}\b(?:in|within|over)\s+\d{2,3}\s*(?:min|minutes)\b"
+    r"|\b\d{2,3}\s*(?:-\s*)?(?:min|minute)s?\s+(?:workout|session|wod)\b",
+    re.I)
 # LOOKUP: "what's the workout/WOD/session for <day>" — read synced data,
 # do NOT ask Fraser to invent. Verb is "what" / "show" / "tell me" / etc.
 # NOTE: "plan" deliberately excluded from the noun list because "what's
@@ -142,8 +154,9 @@ def classify_intent(msg: str) -> dict[str, Any]:
     `day` is extracted when present (today/tomorrow/yesterday/weekday name);
     None otherwise.
     """
-    is_design = bool(_DESIGN_RE.search(msg))
     is_lookup = bool(_LOOKUP_RE.search(msg))
+    # "what's the WOD today" is a lookup of the synced plan, not a design.
+    is_design = bool(_DESIGN_RE.search(msg)) or (bool(_DESIGN_ASK_RE.search(msg)) and not is_lookup)
     has_workout_noun = bool(_WORKOUT_NOUN_RE.search(msg))
     needs_fraser = is_design or bool(re.search(r"\bfraser\b", msg, re.I))
     needs_kobe = bool(_KOBE_HINT.search(msg)) or "@kobe" in msg.lower()

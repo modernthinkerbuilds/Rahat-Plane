@@ -67,10 +67,12 @@ class TestUnifiedConversation:
 
     def test_returns_llm_output_verbatim(self, bootstrap_substrate, fake_llm):
         # No rigid 4-section wrapping/validation any more — the model's
-        # output is the athlete's reply.
+        # output is the athlete's reply. Since 2026-10-11 the contract may
+        # put one "⚠️ Not verified" line before a session that fails it
+        # (this skeleton does); the session itself is untouched.
         out = composer.design_session("design a session", chat_id=CID)
         assert "schema validation failed" not in out
-        assert out == _FULL_SESSION
+        assert out.endswith(_FULL_SESSION)
 
     def test_reset_intent_clears_memory_before_prompt(self, bootstrap_substrate,
                                                       fake_llm):

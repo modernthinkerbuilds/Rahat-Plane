@@ -83,6 +83,22 @@ def _isolate_registry():
 
 
 @pytest.fixture(autouse=True)
+def _no_session_under_discussion():
+    """Every test starts with no workout design under discussion.
+
+    The composer remembers the session a chat is refining for twelve
+    hours (2026-10-11), in the per-process sandbox DB that every test in
+    a process shares. Without this, a design one test made for chat "c1"
+    would turn a later test's "where am I on pace" into a design
+    follow-up. Costs nothing for the tests that never design.
+    """
+    yield
+    comp = sys.modules.get("agents.fraser.composer")
+    if comp is not None and getattr(comp, "_REMEMBERED", None):
+        comp.forget_remembered_designs()
+
+
+@pytest.fixture(autouse=True)
 def _intent_layer_off_by_default(monkeypatch):
     """Force the NL intent layer (ADR-017) OFF as the test baseline.
 

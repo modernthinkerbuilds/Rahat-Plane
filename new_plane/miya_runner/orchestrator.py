@@ -18,6 +18,7 @@ so they can't drift.
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
@@ -84,6 +85,41 @@ def _validation_enabled() -> bool:
 
 
 _SHORT_REPLY_WORDS = 8
+
+
+_SESSION_WORDS_RE = re.compile(
+    r"\b(workout|session|wod|metcon|amrap|emom|strength|warm[\s-]*up|cool[\s-]*down|rep|reps|set|sets|round|rounds|"
+    r"movement|weight|load|heavier|lighter|harder|easier|shorter|longer|format|style|boring|exciting|swap|replace|"
+    r"instead|skip|without|version|the (?:first|second|last) (?:part|block|piece)|block|piece|rx|scaled?)\b", re.I)
+# A short verdict on the session under discussion, with no part named.
+_VERDICT_RE = re.compile(
+    r"^\s*(?:no|nope|not that|again|redo|try again|do it again|one more|another one|something else|"
+    r"too (?:easy|hard|long|short|much|little)|make it (?:harder|easier|shorter|longer|different|better)|"
+    r"(?:a bit |much |way )?(?:harder|easier)|change it|different(?: one)?|same but\b.*|"
+    r"(?:ok(?:ay)?|yes|yep|sure|fine|good)[,.!]?\s*(?:go ahead|do it|that works|that one)?)[.!]?\s*$", re.I)
+
+
+def _design_followup(msg: str) -> bool:
+    """A message that continues a design conversation: anything naming a
+    part, a movement or a change of the session, or a short verdict on it
+    ("too hard", "again", "no"). Anything else — a status question, an
+    errand, a what-if — is not one, whatever is open."""
+    text = (msg or "").strip()
+    if not text or text.startswith("/"):
+        return False
+    try:
+        from new_plane.miya_runner.delegate_classifier import _HYPOTHETICAL_RE
+        if _HYPOTHETICAL_RE.search(text):
+            return False
+    except Exception:  # noqa: BLE001
+        pass
+    if _SESSION_WORDS_RE.search(text) or _VERDICT_RE.match(text):
+        return True
+    try:
+        from agents.fraser.contract import movements_in
+        return bool(movements_in(text))
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def _is_short_reply(msg: str) -> bool:
@@ -779,6 +815,18 @@ def handle(turn: Turn) -> Response:
             used=used, transport_errors=transport_errors)
 
     intent = classify_intent(turn.user_message)
+    # A chat refining a design keeps talking to the coach (2026-10-11): after
+    # the first session, "Give me the workout", "Break the metcon into an
+    # AMRAP and EMOM" and "use the PRVN style" had no design verb, so the
+    # synthesizer improvised sessions of its own for eight turns. Kobe's
+    # rungs above have already claimed his messages; a what-if or a plain
+    # question with no session word stays with the synthesizer.
+    if (delegation_path == "orchestrate" and not intent.get("is_design_request")
+            and not intent.get("is_workout_lookup") and _design_followup(turn.user_message)
+            and getattr(adapter, "fraser_design_open", lambda cid: False)(turn.chat_id)):
+        logger.info("continuation → fraser design (a session is under discussion)")
+        intent["is_design_request"] = True
+        intent["needs_fraser"] = True
 
     # 1. Pull facts (respecting budget). Each call wraps failures
     # gracefully so a single dead endpoint doesn't kill the turn.
@@ -954,6 +1002,46 @@ def handle(turn: Turn) -> Response:
                 transport_errors=transport_errors,
                 arbitration_rule=verdict["rule"] if verdict else None,
             )
+
+    # 4.6 (2026-10-11): a DESIGN goes out as the coach wrote it. The
+    # synthesizer's re-voice of Fraser's session changed its numbers (a
+    # strict press at 35.5 kg became 37.5; a deadlift at 100 kg became
+    # 77.5), dropped the tempo and the lb, and flattened the blocks into
+    # prose — Bug I again, on the design path. The composer has already
+    # verified the session against the athlete's contract and written it in
+    # Miya's voice; the voice-leak scrub and the numeric validator still run.
+    if charter_ok and fraser_text and not str(fraser_text).startswith("[fraser error"):
+        text, leaks = _scrub_voice_leak(str(fraser_text))
+        if leaks:
+            logger.info("voice-leak scrubbed on the design: %s", leaks)
+        text, _issues = _validate_outbound(text, arbitration=verdict if verdict else None, wrote=False)
+        synth_meta = {
+            "model": "verbatim-design-bypass", "fallback": False,
+            "prompt_tokens": 0, "output_tokens": 0, "error": None,
+            "bypass_reason": "2026-10-11: the coach's verified session, not a re-voice",
+        }
+        sid_list = []
+        try:
+            sid = publish_signal(
+                agent="miya", type_="miya_design",
+                payload={"user_message": turn.user_message, "chat_id": turn.chat_id, "intent": intent,
+                         "tools_used": used, "response_len": len(text)},
+                trace_id=trace_id, chat_id=turn.chat_id or None)
+            sid_list.append(sid)
+        except Exception as e:
+            logger.warning("signal-publish failed: %s: %s", type(e).__name__, e)
+        _maybe_record_chat_memory(turn.chat_id, "bot", text)
+        if os.getenv("NEW_MIYA_USE_LIVE_DB", "0") == "1":
+            _log_decision_to_live_db(
+                trace_id=trace_id, turn=turn, response_text=text, used=used, verdict=verdict,
+                charter_ok=True, veto_reason=None,
+                decision=type("D", (), {"model": "verbatim-design-bypass"})(), synth_meta=synth_meta)
+        return Response(
+            trace_id=trace_id, text=text, sent=True, used_tools=used, signals=sid_list, facts=facts,
+            routing={"path": "design", "model": "verbatim-design-bypass",
+                     "reason": "the coach's verified session, synth skipped"},
+            synthesis_meta=synth_meta, transport_errors=transport_errors,
+            arbitration_rule=verdict["rule"] if verdict else None)
 
     # 5. Cost-route the synthesis model
     decision = cost_router.decide(
