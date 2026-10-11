@@ -490,7 +490,7 @@ def handle_weekend_plan(*, now: datetime | None = None,
         lines += [f"  • {r}" for r in violations]
     if not live and _live_plan_enabled() and not location and not _hermetic():
         lines += ["", "_Offline plan — set RAHAT_GENIE_LOCATION in .env "
-                      "(e.g. \"San Jose, CA\") to get real local options._"]
+                      "(e.g. \"Portland, OR\") to get real local options._"]
     if one_day:
         lines += ["", "_It's Sunday, so this plans today._ "
                       "`/weekend_plan next` plans next weekend."]
@@ -694,7 +694,7 @@ def handle_set_location(value: str, *, by_role: str = "") -> str:
     ok, result = set_household_location(value, by_role=by_role)
     if not ok:
         return (f"Couldn't set that ({result}). "
-                "Try `/family set location San Jose, CA`.")
+                "Try `/family set location Portland, OR`.")
     return (f"✅ Home area set to *{result}*. Live discovery will use it "
             "(env RAHAT_GENIE_LOCATION still wins if set).")
 
@@ -1004,7 +1004,7 @@ def handle_whats_on(*, now: datetime | None = None, llm=None,
                 "_Live search is offline — this is the verified feed "
                 "inventory._ `/weekend_plan` for a plan.")
         return ("I need a home area to look things up — set "
-                "RAHAT_GENIE_LOCATION in .env (e.g. \"San Jose, CA\"), "
+                "RAHAT_GENIE_LOCATION in .env (e.g. \"Portland, OR\"), "
                 "then ask me again. `/weekend_plan` works offline.")
 
     from agents.genie import live_plan as lp
@@ -1223,7 +1223,7 @@ def handle_swap(query: str) -> str:
     """
     query = (query or "").strip().strip(".!?")
     if not query:
-        return "Tell me what to swap in, e.g. `swap in Happy Hollow`."
+        return "Tell me what to swap in, e.g. `swap in the zoo`."
     plan = latest_weekend_plan()
     if plan is None:
         return "No saved plan yet — say `/weekend_plan` first."

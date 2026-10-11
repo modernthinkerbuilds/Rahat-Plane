@@ -10,7 +10,7 @@ unknown — prototype early"):
      budget" ruled-out lines. Those aren't rule-outs — they're the
      choices the PRD's J1 loop says the humans get to make.
   2. `place` shipped a full street address + parking trivia:
-     "357 E. Taylor Street, San Jose, CA 95112 (behind Gordon Biersch)".
+     "12 Sample Street, Alpha Town, CA 90000 (behind the brewery)".
   3. A low-energy day ended dead at the nap line — one item, then
      nothing.
 
@@ -57,20 +57,20 @@ _INCIDENT_DISCOVERY = {
     "options": {
         "saturday": [
             {"time": "morning", "activity": "Music and Movement",
-             "place": "357 E. Taylor Street, San Jose, CA 95112 (behind Gordon Biersch)",
-             "why": "free and air-conditioned", "source": "SJ Library"},
-            {"time": "morning", "activity": "Willow Glen Farmers' Market",
-             "place": "Willow Glen", "why": "stroller stroll", "source": "WGBA"},
-            {"time": "afternoon", "activity": "Happy Hollow Park & Zoo",
-             "place": "Happy Hollow", "why": "toddler rides", "source": "hh.org"},
+             "place": "12 Sample Street, Alpha Town, CA 90000 (behind the brewery)",
+             "why": "free and air-conditioned", "source": "Town Library"},
+            {"time": "morning", "activity": "Elm Street Farmers' Market",
+             "place": "Elm Street", "why": "stroller stroll", "source": "EBA"},
+            {"time": "afternoon", "activity": "Maple Park & Zoo",
+             "place": "Maple Park", "why": "toddler rides", "source": "zoo.org"},
             {"time": "midday", "activity": "Water Spray Pad",
-             "place": "Hellyer Park", "why": "cool-down", "source": "SCC Parks"},
+             "place": "Oak Park", "why": "cool-down", "source": "County Parks"},
         ],
         "sunday": [
-            {"time": "morning", "activity": "Japantown Farmer's Market",
-             "place": "Japantown", "why": "easy stroll", "source": "JBA"},
+            {"time": "morning", "activity": "Old Town Farmer's Market",
+             "place": "Old Town", "why": "easy stroll", "source": "OTA"},
             {"time": "morning", "activity": "River Park Trail",
-             "place": "Guadalupe", "why": "flat loop", "source": "grpg"},
+             "place": "Riverside", "why": "flat loop", "source": "rp"},
         ],
     },
 }
@@ -86,7 +86,7 @@ def test_over_cap_finds_are_offered_not_rejected(genie):
     out = _plan(genie)
     assert "Also good this weekend" in out, (
         "over-cap finds must be offered as choices (PRD J1)")
-    assert "Willow Glen Farmers' Market" in out
+    assert "Elm Street Farmers' Market" in out
     assert not re.search(r"over the \w+-energy budget", out), (
         "the incident clutter is back: over-cap finds rendered as "
         "identical budget ruled-out lines")
@@ -99,14 +99,14 @@ def test_ruled_out_is_violations_only_with_reasons(genie):
     tail = ruled[1].split("_Sized")[0]
     assert "Water Spray Pad" in tail
     assert "nap window" in tail                   # concrete reason present
-    assert "Happy Hollow" not in tail             # over-cap ≠ ruled out
+    assert "Maple Park" not in tail             # over-cap ≠ ruled out
 
 
 def test_place_renders_venue_name_only(genie):
     out = _plan(genie)
-    assert "95112" not in out
-    assert "E. Taylor Street" not in out
-    assert "Music and Movement at 357 E" not in out
+    assert "90000" not in out
+    assert "Sample Street" not in out
+    assert "Music and Movement at 12 Sample" not in out
 
 
 def test_low_energy_day_ends_with_wind_down(genie):

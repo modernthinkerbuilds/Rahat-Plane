@@ -6,7 +6,7 @@ criteria from the PRD: no duplicates across sources/days, transparent
 scoping, graceful degradation.
 
 Swap (generate-then-iterate, PRD's step 5): the humans pick from the
-offered alternates ("swap in Happy Hollow") and Genie refines the SAVED
+offered alternates ("swap in Maple Zoo") and Genie refines the SAVED
 plan deterministically — charter-gated re-commit, slot ordering
 preserved, displaced outing returned to the pool so swaps are
 reversible. The value concentrates in steps 2 and 5; step 3 (the human
@@ -41,11 +41,11 @@ _DISCOVERY = {
         "saturday": [
             {"time": "morning", "activity": "Farmers market",
              "place": "Main St", "why": "strollable", "source": "cm.org"},
-            {"time": "afternoon", "activity": "Happy Hollow Zoo",
-             "place": "Happy Hollow", "why": "toddler rides",
-             "source": "hh.org"},
+            {"time": "afternoon", "activity": "Maple Zoo",
+             "place": "Maple Park", "why": "toddler rides",
+             "source": "zoo.org"},
             {"time": "afternoon", "activity": "Discovery Museum",
-             "place": "CDM", "why": "indoor", "source": "cdm.org"},
+             "place": "Kids Museum", "why": "indoor", "source": "museum.org"},
         ],
         "sunday": [
             {"time": "morning", "activity": "Lake stroll",
@@ -67,7 +67,7 @@ def test_whats_on_lists_deduped_with_scope(genie):
     out = genie.handle_whats_on(llm=_llm)
     assert "What's on" in out
     assert out.count("Farmers market") == 1        # de-dup across days
-    assert "Happy Hollow Zoo" in out               # NOT capped — raw list
+    assert "Maple Zoo" in out               # NOT capped — raw list
     assert "Discovery Museum" in out
     assert "Scope:" in out                         # transparent scoping
     assert "naps protected" not in out             # a list, not a plan
@@ -102,20 +102,20 @@ def _make_plan(genie):
 
 def test_swap_replaces_and_reorders(genie):
     _make_plan(genie)
-    out = genie.route("swap in happy hollow")
-    assert "Swapped in" in out and "Happy Hollow Zoo" in out
+    out = genie.route("swap in maple zoo")
+    assert "Swapped in" in out and "Maple Zoo" in out
     body = out.splitlines()
     day_lines = [l for l in body if l.strip().startswith("•")]
     # Slot order must hold: the afternoon swap-in renders AFTER the nap.
     nap_idx = next(i for i, l in enumerate(day_lines) if "naps" in l)
-    zoo_idx = next(i for i, l in enumerate(day_lines) if "Happy Hollow" in l)
+    zoo_idx = next(i for i, l in enumerate(day_lines) if "Maple Zoo" in l)
     assert zoo_idx > nap_idx
     assert "✅ Plan saved." in out                 # charter-gated re-commit
 
 
 def test_swap_is_reversible(genie):
     _make_plan(genie)
-    genie.route("swap in happy hollow")
+    genie.route("swap in maple zoo")
     # The displaced Farmers market went back to the pool.
     out = genie.route("swap in farmers")
     assert "Swapped in" in out and "Farmers market" in out
@@ -130,7 +130,7 @@ def test_swap_no_match_lists_choices(genie):
     _make_plan(genie)
     out = genie.route("swap in the opera")
     assert "Couldn't find" in out
-    assert "Happy Hollow Zoo" in out               # tells you what IS there
+    assert "Maple Zoo" in out               # tells you what IS there
 
 
 def test_swap_updates_latest_saved_plan(genie):
@@ -146,7 +146,7 @@ def test_swap_updates_latest_saved_plan(genie):
 @pytest.mark.parametrize("msg", [
     "what's on this weekend",
     "any events this week",
-    "swap in Happy Hollow",
+    "swap in Maple Zoo",
 ])
 def test_classifier_routes_new_intents_to_genie(msg):
     from new_plane.miya_runner.delegate_classifier import classify_delegation

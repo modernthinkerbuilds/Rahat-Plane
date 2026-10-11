@@ -234,7 +234,7 @@ def _coerce_option(raw: Any) -> LiveOption | None:
     if time not in _SLOT_ORDER:
         time = "morning"
     # `place`: keep the venue name only — the first live run shipped
-    # "357 E. Taylor Street, San Jose, CA 95112 (behind ...)" inside it.
+    # a street address, the city, the zip and a parking note inside it.
     # Take the first comma segment, drop any parenthetical, and if what
     # remains still looks like a street address (leading house number),
     # it isn't a venue name at all — drop it.

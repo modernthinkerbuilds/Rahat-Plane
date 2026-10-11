@@ -33,7 +33,7 @@ _WED = datetime(2026, 9, 30, 9, 0)             # a weekday: window = Sat 10-03 /
 _SRC = {"id": "s", "kind": "search", "name": "S", "url": "x", "city": "Alpha City", "categories": []}
 _GOOD = {"weather": {"sunday": "sunny, high 90s"},
          "options": {"sunday": [{"time": "morning", "activity": "Farmers' market stroll",
-                                 "place": "Japantown Farmers' Market", "why": "stroller friendly, free",
+                                 "place": "Old Town Farmers' Market", "why": "stroller friendly, free",
                                  "source": "market site"}]}}
 _EMPTY = {"weather": {}, "options": {"saturday": [], "sunday": []}}
 

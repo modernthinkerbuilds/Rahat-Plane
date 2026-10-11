@@ -1,8 +1,8 @@
 """Genie idea capture — the PRD core loop's step 4 (2026-08-09).
 
 THE INCIDENT. The spouse's first real message to the Genie bot was a
-multi-weekend plan proposal ("Aug 16th weekend: Alameda … Husband and
-wife outing - Every Friday: 1. Mt Hamilton …"). Two failures at once:
+multi-weekend plan proposal (a destination per weekend, then a list of
+Friday date-night ideas). Two failures at once:
 keyword intents fired on words buried in the text ("adults only",
 "high") and hijacked it into a wrong date-night plan — and Genie had
 NO path for what the message actually was: the humans handing back a

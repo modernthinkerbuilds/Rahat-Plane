@@ -67,17 +67,17 @@ _PLAN_DECISION = {"mode": "plan", "reply": "",
 _PLAN = {"title": "Saturday Aug 15 — hike & lunch",
          "timeline": [
              {"time": "9:15 AM", "what": "Creekside loop hike",
-              "where": "Alum Rock Park", "why": "shaded, toddler-doable",
-              "source": "sanjoseca.gov"},
+              "where": "Hillside Park", "why": "shaded, toddler-doable",
+              "source": "city.gov"},
              {"time": "12:15 PM", "what": "Lunch",
-              "where": "Luna Mexican Kitchen", "why": "patio, fast with kids",
-              "source": "lunamexicankitchen.com"},
+              "where": "Corner Taqueria", "why": "patio, fast with kids",
+              "source": "taqueria.example"},
              {"time": "2:00 PM", "what": "Gelato + stroll",
-              "where": "Santana Row", "why": "easy wind-down",
-              "source": "santanarow.com"}],
-         "notes": ["Parking fills by 10 at Alum Rock — arrive early"],
-         "backups": [{"what": "Japanese Friendship Garden",
-                      "where": "Kelley Park", "source": "sj.gov"}]}
+              "where": "Main Plaza", "why": "easy wind-down",
+              "source": "plaza.example"}],
+         "notes": ["Parking fills by 10 at Hillside — arrive early"],
+         "backups": [{"what": "Rose Garden",
+                      "where": "Cedar Park", "source": "city.gov"}]}
 
 
 def _script(*responses):
@@ -135,7 +135,7 @@ def test_enough_slots_produces_grounded_timed_plan(genie):
         "111", "2 adults and the toddler, 9 to 4, hike then a good lunch",
         now=_NOW, llm=_script(_PLAN_DECISION), search_llm=_script(_PLAN))
     assert "9:15 AM" in out and "Creekside loop hike" in out
-    assert "Luna Mexican Kitchen" in out
+    assert "Corner Taqueria" in out
     assert "Backups" in out
     assert "Parking fills by 10" in out
     assert "✅ Plan saved" in out                          # charter-gated
@@ -147,7 +147,7 @@ def test_concierge_plan_feeds_the_iteration_surface(genie):
                    llm=_script(_PLAN_DECISION), search_llm=_script(_PLAN))
     plan = state.latest_weekend_plan()
     assert plan is not None
-    assert any("Alum Rock" in l for l in plan.saturday)
+    assert any("Hillside Park" in l for l in plan.saturday)
     assert "concierge plan" in plan.notes
 
 

@@ -6,7 +6,7 @@ opening message was a six-weekend plan proposal ending with a Friday
 date-night list. Two failures at once:
 
   1. HIJACK: keyword intents fired on words buried in the text —
-     "those adults only exp in Japan" matched the couple-only route and
+     "those adults only exp abroad" matched the couple-only route and
      "high level thoughts" matched the energy override — so Genie
      answered a rich human proposal with a wrong date-night plan.
   2. NO CAPTURE PATH: the message was PRD core-loop step 4 (the humans
@@ -39,14 +39,14 @@ LIVE_MESSAGE = """Here are some high level thoughts for us
 Subject to your approval :
 With parents and kids :
 Aug 16th weekend:
-Alameda - can ask Ravi uncle and fam to join
+Lake Town - can ask the cousins and fam to join
 
-August 22nd: Mt. Madonna
+August 22nd: Pine Ridge
 
 Husband and wife outing - Every Friday
-1. Mt Hamilton for a drive followed by Mexican dinner in SJ area
-2. Midnight Tea in SF
-3. let's find some hot spring kinda experience - those adults only exp in Japan that we missed out on."""
+1. Hill road for a drive followed by taco dinner downtown
+2. Late tea in the city
+3. let's find some hot spring kinda experience - those adults only exp abroad that we missed out on."""
 
 
 def _next_saturday_iso(weeks_out: int = 0) -> str:
@@ -63,15 +63,15 @@ def _next_saturday_iso(weeks_out: int = 0) -> str:
 def _elicited() -> dict:
     return {
         "weekends": [
-            {"weekend_of": _next_saturday_iso(), "label": "Alameda",
-             "items": ["Alameda outing"],
-             "companions": "Ravi uncle and fam", "notes": ""},
-            {"weekend_of": _next_saturday_iso(1), "label": "Mt. Madonna",
-             "items": ["Mt. Madonna"], "companions": "", "notes": ""},
+            {"weekend_of": _next_saturday_iso(), "label": "Lake Town",
+             "items": ["Lake Town outing"],
+             "companions": "the cousins and fam", "notes": ""},
+            {"weekend_of": _next_saturday_iso(1), "label": "Pine Ridge",
+             "items": ["Pine Ridge"], "companions": "", "notes": ""},
         ],
         "date_nights": [
-            "Mt Hamilton drive + Mexican dinner in SJ",
-            "Midnight Tea in SF",
+            "Hill road drive + taco dinner downtown",
+            "Late tea in the city",
             "Hot spring experience",
         ],
         "notes": ["Subject to approval"],
@@ -109,7 +109,7 @@ def test_live_message_is_captured_not_hijacked(genie, monkeypatch):
     assert "(energy: high)" not in out        # 'high level thoughts' trap
     assert "Childcare" not in out
     # And the content actually landed:
-    assert "Mt. Madonna" in out
+    assert "Pine Ridge" in out
     assert "date-night rotation: 3 ideas" in out
 
 
@@ -133,8 +133,8 @@ def test_captured_weekend_anchors_weekend_plan(genie, monkeypatch):
                "sunday": []}}
     out = genie.handle_weekend_plan(llm=lambda p: json.dumps(fam))
     assert "Your plan on file" in out
-    assert "Alameda" in out
-    assert "Ravi uncle and fam" in out
+    assert "Lake Town" in out
+    assert "the cousins and fam" in out
     assert "discovery adds around it" in out
     assert "Farmers market" in out            # discovery still decorates
 
@@ -152,7 +152,7 @@ def test_rotation_feeds_date_night(genie, monkeypatch):
     out = genie.handle_weekend_plan(llm=lambda p: json.dumps(eve),
                                     audience_text="just us tonight")
     assert "Your date-night rotation" in out
-    assert "Mt Hamilton drive" in out
+    assert "Hill road drive" in out
 
 
 # ─────────────────── never lose their words ───────────────────
@@ -164,7 +164,7 @@ def test_elicitation_failure_saves_raw_text(genie, monkeypatch):
     assert "word-for-word" in out
     from agents.genie import state
     notes = state.household_ideas().get("notes", [])
-    assert any("Mt Hamilton" in n for n in notes)
+    assert any("Hill road" in n for n in notes)
 
 
 def test_capture_is_charter_gated(genie, monkeypatch):
@@ -181,21 +181,21 @@ def test_recapture_updates_same_weekend_and_dedups_rotation(genie):
     state.save_household_ideas(_elicited(), by_role="spouse")
     wk2 = _next_saturday_iso(1)
     revised = {
-        "weekends": [{"weekend_of": wk2, "label": "Big Basin",
-                      "items": ["Big Basin instead"], "companions": "",
+        "weekends": [{"weekend_of": wk2, "label": "Fern Hollow",
+                      "items": ["Fern Hollow instead"], "companions": "",
                       "notes": ""}],
-        "date_nights": ["Midnight Tea in SF",        # dup — must not double
-                        "Lands End sunset hike"],
+        "date_nights": ["Late tea in the city",        # dup — must not double
+                        "Sunset hike on the bluffs"],
         "notes": [],
     }
     state.save_household_ideas(revised, by_role="primary")
     ideas = state.household_ideas()
     aug22 = [w for w in ideas["weekends"]
              if w.get("weekend_of") == wk2]
-    assert len(aug22) == 1 and aug22[0]["label"] == "Big Basin"
+    assert len(aug22) == 1 and aug22[0]["label"] == "Fern Hollow"
     dn = ideas["date_nights"]
-    assert dn.count("Midnight Tea in SF") == 1
-    assert "Lands End sunset hike" in dn
+    assert dn.count("Late tea in the city") == 1
+    assert "Sunset hike on the bluffs" in dn
 
 
 def test_elicit_module_never_raises():

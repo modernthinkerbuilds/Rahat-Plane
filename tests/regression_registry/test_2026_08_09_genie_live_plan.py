@@ -156,15 +156,15 @@ def test_sequencer_orders_slots():
 
 
 def test_place_is_venue_name_only():
-    """First live run shipped '357 E. Taylor Street, San Jose, CA 95112
-    (behind ...)' as the place. Venue name only survives coercion."""
+    """First live run shipped a street address, city, zip and a parking
+    note as the place. Venue name only survives coercion."""
     from agents.genie import live_plan as lp
     o = lp._coerce_option({
         "time": "morning", "activity": "Farmers' market",
-        "place": "357 E. Taylor Street, San Jose, CA 95112 (behind Gordon)",
+        "place": "12 Sample Street, Alpha Town, CA 90000 (behind the brewery)",
         "why": "x", "source": "y"})
     assert "," not in o.place
-    assert "95112" not in o.place
+    assert "90000" not in o.place
 
 
 # ─────────────── handler integration (live + fallbacks) ───────────────

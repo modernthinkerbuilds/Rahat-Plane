@@ -51,17 +51,17 @@ _DISCOVERY = {
         "saturday": [
             {"time": "morning", "activity": "Farmers market",
              "place": "Main St", "why": "strollable", "source": "cm.org"},
-            {"time": "afternoon", "activity": "Happy Hollow Zoo",
-             "place": "Happy Hollow", "why": "toddler rides",
-             "source": "hh.org"},
+            {"time": "afternoon", "activity": "Maple Zoo",
+             "place": "Maple Park", "why": "toddler rides",
+             "source": "zoo.org"},
             {"time": "afternoon", "activity": "Discovery Museum",
-             "place": "CDM", "why": "indoor", "source": "cdm.org"},
+             "place": "Kids Museum", "why": "indoor", "source": "museum.org"},
         ],
         "sunday": [
             {"time": "morning", "activity": "Lake stroll",
              "place": "Lake Park", "why": "flat loop", "source": "parks"},
             {"time": "afternoon", "activity": "Friendship Garden",
-             "place": "Kelley Park", "why": "shaded", "source": "sj.gov"},
+             "place": "Cedar Park", "why": "shaded", "source": "city.gov"},
         ],
     },
 }
@@ -133,7 +133,7 @@ def test_options_builds_two_distinct_plans_and_commits_neither(genie):
     a_part = out.split("Option B")[0]
     b_part = out.split("Option B")[1]
     assert "Farmers market" in a_part
-    assert "Happy Hollow Zoo" in b_part or "Discovery Museum" in b_part
+    assert "Maple Zoo" in b_part or "Discovery Museum" in b_part
 
 
 def test_go_with_commits_the_choice_charter_gated(genie):
@@ -172,7 +172,7 @@ def test_date_night_uses_evening_discovery(genie):
 def test_why_not_answers_from_stored_violation(genie, monkeypatch):
     disc = json.loads(json.dumps(_DISCOVERY))
     disc["options"]["saturday"].insert(
-        1, {"time": "midday", "activity": "Spray Pad", "place": "Hellyer",
+        1, {"time": "midday", "activity": "Spray Pad", "place": "Oak Park",
             "why": "cool", "source": "parks"})
     # Nap guard is opt-in since 2026-08-10 — request it so the
     # violation this pin inspects actually exists.
@@ -184,7 +184,7 @@ def test_why_not_answers_from_stored_violation(genie, monkeypatch):
 
 def test_why_not_alternate_offers_swap(genie):
     genie.handle_weekend_plan(llm=_llm)
-    out = genie.route("why not happy hollow")
+    out = genie.route("why not maple zoo")
     assert "alternate" in out.lower()
     assert "swap in" in out
 
@@ -236,10 +236,10 @@ def test_family_view_shows_subjects_and_location(genie):
 
 def test_set_location_is_charter_gated_write(genie, monkeypatch):
     monkeypatch.delenv("RAHAT_GENIE_LOCATION", raising=False)
-    out = genie.route("/family set location Palo Alto, CA")
+    out = genie.route("/family set location Beta City, CA")
     assert "✅ Home area set" in out
     from agents.genie import state
-    assert state.household_location() == "Palo Alto, CA"
+    assert state.household_location() == "Beta City, CA"
 
 
 def test_family_log_carries_attribution(genie, monkeypatch):
