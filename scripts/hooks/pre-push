@@ -6,6 +6,7 @@
 # regress into production.
 #
 # What runs:
+#   0. private words    (instant)      — scripts/check_private_terms.py
 #   1. unit layer       (target <5s)   — tests/test_*.py at the root
 #   2. contract layer   (target <30s)  — tests/test_miya_*.py, charter
 #   3. regression layer (target <10s)  — tests/regression_registry/
@@ -25,6 +26,15 @@ set -euo pipefail
 # Move to repo root so relative paths just work.
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
+
+# What this push publishes: git hands the hook "<local ref> <local sha>
+# <remote ref> <remote sha>" lines on stdin. Read them before any step can.
+PUSH_REMOTE="${1:-origin}"
+PUSH_REFS="$(mktemp "${TMPDIR:-/tmp}/rahat-push-refs.XXXXXX")"
+trap 'rm -f "$PUSH_REFS"' EXIT
+if [[ ! -t 0 ]]; then
+    cat > "$PUSH_REFS"
+fi
 
 # Locate the venv python — fall back to system python3.
 if [[ -x "venv/bin/python" ]]; then
@@ -65,6 +75,12 @@ step() {
         FAILED+=("$name")
     fi
 }
+
+# 0. Private words — instant. The repo is public: a name, an address, a
+#    token or a chat id in anything this push publishes blocks it. The
+#    words live in private/privacy_terms.txt and .env, never in the repo.
+step "private words" \
+    "$PY" scripts/check_private_terms.py --pre-push "$PUSH_REMOTE" --refs-file "$PUSH_REFS"
 
 # 1. Bug-to-test policy — instant.
 step "bug-to-test policy" \
