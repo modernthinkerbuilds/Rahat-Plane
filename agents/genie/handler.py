@@ -1188,7 +1188,7 @@ def handle_swap(query: str) -> str:
         return (f"Couldn't find “{query}” among the alternates. "
                 f"I have: {names}.")
 
-    from agents.genie.live_plan import LiveOption
+    from agents.genie.live_plan import LiveOption, is_home_block, settle_day, slot_of
     incoming = LiveOption(
         time=str(match.get("time") or "morning"),
         activity=str(match.get("activity") or ""),
@@ -1198,29 +1198,23 @@ def handle_swap(query: str) -> str:
     day_attr = "saturday" if match.get("day") == "Sat" else "sunday"
     day_lines = list(getattr(plan, day_attr))
 
-    # Replace the first real outing line of that day (not the nap block,
-    # not the wind-down). If none, insert at the front.
-    def _is_home_block(s: str) -> bool:
-        return "naps protected" in s or "wind-down" in s
-
+    # Replace the outing in the incoming one's slot, else the first real
+    # outing of that day (not the nap block, not the home block). If
+    # none, add it. The line keeps its time window, like the plan's own.
+    outings = [i for i, ln in enumerate(day_lines) if not is_home_block(ln)]
+    same_slot = [i for i in outings if slot_of(day_lines[i]) == incoming.time]
     displaced: str | None = None
-    for i, ln in enumerate(day_lines):
-        if not _is_home_block(ln):
-            displaced = ln
-            day_lines[i] = incoming.render()
-            break
+    if same_slot or outings:
+        i = (same_slot or outings)[0]
+        displaced = day_lines[i]
+        day_lines[i] = incoming.plan_line()
     else:
-        day_lines.insert(0, incoming.render())
+        day_lines.insert(0, incoming.plan_line())
 
-    # Re-sort by slot so an afternoon swap-in doesn't render before the
-    # nap block (each line leads with "Morning:/Midday:/Afternoon:/…").
-    _slot_rank = {"morning": 0, "midday": 1, "afternoon": 2, "evening": 3}
-
-    def _rank(s: str) -> int:
-        head = s.split(":", 1)[0].strip().casefold()
-        return _slot_rank.get(head, 0)
-
-    day_lines.sort(key=_rank)
+    # Slot order, and the home block out of the outing's way. The old
+    # sort read "Morning (9" as the slot of a windowed line, so every
+    # planned line ranked as morning and the swap-in went last.
+    day_lines = settle_day(day_lines)
     setattr(plan, day_attr, day_lines)
     plan.notes = (plan.notes.rstrip(".") +
                   f" · swapped in: {incoming.activity}.")
@@ -1233,7 +1227,7 @@ def handle_swap(query: str) -> str:
     # displaced outing to the pool (reversible swaps).
     remaining = [a for a in alts if a is not match]
     if displaced:
-        remaining.append({"day": match.get("day"), "time": incoming.time,
+        remaining.append({"day": match.get("day"), "time": slot_of(displaced) or incoming.time,
                           "activity": displaced.split(" — ")[0]
                           .split(": ", 1)[-1].split(" at ")[0],
                           "place": "", "why": "", "source": ""})

@@ -94,6 +94,13 @@ class LiveOption:
     def render(self) -> str:
         return f"{self.time.capitalize()}: {self.body()}"
 
+    def plan_line(self) -> str:
+        """The line as a plan carries it, with its time window:
+        'Afternoon (3:30–5:30): Museum at Hall — why (source)'."""
+        window = SLOT_WINDOWS.get(self.time, "")
+        when = f"{self.time.capitalize()} ({window})" if window else self.time.capitalize()
+        return f"{when}: {self.body()}"
+
 
 @dataclass
 class LiveDiscovery:
@@ -358,6 +365,8 @@ def sequence_day(options: list[LiveOption], *, energy: str,
     Rules (the checker the LLM's proposal must pass through):
       * at most _ENERGY_CAP[energy] outings survive (first-listed wins —
         the LLM was told to lead with the best fit);
+      * one outing per time slot: a second find for a slot that already
+        holds one is an alternate, so no two items share a window;
       * when a toddler/newborn Subject is in scope, the midday nap block
         is protected: midday candidates are VIOLATIONS (glass-box
         "ruled out" with the reason) and the nap line is inserted;
@@ -366,9 +375,11 @@ def sequence_day(options: list[LiveOption], *, energy: str,
         choices (PRD J1: surface options, the humans decide). First
         live run (2026-08-09) dumped 10 of them as identical "over the
         budget" ruled-out lines — clutter, not glass-box;
-      * surviving items are ordered morning → evening;
+      * every item, the nap and home blocks included, is ordered
+        morning → evening;
       * a low-energy day gets a closing home block so the plan reads
-        complete instead of ending at the nap line.
+        complete instead of ending at the nap line. It takes a slot no
+        outing holds (see `home_block`).
 
     Returns (plan_lines, alternates, violation_lines).
     """
@@ -376,29 +387,73 @@ def sequence_day(options: list[LiveOption], *, energy: str,
     kept: list[LiveOption] = []
     alternates: list[LiveOption] = []
     violations: list[str] = []
+    taken: set[str] = set()
 
     for o in options:
         if protect_nap and o.time == "midday":
             violations.append(f"{o.activity} — collides with the protected "
                               "midday nap window")
             continue
-        if len(kept) >= cap:
+        if len(kept) >= cap or o.time in taken:
             alternates.append(o)
             continue
         kept.append(o)
+        taken.add(o.time)
 
-    kept.sort(key=lambda o: _SLOT_ORDER.get(o.time, 0))
-    lines = [f"  • {o.time.capitalize()} ({SLOT_WINDOWS.get(o.time, '')}): "
-             f"{o.body()}" for o in kept]
-
+    entries = [(_SLOT_ORDER.get(o.time, 0), f"  • {o.plan_line()}") for o in kept]
     if protect_nap:
-        # Insert the nap line after the last morning item (or first).
-        idx = sum(1 for o in kept if _SLOT_ORDER.get(o.time, 0) == 0)
-        lines.insert(idx, f"  • Midday ({SLOT_WINDOWS['midday']}): "
-                          "naps protected at home (toddler/newborn)")
-
+        entries.append((_SLOT_ORDER["midday"], f"  • Midday ({SLOT_WINDOWS['midday']}): "
+                                               "naps protected at home (toddler/newborn)"))
     if energy == "low":
-        lines.append(f"  • Afternoon ({SLOT_WINDOWS['afternoon']}): "
-                     "home — quiet play, early wind-down")
+        home = home_block(taken)
+        if home:
+            entries.append((_SLOT_ORDER[slot_of(home) or "afternoon"], f"  • {home}"))
+    entries.sort(key=lambda e: e[0])          # stable: one item per slot
+    return [line for _, line in entries], alternates, violations
 
-    return lines, alternates, violations
+
+# The closing home block of a low-energy day. QA-2026-10-04-05: it was
+# appended as "Afternoon (3:30–5:30)" whatever the outings were, so an
+# afternoon outing shared its slot and an evening outing came before it.
+_HOME_MARK = ": home — "
+
+
+def home_block(taken: set[str]) -> str | None:
+    """The home block for a day whose outings hold the `taken` slots: the
+    afternoon when it is free (before any evening outing), else the
+    evening; None when both hold outings. No bullet."""
+    if "afternoon" not in taken:
+        rest = "a rest before the evening" if "evening" in taken else "early wind-down"
+        return f"Afternoon ({SLOT_WINDOWS['afternoon']}){_HOME_MARK}quiet play, {rest}"
+    if "evening" not in taken:
+        return f"Evening ({SLOT_WINDOWS['evening']}){_HOME_MARK}early wind-down"
+    return None
+
+
+def slot_of(line: str) -> str | None:
+    """The slot a plan line opens with ('Afternoon (3:30–5:30): …' →
+    'afternoon'), or None."""
+    head = re.split(r"[\s:(]", line.strip().lstrip("•").strip(), maxsplit=1)[0].casefold()
+    return head if head in _SLOT_ORDER else None
+
+
+def is_home_block(line: str) -> bool:
+    """The nap block or the closing home block — not an outing."""
+    return "naps protected" in line or _HOME_MARK in line or "wind-down" in line
+
+
+def settle_day(lines: list[str]) -> list[str]:
+    """A saved day after an edit (a swap): items in slot order, and a home
+    block that now shares a slot with an outing moves to a free one, or
+    goes. Lines without a slot keep their place at the front, as before."""
+    outings = [ln for ln in lines if not is_home_block(ln)]
+    taken = {slot_of(ln) for ln in outings} - {None}
+    out = []
+    for ln in lines:
+        if is_home_block(ln) and "naps protected" not in ln and slot_of(ln) in taken:
+            moved = home_block(taken)
+            if moved:
+                out.append(moved)
+            continue
+        out.append(ln)
+    return sorted(out, key=lambda ln: _SLOT_ORDER.get(slot_of(ln) or "", 0))

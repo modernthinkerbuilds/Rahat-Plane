@@ -66,11 +66,6 @@ SUNDAY = ["2026-10-04", "2026-10-04"]
 NEXT_WEEKEND = ["2026-10-10", "2026-10-11"]
 WHATSON = ["W1", "W2", "W3", "W4", "W5", "W6", "W7"]
 
-_P2_OVERLAP = pytest.mark.xfail(strict=True, reason=(
-    "LIVE shape (every low-energy /weekend_plan with an afternoon or evening outing — the default household "
-    "has a toddler and a newborn): sequence_day appends 'Afternoon (3:30–5:30): home — quiet play' after the "
-    "outings, so a 3:30–5:30 outing and the home block share a slot (and an evening outing comes before it). "
-    "Fix QA-2026-10-04-05. Delete this mark when it passes."))
 _PLAN_SILENT = pytest.mark.xfail(strict=True, reason=(
     "LIVE shape (2026-09-17, the spend cap): when live discovery fails, /weekend_plan silently returns the "
     "generic offline menu ('Slow morning at home…') with no word that nothing was looked up. "
@@ -116,7 +111,7 @@ CASES = [
                   "commitments": [{"title": "Lunch with friends", "date": "2026-10-10", "start": "12:00", "end": "13:30",
                                    "where": "their place", "kind": "commitment"}],
                   "expect": {"window": NEXT_WEEKEND, "outcomes": ["W1", "W3", "P1", "P2", "P3"]}},
-                 id="weekend-plan-afternoon-outing", marks=_P2_OVERLAP),
+                 id="weekend-plan-afternoon-outing"),
     pytest.param({"id": "GT09", "when": "2026-10-07T09:00", "surface": "weekend_plan", "inventory": INVENTORY,
                   "live": {"mode": "answers", "answers": [_GOOD_WEEKEND_AM]},
                   "expect": {"window": NEXT_WEEKEND, "outcomes": ["W1", "W3", "P1", "P2"]}},
