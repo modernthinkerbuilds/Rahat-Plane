@@ -25,6 +25,33 @@ from datetime import datetime, timedelta
 _PICKS_PER_DAY = 3        # ranked recurring picks; the rest of the
                           # day's slots go to new/unrated events
 _MAX_PER_DAY = 6
+# QA-2026-10-04-06: Sep 17 to 20 the spend cap stopped every refresh and
+# the digest went out each morning without a word. Past this, it says so.
+STALE_HOURS = 24
+
+
+def _when(dt: datetime) -> str:
+    """'Wed Sep 16, 6 pm' — the household's way of saying a time."""
+    hour = dt.strftime("%I").lstrip("0") or "12"
+    mins = f":{dt.minute:02d}" if dt.minute else ""
+    return f"{dt.strftime('%a %b')} {dt.day}, {hour}{mins} {dt.strftime('%p').lower()}"
+
+
+def feeds_stale(now: datetime | None = None, *,
+                path: str | None = None) -> str | None:
+    """When the feeds last fed the inventory, as `_when` text, once that is
+    over STALE_HOURS ago; None while fresh or when nothing ever refreshed.
+    Never raises."""
+    now = now or datetime.now()
+    try:
+        from bridges.events.store import last_productive_refresh
+        ts = last_productive_refresh(path=path)
+        last = datetime.strptime(ts.replace("T", " ")[:19], "%Y-%m-%d %H:%M:%S") if ts else None
+    except Exception:  # noqa: BLE001 — no store, nothing to say
+        return None
+    if last is None or (now - last).total_seconds() <= STALE_HOURS * 3600:
+        return None
+    return _when(last)
 
 
 def weekend_window(now: datetime | None = None
@@ -155,6 +182,9 @@ def build_digest(now: datetime | None = None, *,
         return None
 
     lines = [f"👋 Hey — here's what's lined up for {label}:"]
+    stale = feeds_stale(now, path=path)
+    if stale:
+        lines.append(f"⚠️ _Feeds last refreshed {stale} — new events may be missing._")
     for day_iso in sorted(by_day):
         day = datetime.strptime(day_iso, "%Y-%m-%d")
         lines += ["", f"*{day.strftime('%A')} {day.strftime('%b')} "
@@ -211,9 +241,10 @@ def build_digest(now: datetime | None = None, *,
             lines.append(f"  _…plus {extra} more — say "
                          f"\"{day.strftime('%A')}\" or `/whatson` for "
                          f"everything._")
-    lines += ["", "_From your verified event feeds (refreshed through "
-                  "the day). Want a plan around any of these? Just tell "
-                  "me — e.g. \"plan Saturday around the kids workshop\"._"]
+    fed = f"last refreshed {stale}" if stale else "refreshed through the day"
+    lines += ["", f"_From your verified event feeds ({fed}). Want a plan "
+                  "around any of these? Just tell me — e.g. \"plan Saturday "
+                  "around the kids workshop\"._"]
     return "\n".join(lines)
 
 

@@ -71,10 +71,6 @@ _P2_OVERLAP = pytest.mark.xfail(strict=True, reason=(
     "has a toddler and a newborn): sequence_day appends 'Afternoon (3:30–5:30): home — quiet play' after the "
     "outings, so a 3:30–5:30 outing and the home block share a slot (and an evening outing comes before it). "
     "Fix QA-2026-10-04-05. Delete this mark when it passes."))
-_D3_STALE = pytest.mark.xfail(strict=True, reason=(
-    "LIVE 2026-09-17 → 09-20: the spend cap stopped every feed refresh for 3.5 days (vault/events_ingest.log, "
-    "258 failed calls) and the 8 am digest went out each day without a word about it. "
-    "Fix QA-2026-10-04-06: name the last good refresh when it is over a day old. Delete this mark when it passes."))
 _PLAN_SILENT = pytest.mark.xfail(strict=True, reason=(
     "LIVE shape (2026-09-17, the spend cap): when live discovery fails, /weekend_plan silently returns the "
     "generic offline menu ('Slow morning at home…') with no word that nothing was looked up. "
@@ -152,7 +148,7 @@ CASES = [
                                  "city": "Beta City", "url": "https://events.example/craft"}],
                   "inventory_refreshed": "2026-09-16T18:00",
                   "expect": {"window": ["2026-09-19", "2026-09-20"], "outcomes": ["D3"], "stale": True}},
-                 id="digest-on-stale-feeds", marks=_D3_STALE),
+                 id="digest-on-stale-feeds"),
 ]
 
 

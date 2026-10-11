@@ -277,6 +277,22 @@ def last_refresh_at(source_id: str, path: str | None = None) -> str | None:
         con.close()
 
 
+def last_productive_refresh(path: str | None = None) -> str | None:
+    """The newest refresh that fetched anything, across the feeds: when the
+    inventory was last fed (QA-2026-10-04-06). Zero-yield refreshes (a
+    spend cap, a dead page) and marker rows ("_on_demand") don't count;
+    legacy NULL rows do, as everywhere else in this table."""
+    con = _connect(path)
+    try:
+        row = con.execute(
+            "SELECT MAX(refreshed_at) FROM events_refresh_log "
+            "WHERE substr(source_id, 1, 1) != '_' "
+            "AND (fetched IS NULL OR fetched > 0)").fetchone()
+        return row[0] if row and row[0] else None
+    finally:
+        con.close()
+
+
 def mark_refresh(source_id: str, *, now: datetime | None = None,
                  fetched: int = 0, path: str | None = None) -> None:
     con = _connect(path)
