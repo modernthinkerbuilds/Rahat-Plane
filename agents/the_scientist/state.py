@@ -95,6 +95,9 @@ import json as _json  # local alias to avoid touching the import block
 
 __all__ = [
     "_db",
+    "WATCH_SILENT_HOURS",
+    "watch_last_data",
+    "watch_silence",
     "burn_for_date",
     "burn_is_provisional",
     "burn_last_sync",
@@ -284,6 +287,41 @@ def state_set(key: str, value: str) -> None:
 # past day whose latest active-calorie row is before this hour is
 # PROVISIONAL and gets flagged instead of masquerading as final.
 BURN_FINAL_HOUR = 22
+
+
+# QA-21 (2026-10-11): the Watch feed was silent from Sep 28 00:52 to Oct 3
+# 09:01 and every burn answer computed on nothing. Only the Watch export
+# writes these metrics (Kobe's /fix and the legacy Shortcut write active
+# calories and weight), so their newest row is when the feed last spoke.
+WATCH_METRICS = ("heart_rate", "steps", "hrv", "resting_heart_rate")
+WATCH_SILENT_HOURS = 24
+
+
+def watch_last_data() -> datetime | None:
+    """When the newest Watch reading is from; None when there is none."""
+    try:
+        con = _db()
+        try:
+            marks = ",".join("?" * len(WATCH_METRICS))
+            row = con.execute("SELECT MAX(timestamp) FROM raw_vitals "
+                              f"WHERE metric_type IN ({marks})", WATCH_METRICS).fetchone()
+        finally:
+            con.close()
+        return datetime.strptime(row[0][:19], "%Y-%m-%d %H:%M:%S") if row and row[0] else None
+    except (sqlite3.Error, ValueError, TypeError):
+        return None
+
+
+def watch_silence(now: datetime | None = None,
+                  hours: float = WATCH_SILENT_HOURS) -> str | None:
+    """"No Watch data since Sat Sep 28 00:52" once the newest reading is
+    over `hours` old; None while the feed is fresh, or when there has never
+    been any (no Watch set up, nothing to warn about)."""
+    last = watch_last_data()
+    now = now or datetime.now()
+    if last is None or (now - last).total_seconds() <= hours * 3600:
+        return None
+    return f"No Watch data since {last:%a %b} {last.day} {last:%H:%M}"
 
 
 def burn_last_sync(target: datetime) -> str | None:

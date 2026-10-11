@@ -177,6 +177,16 @@ def route(message: str, now: datetime | None = None,
                                    trained=_says_trained(text))
 
 
+def _watch_silence(now: datetime) -> str | None:
+    """Kobe's "No Watch data since …" when the feed has been silent over
+    a day (QA-21, 2026-10-11); None otherwise. Never raises."""
+    try:
+        from agents.the_scientist.state import watch_silence
+        return watch_silence(now)
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _with_offer(text: str) -> str:
     """The honest line leads (the model path may not say it) and the
     question closes the message."""
@@ -232,6 +242,9 @@ def maybe_autocool(now: datetime | None = None) -> str | None:
     if unsure:
         text = _with_offer(text)
         state.open_offer(now)
+    silent = _watch_silence(now)        # QA-21: say why nothing synced
+    if silent:
+        text = f"_{silent}._\n\n{text}"
     state.mark_autocool(today)
     logger.info("[autocool] fired (%s)",
                 ", ".join(w["name"] for w in cf)

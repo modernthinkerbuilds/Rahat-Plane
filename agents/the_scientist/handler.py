@@ -26,6 +26,7 @@ importlib loader and the eval suite) is preserved end-to-end via the
 two star re-exports in main.py (state + handler).
 """
 from __future__ import annotations  # 3.9-safe: defer PEP 604 / PEP 585 evaluation
+import functools
 import os
 import re
 import sqlite3
@@ -68,6 +69,28 @@ from agents.the_scientist.protocols import (  # noqa: E402
 )
 
 from agents.the_scientist.state import *  # noqa: F401, F403
+
+
+def _watch_note(now: datetime | None = None) -> str | None:
+    """QA-21: the silent-feed line, or None. Never blocks a reply."""
+    try:
+        return watch_silence(now)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _flags_watch_silence(fn):
+    """A burn answer leads with "No Watch data since …" while the feed is
+    silent (QA-21, 2026-10-11): the numbers below it are missing whatever
+    the Watch has not sent."""
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        out = fn(*args, **kwargs)
+        note = _watch_note() if isinstance(out, str) and out else None
+        if not note:
+            return out
+        return f"⚠️ {note}, so burns since then are missing until it syncs.\n\n{out}"
+    return wrapper
 
 
 # ── LLM client + gym-plan wrappers + paths ──────────────────────────
@@ -206,6 +229,7 @@ def handle_recalibrate() -> str:
 
 
 # ───────────────────────── Handlers ──────────────────────────
+@_flags_watch_silence
 def handle_daily_burn(when: datetime) -> str:
     """Bare burn answer — explicitly NO goal-burn footer per user spec."""
     kcal = burn_for_date(when)
@@ -310,6 +334,7 @@ def handle_daily_burn_breakdown(text: str | None = None) -> str:
     return "\n".join(lines)
 
 
+@_flags_watch_silence
 def handle_weekly_remaining() -> str:
     """Prorated week view — actual burn vs the slice of week-target we
     SHOULD have burned by now.
@@ -1755,6 +1780,7 @@ def _prorated_week_target(full_target: float,
     return expected_week_burn_to_date(now=now, weekly_t=full_target)
 
 
+@_flags_watch_silence
 def handle_pace() -> str:
     """Today's burn vs prorated day-type target.
 
@@ -1806,6 +1832,7 @@ def handle_pace() -> str:
             f"Day target: {fmt_kcal(full_target)}")
 
 
+@_flags_watch_silence
 def handle_today_target() -> str:
     row = today_plan()
     kind = DAY_TYPE_LABEL[row["day_type"]]
@@ -3479,6 +3506,7 @@ def _internal_safety_downgrade() -> tuple[bool, str | None]:
     return True, f"HRV {hrv:.0f} ms in RED band — downgrading to recovery"
 
 
+@_flags_watch_silence
 def maybe_morning_briefing() -> str | None:
     """At 08:00, send the day's plan: type, gym pick, target, week so far.
     Suppressed if another agent has posted a veto for this nudge in
@@ -3590,6 +3618,11 @@ def maybe_recovery_nudge() -> str | None:
     deficit = target - today_burn
     kind = DAY_TYPE_LABEL[row["day_type"]]
     mark_nudge("recovery_21", today)
+    note = _watch_note(now)
+    if note:                       # QA-21: no verdict computed on nothing
+        return (f"🌙 9pm check — {kind} day. {note}, so I can't see today's "
+                f"burn and won't call it short.\n"
+                f"If you trained, tell me the workout and its calories.")
     if row["day_type"] == "rest":
         prescription = ("25–35 min easy walk + 5 min mobility "
                         "(couch stretch / pigeon / thread-the-needle).")
