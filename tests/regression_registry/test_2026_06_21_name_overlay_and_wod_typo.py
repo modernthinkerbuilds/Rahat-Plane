@@ -24,12 +24,12 @@ from core import dispatcher
 def test_overlay_name_is_applied(monkeypatch, tmp_path):
     overlay = tmp_path / "user_profile.json"
     overlay.write_text(json.dumps(
-        {"name": "Venkat", "one_rep_maxes_kg": {"deadlift": 200.0}}))
+        {"name": "Jordan", "one_rep_maxes_kg": {"deadlift": 200.0}}))
     monkeypatch.setenv("RAHAT_USER_PROFILE_JSON", str(overlay))
     from core import user_profile as up
     p = up.load()
-    assert p.name == "Venkat", "load() must read display name from the overlay"
-    assert "Name: Venkat" in up.to_facts_block(p)
+    assert p.name == "Jordan", "load() must read display name from the overlay"
+    assert "Name: Jordan" in up.to_facts_block(p)
 
 
 def test_missing_overlay_keeps_committed_default(monkeypatch, tmp_path):

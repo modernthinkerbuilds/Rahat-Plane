@@ -25,7 +25,7 @@ from new_plane.miya_runner import validator
 from new_plane.miya_runner.delegate_classifier import classify_delegation
 
 LIVE_REPLIES = [
-    ("Understood, Venkat. Your new active sprint goal is set at 187 lbs by Thanksgiving 2026, "
+    ("Understood. Your new active sprint goal is set at 187 lbs by Thanksgiving 2026, "
      "and your weekly burn target is now 7000 kcal. This means aiming for approximately 1120 kcal "
      "per day for the remaining 3 days of this week.", "Your new active sprint goal is"),
     ("With your sprint goal now confirmed as 187 lbs by Thanksgiving 2026, setting your weekly burn "

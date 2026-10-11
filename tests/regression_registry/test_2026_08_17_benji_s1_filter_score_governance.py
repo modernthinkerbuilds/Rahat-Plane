@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import re
 from datetime import datetime
 
 import pytest
@@ -240,19 +241,49 @@ def test_ingest_upsert_is_charter_gated(env, monkeypatch):
 
 
 # ─────────────────── the repo stays public-safe ───────────────────────
-def test_no_pii_in_benji_repo_files(env):
-    """The co-owner's identity must never land in committed code. The
-    needles are assembled at runtime so this file can't self-trip."""
+# Until 2026-10-11 the words to look for were spelled in this file, in halves
+# so the scan would not trip on itself, which anyone reading the public file
+# could join. They now live only in the gitignored private list and .env,
+# read through scripts/check_private_terms.py, which also gates every push.
+_PERSONAL_MAIL = re.compile(r"@(?:gmail|googlemail|yahoo|ymail|outlook|hotmail|live|msn"
+                            r"|icloud|me|aol|proton|protonmail)\.", re.I)
+_PHONE = re.compile(r"(?<!\d)\(?\d{3}\)?[ .-]\d{3}[ .-]\d{4}(?!\d)")
+
+
+def _benji_repo_files():
     from pathlib import Path
     root = Path(__file__).resolve().parent.parent.parent
-    needles = ["amri" + "tha", "manda" + "gondi",
-               "jobsearch" + "2026@", "650." + "645"]
-    scan = [*(root / "agents/benji").glob("*.py"),
-            *(root / "bridges/jobsearch").glob("*.py"),
-            *(root / "new_plane/benji_runner").glob("*.py"),
-            root / "scripts/install_benji.sh",
-            root / ".env.example"]
+    return root, [*(root / "agents/benji").glob("*.py"),
+                  *(root / "bridges/jobsearch").glob("*.py"),
+                  *(root / "new_plane/benji_runner").glob("*.py"),
+                  root / "scripts/install_benji.sh",
+                  root / ".env.example"]
+
+
+def test_no_pii_in_benji_repo_files(env):
+    """The co-owner's identity must never land in committed code. This half
+    needs no private words, so it runs everywhere: no personal-mail address
+    and no phone number in Benji's committed files."""
+    _, scan = _benji_repo_files()
     for f in scan:
-        text = f.read_text().lower()
-        for needle in needles:
-            assert needle not in text, f"PII needle in {f.name}"
+        text = f.read_text()
+        assert not _PERSONAL_MAIL.search(text), f"a personal-mail address in {f.name}"
+        assert not _PHONE.search(text), f"a phone number in {f.name}"
+
+
+def test_no_private_word_in_benji_repo_files(env):
+    """The words themselves, where they exist (the owner's machine, where every
+    push is gated); CI and a fresh clone have no list, so this half skips."""
+    import importlib.util
+    root, scan = _benji_repo_files()
+    spec = importlib.util.spec_from_file_location(
+        "check_private_terms", root / "scripts" / "check_private_terms.py")
+    words = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(words)
+    terms = words.load_terms(root)
+    if not terms:
+        pytest.skip("no private word list and no .env here (CI, a fresh clone)")
+    for f in scan:
+        rel = f.relative_to(root).as_posix()
+        hits = words.find_in_text(f.read_text(), terms, rel)
+        assert not hits, f"a private word in {rel}: {[h.where(terms) for h in hits]}"
