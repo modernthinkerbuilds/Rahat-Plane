@@ -433,8 +433,9 @@ def log_digest(kind: str, *, now: datetime, meta: dict | None = None,
 
 def sent_to(address: str, kind: str = "morning",
             path: str | None = None) -> bool:
-    """Has a digest of this kind ever been logged to this address? (The
-    runner records "to" on every send since 2026-10-07.)"""
+    """Has a digest of this kind ever reached this address? (The runner
+    records "to" on every send since 2026-10-07; one the sending account
+    mailed to itself — already read, no alert — does not count.)"""
     want = (address or "").strip().lower()
     if not want:
         return False
@@ -443,10 +444,10 @@ def sent_to(address: str, kind: str = "morning",
         for (meta,) in con.execute(
                 "SELECT meta FROM digest_log WHERE kind=?", (kind,)):
             try:
-                to = str(json.loads(meta or "{}").get("to") or "")
+                m = json.loads(meta or "{}")
             except ValueError:
                 continue
-            if to.strip().lower() == want:
+            if str(m.get("to") or "").strip().lower() == want and not m.get("self_sent"):
                 return True
         return False
     finally:

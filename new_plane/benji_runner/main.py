@@ -149,10 +149,15 @@ def cmd_digest(which: str | None, *, preview: bool = False) -> int:
     except Exception as e:                      # noqa: BLE001 — SMTP down
         sent, reason = False, f"{type(e).__name__}: {e}"
     if sent:
+        # A digest an account sent to itself arrives already read, with no
+        # alert: it does not count as having reached her, so the catch-up
+        # still goes out once a real sender is set (2026-10-11).
+        from new_plane.benji_runner.emailer import sending_account
+        self_sent = sending_account(recipient)[0].strip().lower() == recipient.lower()
         store.log_digest(which, now=now,
                          meta={"subject": subject, "to": recipient,
                                "attachments": [n for n, _ in attachments],
-                               **stats})
+                               "self_sent": self_sent, **stats})
         if problems and not owner:
             store.log_digest("health", now=now,
                              meta={"to": "digest", "problems": problems})
