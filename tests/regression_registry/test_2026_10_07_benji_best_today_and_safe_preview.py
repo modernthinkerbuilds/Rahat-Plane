@@ -111,5 +111,6 @@ def test_a_preview_leaves_the_morning_queue_untouched(env, capsys, monkeypatch):
     # the real send then digests them — and records what the morning held
     stats: dict = {}
     dg.build_morning(now=NOW, stats=stats)
-    assert stats == {"new": 6, "apply_band": 0, "best": [1, 2, 3, 4, 5], "threshold": 75}
+    assert stats == {"new": 6, "apply_band": 0, "best": [1, 2, 3, 4, 5], "threshold": 75,
+                     "catch_up": False}
     assert store.queue_rows(only_undigested=True) == []

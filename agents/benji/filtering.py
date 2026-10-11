@@ -26,6 +26,9 @@ from agents.benji.protocols import (
     FilterOutcome,
     LEVEL_REJECT_TOKENS,
     MISSION_TITLE_KEYWORDS,
+    NON_US_PLACE_RE,
+    TECH_ORG_TYPES,
+    US_PLACE_RE,
     TITLE_EXCLUDE_TOKENS,
     TITLE_LEVEL_RE,
     TITLE_NOUN_RE,
@@ -35,6 +38,20 @@ _NOUN = re.compile(TITLE_NOUN_RE, re.I)
 _LEVEL = re.compile(TITLE_LEVEL_RE, re.I)
 _ASSISTANT = re.compile(ASSISTANT_REJECT_RE, re.I)
 _CLUSTERS = tuple((c, re.compile(p, re.I)) for c, p in CLUSTER_PATTERNS)
+_NON_US = re.compile(NON_US_PLACE_RE, re.I)
+_US = re.compile(US_PLACE_RE, re.I)
+
+
+def outside_us(location: str, title: str = "") -> str | None:
+    """The non-US place a posting names, if it names one and no US place:
+    "Sydney, Australia" → "sydney"; "Remote - US or Canada" → None. The
+    title speaks only when no location is stated ("Programme Officer,
+    Japan"); an office in Oakland with UK partnerships is still Oakland."""
+    loc = location or ""
+    m = _NON_US.search(loc) if loc.strip() else _NON_US.search(title or "")
+    if m and not _US.search(loc):
+        return m.group(1).lower()
+    return None
 
 _COMP_RANGE = re.compile(
     r"\$\s?(\d{2,3})(?:[,.]?(\d{3}))?\s?([kK])?\s?(?:-|–|—|to)\s?"
@@ -87,9 +104,14 @@ def _bare_ambiguous(loc: str, cfg: dict) -> bool:
 
 
 def hard_location_filter(location: str, work_mode: str,
-                         jd_text: str, cfg: dict) -> FilterOutcome:
+                         jd_text: str, cfg: dict,
+                         title: str = "") -> FilterOutcome:
     loc = (location or "").lower()
     blob = f"{loc} {(jd_text or '')[:600].lower()}"
+
+    place = outside_us(location, title)
+    if place:
+        return FilterOutcome("reject", f"outside the US ({place})")
 
     if "relocation" in blob and ("required" in blob or "assistance" in blob):
         return FilterOutcome("reject", "relocation required/expected")
@@ -156,16 +178,36 @@ def title_filter(title: str, cfg: dict) -> FilterOutcome:
     return FilterOutcome("accept", "title matches pattern")
 
 
-def big_tech_gate(org: str, title: str, cfg: dict) -> FilterOutcome:
-    if org not in set(cfg.get("big_tech_orgs", [])):
+def org_type_of(posting: dict, cfg: dict) -> str:
+    """Her Filter Config's org_type for the posting's org, else the
+    source's default hint ("" when neither says)."""
+    org = posting.get("org", "")
+    for s in cfg.get("sources", []):
+        if s.get("org") == org and s.get("org_type"):
+            return s["org_type"]
+    return posting.get("_org_type_hint") or ""
+
+
+def big_tech_gate(org: str, title: str, cfg: dict,
+                  org_type: str = "") -> FilterOutcome:
+    """Mission word in the title itself, at a tech company. 2026-10-11:
+    every tech org in her sources (org_type tech_general / tech_csr), not
+    only the named big-tech list: Anthropic and OpenAI postings (TPMs,
+    data centers, go-to-market) were 60% of her open queue."""
+    big = org in set(cfg.get("big_tech_orgs", []))
+    if not big and org_type not in TECH_ORG_TYPES:
         return FilterOutcome("accept", "")
     t = title.lower()
     if any(k in t for k in MISSION_TITLE_KEYWORDS):
         return FilterOutcome("accept", "big-tech title carries mission "
                                        "keyword")
-    return FilterOutcome("reject", "big-tech org without mission keyword "
-                                   "in the title itself (80%-volume/"
-                                   "2%-value rule)")
+    if big:
+        return FilterOutcome("reject", "big-tech org without mission keyword "
+                                       "in the title itself (80%-volume/"
+                                       "2%-value rule)")
+    return FilterOutcome("reject", "tech org without a mission keyword in "
+                                   "the title itself (80%-volume/2%-value "
+                                   "rule)")
 
 
 def classify_cluster(title: str) -> str:
@@ -192,7 +234,8 @@ def apply_filters(posting: dict, cfg: dict) -> FilterOutcome:
                              f"${cfg.get('comp_floor', 90_000):,})")
 
     loc = hard_location_filter(posting.get("location", ""), work_mode,
-                               posting.get("jd_text", ""), cfg)
+                               posting.get("jd_text", ""), cfg,
+                               title=posting.get("title", ""))
     if loc.result == "reject":
         return loc
 
@@ -200,7 +243,8 @@ def apply_filters(posting: dict, cfg: dict) -> FilterOutcome:
     if t.result == "reject":
         return t
 
-    g = big_tech_gate(posting.get("org", ""), posting.get("title", ""), cfg)
+    g = big_tech_gate(posting.get("org", ""), posting.get("title", ""), cfg,
+                      org_type=org_type_of(posting, cfg))
     if g.result == "reject":
         return g
 

@@ -27,6 +27,8 @@ from agents.benji.coverage import coverage as _coverage
 from agents.benji.protocols import (
     BAND_APPLY,
     COVERAGE_FLOOR,
+    JD_BOILERPLATE_RE,
+    JD_HEADER_RE,
     MISSION_ADJACENT,
     MISSION_CORE,
     MISSION_GENERIC,
@@ -73,8 +75,21 @@ def experience_match_points(cov: float) -> int:
     return 8
 
 
+_BOILERPLATE = re.compile(JD_BOILERPLATE_RE, re.I)
+_HEADER = re.compile(JD_HEADER_RE, re.I)
+_PIECES = re.compile(r"(?<=[.!?;])\s+|\n+")
+
+
+def role_text(jd_text: str) -> str:
+    """The JD without the sentences every JD carries (EEO, degrees,
+    benefits, pay): what is left describes this job and this org."""
+    return " ".join(p for p in _PIECES.split(jd_text or "")
+                    if p.strip() and not _BOILERPLATE.search(p)
+                    and not _HEADER.match(p))
+
+
 def mission_fit_points(title: str, jd_text: str) -> int:
-    blob = f"{title} {jd_text}".lower()
+    blob = f"{title} {role_text(jd_text)}".lower()
     if any(k in blob for k in MISSION_CORE):
         return 10
     if any(k in blob for k in MISSION_ADJACENT):

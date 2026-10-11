@@ -153,7 +153,40 @@ TITLE_EXCLUDE_TOKENS: tuple[str, ...] = (
     "growth marketing", "executive assistant", "administrative assistant",
     "office manager", "warehouse", "driver", "retail", "barista",
     "security guard",
+    # 2026-10-11 (owner: "all irrelevant jobs, not per her profile"):
+    # functions she does not do, whatever the org. A "Program Manager"
+    # title alone let these through — 60% of her open queue.
+    # Specific phrases, never a bare "finance", "legal" or "security":
+    # inclusive-finance, immigration-legal-services and food-security
+    # program roles are hers.
+    "technical program", "technical project", "tpm", "tech lead",
+    "marketing", "finance &", "finance and operations", "finance manager",
+    "finance director", "of finance", "financial reporting",
+    "financial operations", "financial analyst", "accounting", "payroll",
+    "procurement", "real estate", "facilities", "legal counsel",
+    "general counsel", "paralegal", "legal operations", "attorney",
+    "product manager", "product management", "product program",
+    "product operations", "information security", "cybersecurity",
+    "product security", "security technical", "it operations",
+    "data center", "hardware", "customer success", "customer support",
+    "customer programs", "account director", "account manager",
+    "go-to-market", "gtm", "investor relations", "community support",
+    "growth manager", "demand planning", "fundraising",
 )
+
+# Places outside the US (2026-10-11): her search is the Bay Area or remote
+# US, but "Remote-Friendly, Australia" passed as remote US and "Barcelona,
+# Spain" sat flagged in the queue. Matched as whole words in the location
+# or the title; a location that also says US/USA/United States stays.
+NON_US_PLACE_RE = (
+    r"\b(australia|sydney|melbourne|canada|toronto|vancouver|montreal"
+    r"|united kingdom|uk|england|london|ireland|dublin|germany|munich"
+    r"|berlin|france|paris|spain|barcelona|madrid|portugal|lisbon"
+    r"|netherlands|amsterdam|switzerland|zurich|singapore|india"
+    r"|bangalore|bengaluru|japan|tokyo|korea|seoul|china|hong kong"
+    r"|taiwan|brazil|mexico|israel|tel aviv|dubai|emea|apac|latam"
+    r"|south america|southern cone|africa|kenya|nigeria)\b")
+US_PLACE_RE = r"\b(us|u\.s\.|usa|united states|remote[- ]us)\b"
 
 # Level guard: hard rejects (Filter Config §2). "Director" alone stays —
 # Program Director is Cluster A; only the senior-executive band rejects.
@@ -164,12 +197,23 @@ LEVEL_REJECT_TOKENS: tuple[str, ...] = (
 # "Program Assistant is a step down from Program Associate" — reject.
 ASSISTANT_REJECT_RE = r"\bassistant\b"
 
-# Big-tech special case: at these orgs "Program Manager" almost always
-# means TPM/supply-chain; require a mission keyword in the TITLE itself.
+# Tech-company special case: there "Program Manager" almost always
+# means TPM, supply chain or go-to-market; a role counts only with a
+# mission keyword in the TITLE itself (Filter Config: "tech CSR = mission
+# word in the title itself"). 2026-10-11: her own mission words count too
+# ("Economic Mobility Partnerships Manager" is a tech-CSR role), and the
+# gate covers every tech org in her sources, not only the big-tech list.
 MISSION_TITLE_KEYWORDS: tuple[str, ...] = (
     "social impact", "education", "community", "philanthropy",
     "citizenship", "sustainability", "inclusion", "nonprofit", ".org",
+    "economic mobility", "economic opportunity", "workforce development",
+    "career pathways", "early career", "accessibility", "disability",
+    "refugee", "immigrant", "youth", "public health", "health equity",
+    "social good", "for good", "csr", "giving", "volunteer",
 )
+# Org types the mission-word-in-title gate applies to (her Filter Config
+# sources carry an org_type; big_tech_orgs is the named list on top).
+TECH_ORG_TYPES: tuple[str, ...] = ("tech_general", "tech_csr")
 
 # Title clusters (scoring §3). Order matters: first match wins, D before
 # B so "AI Policy Program Manager" lands in D not B.
@@ -191,13 +235,35 @@ CLUSTER_PATTERNS: tuple[tuple[str, str], ...] = (
     ("A", r"program|project|initiative|portfolio"),
 )
 
-# Mission-fit keyword buckets (scoring §4), scanned over title + JD.
+# Mission-fit keyword buckets (scoring §4), scanned over the title and
+# the JD minus its boilerplate (JD_BOILERPLATE_RE below).
 MISSION_CORE = ("education", "refugee", "immigrant", "disability",
                 "workforce", "economic mobility", "asylee")
 MISSION_ADJACENT = ("youth", "community development", "health equity",
                     "climate", "community programs", "first-generation")
 MISSION_GENERIC = ("nonprofit", "mission", "philanthropy", "social impact",
                    "underserved", "equity")
+
+# Sentences every JD carries whatever the job (2026-10-11): the EEO line
+# names disability and veterans, the requirements an "Education" section
+# and degrees, the benefits tuition, equity and pay. In her open queue
+# "disability" appeared only in EEO lines in 97 of 146 JDs and
+# "education" only in degree lines in 53 of 79, so every tech posting
+# scored full mission fit. Mission fit reads the job, not these.
+JD_BOILERPLATE_RE = (
+    r"equal (employment )?opportunit|without regard|regardless of"
+    r"|protected (veteran|class|characteristic)|reasonable accommodation"
+    r"|disabilit(y|ies) status|veteran status|e-verify|\beeo\b"
+    r"|affirmative action|\b(bachelor|master'?s|degree|ba/bs|bs/ba|phd"
+    r"|diploma|ged)\b|education (and|&) experience|education requirement"
+    r"|minimum education|tuition|continuing education"
+    r"|education (stipend|reimbursement|assistance|budget)"
+    r"|(learning|development) (stipend|budget)|\b401\(?k\)?"
+    r"|health insurance|parental leave|paid time off|compensation"
+    r"|salary|pay range|base pay|benefits|perks|visa sponsorship"
+    r"|background check")
+# A line that is only a section header ("Education", "Requirements:").
+JD_HEADER_RE = r"^\s*(education|qualifications|requirements|benefits)\s*:?\s*$"
 
 COMP_FLOOR = 90_000
 COMP_STRONG = 110_000

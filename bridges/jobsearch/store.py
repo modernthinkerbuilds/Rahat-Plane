@@ -158,13 +158,24 @@ def upsert_batch(rows: list[dict], *, now: datetime,
                                 (now_iso, key))
                     continue
                 new_status = row["status"]
-                if row["status"] == "closed":
-                    new_status, reopened = "new", reopened + 1
+                if r.get("filter_result") == "reject":
+                    # 2026-10-11: the filter's verdict is re-read on every
+                    # pass, so a rule change reaches roles already queued
+                    # (before, a newly rejected role stayed 'new' with no
+                    # score, and a fixed rule never freed a rejected one).
+                    new_status = "rejected"
+                elif row["status"] in ("rejected", "closed"):
+                    if row["status"] == "closed":
+                        reopened += 1
+                    new_status = r.get("status") if r.get("status") in (
+                        "new", "backlog") else "new"
                 con.execute(
                     """UPDATE jobs SET comp_range=?, comp_unlisted=?,
                         posted_date=COALESCE(?, posted_date),
                         canonical_url=?, jd_text=?, coverage=?, score=?,
                         score_breakdown=?, rationale=?, status=?,
+                        filter_result=?, reject_reason=?, title_cluster=?,
+                        flags=?, stretch=?,
                         last_seen=?, closed_at=NULL
                        WHERE job_key=?""",
                     (r.get("comp_range", ""),
@@ -173,7 +184,11 @@ def upsert_batch(rows: list[dict], *, now: datetime,
                      r.get("jd_text", ""), r.get("coverage"),
                      r.get("score"),
                      json.dumps(r.get("score_breakdown") or {}),
-                     r.get("rationale", ""), new_status, now_iso, key))
+                     r.get("rationale", ""), new_status,
+                     r.get("filter_result", ""), r.get("reject_reason", ""),
+                     r.get("title_cluster", ""),
+                     json.dumps(r.get("flags") or []),
+                     1 if r.get("stretch") else 0, now_iso, key))
                 updated += 1
         con.commit()
     finally:
@@ -412,6 +427,28 @@ def log_digest(kind: str, *, now: datetime, meta: dict | None = None,
                     "VALUES (?,?,?)",
                     (kind, _iso(now), json.dumps(meta or {})))
         con.commit()
+    finally:
+        con.close()
+
+
+def sent_to(address: str, kind: str = "morning",
+            path: str | None = None) -> bool:
+    """Has a digest of this kind ever been logged to this address? (The
+    runner records "to" on every send since 2026-10-07.)"""
+    want = (address or "").strip().lower()
+    if not want:
+        return False
+    con = _connect(path)
+    try:
+        for (meta,) in con.execute(
+                "SELECT meta FROM digest_log WHERE kind=?", (kind,)):
+            try:
+                to = str(json.loads(meta or "{}").get("to") or "")
+            except ValueError:
+                continue
+            if to.strip().lower() == want:
+                return True
+        return False
     finally:
         con.close()
 

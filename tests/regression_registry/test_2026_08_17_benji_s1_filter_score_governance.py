@@ -61,7 +61,11 @@ FILTER_CASES = [
      "reject", "level guard"),
     ("Program Assistant", "Berkeley, CA", "",
      "reject", "step down"),
+    # 2026-10-11: marketing is now an excluded function (it ran first);
+    # the structural rule keeps its own case.
     ("Marketing Lead", "San Francisco, CA", "",
+     "reject", "marketing"),
+    ("Communications Lead", "San Francisco, CA", "",
      "reject", "noun+level"),
 ]
 

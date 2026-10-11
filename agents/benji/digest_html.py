@@ -101,6 +101,13 @@ def _best_table(best: list[tuple[dict, str]], now: datetime) -> str:
             f'margin:4px 0 14px 0;"><tr>{head}</tr>{"".join(rows)}</table>')
 
 
+def expand_html(rows: list[dict], *, now: datetime, head: str,
+                org_types: dict | None = None) -> str:
+    """`expand`'s answer: every open role in one table, titles linked."""
+    return (f'<p style="{FONT}font-size:13px;margin:6px 0;">{escape(head)}'
+            "</p>" + _table(rows, now, org_types or {}))
+
+
 def render_nothing_new_html(*, now: datetime, line: str) -> str:
     return (f'<div style="{FONT}max-width:860px;">'
             f'<h2 style="{FONT}font-size:17px;margin:0 0 2px 0;">'
@@ -116,7 +123,9 @@ def render_morning_html(*, now: datetime, bands: dict, seen_count: int,
                         package_names: list[str] | None,
                         kit_only: bool = False,
                         best: list[tuple[dict, str]] | None = None,
-                        labels: dict | None = None) -> str:
+                        labels: dict | None = None,
+                        catch_up: bool = False,
+                        more: list[dict] | None = None) -> str:
     parts = [f'<div style="{FONT}max-width:860px;">',
              f'<h2 style="{FONT}font-size:17px;margin:0 0 2px 0;">'
              f'Benji — morning queue · {now.strftime("%a %Y-%m-%d")}'
@@ -126,10 +135,17 @@ def render_morning_html(*, now: datetime, bands: dict, seen_count: int,
                      f'margin:2px 0;">first run: top roles below; '
                      f'{overflow_count} more in initial_backlog.md '
                      "(attached)</p>")
+    if catch_up:
+        parts.append(f'<p style="{FONT}font-size:12px;color:#666;'
+                     f'margin:2px 0;">catch-up — the first digest to this '
+                     f"inbox: every open role, best first"
+                     + (f"; {len(more)} more at the end" if more else "")
+                     + "</p>")
     if best:
         parts.append(f'<h3 style="{FONT}font-size:13px;color:#1a56b0;'
-                     f'margin:14px 0 2px 0;">BEST TODAY — top {len(best)} '
-                     "by score, whatever the band</h3>")
+                     f'margin:14px 0 2px 0;">BEST '
+                     f'{"OPEN ROLES" if catch_up else "TODAY"} — top '
+                     f'{len(best)} by score, whatever the band</h3>')
         parts.append(_best_table(best, now))
     for band in ("apply", "worth_a_look", "maybe"):
         rows = bands.get(band) or []
@@ -156,6 +172,11 @@ def render_morning_html(*, now: datetime, bands: dict, seen_count: int,
         parts.append(f'<p style="{FONT}font-size:13px;">No new roles '
                      "since the last morning queue — the ledger below "
                      "says when each feed was checked.</p>")
+    if more:
+        parts.append(f'<h3 style="{FONT}font-size:13px;color:#555;'
+                     f'margin:14px 0 2px 0;">MORE OPEN ROLES · {len(more)}, '
+                     "best first</h3>")
+        parts.append(_table(more, now, org_types))
     if sample:
         parts.append(f'<h3 style="{FONT}font-size:13px;margin:14px 0 '
                      '2px 0;">Sunday rejects sample (filter '

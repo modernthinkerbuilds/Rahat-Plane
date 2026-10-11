@@ -22,11 +22,18 @@ Cold start (Tara #1): the FIRST morning is capped at 30 by score; the
 remainder is rendered into initial_backlog.md (returned as an
 attachment) and demoted to 'backlog' so later mornings are pure delta.
 
+Catch-up (2026-10-11): the first morning to a delivery address that has
+never had one is a catch-up — every open role, seen or not, the best 30
+in the bands and the rest as links at the end (never an attachment).
+The Aug 17 cold start went to a mailbox she did not read, so her best
+matches were marked digested unseen and never came back.
+
 Coverage honesty (J5): the footer carries the per-source ledger and any
 config warnings; Sundays add the 20-item seeded rejects sample.
 """
 from __future__ import annotations
 
+import os
 import re
 from datetime import datetime, timedelta
 
@@ -157,10 +164,12 @@ def _ledger_footer(store_path, warnings: list[str]) -> str:
     return "\n".join(lines)
 
 
-def _subject(now: datetime, rows: list[dict]) -> str:
+def _subject(now: datetime, rows: list[dict], *, open_total: int | None = None
+             ) -> str:
     """`Benji · Thu 10-08 · best: <org> — <title> (<score>) · <n> new`,
     or `… · nothing new`. Never a band count: fifty-one mornings of
-    "0 in the apply band" in the subject taught her not to open it."""
+    "0 in the apply band" in the subject taught her not to open it. A
+    catch-up says how many roles are open instead of "new"."""
     day = now.strftime("%a %m-%d")
     if not rows:
         return f"Benji · {day} · nothing new"
@@ -168,8 +177,15 @@ def _subject(now: datetime, rows: list[dict]) -> str:
     title = (best.get("title") or "").strip()
     if len(title) > 48:
         title = title[:47].rstrip() + "…"
+    tail = (f"catch-up, {open_total} open roles" if open_total is not None
+            else f"{len(rows)} new")
     return (f"Benji · {day} · best: {best.get('org')} — {title} "
-            f"({best.get('score')}) · {len(rows)} new")
+            f"({best.get('score')}) · {tail}")
+
+
+def _with_link(row: dict) -> str:
+    url = (row.get("canonical_url") or "").strip()
+    return _fmt_one_line(row) + (f"  {url}" if url else "")
 
 
 def _nothing_new_line(store_path) -> str:
@@ -185,7 +201,8 @@ def build_morning(*, now: datetime, store_path: str | None = None,
                   warnings: list[str] | None = None,
                   package_names: list[str] | None = None,
                   with_html: bool = False, commit: bool = True,
-                  stats: dict | None = None):
+                  stats: dict | None = None,
+                  recipient: str | None = None):
     """Returns (subject, body, attachments[(filename, text)]) — plus a
     4th element, the HTML alternative, when with_html=True (the runner
     passes it; pins keep the stable 3-tuple).
@@ -194,7 +211,9 @@ def build_morning(*, now: datetime, store_path: str | None = None,
     `commit=False` renders without marking anything digested or demoted
     (a preview must leave the 7:30 queue intact — 2026-10-07).
     `stats`, when given, receives {"new", "apply_band", "best"} for the
-    runner's ledger row and the health check."""
+    runner's ledger row and the health check.
+    `recipient` (default BENJI_DELIVERY_EMAIL): an address no morning
+    digest has gone to yet gets the catch-up (module doc)."""
     cfg, cfg_w = load_filter_config()
     prefs, pref_w = load_preferences()
     warnings = [*(warnings or []), *cfg_w, *pref_w]
@@ -205,9 +224,21 @@ def build_morning(*, now: datetime, store_path: str | None = None,
     labels = band_labels(threshold)
 
     first_morning = store.last_digest("morning", path=store_path) is None
-    rows = store.queue_rows(statuses=("new",), only_undigested=True,
-                            path=store_path)
+    if recipient is None:
+        recipient = os.getenv("BENJI_DELIVERY_EMAIL", "")
+    catch_up = (not first_morning and bool(recipient.strip())
+                and not store.sent_to(recipient, "morning", path=store_path))
+    if catch_up:
+        rows = store.queue_rows(statuses=("new", "backlog"), path=store_path)
+    else:
+        rows = store.queue_rows(statuses=("new",), only_undigested=True,
+                                path=store_path)
     rows.sort(key=lambda r: sort_key(r, now=now))
+    more: list[dict] = []
+    open_total = len(rows) if catch_up else None
+    if catch_up:
+        cap = int(prefs["cold_start_digest_cap"])
+        rows, more = rows[:cap], rows[cap:]
 
     attachments: list[tuple[str, str]] = []
     overflow: list[dict] = []
@@ -232,11 +263,11 @@ def build_morning(*, now: datetime, store_path: str | None = None,
         bands[band_for(r.get("score") or 0, threshold)].append(r)
     best = [(r, why_line(r, org_types=org_types, dream_orgs=dream_orgs))
             for r in rows[:BEST_COUNT]]
-    subject = _subject(now, rows)
+    subject = _subject(now, rows, open_total=open_total)
     if stats is not None:
         stats.update({"new": len(rows), "apply_band": len(bands[BAND_APPLY]),
                       "best": [r["id"] for r, _ in best],
-                      "threshold": threshold})
+                      "threshold": threshold, "catch_up": catch_up})
 
     body: list[str] = [f"Benji — morning queue · "
                        f"{now.strftime('%a %Y-%m-%d')}"]
@@ -255,10 +286,14 @@ def build_morning(*, now: datetime, store_path: str | None = None,
     if first_morning:
         body.append(f"(first run: showing top {len(rows)}; "
                     f"{len(overflow)} more in initial_backlog.md)")
+    if catch_up:
+        body.append("(catch-up — the first digest to this inbox: every "
+                    "open role, best first"
+                    + (f"; {len(more)} more at the end)" if more else ")"))
     body.append("")
     if best:
-        body.append(f"BEST TODAY — top {len(best)} by score, whatever "
-                    "the band")
+        body.append(f"BEST {'OPEN ROLES' if catch_up else 'TODAY'} — top "
+                    f"{len(best)} by score, whatever the band")
         body += [_fmt_best(r, why) for r, why in best]
     else:
         body.append(_nothing_new_line(store_path))
@@ -313,9 +348,14 @@ def build_morning(*, now: datetime, store_path: str | None = None,
                  f"{r['reject_reason']}" for r in sample]
         body.append("")
 
+    if more:
+        body.append(f"MORE OPEN ROLES — {len(more)}, best first:")
+        body += [_with_link(r) for r in more]
+        body.append("")
+
     body.append(_ledger_footer(store_path, warnings))
     if commit:
-        store.mark_digested([r["id"] for r in rows], now=now,
+        store.mark_digested([r["id"] for r in rows + more], now=now,
                             path=store_path)
 
     if with_html:
@@ -331,7 +371,7 @@ def build_morning(*, now: datetime, store_path: str | None = None,
             first_morning=first_morning, overflow_count=len(overflow),
             package_names=package_names,
             kit_only=int(prefs.get("morning_package_cap", 5)) <= 0,
-            best=best, labels=labels)
+            best=best, labels=labels, catch_up=catch_up, more=more)
         return subject, "\n".join(body), attachments, html
     return subject, "\n".join(body), attachments
 
