@@ -139,6 +139,17 @@ _SUNDAY_BY_ENERGY: dict[str, list[str]] = {
 
 _VALID_ENERGY = ("low", "medium", "high")
 
+# QA-2026-10-04-08 (live 2026-09-17, the spend cap): when live search
+# failed, /weekend_plan sent the offline menu without a word. One line
+# says so. The command sits outside the italic: legacy Markdown has no
+# nesting, and the "_" in a command would close it.
+_LIVE_SEARCH_FAILED = {
+    "down": "_Live search is down right now, so this is the offline plan._ "
+            "`/whatson` has the verified events.",
+    "unusable": "_Live search found nothing usable just now, so this is the offline plan._ "
+                "`/whatson` has the verified events.",
+}
+
 
 def _live_plan_enabled() -> bool:
     """RAHAT_GENIE_LIVE_PLAN gates live discovery (default ON — the
@@ -245,6 +256,7 @@ def handle_weekend_plan(*, now: datetime | None = None,
     violations: list[str] = []
     weather_line = ""
     option_b: dict | None = None
+    live_failure = ""                   # "down" | "unusable" when live search was tried and failed
     location = household_location()
     live_ok = (_live_plan_enabled() and location
                and (llm is not None or not _hermetic()))
@@ -268,7 +280,7 @@ def handle_weekend_plan(*, now: datetime | None = None,
             constraints.append(
                 f"HARD COMMITMENT {day}{when}: {c['title']} — the family "
                 f"will be there; do not propose overlapping activities")
-        disc = lp.discover_options(
+        disc, live_failure = lp.discover(
             location=location,
             sat_iso=saturday.strftime("%Y-%m-%d"),
             sun_iso=sunday.strftime("%Y-%m-%d"),
@@ -350,6 +362,8 @@ def handle_weekend_plan(*, now: datetime | None = None,
     lines = [header, scope]
     if weather_line:
         lines.append(weather_line)
+    if live_failure:
+        lines.append(_LIVE_SEARCH_FAILED[live_failure])
 
     # ── Commitments first: the plan is built AROUND these. ──
     if weekend_commits and not evening_mode:
@@ -450,7 +464,12 @@ def handle_weekend_plan(*, now: datetime | None = None,
                       "(e.g. \"San Jose, CA\") to get real local options._"]
     lines += ["", f"_{plan.notes}_"]
 
-    if commit:
+    saved = latest_weekend_plan() if commit and live_failure else None
+    if saved is not None and saved.weekend_of == plan.weekend_of:
+        # The offline menu is filler: it must not replace the plan the
+        # family saved for this weekend, which swaps and /replan_day use.
+        lines += ["", "_Your saved plan for this weekend stays as it was._"]
+    elif commit:
         written, verdict = commit_weekend_plan(plan)
         if not written:
             lines.append("")

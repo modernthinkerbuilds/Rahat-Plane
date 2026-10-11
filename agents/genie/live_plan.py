@@ -268,6 +268,23 @@ def discover_options(*, location: str, sat_iso: str, sun_iso: str,
     Returns None on ANY failure so the caller falls back to the static
     offline plan. Never raises.
     """
+    return discover(location=location, sat_iso=sat_iso, sun_iso=sun_iso,
+                    energy=energy, roles=roles, constraints=constraints,
+                    llm=llm, mode=mode)[0]
+
+
+def discover(*, location: str, sat_iso: str, sun_iso: str,
+             energy: str, roles: list[str],
+             constraints: list[str],
+             llm: Callable[[str], str] | None = None,
+             mode: str = "family",
+             ) -> tuple[LiveDiscovery | None, str]:
+    """`discover_options`, with why it came back empty, so a plan built
+    without it can say so (QA-2026-10-04-08): (the discovery, "");
+    (None, "down") when the call failed (budget, quota, wire, no key);
+    (None, "unusable") when both answers carried no usable options.
+    Never raises.
+    """
     prompt = _discovery_prompt(location=location, sat_iso=sat_iso,
                                sun_iso=sun_iso, energy=energy,
                                roles=roles, constraints=constraints,
@@ -291,19 +308,19 @@ def discover_options(*, location: str, sat_iso: str, sun_iso: str,
                     logger.warning("genie live discovery LLM error "
                                    "(falling back to offline plan): %s",
                                    usage.error)
-                    return None
+                    return None, "down"
                 text = usage.text
         except Exception as e:  # noqa: BLE001 — incl. BudgetExceeded; fallback
             logger.warning("genie live discovery failed (%s: %s) — offline "
                            "fallback", type(e).__name__, e)
-            return None
+            return None, "down"
         disc, why = _discovery_from_text(text, sat_iso=sat_iso, sun_iso=sun_iso)
         if disc is not None:
-            return disc
+            return disc, ""
         logger.warning("genie live discovery returned %s (attempt %d of %d)%s",
                        why, attempt, attempts,
                        " — asking once more" if attempt < attempts else " — offline fallback")
-    return None
+    return None, "unusable"
 
 
 def _discovery_from_text(text: str, *, sat_iso: str, sun_iso: str) -> tuple[LiveDiscovery | None, str]:

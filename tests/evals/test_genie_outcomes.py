@@ -66,10 +66,6 @@ SUNDAY = ["2026-10-04", "2026-10-04"]
 NEXT_WEEKEND = ["2026-10-10", "2026-10-11"]
 WHATSON = ["W1", "W2", "W3", "W4", "W5", "W6", "W7"]
 
-_PLAN_SILENT = pytest.mark.xfail(strict=True, reason=(
-    "LIVE shape (2026-09-17, the spend cap): when live discovery fails, /weekend_plan silently returns the "
-    "generic offline menu ('Slow morning at home…') with no word that nothing was looked up. "
-    "Fix QA-2026-10-04-08: one line saying live search is down. Delete this mark when it passes."))
 _SUNDAY_PLAN = pytest.mark.xfail(strict=True, reason=(
     "DECISION NEEDED (QA-2026-10-04-07): on a Sunday /weekend_plan plans the next weekend (6 days out) while "
     "/whatson and the digest show today. If next weekend is intended, the reply should say so and this case "
@@ -123,7 +119,7 @@ CASES = [
     pytest.param({"id": "GT10b", "when": "2026-10-07T09:00", "surface": "weekend_plan",
                   "live": {"mode": "fails", "error": "429 RESOURCE_EXHAUSTED"},
                   "expect": {"window": NEXT_WEEKEND, "outcomes": ["W7"], "degraded": True}},
-                 id="weekend-plan-model-down-says-so", marks=_PLAN_SILENT),
+                 id="weekend-plan-model-down-says-so"),
     pytest.param({"id": "GT11", "when": "2026-10-04T09:00", "surface": "weekend_plan",
                   "live": {"mode": "answers", "answers": [_GOOD_SUN]},
                   "expect": {"window": SUNDAY, "outcomes": ["W1", "W3"]}},
