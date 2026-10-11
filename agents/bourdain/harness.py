@@ -71,6 +71,12 @@ PARTY_WORDS = re.compile(
     r"|\bwith (a |my |our )?(friends?|colleagues?|guests?|mom|dad|parents|in-laws|family|kids?|baby)\b"
     r"|\b(i'?m|i am) (the )?(wife|husband|spouse)\b", re.I)
 _SOLO_ASSUMPTION = re.compile(r"\b(solo|alone|just you|by yourself|on your own|only you)\b", re.I)
+# "places that match my wife's profile" asks for the partner's rules, and only theirs (the trip's T08 and
+# T11, 2026-09-21/22: the reading kept or put back the whole party, so his own rule ranked her lunch). A
+# message that also says the whole party eats ("for all of us") keeps everyone.
+PARTNER_RULES = re.compile(r"\bmy\s+(?:wife|husband|partner|spouse)'?s\s+(?:profile|diet(?:ary\s+\w+)?|preferences|rules"
+                           r"|restrictions|needs)\b", re.I)
+WHOLE_PARTY = re.compile(r"\b(?:for us|for all of us|both of us|all of us|all three|the (?:whole )?family|everyone)\b", re.I)
 
 
 class BourdainTenant:
@@ -196,6 +202,13 @@ class BourdainTenant:
     # ── the reading, made consistent ─────────────────────────────────────
     _WHAT = ("meal", "cuisines", "dishes", "formats", "attributes", "reference_place")
 
+    @staticmethod
+    def _partner(ctx: dict, speaker: str) -> str | None:
+        """The other adult's member id: the spouse for the primary, and back."""
+        members = (ctx.get("profile") or {}).get("members", {})
+        want = {"primary": "spouse", "spouse": "primary"}.get((members.get(speaker) or {}).get("role"))
+        return next((m for m, v in members.items() if v.get("role") == want), None) if want else None
+
     def refine_frame(self, frame: Frame, ctx: dict) -> tuple[Frame, list[str]]:
         """Deterministic rules on the model's reading.
 
@@ -215,6 +228,8 @@ class BourdainTenant:
           diet rules dropped out of every check (QA-2026-10-04-09). A party
           word ("just me", "for my wife", "with friends") or a follow-up of
           an ask that had narrowed it keeps the narrower party.
+        * "Places that match my wife's profile" asks for the partner's rules
+          and only theirs, whatever the model read (the trip's T08 and T11).
         """
         notes: list[str] = []
         upd: dict = {}
@@ -223,7 +238,14 @@ class BourdainTenant:
         narrowed = bool(usual) and set(frame.diners) < set(usual) and not frame.guests
         kept_narrow = bool(frame.refers_to_last_answer and last.get("diners")
                            and set(last.get("diners")) < set(usual) and set(frame.diners) == set(last.get("diners")))
-        if narrowed and not kept_narrow and not PARTY_WORDS.search(ctx.get("ask") or ""):
+        ask = ctx.get("ask") or ""
+        partner = (self._partner(ctx, frame.speaker)
+                   if PARTNER_RULES.search(ask) and not WHOLE_PARTY.search(ask) else None)
+        if partner and not frame.guests:
+            if frame.diners != [partner]:
+                upd["diners"] = [partner]
+                notes.append("the message asks for the partner's rules: only theirs apply")
+        elif narrowed and not kept_narrow and not PARTY_WORDS.search(ask):
             upd["diners"] = usual
             dropped = [a for a in frame.assumptions if _SOLO_ASSUMPTION.search(a)]
             if dropped:
