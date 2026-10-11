@@ -53,11 +53,6 @@ def test_verdicts_and_acceptances_label_today(tmp_path):
     assert sorted(_labels(db, "t1")) == [("D3", "pass", "reaction"), ("U1", "pass", "reaction")]
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "QA-2026-10-04-13: record_reaction records a correction ('Other options please?') and writes no judge "
-    "label, though ADR-018 §2.8 names corrections as a label source; at the household's rate of thanks the "
-    "judge never reaches its 50 labels. Fix: a correction labels U1 and U7 (and the judged outcomes it bears "
-    "on) fail for the previous trace. Delete this mark when it passes."))
 def test_a_correction_becomes_labels(tmp_path):
     db = str(tmp_path / "labels.db")
     crecord.record_reaction(trace_id="t2", previous_trace="t1", agent="bourdain", chat_id="c", frame=CORRECTION,

@@ -47,6 +47,13 @@ VERDICT_OUTCOMES = {
     "rejected": ["U7"], "closed": ["E3"], "wrong_claim": ["E1"], "style": ["D1"], "delight": [], "loved": [],
     "chosen": [], "other": [],
 }
+# A correction is the household asking again: the previous answer did not
+# settle the ask (U1) and, when it was itself a follow-up, did not carry
+# the ask forward (U7). QA-2026-10-04-13: a correction wrote no label, and
+# the household rarely says thanks, so the judge never reached the labels
+# it needs to leave shadow (ADR-018 §2.8 names corrections as a source).
+# These labels carry source="correction" so they can be weighed apart.
+CORRECTION_OUTCOMES = ["U1", "U7"]
 ACCEPT_WORDS = ("thanks", "thank you", "great", "perfect", "going", "booked", "done", "sounds good", "love it",
                 "good call", "nice", "ok great", "will do")
 
@@ -95,7 +102,7 @@ def classify_reaction(frame: Frame | None, text: str) -> tuple[str, list[str]]:
             return "acceptance", []
         return "verdict", sorted(set(outs))
     if frame is not None and frame.refers_to_last_answer and (set(frame.intents) & {"eat", "plan", "plan_edit", "place_check"}):
-        return "correction", ["U7"]
+        return "correction", list(CORRECTION_OUTCOMES)
     if any(low == w or low.startswith(w) for w in ACCEPT_WORDS):
         return "acceptance", []
     return "unrelated", []
@@ -105,8 +112,9 @@ def record_reaction(*, trace_id: str, previous_trace: str, agent: str, chat_id: 
                     text: str, judged_outcomes: list[str], now: datetime, db_path: str | Path | None = None,
                     label: bool = True) -> dict:
     """Link the message to the previous trace and, when `label`, turn it
-    into judge labels: a verdict indicts its outcomes (fail); an
-    acceptance labels the previous trace's judged outcomes pass.
+    into judge labels: a verdict indicts its outcomes (fail); a correction
+    labels U1 and U7 fail (source "correction"); an acceptance labels the
+    previous trace's judged outcomes pass.
 
     `label` is True only when the household saw the previous trace's own
     reply (serve mode). In shadow the household reacted to the legacy
@@ -125,9 +133,10 @@ def record_reaction(*, trace_id: str, previous_trace: str, agent: str, chat_id: 
             con.close()
         if not label:
             pass
-        elif kind == "verdict":
+        elif kind in ("verdict", "correction"):
             for oid in outs:
-                cjudge.record_label(trace_id=previous_trace, agent=agent, outcome=oid, label="fail", source="reaction",
+                cjudge.record_label(trace_id=previous_trace, agent=agent, outcome=oid, label="fail",
+                                    source="reaction" if kind == "verdict" else "correction",
                                     now=now, db_path=db_path)
         elif kind == "acceptance":
             for oid in judged_outcomes:
