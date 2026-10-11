@@ -20,8 +20,10 @@ Modes:
   live    — the real eight steps against the model; with RAHAT_FIXTURE_
             RECORD=1 the cassettes are written for replay.
 
-Cases run in order with one chat per set, so a follow-up sees the
-previous case's answer the way the household did.
+Cases run in order in one chat: a run's sets follow each other in it, as
+the household's home asks followed the trip, so a follow-up sees the
+previous case's answer the way the household did (QA-2026-10-04-12: this
+said "one chat per set").
 """
 from __future__ import annotations
 
@@ -325,9 +327,14 @@ def frame_faithfulness(model: Frame, oracle: Frame) -> dict[str, dict]:
         put("meal", (model.meal or "").lower() == oracle.meal.lower(), model.meal, oracle.meal)
     o_where = oracle.area or oracle.origin
     if o_where is not None and o_where.label:
-        m_labels = " ".join(p.label for p in (model.area, model.origin) if p is not None)
+        # A case that says "hotel" means the stay; a reading that resolved it to the stay's own name read it
+        # right (the recording of 2026-10-11 scored "where" 0/2 on exactly that, printing the stay twice).
+        places = [p for p in (model.area, model.origin) if p is not None]
+        m_labels = " · ".join(dict.fromkeys(p.label for p in places if p.label))
         want = _words(o_where.label)
-        put("where", bool(want) and len(want & _words(m_labels)) * 2 >= len(want), m_labels or None, o_where.label)
+        same_stay = o_where.kind == "stay" and any(p.kind == "stay" for p in places)
+        put("where", same_stay or (bool(want) and len(want & _words(m_labels)) * 2 >= len(want)),
+            m_labels or None, o_where.label)
     if oracle.radius is not None:
         got = model.radius.minutes if model.radius else None
         put("radius", got is not None and abs(got - oracle.radius.minutes) <= 5, got, oracle.radius.minutes)

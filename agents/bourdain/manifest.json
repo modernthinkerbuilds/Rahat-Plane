@@ -96,7 +96,8 @@
   ],
   "golden_sets": [
     "private/prds/bourdain/evals/golden_trip_2026-09.jsonl",
-    "private/prds/bourdain/evals/golden_home.jsonl"
+    "private/prds/bourdain/evals/golden_home.jsonl",
+    "private/prds/bourdain/evals/golden_home_2026-10.jsonl"
   ],
   "cassette_dir": "tests/cassettes/bourdain",
   "quiet_hours": "22:30-07:00",
