@@ -48,10 +48,6 @@ def test_just_me_stays_just_me(world, monkeypatch):
     assert res.frame is not None and res.frame.diners == ["primary"]
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "QA-2026-10-04-10: '/who' says 'Eating: just you by default' (agents/bourdain/handler.py, the legacy "
-    "party_default) while the harness's default is both adults and the baby (profile.diners_default, BR-P4). "
-    "Fix: /who reads the harness default. Delete this mark when it passes."))
 def test_who_states_the_party_the_harness_uses(tmp_path, monkeypatch):
     monkeypatch.setenv("RAHAT_TEST_VAULT_DIR", str(tmp_path / "vault"))
     monkeypatch.setenv("RAHAT_BOURDAIN_STORE_JSON", str(tmp_path / "store.json"))

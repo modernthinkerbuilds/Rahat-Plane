@@ -534,20 +534,35 @@ def handle_list(cid: str, text: str, *, now: datetime) -> str:
 
 
 # ── who / where ───────────────────────────────────────────────────────
+_ZONES = {"America/Los_Angeles": "PT", "America/New_York": "ET", "America/Chicago": "CT", "America/Denver": "MT"}
+
+
+def _and(words: list[str]) -> str:
+    return words[0] if len(words) == 1 else ", ".join(words[:-1]) + " and " + words[-1] if words else "no one"
+
+
 def handle_who(cid: str, *, now: datetime) -> str:
-    ctx = _ctx(cid, now)
-    loc = state.location(cid, now)
-    lines = ["*Who, where, when*"]
-    lines.append(f"Eating: {'you + wife' if ctx['party_default'] == 'we' else 'just you'} by default — say \"just me\" or \"we\" any time.")
-    if ctx["leg"]:
-        lines.append(f"Leg: {CITY_LABEL.get(ctx['leg'], ctx['leg'])} · stay: {md_escape(_stay_label(ctx['stay']))} · {md_escape(ctx['stay'].get('dates') or '')}")
-        if ctx["stay"].get("note"):
-            lines.append(f"_{md_escape(ctx['stay']['note'])}_")
+    """Who eats, where it ranks from and its clock, as the harness will
+    assume them for the next ask (QA-2026-10-04-10). This used to speak
+    the trip's legacy defaults ("Eating: just you by default", "Ranking
+    from: the stay", a clock labelled ET) while the harness assumed both
+    adults and the baby, at home, on the household's own clock."""
+    from agents.bourdain import harness as bh
+    tenant = bh.tenant()
+    ctx = tenant.build_ctx(str(cid), now, "", db_path=None, cassette_dir=None, trace_id="who")
+    names = tenant.labels(ctx)
+    leg = ctx.get("leg") or {}
+    eating = _and([names.get(d, d) for d in (ctx.get("diners") or [])])
+    lines = ["*Who, where, when*",
+             f"Eating: {md_escape(eating)} by default — say \"just me\" or \"for my wife\" any time."]
+    if leg.get("kind") == "trip":
+        lines.append(f"Leg: {md_escape(str(leg.get('label') or leg.get('city') or 'the trip'))}"
+                     f" · stay: {md_escape(str(leg.get('stay_name') or 'not set'))}")
     else:
-        lines.append("No trip leg today — tell me where you are.")
-    lines.append(f"Ranking from: {md_escape(loc['label']) if loc else 'the stay'}"
-                 + (f" (until {loc['expires'][-5:]})" if loc else ""))
-    lines.append(f"Clock: {now:%a %b %-d, %-I:%M %p} ET")
+        lines.append("Home — no trip leg today.")
+    lines.append(f"Ranking from: {md_escape(str(ctx.get('origin_label') or 'home'))}")
+    tz = str(leg.get("tz") or "")
+    lines.append(f"Clock: {now:%a %b %-d, %-I:%M %p} {_ZONES.get(tz, tz)}".rstrip())
     return "\n".join(lines)
 
 
