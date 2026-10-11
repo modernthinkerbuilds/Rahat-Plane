@@ -14,7 +14,9 @@ record and returns one plain line per problem:
   * Genie's feeds as a whole not fed for over a day;
   * the Watch silent for over a day;
   * a Benji job feed in error for 3+ days;
-  * the model refusing calls in the last day (a spent cap shows up here).
+  * the model refusing calls in the last day (a spent cap shows up here);
+  * replies or nudges Telegram never took, in the last day;
+  * the gym plan not re-synced for over a week, with nothing for today.
 
 `maybe_health_line(now)` is a nudge for Miya's minute tick: at or after
 HEALTH_HOUR:HEALTH_MINUTE it checks once a day and returns the message
@@ -35,8 +37,15 @@ FEED_DEAD_DAYS = 3
 FEED_MIN_TRIES = 3
 BENJI_ERROR_DAYS = 3
 REFUSAL_HOURS = 24
+LOST_HOURS = 24
+GYM_PLAN_DAYS = 8
 _LOG_TAIL_BYTES = 2_000_000
 _REFUSAL_RE = re.compile(r"RESOURCE_EXHAUSTED|spending cap", re.I)
+# A reply Telegram did not take, or a nudge given up on after its retries
+# (QA-2026-10-04-03's log lines). A nudge that failed once and then went
+# out on a retry is not counted.
+_LOST_RE = re.compile(r"\[out\] .*delivered=False|\[nudge\] dropped")
+_LOG_AGENT = {"bourdain_bot": "Bourdain", "genie_bot": "Genie", "miya_v2": "Miya"}
 _LOG_TS_RE = re.compile(r"^(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2})")
 
 
@@ -146,15 +155,16 @@ def benji_feeds_in_error(now: datetime, *, path: str | None = None) -> list[str]
     return [f"Benji: {len(broken)} job {feeds} in error since {_day(first)}: {names}."]
 
 
-def model_refusals(now: datetime, *, log_dir: Path | None = None) -> list[str]:
-    """Calls the model refused in the last REFUSAL_HOURS, from the bots' logs."""
+def _log_hits(pattern: re.Pattern, since: datetime, until: datetime,
+              log_dir: Path | None = None) -> list[tuple[str, datetime]]:
+    """(log stem, time) of each line matching `pattern` in the tail of
+    every vault log, timed inside [since, until]."""
     log_dir = log_dir or _vault_dir()
-    since = now - timedelta(hours=REFUSAL_HOURS)
-    count, first = 0, None
+    hits: list[tuple[str, datetime]] = []
     try:
         logs = sorted(log_dir.glob("*.log"))
     except Exception:  # noqa: BLE001
-        return []
+        return hits
     for log in logs:
         try:
             with open(log, "rb") as fh:
@@ -164,24 +174,66 @@ def model_refusals(now: datetime, *, log_dir: Path | None = None) -> list[str]:
         except OSError:
             continue
         for line in text.splitlines():
-            if not _REFUSAL_RE.search(line):
+            if not pattern.search(line):
                 continue
             m = _LOG_TS_RE.match(line)
             at = _ts(m.group(1)) if m else None
-            if at is None or not (since <= at <= now):
-                continue
-            count += 1
-            first = at if first is None or at < first else first
-    if not count:
+            if at is not None and since <= at <= until:
+                hits.append((log.stem, at))
+    return hits
+
+
+def model_refusals(now: datetime, *, log_dir: Path | None = None) -> list[str]:
+    """Calls the model refused in the last REFUSAL_HOURS, from the bots' logs."""
+    hits = _log_hits(_REFUSAL_RE, now - timedelta(hours=REFUSAL_HOURS), now, log_dir)
+    if not hits:
         return []
-    return [f"Model: {count} calls refused since {first:%a} {first:%H:%M} (quota or spending cap); "
+    first = min(at for _, at in hits)
+    return [f"Model: {len(hits)} calls refused since {first:%a} {first:%H:%M} (quota or spending cap); "
             "the bots' AI answers fail until it clears."]
+
+
+def lost_messages(now: datetime, *, log_dir: Path | None = None) -> list[str]:
+    """Replies and nudges Telegram never took, in the last LOST_HOURS."""
+    hits = _log_hits(_LOST_RE, now - timedelta(hours=LOST_HOURS), now, log_dir)
+    if not hits:
+        return []
+    by: dict[str, int] = {}
+    for stem, _ in hits:
+        name = _LOG_AGENT.get(stem, stem)
+        by[name] = by.get(name, 0) + 1
+    parts = ", ".join(f"{name} {n}" for name, n in sorted(by.items()))
+    noun = "message" if len(hits) == 1 else "messages"
+    return [f"Telegram: {len(hits)} {noun} never arrived in the last day ({parts})."]
+
+
+def gym_plan_stale(now: datetime, *, plan_path: Path | None = None) -> list[str]:
+    """The SugarWOD plan not re-synced for GYM_PLAN_DAYS and nothing in it for
+    today (QA-2026-10-04-20: unsynced Sep 1 to Oct 3, so the 9:30 autorun
+    read every CrossFit night as a rest day)."""
+    try:
+        from agents.the_scientist import handler as kh
+        path = Path(plan_path or kh.PLAN_PATH)
+        synced = datetime.fromtimestamp(path.stat().st_mtime)
+    except Exception:  # noqa: BLE001 — no plan file: nothing set up to warn about
+        return []
+    if now - synced <= timedelta(days=GYM_PLAN_DAYS):
+        return []
+    try:
+        today = kh.handle_gym_wod_on_date(now) or ""
+    except Exception:  # noqa: BLE001
+        today = ""
+    if today.strip() and "no WOD synced" not in today:
+        return []
+    return [f"Kobe: the gym plan was last synced {_day(synced)} and has nothing for today; "
+            "re-sync it from SugarWOD."]
 
 
 def findings(now: datetime | None = None) -> list[str]:
     now = now or datetime.now()
     out: list[str] = []
-    for check in (model_refusals, genie_dead_feeds, genie_feeds_stale, watch_silent, benji_feeds_in_error):
+    for check in (model_refusals, lost_messages, genie_dead_feeds, genie_feeds_stale, watch_silent,
+                  gym_plan_stale, benji_feeds_in_error):
         try:
             out += check(now)
         except Exception:  # noqa: BLE001
