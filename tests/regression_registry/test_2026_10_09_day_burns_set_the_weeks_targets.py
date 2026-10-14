@@ -77,10 +77,12 @@ def kobe(tmp_path, monkeypatch):
     sys.modules["sci"] = mod
     spec.loader.exec_module(mod)
     mod.PLAN_PATH = plan_path
-    from agents.the_scientist import handler as h, state as st, tools as t
+    from agents.the_scientist import handler as h, protocols as pr, state as st, tools as t
     from core import memory as mem
     h.PLAN_PATH = plan_path
-    for m in (h, st, t, mod):
+    # protocols.week_bounds() reads its own clock (2026-10-14: the pin
+    # broke the Monday after it was written, once the real week moved on).
+    for m in (h, st, t, pr, mod):
         monkeypatch.setattr(m, "datetime", _Friday)
     st.state_set("recovery_tier", "hammer")
     mem.put_entity("scientist", "commitment", {"kind": "weekly_target", "value": 6000},
