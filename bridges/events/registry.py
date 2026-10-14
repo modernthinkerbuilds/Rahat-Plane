@@ -32,6 +32,16 @@ is JS-only or genuinely needs discovery across a whole region.
 
 Upgrade path: when a LibCal/city iCal URL is known, flip that source's
 kind to "ical" in the overlay — precision beats extraction.
+
+2026-10-14 (owner: "none of the events show up … find the right set of
+feeds"): the upgrade happened. The library sources read their platforms'
+own calendars in code (bridges/events/readers.py) instead of a 25-item
+RSS through a model; sources_bayarea.py adds the libraries, family
+venues, city pages and culture venues of the whole Bay, each verified by
+fetch; the dead sources (the Mountain View city page, 403 since August;
+Visit San José and Broadway San José by search; the Monterey search; the
+SF Indian Music Project search) are replaced by direct reads of what
+works. The research is claude/genie_event_feeds_2026-10-11.md.
 """
 from __future__ import annotations
 
@@ -40,37 +50,37 @@ import logging
 import os
 from pathlib import Path
 
+from bridges.events.sources_bayarea import BAY_AREA_SOURCES, _bc, _libcal
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_SOURCES: list[dict] = [
     # ── Libraries (storytimes, author visits, kids workshops) ──
     # bibliocommons gateway RSS feeds: live, dated, server-rendered —
     # each verified by fetch 2026-08-24. One feed covers every branch.
+    # 2026-10-14: the whole calendar through the platform's JSON (the RSS
+    # held 25 items, two days), family audiences only for the big systems.
     {"id": "sjpl", "name": "San José Public Library",
-     "kind": "page",
-     "url": "https://gateway.bibliocommons.com/v2/libraries/sjpl/rss/events",
-     "city": "San Jose", "categories": ["kids", "library", "author"],
+     "kind": "bibliocommons", "url": _bc("sjpl"),
+     "city": "San Jose", "categories": ["library", "author"],
      "query_hint": "storytimes, author visits, kids programs, workshops"},
     {"id": "sccl-library", "name": "Santa Clara County Library District",
-     "kind": "page",
-     "url": "https://gateway.bibliocommons.com/v2/libraries/sccl/rss/events",
-     "city": "Los Altos", "categories": ["kids", "library", "author"],
+     "kind": "bibliocommons", "url": _bc("sccl"),
+     "city": "Los Altos", "categories": ["library", "author"],
      "query_hint": "Los Altos, Cupertino, Campbell, Saratoga, Milpitas, "
                    "Gilroy branches — storytimes, kids programs, "
                    "workshops"},
     {"id": "paloalto-library", "name": "Palo Alto City Library",
-     "kind": "page",
-     "url": "https://gateway.bibliocommons.com/v2/libraries/paloalto/"
-            "rss/events",
-     "city": "Palo Alto", "categories": ["kids", "library", "author"],
+     "kind": "bibliocommons", "url": _bc("paloalto"),
+     "city": "Palo Alto", "categories": ["library", "author"],
      "query_hint": "storytimes, LEGO days, STEAM workshops, author "
                    "visits"},
     {"id": "mv-libcal", "name": "Mountain View Library",
-     "kind": "search",       # LibCal is JS-only (verified 08-24) — no
-                             # server-rendered surface; search until an
-                             # iCal cid is found for the overlay.
-     "url": "https://mountainview.libcal.com/calendar/libraryevents",
-     "city": "Mountain View", "categories": ["kids", "library", "author"],
+     "kind": "libcal",       # 2026-10-14: the calendar's own JSON (cid
+                             # 8800); search found 5 events in 119 tries.
+     "url": _libcal("mountainview", "8800"),
+     "city": "Mountain View", "venue": "Mountain View Public Library",
+     "categories": ["library", "author"],
      "query_hint": "Mountain View Public Library events: storytimes, "
                    "kids programs, maker workshops"},
     {"id": "linden-tree", "name": "Linden Tree Books",
@@ -81,28 +91,25 @@ DEFAULT_SOURCES: list[dict] = [
      "query_hint": "author visits, storytimes, book clubs, writing "
                    "workshops, book signings"},
     # ── City calendars ──
-    {"id": "mv-city", "name": "City of Mountain View events",
-     "kind": "page",         # server-rendered monthly calendar
-                             # (verified 08-24; old /events/ URL 404s)
-     "url": "https://www.mountainview.gov/whats-happening/events",
-     "city": "Mountain View", "categories": ["city", "festival", "family"],
-     "query_hint": "city special events, Music on Castro, Concerts on "
-                   "the Plaza, movie nights, festivals, markets"},
-    {"id": "sj-city", "name": "San José city & Visit San José events",
-     "kind": "search",       # sanjose.org calendar is JS-rendered;
-                             # grounded search indexes it well
+    # mv-city (the City of Mountain View page) was retired 2026-10-14: 403
+    # on every refresh since 2026-08-24 (149 tries, 0 events), and the
+    # page it serves a browser is a stale March grid. The library's own
+    # calendar (mv-libcal) carries the city's family programs.
+    {"id": "sj-city", "name": "Visit San José upcoming events",
+     "kind": "page",         # 2026-10-14: the page's own "Upcoming
+                             # Events" block (the search found nothing
+                             # after 2026-09-16)
      "url": "https://www.sanjose.org/events",
-     "city": "San Jose", "categories": ["city", "festival", "family"],
-     "query_hint": "San Jose events: downtown festivals, parks and "
-                   "recreation programs, Christmas in the Park class "
-                   "events, VivaCalleSJ"},
-    {"id": "pa-city", "name": "City of Palo Alto events",
-     "kind": "search",       # city moved to paloalto.gov (old
-                             # cityofpaloalto.org URLs 404 — 08-24)
-     "url": "https://www.paloalto.gov/Home/Calendar",
+     "city": "San Jose", "categories": ["city", "festival", "family", "show"],
+     "query_hint": "the Upcoming Events block: downtown festivals, city "
+                   "theatre shows, Christmas in the Park, VivaCalleSJ"},
+    {"id": "pa-city", "name": "City of Palo Alto events directory",
+     "kind": "page",         # 2026-10-14: the directory's first page is
+                             # server-rendered (about five days)
+     "url": "https://www.paloalto.gov/Events-Directory",
      "city": "Palo Alto", "categories": ["city", "family", "theatre"],
-     "query_hint": "Palo Alto city events, children's theatre "
-                   "productions, community festivals"},
+     "query_hint": "city events, Junior Museum & Zoo events, children's "
+                   "theatre, community festivals; skip meetings"},
     # ── Retail workshops ──
     {"id": "home-depot-kids", "name": "Home Depot Kids Workshops",
      "kind": "search",       # workshops page is a JS app; the program
@@ -116,9 +123,14 @@ DEFAULT_SOURCES: list[dict] = [
                    "build project"},
     # ── Live shows & performances ──
     {"id": "broadway-sj", "name": "Broadway San José",
-     "kind": "search", "url": "https://broadwaysanjose.com",
-     "city": "San Jose", "categories": ["show", "theatre", "family"],
-     "query_hint": "touring Broadway shows and dates"},
+     "kind": "page",         # 2026-10-14: the homepage lists every show
+                             # with its run dates (the search found 3
+                             # shows in 119 tries)
+     "url": "https://broadwaysanjose.com/",
+     "city": "San Jose", "venue": "San José Center for the Performing Arts",
+     "categories": ["show", "theatre", "family", "culture"],
+     "query_hint": "touring shows and their run dates (one event per show, "
+                   "on its first date)"},
     {"id": "pa-childrens-theatre", "name": "Palo Alto Children's Theatre",
      "kind": "search", "url": "https://www.cityofpaloalto.org",
      "city": "Palo Alto", "categories": ["kids", "theatre", "show"],
@@ -132,21 +144,11 @@ DEFAULT_SOURCES: list[dict] = [
                    "Eventbrite, Partiful and Sulekha listings"},
     # ── Community music orgs (owner, 2026-08-30: Genie missed the SF
     # Indian Music Project's Aug 29 Saratoga acoustic jam) ──
-    # Their own site is JS-only with no feed/API (verified 08-30), but
-    # their events are indexed on Partiful / UNATION / Sulekha, so a
-    # dedicated grounded search scoped to the org's known series
-    # catches them. The 4-productive-miss suspect window keeps them
-    # once found.
-    {"id": "sfimp", "name": "SF Indian Music Project",
-     "kind": "search", "url": "https://sfindianmusicproject.org",
-     "city": "Bay Area", "categories": ["music", "indian", "jam",
-                                        "family"],
-     "query_hint": "SF Indian Music Project events and RSVPs (their "
-                   "Partiful pages count): Acoustic Jam sessions, "
-                   "concerts, Jam at The Commons SF, Jam at Spark "
-                   "Social SF, and South Bay jams like the Saratoga "
-                   "redwoods acoustic evening — include location, "
-                   "start time, and whether free"},
+    # sfimp, a grounded search for the org's Partiful / UNATION / Sulekha
+    # listings, was retired 2026-10-14: 5 events in 63 tries, nothing
+    # since 2026-09-16, and none of those sites offers a feed. The
+    # India Currents calendar (sources_bayarea: india-currents) is the
+    # Bay-wide South Asian source with a feed.
     # ── Markets ──
     {"id": "flea-markets", "name": "Bay Area flea markets",
      "kind": "search", "url": "https://www.sjfm.com",
@@ -223,13 +225,12 @@ DEFAULT_SOURCES: list[dict] = [
                    "Capitola — festivals, beach events, family days",
      "region": "santa-cruz"},
     # ── Monterey / Carmel / Big Sur ──
-    {"id": "monterey-bigsur", "name": "Monterey · Carmel · Big Sur events",
-     "kind": "search", "url": "https://www.seemonterey.com/events",
-     "city": "Monterey", "categories": ["family", "outdoor", "coastal"],
-     "query_hint": "Monterey Bay, Carmel, Pacific Grove, Big Sur events: "
-                   "aquarium programs, coastal festivals, whale season",
-     "region": "monterey"},
-]
+    # monterey-bigsur (a search of seemonterey.com) was retired 2026-10-14:
+    # nothing since 2026-09-16, and the site's own RSS carries no event
+    # dates. The Monterey Public Library's calendar (sources_bayarea:
+    # montereypl) is the coast's feed; a Big Sur trip is planned by the
+    # concierge's live search.
+] + BAY_AREA_SOURCES
 
 
 def _overlay_path() -> Path:

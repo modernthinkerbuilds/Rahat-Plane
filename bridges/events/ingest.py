@@ -1,13 +1,14 @@
 """Event ingestion — per-source fetch → typed events → store.
 
-Three fetch kinds (PRD §6.3: high-yield structured first, degrade
-gracefully everywhere else):
+Fetch kinds (PRD §6.3: high-yield structured first, degrade gracefully
+everywhere else):
 
-  * "ical"   — an RFC 5545 feed URL. Minimal VEVENT parser (DTSTART,
-               DTEND, SUMMARY, LOCATION, URL). Precise; preferred when
-               a feed URL is known. RRULE expansion is v2 — recurring
-               masters are ingested at their DTSTART occurrence and a
-               debug line notes the skipped rule.
+  * the code kinds (2026-10-14, bridges/events/readers.py): "ical",
+               "bibliocommons", "libcal", "communico", "tribe",
+               "localist", "livewhale", "spektrix", "squarespace_rss".
+               A platform's own feed, parsed in code: no model, every
+               event in the calendar, local time, an audience tag from
+               the feed's own labels. Free, so they run every pass.
   * "page"   — 2026-08-24 (owner: venue/library/city events not being
                picked up): fetch the source URL directly (an events
                page or a public RSS feed), strip it to text, and
@@ -43,6 +44,8 @@ import re
 from datetime import datetime, timedelta
 from typing import Callable
 
+from bridges.events import readers
+from bridges.events.readers import parse_ical  # noqa: F401 — the reader moved; the name stays importable
 from bridges.events.registry import load_sources
 from bridges.events.store import upsert_events, inventory_stats
 
@@ -50,53 +53,6 @@ logger = logging.getLogger(__name__)
 
 _HORIZON_DAYS = 21          # ingestion horizon (PRD: weeks out)
 _MAX_EVENTS_PER_SOURCE = 40
-
-
-# ─────────────────────────── iCal (minimal RFC 5545) ───────────────────
-_ICS_DT = re.compile(r"^(?:DTSTART|DTEND)[^:]*:(\d{8})(?:T(\d{6}))?")
-
-
-def _ics_dt(line: str) -> str | None:
-    m = _ICS_DT.match(line)
-    if not m:
-        return None
-    d, t = m.group(1), m.group(2) or "000000"
-    return (f"{d[:4]}-{d[4:6]}-{d[6:8]} "
-            f"{t[:2]}:{t[2:4]}:{t[4:6]}")
-
-
-def parse_ical(text: str, source: dict) -> list[dict]:
-    """VEVENT blocks → event dicts. Tolerant: a bad block is skipped."""
-    events: list[dict] = []
-    # Unfold RFC 5545 folded lines (CRLF + space/tab continuation).
-    text = re.sub(r"\r?\n[ \t]", "", text or "")
-    for block in text.split("BEGIN:VEVENT")[1:]:
-        block = block.split("END:VEVENT")[0]
-        ev: dict = {"city": source.get("city", ""),
-                    "categories": list(source.get("categories") or [])}
-        for line in block.splitlines():
-            if line.startswith("DTSTART"):
-                ev["start_ts"] = _ics_dt(line)
-            elif line.startswith("DTEND"):
-                ev["end_ts"] = _ics_dt(line)
-            elif line.startswith("SUMMARY:"):
-                ev["title"] = line[len("SUMMARY:"):].strip()
-            elif line.startswith("LOCATION:"):
-                ev["venue"] = line[len("LOCATION:"):].strip()
-            elif line.startswith("URL:"):
-                ev["url"] = line[len("URL:"):].strip()
-            elif line.startswith("RRULE:"):
-                logger.debug("RRULE skipped (v2): %s", line[:80])
-        if ev.get("title") and ev.get("start_ts"):
-            events.append(ev)
-    return events[:_MAX_EVENTS_PER_SOURCE]
-
-
-def _fetch_ical(source: dict) -> list[dict]:
-    import requests
-    resp = requests.get(source["url"], timeout=30)
-    resp.raise_for_status()
-    return parse_ical(resp.text, source)
 
 
 # ─────────────────────────── page-kind (fetch + extract) ───────────────
@@ -129,7 +85,11 @@ Window: today through {until}
 
 Only events that actually appear in the text, each with a real calendar
 date in the window. Resolve relative dates ("Sunday, August 30") against
-today's date. No inventions, no past events, no "check the website".
+today's date; a date with no year is the next one on or after today. No
+inventions, no past events, no "check the website". A show that runs for
+weeks is one event on its first date in the window, titled "Title (runs
+to <last date>)". Mark an adults-only event (21+, NightLife, late shows
+described as such) by putting "21+" in its title.
 
 Return STRICT JSON only, no fences:
 {{"events": [{{"title": "...", "start_ts": "YYYY-MM-DD HH:MM:SS",
@@ -343,8 +303,8 @@ def refresh_source(source: dict, *, today: datetime | None = None,
     today = today or datetime.now()
     kind = source.get("kind") or "search"
     try:
-        if kind == "ical":
-            events = _fetch_ical(source)
+        if kind in readers.KINDS:
+            events = readers.fetch(source, today=today, http=http)
         elif kind == "page":
             events = _fetch_page(source, today, llm, http)
         else:
@@ -369,10 +329,27 @@ def refresh_source(source: dict, *, today: datetime | None = None,
 # page) keep their three daily passes; the paid search pass runs
 # Wednesday and Saturday at 03:00 (`--search`, scheduled by launchd)
 # and on demand from Genie, rate-limited. ~102 paid calls/day → ~10.
-FREE_KINDS = ("ical", "page")
+FREE_KINDS = ("page", *readers.KINDS)
 PAID_KINDS = ("search",)
 ON_DEMAND_SOURCE_ID = "_on_demand"
 ON_DEMAND_MIN_GAP_HOURS = 6
+# A page is read by the model (2026-10-14: ~50 venue season pages joined
+# the registry). Once a day is enough for a season page; the code kinds
+# stay on every pass.
+PAGE_REFRESH_HOURS = 20
+
+
+def _due(source: dict, today: datetime, db_path: str | None) -> bool:
+    if (source.get("kind") or "search") != "page":
+        return True
+    try:
+        from bridges.events.store import last_refresh_at
+        last = last_refresh_at(source["id"], path=db_path)
+        if last and today - datetime.strptime(last[:19], "%Y-%m-%d %H:%M:%S") < timedelta(hours=PAGE_REFRESH_HOURS):
+            return False
+    except Exception:  # noqa: BLE001 — no log, due
+        pass
+    return True
 
 
 def refresh_all(*, today: datetime | None = None,
@@ -382,8 +359,9 @@ def refresh_all(*, today: datetime | None = None,
     """Refresh every registered source, or only those whose kind is in
     `kinds` (None = all). The scheduled free passes call this with
     FREE_KINDS; the search pass and the on-demand refresh with all."""
+    today = today or datetime.now()
     sources = [s for s in load_sources()
-               if kinds is None or (s.get("kind") or "search") in kinds]
+               if (kinds is None or (s.get("kind") or "search") in kinds) and _due(s, today, db_path)]
     results = [refresh_source(s, today=today, llm=llm, db_path=db_path)
                for s in sources]
     total = sum(r["fetched"] for r in results)
@@ -461,7 +439,7 @@ def main() -> int:
         print(f"popularity: scored {score_upcoming()} recurring series")
     print(f"links: resolved {resolve_stored_urls()} redirect links")
     print("pass:", "search + free" if paid else "free kinds only "
-          "(ical/page); add --search for the paid pass")
+          "(feeds and pages); add --search for the paid pass")
     return 0
 
 

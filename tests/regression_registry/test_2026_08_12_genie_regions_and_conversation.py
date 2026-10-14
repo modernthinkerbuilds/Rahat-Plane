@@ -129,12 +129,14 @@ def test_registry_covers_the_whole_bay_and_coast(env):
     from bridges.events import registry
     importlib.reload(registry)
     by_id = {s["id"]: s for s in registry.load_sources()}
+    # monterey-bigsur (a search of a site whose RSS carries no dates)
+    # became the Monterey library's own calendar on 2026-10-14.
     expected = {"funcheap-sf": "sf", "sf-rec-parks": "sf",
                 "marin-events": "north-bay",
                 "eastbay-510": "east-bay", "eastbay-diablo": "east-bay",
                 "peninsula-events": "peninsula",
                 "santa-cruz": "santa-cruz",
-                "monterey-bigsur": "monterey"}
+                "montereypl": "monterey"}
     for sid, region in expected.items():
         assert sid in by_id, f"missing regional source {sid}"
         assert by_id[sid].get("region") == region

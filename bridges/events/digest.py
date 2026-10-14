@@ -160,7 +160,10 @@ def build_digest(now: datetime | None = None, *,
     start, end, label = weekend_window(now)
     try:
         from bridges.events.store import query_window
-        rows = query_window(start, end, limit=60, path=path)
+        # At most three rows per feed per day (2026-10-14): the library
+        # feeds now hold whole calendars, and a time-ordered cut was all
+        # one branch's Saturday morning.
+        rows = query_window(start, end, limit=60, per_source_cap=3, path=path)
     except Exception:  # noqa: BLE001 — no inventory, no digest
         rows = []
     commitments = [c for c in (commitments or [])

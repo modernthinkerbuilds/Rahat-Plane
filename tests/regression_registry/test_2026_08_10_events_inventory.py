@@ -67,8 +67,11 @@ def test_registry_ships_the_owners_categories(env):
     from bridges.events import registry
     importlib.reload(registry)
     sources = {s["id"] for s in registry.load_sources()}
+    # mv-city (the City of Mountain View page) retired 2026-10-14: 403 on
+    # every refresh since August; the library's calendar (mv-libcal)
+    # carries the city's family programs.
     assert {"linden-tree", "home-depot-kids", "broadway-sj",
-            "indian-live", "flea-markets", "mv-city",
+            "indian-live", "flea-markets", "mv-libcal",
             "sjpl"} <= sources
 
 

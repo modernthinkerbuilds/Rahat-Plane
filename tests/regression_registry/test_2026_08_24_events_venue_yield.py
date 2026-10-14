@@ -110,32 +110,38 @@ def test_page_kind_is_hermetic_and_tolerant(env):
 
 
 # ── the registry (the owner's named surfaces) ─────────────────────────
-def test_verified_venue_sources_are_page_kind(env):
+def test_verified_venue_sources_are_read_directly(env):
+    """2026-10-14: the libraries moved from the 25-item RSS (read by the
+    model) to their platform's search API, read in code — the upgrade
+    path this module always named. mv-city retired (403 since August)."""
     from bridges.events.registry import load_sources
     by_id = {s["id"]: s for s in load_sources()}
+    assert by_id["linden-tree"]["kind"] == "page"
+    assert "lindentreebooks.com/events-calendar" in by_id["linden-tree"]["url"]
     for sid, url_frag in (
-            ("linden-tree", "lindentreebooks.com/events-calendar"),
-            ("sjpl", "bibliocommons.com/v2/libraries/sjpl/rss/events"),
-            ("sccl-library", "libraries/sccl/rss/events"),
-            ("paloalto-library", "libraries/paloalto/rss/events"),
-            ("mv-city", "mountainview.gov/whats-happening/events")):
-        assert by_id[sid]["kind"] == "page", sid
+            ("sjpl", "bibliocommons.com/v2/libraries/sjpl/events/search"),
+            ("sccl-library", "libraries/sccl/events/search"),
+            ("paloalto-library", "libraries/paloalto/events/search")):
+        assert by_id[sid]["kind"] == "bibliocommons", sid
         assert url_frag in by_id[sid]["url"], sid
+    assert "mv-city" not in by_id
 
 
-def test_community_music_org_source_exists(env):
+def test_south_asian_music_has_a_source_with_a_feed(env):
     """Owner, 2026-08-30: Genie missed the SF Indian Music Project's
-    Saratoga acoustic jam. The org's site is JS-only with no feed
-    (verified by fetch), so this is a dedicated grounded-search source
-    whose hint names their real event series — pin it so the source
-    can't be dropped in a registry cleanup."""
+    Saratoga acoustic jam, so a grounded search for the org's listings
+    (sfimp) was pinned here. 2026-10-14: that search found 5 events in
+    63 tries and nothing after 2026-09-16; none of the listing sites has
+    a feed. It was retired for the India Currents calendar, read in code,
+    plus the venues that book Indian artists. The Indian category stays
+    covered by a source Genie can actually read."""
     from bridges.events.registry import load_sources
     by_id = {s["id"]: s for s in load_sources()}
-    sfimp = by_id["sfimp"]
-    assert sfimp["kind"] == "search"
-    for series in ("Acoustic Jam", "Spark Social", "Saratoga"):
-        assert series in sfimp["query_hint"], series
-    assert "indian" in sfimp["categories"]
+    assert "sfimp" not in by_id
+    ic = by_id["india-currents"]
+    assert ic["kind"] == "tribe" and "indian" in ic["categories"]
+    assert "indiacurrents.com/wp-json/tribe/events/v1/events" in ic["url"]
+    assert "indian" in by_id["indian-live"]["categories"]
 
 
 def test_fitness_sources_exist_with_fitness_category(env):

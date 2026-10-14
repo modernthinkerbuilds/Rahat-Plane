@@ -11,6 +11,7 @@ days (Sep 17 to 20). Each bot logged it; nobody was told.
 record and returns one plain line per problem:
 
   * a Genie feed still tried but fetching nothing for 3+ days;
+  * a Genie feed whose newest event is already past (a stale page);
   * Genie's feeds as a whole not fed for over a day;
   * the Watch silent for over a day;
   * a Benji job feed in error for 3+ days;
@@ -116,6 +117,32 @@ def _feed_name(source_id: str) -> str:
     except Exception:  # noqa: BLE001
         pass
     return source_id
+
+
+def genie_feeds_dated_past(now: datetime, *, path: str | None = None) -> list[str]:
+    """Feeds still being tried whose newest event is already past: a page
+    served from a stale cache (the Mountain View city calendar showed
+    March all autumn) fetches fine and feeds nothing current."""
+    try:
+        from bridges.events import store
+        newest = store.newest_event_by_source(path)
+        con = store._connect(path)
+        try:
+            tried = {sid: _ts(last) for sid, last in con.execute(
+                "SELECT source_id, MAX(refreshed_at) FROM events_refresh_log "
+                "WHERE substr(source_id, 1, 1) != '_' GROUP BY source_id")}
+        finally:
+            con.close()
+    except Exception:  # noqa: BLE001
+        return []
+    today = now.strftime("%Y-%m-%d")
+    out = []
+    for sid, day in sorted(newest.items()):
+        last_try = tried.get(sid)
+        if last_try is None or now - last_try > timedelta(days=2) or not day or day >= today:
+            continue
+        out.append(f"Genie: the {_feed_name(sid)} feed's newest event is dated {day}; it is serving a stale page.")
+    return out
 
 
 def genie_feeds_stale(now: datetime, *, path: str | None = None) -> list[str]:
@@ -232,8 +259,8 @@ def gym_plan_stale(now: datetime, *, plan_path: Path | None = None) -> list[str]
 def findings(now: datetime | None = None) -> list[str]:
     now = now or datetime.now()
     out: list[str] = []
-    for check in (model_refusals, lost_messages, genie_dead_feeds, genie_feeds_stale, watch_silent,
-                  gym_plan_stale, benji_feeds_in_error):
+    for check in (model_refusals, lost_messages, genie_dead_feeds, genie_feeds_dated_past, genie_feeds_stale,
+                  watch_silent, gym_plan_stale, benji_feeds_in_error):
         try:
             out += check(now)
         except Exception:  # noqa: BLE001

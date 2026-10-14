@@ -127,7 +127,7 @@ def _inventory_context(now: datetime) -> str:
         from bridges.events.store import query_window
         rows = query_window(now.strftime("%Y-%m-%d"),
                             (now + timedelta(days=10)).strftime("%Y-%m-%d"),
-                            limit=14)
+                            limit=14, per_source_cap=2)
     except Exception:  # noqa: BLE001 — inventory is optional context
         return ""
     if not rows:

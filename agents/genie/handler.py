@@ -800,7 +800,7 @@ def handle_day_events(day_token: str, *,
     rows: list[dict] = []
     try:
         from bridges.events.store import query_window
-        rows = query_window(day_iso, day_iso, limit=60)
+        rows = query_window(day_iso, day_iso, limit=60, per_source_cap=4)
     except Exception:  # noqa: BLE001
         pass
     from bridges.events.digest import _fmt_row
@@ -945,7 +945,7 @@ def handle_whats_on(*, now: datetime | None = None, llm=None,
     try:
         from bridges.events.store import query_window
         rows = query_window(saturday.strftime("%Y-%m-%d"),
-                            sunday.strftime("%Y-%m-%d"), limit=40)
+                            sunday.strftime("%Y-%m-%d"), limit=40, per_source_cap=3)
         if aud_tags:
             hit, rest = split_by_audience(rows, aud_tags)
             rows = hit if hit else rows

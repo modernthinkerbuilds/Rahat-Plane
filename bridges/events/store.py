@@ -39,7 +39,10 @@ import unicodedata
 from datetime import datetime
 
 # Consecutive PRODUCTIVE refreshes an event must miss before 'suspect'.
-_SUSPECT_MISSES = {"ical": 2, "page": 2, "search": 4}
+# The code kinds (2026-10-14) read the whole calendar, so two misses mean
+# gone, as for ical and page.
+_SUSPECT_MISSES = {"ical": 2, "page": 2, "search": 4, "bibliocommons": 2, "libcal": 2, "communico": 2,
+                   "tribe": 2, "localist": 2, "livewhale": 2, "spektrix": 2, "squarespace_rss": 2}
 
 
 def db_path() -> str:
@@ -208,8 +211,15 @@ def query_window(start_date: str, end_date: str, *,
                  categories: list[str] | None = None,
                  include_suspect: bool = False,
                  limit: int = 60,
+                 per_source_cap: int | None = None,
                  path: str | None = None) -> list[dict]:
-    """Inventory for a date window (ISO dates, inclusive)."""
+    """Inventory for a date window (ISO dates, inclusive), soonest first.
+
+    `per_source_cap` (2026-10-14): every feed's first rows of a day come
+    first, at most this many per feed, then the rest, both in time order,
+    `limit` rows in all. The library feeds now hold whole calendars, and a
+    window ordered by time and cut at `limit` was all Saturday-morning
+    storytimes; a window with one feed in it reads exactly as before."""
     con = _connect(path)
     try:
         sql = ("SELECT title, start_ts, end_ts, venue, city, url, "
@@ -225,11 +235,38 @@ def query_window(start_date: str, end_date: str, *,
             sql += (" AND (" + " OR ".join("categories LIKE ?"
                                            for _ in categories) + ")")
             args += [f"%{c}%" for c in categories]
-        sql += " ORDER BY start_ts LIMIT ?"
-        args.append(limit)
+        sql += " ORDER BY start_ts"
+        if not per_source_cap:
+            sql += " LIMIT ?"
+            args.append(limit)
         cols = ("title", "start_ts", "end_ts", "venue", "city", "url",
                 "source_id", "categories", "status")
-        return [dict(zip(cols, r)) for r in con.execute(sql, args)]
+        rows = [dict(zip(cols, r)) for r in con.execute(sql, args)]
+    finally:
+        con.close()
+    if not per_source_cap:
+        return rows
+    taken: dict[tuple[str, str], int] = {}
+    first: list[dict] = []
+    rest: list[dict] = []
+    for r in rows:
+        key = (str(r.get("source_id") or ""), (r.get("start_ts") or "")[:10])
+        if taken.get(key, 0) < per_source_cap:
+            taken[key] = taken.get(key, 0) + 1
+            first.append(r)
+        else:
+            rest.append(r)
+    return (first + rest)[:limit]
+
+
+def newest_event_by_source(path: str | None = None) -> dict[str, str]:
+    """source_id → the latest start date it ever stored (any status): a
+    feed whose newest event is in the past is serving a stale page."""
+    con = _connect(path)
+    try:
+        return {sid: d for sid, d in con.execute(
+            "SELECT source_id, MAX(date(start_ts)) FROM events_inventory "
+            "WHERE start_ts IS NOT NULL AND start_ts != '' GROUP BY source_id")}
     finally:
         con.close()
 
