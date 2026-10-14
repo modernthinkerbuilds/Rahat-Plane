@@ -10,6 +10,12 @@ Kinds: the code kinds (bibliocommons, libcal, communico, tribe, localist,
 livewhale, spektrix, squarespace_rss, ical) are parsed in code and run
 every pass; "page" is a server-rendered page the model reads once a day.
 
+The last section holds feeds whose robots.txt disallows automated
+readers. The owner chose to subscribe (2026-10-14): they are the
+calendars' own subscribe links, read a few times a day by a reader that
+names itself in its User-Agent; a 403 or 429 is honoured (the fetch
+fails, the health line says so), never retried in a loop.
+
 URL tokens: {start} {end} {days} are filled at fetch time; {family} on a
 BiblioCommons URL becomes the library's own ids for babies, toddlers,
 preschoolers, kids and families (readers.fetch finds them in the feed),
@@ -289,4 +295,65 @@ BAY_AREA_SOURCES: list[dict] = [
      "url": "https://feeds.feedburner.com/funcheapsf_recent_added_events", "city": "Bay Area",
      "categories": ["free", "festival", "family"], "region": "sf",
      "query_hint": "free and cheap events; the date is the title's prefix (MM/DD/YY)"},
+
+    # ══ Feeds whose robots.txt asks automated readers to stay out (owner's
+    # decision, 2026-10-14: "there's no harm in reading"). These are the
+    # calendars' own subscribe links, read a few times a day by a reader
+    # that names itself; none could be verified from the research tools,
+    # which honour robots.txt, so the daily health line is the check: a
+    # feed that fetches nothing for three days is named there, and the
+    # overlay's "disable" list retires it without a commit. ══
+    # ── CivicPlus city calendars: the standard RSS of every calendar ──
+    *[{"id": sid, "name": name, "kind": "page",
+       "url": f"https://{host}/RSSFeed.aspx?ModID=58&CID=All-calendar.xml",
+       "city": city, "categories": ["city", "family", "festival"], "region": region,
+       "query_hint": "city special events, festivals, parks and recreation programs, library events; "
+                     "skip council, commission and committee meetings",
+       "note": "unverified: robots.txt disallows readers; the owner chose to subscribe (2026-10-14)"}
+      for sid, name, host, city, region in (
+          ("sanmateo-city", "City of San Mateo events", "www.cityofsanmateo.org", "San Mateo", "peninsula"),
+          ("dalycity-city", "City of Daly City events", "www.dalycity.org", "Daly City", "peninsula"),
+          ("sanbruno-city", "City of San Bruno events", "www.sanbruno.ca.gov", "San Bruno", "peninsula"),
+          ("halfmoonbay-city", "City of Half Moon Bay events", "www.half-moon-bay.ca.us", "Half Moon Bay", "peninsula"),
+          ("fostercity-city", "City of Foster City events", "www.fostercity.org", "Foster City", "peninsula"),
+          ("burlingame-city", "City of Burlingame events", "burlingame.org", "Burlingame", "peninsula"),
+          ("campbell-city", "City of Campbell events", "www.campbellca.gov", "Campbell", "south-bay"),
+          ("losgatos-town", "Town of Los Gatos events", "www.losgatosca.gov", "Los Gatos", "south-bay"),
+          ("losaltoshills-town", "Town of Los Altos Hills events", "www.losaltoshills.ca.gov", "Los Altos Hills", "south-bay"),
+          ("richmond-city", "City of Richmond events", "www.ci.richmond.ca.us", "Richmond", "east-bay"),
+          ("dublin-city", "City of Dublin events", "dublin.ca.gov", "Dublin", "east-bay"),
+          ("elcerrito-city", "City of El Cerrito events", "www.el-cerrito.org", "El Cerrito", "east-bay"))],
+    {"id": "millbrae-city", "name": "City of Millbrae events", "kind": "ical",
+     "url": "https://www.ci.millbrae.ca.us/common/modules/iCalendar/iCalendar.aspx?catID=26&feed=calendar",
+     "city": "Millbrae", "categories": ["city", "family", "festival"], "region": "peninsula",
+     "note": "unverified: robots.txt disallows readers; the owner chose to subscribe (2026-10-14)"},
+    # ── The East Bay family calendar, and two aggregators ──
+    {"id": "510families", "name": "510 Families", "kind": "tribe", "url": _tribe("www.510families.com"),
+     "city": "East Bay", "categories": ["kids", "family", "festival"], "region": "east-bay",
+     "note": "unverified: robots.txt disallows readers; the owner chose to subscribe (2026-10-14)"},
+    {"id": "visit-trivalley", "name": "Visit Tri-Valley events", "kind": "page", "url": "https://www.visittrivalley.com/event/rss/",
+     "city": "Tri-Valley", "categories": ["family", "festival"], "region": "east-bay",
+     "query_hint": "Pleasanton, Livermore, Dublin, Danville and San Ramon events; the dates are in each item's text",
+     "note": "unverified: robots.txt disallows readers; the owner chose to subscribe (2026-10-14)"},
+    {"id": "ybg-festival", "name": "Yerba Buena Gardens Festival", "kind": "tribe", "url": _tribe("ybgfestival.org"),
+     "city": "San Francisco", "venue": "Yerba Buena Gardens", "categories": ["music", "festival", "family", "free"], "region": "sf",
+     "note": "unverified: robots.txt disallows readers; the owner chose to subscribe (2026-10-14)"},
+    # ── Two public Google Calendars ──
+    {"id": "losaltos-stage-cal", "name": "Los Altos Stage Company calendar", "kind": "ical",
+     "url": "https://calendar.google.com/calendar/ical/c776afcc005eb01f0f5e4507c83697e20eeed9430b2101435f5a4b10a914cbee%40group.calendar.google.com/public/basic.ics",
+     "city": "Los Altos", "venue": "Bus Barn Theater", "categories": ["theatre", "show", "culture"], "region": "south-bay",
+     "note": "unverified from here (robots.txt); a public Google Calendar; the owner chose to subscribe (2026-10-14)"},
+    {"id": "saratoga-history-cal", "name": "Saratoga Historical Foundation calendar", "kind": "ical",
+     "url": "https://calendar.google.com/calendar/ical/0e32a316dda2fe3a402d603cc0436b49dc2e5db919c60cc3d91dc451f8f3eab1%40group.calendar.google.com/public/basic.ics",
+     "city": "Saratoga", "venue": "Saratoga History Museum", "categories": ["museum", "culture"], "region": "south-bay",
+     "note": "unverified from here (robots.txt); a public Google Calendar; the owner chose to subscribe (2026-10-14)"},
+    # ── Two Los Gatos pages ──
+    {"id": "numu", "name": "New Museum Los Gatos (NUMU)", "kind": "page", "url": "https://numu.org/",
+     "city": "Los Gatos", "venue": "NUMU", "categories": ["museum", "art", "culture", "family"], "region": "south-bay",
+     "query_hint": "exhibitions, family art days, talks with dates",
+     "note": "unverified: robots.txt disallows readers; the owner chose to subscribe (2026-10-14)"},
+    {"id": "billy-jones-railroad", "name": "Billy Jones Wildcat Railroad", "kind": "page", "url": "https://www.billyjonesrailroad.org/",
+     "city": "Los Gatos", "venue": "Oak Meadow Park", "categories": ["kids", "family", "outdoor"], "region": "south-bay",
+     "query_hint": "special train days, holiday trains, operating hours changes with dates",
+     "note": "unverified: robots.txt disallows readers; the owner chose to subscribe (2026-10-14)"},
 ]

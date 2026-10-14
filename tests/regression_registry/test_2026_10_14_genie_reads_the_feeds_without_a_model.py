@@ -333,3 +333,18 @@ def test_the_registry_carries_the_bay_areas_feeds_and_retired_the_dead_ones():
     assert "indian" in by_id["india-currents"]["categories"]
     assert all("kids" not in s["categories"] for s in by_id.values() if s.get("kind") in ("bibliocommons", "libcal", "communico"))
     assert len({s["id"] for s in load_sources()}) == len(load_sources())
+
+
+def test_the_feeds_the_owner_chose_to_read_despite_robots_are_marked():
+    """Owner, 2026-10-14: "what's the harm in reading those feeds?" None
+    worth a rule: they are the calendars' own subscribe links. They could
+    not be verified by tools that honour robots.txt, so each carries a
+    note and the health line is the check."""
+    from bridges.events.registry import load_sources
+    by_id = {s["id"]: s for s in load_sources()}
+    chosen = [s for s in by_id.values() if str(s.get("note", "")).startswith("unverified")]
+    assert {"sanmateo-city", "campbell-city", "losgatos-town", "510families", "losaltos-stage-cal", "numu"} <= {s["id"] for s in chosen}
+    assert all(s["kind"] in ("page", "ical", "tribe") for s in chosen)
+    assert "RSSFeed.aspx?ModID=58&CID=All-calendar.xml" in by_id["campbell-city"]["url"]
+    assert by_id["losaltos-stage-cal"]["url"].startswith("https://calendar.google.com/calendar/ical/")
+    assert "owner chose to subscribe" in by_id["510families"]["note"]
