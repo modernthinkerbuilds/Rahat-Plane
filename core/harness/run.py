@@ -39,6 +39,8 @@ from core.tools import Brake, ToolRegistry
 ENV_SANITY = "RAHAT_HARNESS_SANITY"       # "0" turns the cheap frame sanity check off
 PICKS = 3                                 # at most three picks and one clear recommendation
 WIDE_PICKS = 5                            # a wide ask: up to five, spread across the area
+NO_RESEARCH_ROUNDS = 2                    # a message with nothing to find: two rounds, no network tools
+NO_RESEARCH_TOOL_CALLS = 4
 
 
 class SanityOut(BaseModel):
@@ -222,17 +224,26 @@ def run(tenant: Tenant, text: str, *, chat_id: str, now: datetime, serve_mode: s
     result.steps.append({"step": "contract", "outcomes": len(contract.outcomes)})
 
     # 3. Execute (+ repairs through the controller)
+    # A message with nothing to find (a save, a verdict, a question, a reply) runs without the network tools and
+    # in at most two rounds; the tenant decides (2026-10-15: seven of nineteen serve-mode asks were such
+    # messages and each ran the full research loop).
+    research = bool(tenant.research_needed(frame, ctx)) if hasattr(tenant, "research_needed") else True
+    if not research:
+        ctx["no_research"] = True
     registry = tenant.registry(ctx)
     # A wide ask (a long drive, a whole region, "other options") wants a spread, not one answer: more picks and
     # the research to back them (LIVE 2026-10-04: a 50-minute, whole-area ask came back with one café).
-    wide = bool(hasattr(tenant, "is_wide") and tenant.is_wide(frame, text, ctx))
+    wide = research and bool(hasattr(tenant, "is_wide") and tenant.is_wide(frame, text, ctx))
     wide_budget = getattr(tenant.budgets, "per_ask_wide", None)
     budgets = wide_budget if (wide and wide_budget is not None) else tenant.budgets.per_ask
     max_picks = WIDE_PICKS if wide else PICKS
     ctx["wide"], ctx["max_picks"], ctx["budget"] = wide, max_picks, budgets
     if wide:
         result.steps.append({"step": "breadth", "wide": True, "max_picks": max_picks, "tool_calls": budgets.tool_calls})
-    brake = Brake(max_tool_calls=budgets.tool_calls, max_search_queries=budgets.search_queries, max_usd=budgets.usd)
+    if not research:
+        result.steps.append({"step": "breadth", "research": False, "rounds_max": NO_RESEARCH_ROUNDS})
+    brake = (Brake(max_tool_calls=budgets.tool_calls, max_search_queries=budgets.search_queries, max_usd=budgets.usd)
+             if research else Brake(max_tool_calls=NO_RESEARCH_TOOL_CALLS, max_search_queries=0, max_usd=budgets.usd))
     prompt = cexecute.build_prompt(ask=text, frame=frame, contract=contract, library_texts=texts,
                                    moment=tenant.moment(ctx, frame), rules_text=tenant.rules_text(ctx, frame),
                                    max_picks=max_picks)
@@ -254,6 +265,7 @@ def run(tenant: Tenant, text: str, *, chat_id: str, now: datetime, serve_mode: s
             res = cexecute.execute(tenant.name, system=tenant.system_prompt, prompt=prompt, registry=registry, ctx=ctx,
                                    brake=brake, now=now, prior=prior, hints=hints, holding_line=holding_line,
                                    holding_line_s=holding_s, started_at=t0, slow_line_s=slow_s,
+                                   max_rounds=cexecute.MAX_ROUNDS if research else NO_RESEARCH_ROUNDS,
                                    trace_id=tid, db_path=db_path, cassette_dir=cassette_dir, mode=mode)
             s.output = {"rounds": res.rounds, "tool_calls": res.tool_calls, "ok": res.ok, "error": res.error,
                         "problems": res.problems[:3]}

@@ -82,6 +82,21 @@ WHOLE_PARTY = re.compile(r"\b(?:for us|for all of us|both of us|all of us|all th
                          r"|our)\b", re.I)
 
 
+# The household asks for a search in so many words (owner decision 2026-10-15, pulled forward from the
+# DB-first design): these say "go beyond the knowledge base", read in code whatever the model read.
+SEARCH_WORDS = re.compile(
+    r"\b(search(?:\s+(?:online|the\s+web|the\s+internet|again|wider|more))?|look(?:\s+it)?\s+(?:up|online)|go\s+online"
+    r"|check\s+online|google\s+it|use\s+(?:gemini|ai|the\s+ai|google)|broaden|widen|wider|more\s+options"
+    r"|other\s+options|more\s+choices|dig\s+deeper)\b", re.I)
+# ...and for places they don't already know: the regulars and saves are left out unless nothing else fits.
+NEW_WORDS = re.compile(
+    r"\b(something\s+new|somewhere\s+new|new\s+places?(?:\s+only)?|(?:haven'?t|have\s+not|never)\s+(?:tried|been)"
+    r"|not\s+the\s+usual|surprise\s+(?:us|me)|something\s+different|somewhere\s+different)\b", re.I)
+# Intents that need something found; the rest (a save, a verdict, a profile change, a question, a reply)
+# are answered from the knowledge base and the session, without the network tools.
+RESEARCH_INTENTS = frozenset({"eat", "plan", "place_check"})
+
+
 class BourdainTenant:
     name = AGENT
 
@@ -237,11 +252,24 @@ class BourdainTenant:
         notes: list[str] = []
         upd: dict = {}
         last = (ctx.get("last_answer") or {}).get("frame") or {}
+        ask = ctx.get("ask") or ""
+        attrs = list(frame.attributes)
+        if SEARCH_WORDS.search(ask):
+            ctx["search_asked"] = True
+            if "search_asked" not in attrs:
+                attrs.append("search_asked")
+            notes.append("the message asks for a search beyond the knowledge base")
+        if NEW_WORDS.search(ask):
+            ctx["new_asked"] = True
+            if "new_places" not in attrs:
+                attrs.append("new_places")
+            notes.append("the message asks for places the household doesn't already know")
+        if attrs != list(frame.attributes):
+            upd["attributes"] = attrs
         usual = [d for d in (ctx.get("diners") or [])]
         narrowed = bool(usual) and set(frame.diners) < set(usual) and not frame.guests
         kept_narrow = bool(frame.refers_to_last_answer and last.get("diners")
                            and set(last.get("diners")) < set(usual) and set(frame.diners) == set(last.get("diners")))
-        ask = ctx.get("ask") or ""
         partner = (self._partner(ctx, frame.speaker)
                    if PARTNER_RULES.search(ask) and not WHOLE_PARTY.search(ask) else None)
         if partner and not frame.guests:
@@ -342,6 +370,15 @@ class BourdainTenant:
             "weather_on_file": ctx.get("weather"),
             "brake": {"tool_calls": budget.tool_calls, "search_queries": budget.search_queries, "usd": budget.usd},
         }
+        if ctx.get("search_asked"):
+            out["search_asked"] = {"how": "the household asked for a search: go beyond the knowledge base (maps_search, "
+                                          "web_search), and say in the reply that you searched"}
+        if ctx.get("new_asked"):
+            out["new_places"] = {"how": "the household wants places it doesn't already know: leave out its regulars and "
+                                        "saved places unless nothing else fits, and prefer places not yet in the knowledge base"}
+        if ctx.get("no_research"):
+            out["no_research"] = {"how": "nothing to find: act on the knowledge base and the session with the tools you "
+                                         "have, then answer; the network tools are not offered for this message"}
         if ctx.get("wide"):
             out["wide_ask"] = {"picks_max": ctx.get("max_picks", 5),
                                "how": "a spread across the area, not the nearest one: one maps_search with `areas` "
@@ -381,9 +418,20 @@ class BourdainTenant:
             out += {"chain": ["P9"], "price": ["P8"], "room": ["P7"], "reported_score": ["P10"]}.get(kind, [])
         return sorted(set(out))
 
+    def research_needed(self, frame: Frame, ctx: dict) -> bool:
+        """False for a message with nothing to find (a save, a verdict, a
+        profile change, a question, a reply): the run then has no network
+        tools and at most two rounds. A search asked in words always counts."""
+        if ctx.get("search_asked"):
+            return True
+        return bool(set(frame.intents) & RESEARCH_INTENTS)
+
     # ── tools, evidence, verification, rendering ───────────────────────────
     def registry(self, ctx: dict) -> ToolRegistry:
-        return btools.build_registry(ctx, allow=self.manifest.tools)
+        allow = list(self.manifest.tools)
+        if ctx.get("no_research"):
+            allow = [t for t in allow if t not in NETWORK_TOOLS]
+        return btools.build_registry(ctx, allow=allow)
 
     def evidence(self, ctx: dict) -> Evidence:
         return Evidence(kb.connect(ctx.get("db_path")), now=ctx["now"], mode=ctx.get("mode", "home"))
