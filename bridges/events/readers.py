@@ -480,40 +480,227 @@ def _ics_datetime(params: str, value: str, default_zone: str | None) -> datetime
     return naive
 
 
+_RRULE_DAYS = {"MO": 0, "TU": 1, "WE": 2, "TH": 3, "FR": 4, "SA": 5, "SU": 6}
+_RRULE_MAX_STEPS = 4000       # a daily rule from years back: enough steps to reach the window, never a hang
+
+
+def _rrule_parts(rule: str) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for part in (rule or "").split(";"):
+        if "=" in part:
+            k, v = part.split("=", 1)
+            out[k.strip().upper()] = v.strip()
+    return out
+
+
+def _nth_weekday(year: int, month: int, weekday: int, n: int) -> datetime | None:
+    """The n-th (1..5) or, with n < 0, the n-th-from-last weekday of a month."""
+    import calendar as _cal
+    days = [d for d in range(1, _cal.monthrange(year, month)[1] + 1)
+            if datetime(year, month, d).weekday() == weekday]
+    try:
+        d = days[n - 1] if n > 0 else days[n]
+    except IndexError:
+        return None
+    return datetime(year, month, d)
+
+
+def expand_rrule(start: datetime, rule: str, *, until_day: datetime, exdates: set[str] = frozenset(),
+                 not_before: datetime | None = None) -> list[datetime] | None:
+    """The occurrences of an RRULE master from `start` through `until_day`
+    (DAILY, WEEKLY with BYDAY, MONTHLY by BYMONTHDAY or an ordinal BYDAY,
+    YEARLY; INTERVAL, COUNT, UNTIL). `exdates` are "YYYYMMDDTHHMMSS" or
+    "YYYYMMDD" strings as the feed wrote them (local time). None when the
+    rule can't be read, so the caller lists the master once as before.
+    Occurrences before `not_before` are counted (COUNT) but not returned."""
+    parts = _rrule_parts(rule)
+    freq = parts.get("FREQ")
+    if freq not in ("DAILY", "WEEKLY", "MONTHLY", "YEARLY"):
+        return None
+    try:
+        interval = max(1, int(parts.get("INTERVAL", "1")))
+        count = int(parts["COUNT"]) if "COUNT" in parts else None
+    except ValueError:
+        return None
+    until: datetime | None = None
+    if "UNTIL" in parts:
+        u = parts["UNTIL"]
+        try:
+            until = (to_pacific(datetime.strptime(u[:15], "%Y%m%dT%H%M%S").replace(tzinfo=_zone("UTC")))
+                     if u.endswith("Z") else datetime.strptime(u[:15], "%Y%m%dT%H%M%S") if "T" in u
+                     else datetime.strptime(u[:8], "%Y%m%d").replace(hour=23, minute=59))
+        except (ValueError, TypeError):
+            return None
+    bydays: list[tuple[int, int]] = []        # (ordinal or 0, weekday)
+    if parts.get("BYDAY"):
+        for tok in parts["BYDAY"].split(","):
+            m = re.fullmatch(r"([+-]?\d)?([A-Z]{2})", tok.strip())
+            if not m or m.group(2) not in _RRULE_DAYS:
+                return None
+            bydays.append((int(m.group(1) or 0), _RRULE_DAYS[m.group(2)]))
+    try:
+        monthdays = [int(x) for x in parts["BYMONTHDAY"].split(",")] if parts.get("BYMONTHDAY") else []
+        months = [int(x) for x in parts["BYMONTH"].split(",")] if parts.get("BYMONTH") else []
+    except ValueError:
+        return None
+    hard_end = min(until, until_day) if until else until_day
+    out: list[datetime] = []
+    n_emitted = 0
+
+    def emit(dt: datetime) -> bool:
+        """True to keep going, False when COUNT or the end is reached."""
+        nonlocal n_emitted
+        if dt < start:
+            return True
+        if dt > hard_end:
+            return False
+        n_emitted += 1
+        key_dt, key_d = dt.strftime("%Y%m%dT%H%M%S"), dt.strftime("%Y%m%d")
+        if key_dt not in exdates and key_d not in exdates and (not_before is None or dt >= not_before):
+            out.append(dt)
+        return count is None or n_emitted < count
+
+    steps = 0
+    if freq == "DAILY":
+        cur = start
+        while steps < _RRULE_MAX_STEPS and emit(cur):
+            cur += timedelta(days=interval)
+            steps += 1
+    elif freq == "WEEKLY":
+        days = sorted({wd for _, wd in bydays}) or [start.weekday()]
+        week0 = start - timedelta(days=start.weekday())           # the Monday of the start's week
+        going = True
+        while going and steps < _RRULE_MAX_STEPS:
+            for wd in days:
+                if not emit(week0 + timedelta(days=wd)):
+                    going = False
+                    break
+            week0 += timedelta(weeks=interval)
+            steps += 1
+    elif freq == "MONTHLY":
+        y, mo = start.year, start.month
+        going = True
+        while going and steps < _RRULE_MAX_STEPS:
+            cands: list[datetime] = []
+            if bydays:
+                for n, wd in bydays:
+                    d = _nth_weekday(y, mo, wd, n or 1)
+                    if d is not None:
+                        cands.append(d.replace(hour=start.hour, minute=start.minute))
+            elif monthdays:
+                import calendar as _cal
+                last = _cal.monthrange(y, mo)[1]
+                for md in monthdays:
+                    dd = md if md > 0 else last + 1 + md
+                    if 1 <= dd <= last:
+                        cands.append(datetime(y, mo, dd, start.hour, start.minute))
+            else:
+                import calendar as _cal
+                if start.day <= _cal.monthrange(y, mo)[1]:
+                    cands.append(datetime(y, mo, start.day, start.hour, start.minute))
+            for d in sorted(cands):
+                if not emit(d):
+                    going = False
+                    break
+            mo += interval
+            while mo > 12:
+                mo -= 12
+                y += 1
+            steps += 1
+    else:  # YEARLY
+        y = start.year
+        going = True
+        while going and steps < _RRULE_MAX_STEPS:
+            for mo in (months or [start.month]):
+                try:
+                    d = datetime(y, mo, start.day, start.hour, start.minute)
+                except ValueError:
+                    continue
+                if not emit(d):
+                    going = False
+                    break
+            y += interval
+            steps += 1
+    return out
+
+
 def parse_ical(text: str, source: dict, *, today: datetime | None = None,
                horizon_days: int | None = None) -> list[dict]:
     """VEVENT blocks → event dicts. UTC ("Z") and TZID times become the
     household's local time; all-day DATE values keep 00:00; a folded line
     is unfolded; "\\," is a comma. Past events are dropped before any cap
     (the old reader kept the feed's first 40 rows, which on a LibCal feed
-    were a month of past storytimes). RRULE masters are listed once, at
-    their DTSTART."""
+    were a month of past storytimes). With a window, an RRULE master is
+    expanded on its dates inside it (2026-10-15: two public Google
+    Calendars of recurring events parsed to nothing, listed once at a
+    DTSTART months old); EXDATEs are skipped and a RECURRENCE-ID instance
+    replaces its occurrence. Without a window a master is listed once."""
     text = re.sub(r"\r?\n[ \t]", "", text or "")
     default_zone = None
     m = re.search(r"^X-WR-TIMEZONE:(.+)$", text, re.M)
     if m:
         default_zone = m.group(1).strip()
-    events: list[dict] = []
+    window_end = ((today + timedelta(days=horizon_days or CODE_HORIZON_DAYS)).replace(hour=23, minute=59, second=59)
+                  if today else None)
+    not_before = (today - timedelta(days=1)) if today else None
+    blocks: list[dict] = []
     for block in text.split("BEGIN:VEVENT")[1:]:
         block = block.split("END:VEVENT")[0]
         props: dict[str, tuple[str, str]] = {}
+        exdates: set[str] = set()
         for line in block.splitlines():
             pm = _ICS_PROP_RE.match(line.strip())
-            if pm:
-                props.setdefault(pm.group(1), (pm.group(2), pm.group(3)))
+            if not pm:
+                continue
+            if pm.group(1) == "EXDATE":
+                for v in pm.group(3).split(","):
+                    v = v.strip()
+                    if v:
+                        exdates.add(v.rstrip("Z"))
+                continue
+            props.setdefault(pm.group(1), (pm.group(2), pm.group(3)))
         if "DTSTART" not in props:
             continue
+        blocks.append({"props": props, "exdates": exdates})
+    # Instances with a RECURRENCE-ID replace their master's occurrence on that date.
+    overridden: set[tuple[str, str]] = set()
+    for b in blocks:
+        rid = b["props"].get("RECURRENCE-ID")
+        if rid:
+            d = _ics_datetime(rid[0], rid[1], default_zone)
+            if d is not None:
+                overridden.add((b["props"].get("UID", ("", ""))[1].strip(), d.strftime("%Y%m%d")))
+    events: list[dict] = []
+    recurring = expanded = 0
+    for b in blocks:
+        props, exdates = b["props"], b["exdates"]
         start = _ics_datetime(*props["DTSTART"], default_zone)
         end = _ics_datetime(*props["DTEND"], default_zone) if "DTEND" in props else None
-        if "RRULE" in props:
-            logger.debug("RRULE listed once at DTSTART: %s", props["RRULE"][1][:80])
+        if start is None:
+            continue
+        title = _unescape_ics(props.get("SUMMARY", ("", ""))[1])
         desc = _unescape_ics(props.get("DESCRIPTION", ("", ""))[1])[:400]
         cats = _unescape_ics(props.get("CATEGORIES", ("", ""))[1])
-        ev = _event(source, title=_unescape_ics(props.get("SUMMARY", ("", ""))[1]), start=start, end=end,
-                    venue=_unescape_ics(props.get("LOCATION", ("", ""))[1]),
-                    url=props.get("URL", ("", ""))[1].strip(), labels=(cats, desc))
-        if ev:
-            events.append(ev)
+        venue = _unescape_ics(props.get("LOCATION", ("", ""))[1])
+        url = props.get("URL", ("", ""))[1].strip()
+        uid = props.get("UID", ("", ""))[1].strip()
+        starts: list[datetime] = [start]
+        if "RRULE" in props and "RECURRENCE-ID" not in props:
+            recurring += 1
+            if window_end is not None:
+                occ = expand_rrule(start, props["RRULE"][1], until_day=window_end, exdates=exdates, not_before=not_before)
+                if occ is not None:
+                    starts = [d for d in occ if (uid, d.strftime("%Y%m%d")) not in overridden]
+                    expanded += len(starts)
+        duration = (end - start) if end else None
+        for s in starts:
+            ev = _event(source, title=title, start=s, end=(s + duration) if duration else None,
+                        venue=venue, url=url, labels=(cats, desc))
+            if ev:
+                events.append(ev)
+    if today and recurring:
+        logger.info("%s: %d of %d events are recurring; %d dates in the window", source.get("id"), recurring,
+                    len(blocks), expanded)
     return _window(events, today, horizon_days) if today else events[:MAX_EVENTS]
 
 

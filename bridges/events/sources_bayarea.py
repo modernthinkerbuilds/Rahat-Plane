@@ -328,9 +328,12 @@ BAY_AREA_SOURCES: list[dict] = [
      "city": "Millbrae", "categories": ["city", "family", "festival"], "region": "peninsula",
      "note": "unverified: robots.txt disallows readers; the owner chose to subscribe (2026-10-14)"},
     # ── The East Bay family calendar, and two aggregators ──
-    {"id": "510families", "name": "510 Families", "kind": "tribe", "url": _tribe("www.510families.com"),
+    # 2026-10-15: the site answers 404 on The Events Calendar's REST route (three passes); its iCal export
+    # is the feed the site itself offers. A list view from today, so the export is upcoming events.
+    {"id": "510families", "name": "510 Families", "kind": "ical",
+     "url": "https://www.510families.com/events/list/?tribe-bar-date={start}&ical=1",
      "city": "East Bay", "categories": ["kids", "family", "festival"], "region": "east-bay",
-     "note": "unverified: robots.txt disallows readers; the owner chose to subscribe (2026-10-14)"},
+     "note": "unverified: robots.txt disallows readers; the owner chose to subscribe (2026-10-14); iCal since 2026-10-15"},
     {"id": "visit-trivalley", "name": "Visit Tri-Valley events", "kind": "page", "url": "https://www.visittrivalley.com/event/rss/",
      "city": "Tri-Valley", "categories": ["family", "festival"], "region": "east-bay",
      "query_hint": "Pleasanton, Livermore, Dublin, Danville and San Ramon events; the dates are in each item's text",

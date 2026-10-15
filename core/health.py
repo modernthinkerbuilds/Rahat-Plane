@@ -88,10 +88,13 @@ def genie_dead_feeds(now: datetime, *, path: str | None = None) -> list[str]:
                 "FROM events_refresh_log WHERE substr(source_id, 1, 1) != '_' "
                 "GROUP BY source_id").fetchall()
             out = []
+            registered = _registered_feed_ids()
             for sid, last_try, last_good in rows:
                 tried, good = _ts(last_try), _ts(last_good)
                 if tried is None or now - tried > timedelta(days=2):
                     continue                        # no longer tried: retired, not broken
+                if registered is not None and sid not in registered:
+                    continue                        # retired yesterday: its last try is recent, it is still not broken
                 if good is not None and now - good <= timedelta(days=FEED_DEAD_DAYS):
                     continue
                 tries = con.execute(
@@ -106,6 +109,16 @@ def genie_dead_feeds(now: datetime, *, path: str | None = None) -> list[str]:
             con.close()
     except Exception:  # noqa: BLE001
         return []
+
+
+def _registered_feed_ids() -> set[str] | None:
+    """The feeds the registry (defaults plus the vault overlay) holds now;
+    None when it can't be read, and then every tried feed counts."""
+    try:
+        from bridges.events.registry import load_sources
+        return {str(s.get("id")) for s in load_sources() if s.get("id")}
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def _feed_name(source_id: str) -> str:

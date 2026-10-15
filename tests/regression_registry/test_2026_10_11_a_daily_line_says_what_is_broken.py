@@ -50,8 +50,9 @@ def _feed(path, source, at, fetched):
     store.mark_refresh(source, now=at, fetched=fetched, path=path)
 
 
-def test_a_feed_still_tried_but_fetching_nothing_is_named(sandbox):
+def test_a_feed_still_tried_but_fetching_nothing_is_named(sandbox, monkeypatch):
     h, db = sandbox["health"], sandbox["events"]
+    monkeypatch.setattr(h, "_registered_feed_ids", lambda: {"feed-a", "feed-b", "feed-c"})   # 2026-10-15: registry-aware
     _feed(db, "feed-a", datetime(2026, 10, 1, 7, 0), 12)
     for day in range(2, 12):                                  # ten empty tries
         _feed(db, "feed-a", datetime(2026, 10, day, 7, 0), 0)
