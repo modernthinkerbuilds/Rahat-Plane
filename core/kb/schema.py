@@ -231,6 +231,26 @@ CREATE VIEW IF NOT EXISTS kb_regulars AS
            (SELECT COUNT(*) FROM kb_visit vi WHERE vi.place_id = p.place_id) AS visits
     FROM kb_place p JOIN kb_verdict vd ON vd.place_id = p.place_id AND vd.kind = 'loved'
     GROUP BY p.place_id, p.name;
+
+-- The gazetteer (2026-10-15): every eating place that exists in an area, from open data
+-- (OpenStreetMap, Foursquare OS Places). Not the knowledge base: nobody has vouched for a
+-- row, it carries no hours or rating, and it is promoted into kb_place only when an ask or a
+-- mention touches it (core/kb/gazetteer.py). Google Maps data never lands here.
+CREATE TABLE IF NOT EXISTS kb_gazetteer (
+    gaz_id TEXT PRIMARY KEY,                   -- osm:node/123 | fsq:<fsq_place_id>
+    source TEXT NOT NULL,                      -- osm | foursquare
+    name TEXT NOT NULL, name_norm TEXT NOT NULL,
+    lat REAL, lng REAL, address TEXT, city TEXT, city_key TEXT, postcode TEXT,
+    categories TEXT NOT NULL DEFAULT '',       -- "restaurant;cafe" | the source's labels, ; joined
+    cuisine TEXT, cuisine_family TEXT, website TEXT, phone TEXT, hours_text TEXT,
+    tags_json TEXT,                            -- a whitelist of the source's tags (diet:*, brand, takeaway…)
+    date_refreshed TEXT, date_closed TEXT,
+    place_id TEXT,                             -- the kb_place it was promoted to, if any
+    release TEXT, loaded_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS kb_gaz_name ON kb_gazetteer(name_norm);
+CREATE INDEX IF NOT EXISTS kb_gaz_city ON kb_gazetteer(city_key);
+CREATE INDEX IF NOT EXISTS kb_gaz_latlng ON kb_gazetteer(lat, lng);
 """
 
 # Seed ontology: cuisines that count together for the variety rule.

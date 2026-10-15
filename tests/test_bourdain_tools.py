@@ -189,3 +189,56 @@ def test_blocked_host_is_refused_before_any_request(ctx, monkeypatch):
     reg = _reg(ctx)
     res = reg.execute("read_page_facts", {"url": "https://www.yelp.com/biz/casa"}, ctx)
     assert not res.ok and "link_only" in res.error and res.denied_by == "_deny_blocked_hosts"
+
+
+# ── the gazetteer under the tools (2026-10-15) ──────────────────────────
+def _gazetteer_rows(ctx, rows):
+    from core.kb import gazetteer as gz
+    con = kb.connect(ctx["db_path"])
+    gz.upsert(con, rows, release="test", now=NOW)
+    con.commit()
+    con.close()
+
+
+def test_a_thin_search_is_filled_from_the_gazetteer_as_unvetted(ctx):
+    from core.kb import gazetteer as gz
+    lat, lng = ctx["origin_latlng"]
+    _gazetteer_rows(ctx, [
+        gz.osm_row({"type": "node", "id": 1, "lat": lat + 0.003, "lon": lng, "tags": {"name": "Bai Tong", "amenity": "restaurant",
+                    "cuisine": "thai", "website": "https://baitong.test"}}),
+        gz.osm_row({"type": "node", "id": 2, "lat": lat + 0.004, "lon": lng, "tags": {"name": "Lao Kitchen", "amenity": "restaurant",
+                    "cuisine": "lao"}}),
+        gz.osm_row({"type": "node", "id": 3, "lat": lat + 0.9, "lon": lng, "tags": {"name": "Far Thai", "amenity": "restaurant",
+                    "cuisine": "thai"}}),
+    ])
+    reg = _reg(ctx)
+    res = reg.execute("kb_search_places", {"family": "thai", "within_minutes": 15, "mode": "walk"}, ctx)
+    assert res.ok and res.value["places"] == []                      # nothing vetted in walking range
+    names = [p["name"] for p in res.value["unvetted"]]
+    assert names == ["Bai Tong", "Lao Kitchen"], names                # lao counts as thai; Far Thai is far
+    first = res.value["unvetted"][0]
+    assert first["unvetted"] is True and first["source"] == "OpenStreetMap" and first["status"] == "unknown"
+    assert first["facts"]["website"]["value"] == "https://baitong.test"
+    assert "hours" not in first["facts"] and "no hours or rating" in res.value["note"]
+    con = kb.connect(ctx["db_path"])
+    p = query.place(con, first["place_id"])
+    assert p["source_list"] == "gazetteer" and p["status"] == "unknown"
+    # a vetted search is not padded
+    full = reg.execute("kb_search_places", {"within_minutes": 15, "mode": "walk"}, ctx)
+    assert "unvetted" not in full.value or full.value["places"]
+
+
+def test_a_name_the_knowledge_base_lacks_resolves_from_the_gazetteer(ctx):
+    from core.kb import gazetteer as gz
+    lat, lng = ctx["origin_latlng"]
+    _gazetteer_rows(ctx, [gz.osm_row({"type": "node", "id": 7, "lat": lat + 0.01, "lon": lng,
+                                      "tags": {"name": "Pho Bowl", "amenity": "restaurant", "cuisine": "vietnamese"}})])
+    reg = _reg(ctx)
+    r = reg.execute("resolve_name", {"text": "pho bowl"}, ctx)
+    cand = r.value["candidates"][0]
+    assert cand["name"] == "Pho Bowl" and cand["unvetted"] is True and "gazetteer" in cand["why"]
+    assert cand["confidence"] == 0.7 and r.value["resolved"]["name"] == "Pho Bowl"   # the only reading
+    con = kb.connect(ctx["db_path"])
+    assert query.find_place(con, "Pho Bowl")[0]["source_list"] == "gazetteer"
+    # the knowledge base still wins when it knows the name
+    assert reg.execute("resolve_name", {"text": "casa pasta"}, ctx).value["resolved"]["why"] == "knowledge base"

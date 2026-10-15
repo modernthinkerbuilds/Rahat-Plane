@@ -39,7 +39,7 @@ from core import hours as chours
 from core import llm_chat
 from core import state_scopes as ss
 from core import weather as cweather
-from core.kb import geo, query, schema as kb
+from core.kb import gazetteer as gz, geo, query, schema as kb
 from core.tools import ToolRegistry, ToolResult
 from agents.bourdain import maps as bmaps
 from agents.bourdain import profile as cprofile
@@ -101,7 +101,7 @@ def _place_view(con, p: dict, ctx: dict) -> dict:
            "format_tags": p.get("format_tags"), "room_tags": p.get("room_tags"), "source_list": p.get("source_list"),
            "lat": p.get("lat"), "lng": p.get("lng"), "facts": {}}
     for claim in ("hours", "status", "price", "menu", "dish_note:primary", "dish_note:spouse", "why",
-                  "acclaim", "map_url", "yelp_url", "phone", "reservations", "payment", "transit",
+                  "acclaim", "map_url", "yelp_url", "phone", "website", "reservations", "payment", "transit",
                   "minutes_from_stay", "note", "seating", "format", "location_count"):
         f = kb.current_fact(con, "place", p["place_id"], claim)
         if f:
@@ -393,6 +393,17 @@ def build_registry(ctx: dict, *, allow: list[str] | None = None) -> ToolRegistry
             if amb:
                 cands.append({"kind": "ambiguous", "readings": json.loads(amb[0] or "[]"), "rule": amb[1],
                               "confidence": 0.5})
+            if not any(x.get("kind") == "place" for x in cands):
+                # Not on file: the gazetteer (open data) may know the place by name, near the origin.
+                origin = c.get("origin_latlng")
+                for g in gz.find(con, a.text, city=a.city, near=origin, km=GAZ_NAME_KM if origin else None, limit=3):
+                    w = gz.promote(con, g, now=_now(c), trace_id=c.get("trace_id"))
+                    cands.append({"kind": "place", "place_id": w["place_id"], "name": g["name"], "city": g.get("city"),
+                                  "unvetted": True, "website": g.get("website"),
+                                  "why": f"the gazetteer ({gz.SOURCE_NAMES[g['source']]}): exists, nobody has vouched for it; "
+                                         "no hours or rating on file",
+                                  "confidence": 0.7 if kb.norm_name(g["name"]) == norm else 0.5})
+                con.commit()
             return {"candidates": cands[:8], "resolved": cands[0] if len(cands) == 1 or (cands and cands[0]["confidence"] >= 0.85) else None}
         finally:
             con.close()
@@ -424,8 +435,41 @@ def build_registry(ctx: dict, *, allow: list[str] | None = None) -> ToolRegistry
             out.sort(key=lambda v: (not v["saved"], v.get("about_minutes") if v.get("about_minutes") is not None else 999,
                                     -(v.get("rating") or {}).get("value", 0) if v.get("rating") else 0))
             left_out = {pid: why for pid, why in excluded.items()}
-            return {"places": out[:a.limit], "count_before_limit": len(out), "excluded": len(left_out),
-                    "kb_hits": len(out)}
+            res = {"places": out[:a.limit], "count_before_limit": len(out), "excluded": len(left_out),
+                   "kb_hits": len(out)}
+            # A thin result is filled from the gazetteer (2026-10-15): open-data places near the origin, by the
+            # family asked for, promoted as unvetted (status unknown, no hours or rating). The model reads their
+            # website or Maps before picking one; the verifier insists.
+            if len(out) < GAZ_FILL_BELOW and origin:
+                mode = a.mode or (c.get("leg") or {}).get("minutes_mode", "drive")
+                minutes = a.within_minutes or (c.get("leg") or {}).get("radius_min") or 20
+                km = max(2.0, minutes * (0.08 if mode == "walk" else 0.9))
+                have = {v["place_id"] for v in out}
+                fill = []
+                for g in gz.nearby(con, origin[0], origin[1], km=km, family=(a.family or "").lower() or None, limit=40):
+                    w = gz.promote(con, g, now=now, trace_id=c.get("trace_id"))
+                    if w["place_id"] in have or w["place_id"] in excluded:
+                        continue
+                    have.add(w["place_id"])
+                    p = query.place(con, w["place_id"])
+                    if not p:
+                        continue
+                    v = _place_view(con, p, c)
+                    v["saved"] = False
+                    v["unvetted"] = True
+                    v["source"] = gz.SOURCE_NAMES[g["source"]]
+                    if a.within_minutes and v.get("about_minutes") is not None and v["about_minutes"] > a.within_minutes:
+                        continue
+                    fill.append(v)
+                    if len(fill) >= GAZ_FILL_MAX:
+                        break
+                con.commit()
+                if fill:
+                    res["unvetted"] = fill
+                    res["note"] = (f"{len(fill)} unvetted places from the gazetteer (open data): they exist nearby, but "
+                                   "nobody has vouched for them and no hours or rating are on file. Read the website "
+                                   "(read_page_facts) or check Google Maps before picking one.")
+            return res
         finally:
             con.close()
 
@@ -885,6 +929,11 @@ MAPS_AREA_WAIT_S = 15.0
 # A Maps result farther than this from the search centre is another town with the same name (LIVE 2026-10-11:
 # six Saratoga Springs, NY bakeries filed from a Saratoga, CA ask). Wider than any drive in the area.
 MAPS_MAX_KM = 150
+# The gazetteer (open data: every eating place that exists) fills a thin knowledge-base search and resolves a
+# name the knowledge base lacks; a row is promoted into kb_place as an unvetted place (status unknown, no hours).
+GAZ_FILL_BELOW = 5            # fewer vetted fits than this → add gazetteer places
+GAZ_FILL_MAX = 8
+GAZ_NAME_KM = 60.0            # a name resolves from the gazetteer within this of the origin
 
 _QUERY_STOP = {"a", "an", "the", "and", "or", "with", "for", "of", "to", "in", "near", "around", "place", "places",
                "spot", "spots", "shop", "shops", "good", "best", "nice"}
