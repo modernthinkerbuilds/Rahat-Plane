@@ -337,6 +337,8 @@ def write_place(con, mp: MapsPlace, *, now: datetime, trace_id: str | None = Non
         f("price", {"value": mp.price_level, "range": mp.price_range})
     if mp.phone:
         f("phone", {"value": mp.phone})
+    if mp.website:
+        f("website", {"value": mp.website})          # 2026-10-15: the nightly own-site refresh reads it
     if mp.url:
         f("map_url", {"value": mp.url})
     if mp.menu:

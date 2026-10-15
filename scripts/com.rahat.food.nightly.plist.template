@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- bridges/food/nightly.py: the feeds → mentions, then the own-site refresh. 05:30, in code, no model.
+         Render with bootstrap.sh (or sed {{RAHAT_HOME}} / {{PYTHON_BIN}}) and:
+           launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.rahat.food.nightly.plist
+           launchctl kickstart -k gui/$(id -u)/com.rahat.food.nightly     # run it now -->
+    <key>Label</key>
+    <string>com.rahat.food.nightly</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>{{PYTHON_BIN}}</string>
+        <string>-u</string>
+        <string>-m</string>
+        <string>bridges.food.nightly</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>{{RAHAT_HOME}}</string>
+
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict>
+            <key>Hour</key>
+            <integer>5</integer>
+            <key>Minute</key>
+            <integer>30</integer>
+        </dict>
+    </array>
+
+    <key>StandardOutPath</key>
+    <string>{{RAHAT_HOME}}/vault/food_nightly.log</string>
+    <key>StandardErrorPath</key>
+    <string>{{RAHAT_HOME}}/vault/food_nightly.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+    </dict>
+</dict>
+</plist>

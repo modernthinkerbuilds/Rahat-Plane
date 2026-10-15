@@ -251,6 +251,23 @@ CREATE TABLE IF NOT EXISTS kb_gazetteer (
 CREATE INDEX IF NOT EXISTS kb_gaz_name ON kb_gazetteer(name_norm);
 CREATE INDEX IF NOT EXISTS kb_gaz_city ON kb_gazetteer(city_key);
 CREATE INDEX IF NOT EXISTS kb_gaz_latlng ON kb_gazetteer(lat, lng);
+
+-- Mentions (2026-10-15): what the feeds wrote about eating places, read in code (bridges/food).
+-- One row per (item, name); resolved to a place or a gazetteer row when the name is known.
+CREATE TABLE IF NOT EXISTS kb_mention (
+    mention_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_id TEXT NOT NULL, url TEXT NOT NULL, title TEXT NOT NULL, published TEXT,
+    name TEXT NOT NULL, name_norm TEXT NOT NULL, city TEXT, neighborhood TEXT,
+    kind TEXT NOT NULL,                        -- opening | closing | closed | list | mention
+    how TEXT NOT NULL,                         -- title_convention | headline | known_name
+    confidence REAL NOT NULL DEFAULT 0.6, quote TEXT,
+    place_id TEXT, gaz_id TEXT,                -- what it resolved to, if anything
+    found_at TEXT NOT NULL,
+    UNIQUE(url, name_norm)
+);
+CREATE INDEX IF NOT EXISTS kb_mention_name ON kb_mention(name_norm);
+CREATE INDEX IF NOT EXISTS kb_mention_place ON kb_mention(place_id);
+CREATE INDEX IF NOT EXISTS kb_mention_found ON kb_mention(found_at);
 """
 
 # Seed ontology: cuisines that count together for the variety rule.

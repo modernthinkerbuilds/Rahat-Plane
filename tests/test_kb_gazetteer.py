@@ -111,7 +111,8 @@ def test_osm_hours_come_along_as_an_unverified_fact_and_a_chain_is_tagged(db):
     con = kb.connect(db)
     w = gz.promote(con, gz.find(con, "Big Basin Cafe")[0], now=NOW)
     h = kb.current_fact(con, "place", w["place_id"], "hours")
-    assert h and "Mo-Su" in h["value"]["value"] and "unverified" in h["value"]["note"]
+    assert h and h["value"]["value"].startswith("Monday: 7:00 AM–5:00 PM") and "unverified" in h["value"]["note"]
+    assert con.execute("SELECT COUNT(*) FROM kb_hours WHERE place_id = ?", (w["place_id"],)).fetchone()[0] == 7
     assert query.place(con, w["place_id"])["format_tags"] == ["cafe"]
     b = gz.promote(con, gz.find(con, "Burger Barn")[0], now=NOW)
     assert "chain" in query.place(con, b["place_id"])["format_tags"]
@@ -147,3 +148,25 @@ def test_the_loader_tiles_the_box_and_fills_a_city(monkeypatch):
     assert [r["name"] for r in rows] == ["Tile Cafe"] and rows[0]["city"] == "Los Gatos"
     sql = mod.fsq_sql("dt=2026-09-15", (36.9, -123.0, 38.9, -121.0), limit=10)
     assert "dt=2026-09-15" in sql and "Dining and Drinking" in sql and "LIMIT 10" in sql
+
+
+@pytest.mark.parametrize("spec, want", [
+    ("Mo-Fr 11:00-21:00; Sa,Su 12:00-22:00", "Monday: 11:00 AM–9:00 PM; Tuesday: 11:00 AM–9:00 PM; Wednesday: 11:00 AM–9:00 PM; "
+                                            "Thursday: 11:00 AM–9:00 PM; Friday: 11:00 AM–9:00 PM; Saturday: 12:00 PM–10:00 PM; "
+                                            "Sunday: 12:00 PM–10:00 PM"),
+    ("Mo-Su 07:00-17:00", "Monday: 7:00 AM–5:00 PM; Tuesday: 7:00 AM–5:00 PM; Wednesday: 7:00 AM–5:00 PM; Thursday: 7:00 AM–5:00 PM; "
+                          "Friday: 7:00 AM–5:00 PM; Saturday: 7:00 AM–5:00 PM; Sunday: 7:00 AM–5:00 PM"),
+    ("Tu-Su 11:30-14:30,17:00-21:30; Mo off", "Monday: Closed; Tuesday: 11:30 AM–2:30 PM, 5:00 PM–9:30 PM; Wednesday: 11:30 AM–2:30 PM, "
+                                              "5:00 PM–9:30 PM; Thursday: 11:30 AM–2:30 PM, 5:00 PM–9:30 PM; Friday: 11:30 AM–2:30 PM, "
+                                              "5:00 PM–9:30 PM; Saturday: 11:30 AM–2:30 PM, 5:00 PM–9:30 PM; Sunday: 11:30 AM–2:30 PM, 5:00 PM–9:30 PM"),
+    ("24/7", "Monday: Open 24 hours; Tuesday: Open 24 hours; Wednesday: Open 24 hours; Thursday: Open 24 hours; Friday: Open 24 hours; "
+             "Saturday: Open 24 hours; Sunday: Open 24 hours"),
+    ("Mo-Fr 09:00-17:00; PH off", "Monday: 9:00 AM–5:00 PM; Tuesday: 9:00 AM–5:00 PM; Wednesday: 9:00 AM–5:00 PM; Thursday: 9:00 AM–5:00 PM; "
+                                  "Friday: 9:00 AM–5:00 PM"),
+    ("Mo-Su sunrise-sunset", None), ("Jan-Mar Mo-Fr 10:00-16:00", None), ("", None), (None, None),
+])
+def test_osm_opening_hours_become_the_text_the_hours_parser_reads(spec, want):
+    assert gz.osm_hours_to_text(spec) == want
+    if want:
+        from core import hours as chours
+        assert chours.parse(want).intervals

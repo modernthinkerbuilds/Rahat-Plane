@@ -223,7 +223,21 @@ def nearby(con: sqlite3.Connection, lat: float, lng: float, *, km: float, family
         d["km"] = round(geo.haversine_km(lat, lng, d["lat"], d["lng"]), 1)
         if d["km"] <= km:
             out.append(d)
-    out.sort(key=lambda d: (d["km"], d["name"]))
+    # A row the feeds have written about comes first (bridges/food): someone vouched for it, a little.
+    mentioned: dict[str, int] = {}
+    if out:
+        try:
+            ids = [d["gaz_id"] for d in out]
+            for i in range(0, len(ids), 400):
+                chunk = ids[i:i + 400]
+                q = ",".join("?" * len(chunk))
+                mentioned.update(dict(con.execute(
+                    f"SELECT gaz_id, COUNT(*) FROM kb_mention WHERE gaz_id IN ({q}) GROUP BY gaz_id", chunk).fetchall()))
+        except sqlite3.Error:
+            mentioned = {}
+    for d in out:
+        d["mentions"] = mentioned.get(d["gaz_id"], 0)
+    out.sort(key=lambda d: (-d["mentions"], d["km"], d["name"]))
     return out[:limit]
 
 
@@ -276,8 +290,16 @@ def promote(con: sqlite3.Connection, row: dict, *, now: datetime, trace_id: str 
         f("website", {"value": row["website"]})
     if row.get("phone"):
         f("phone", {"value": row["phone"]})
-    if row.get("hours_text"):
-        f("hours", {"value": row["hours_text"], "note": "as OpenStreetMap had it; unverified"})
+    hours = osm_hours_to_text(row.get("hours_text")) if row.get("source") == "osm" else row.get("hours_text")
+    if hours:
+        f("hours", {"value": hours, "note": "as OpenStreetMap had it; unverified"})
+        try:
+            from core import hours as chours
+            for iv in chours.parse(hours).intervals:
+                con.execute("INSERT INTO kb_hours (fact_id, place_id, weekday, open_min, close_min, service, note) "
+                            "VALUES (?,?,?,?,?,?,?)", (facts["hours"], pid, iv.weekday, iv.open_min, iv.close_min, iv.service, iv.text))
+        except Exception:  # noqa: BLE001 - the text is kept; the projection is a courtesy
+            pass
     f("note", {"value": f"from {src_name}; nobody has vouched for it yet"})
     con.execute("UPDATE kb_gazetteer SET place_id = ? WHERE gaz_id = ?", (pid, row["gaz_id"]))
     return {"place_id": pid, "location_id": loc, "facts": facts, "promoted": True}
@@ -296,6 +318,63 @@ def _format_tags(row: dict) -> list[str]:
     if tags.get("brand"):
         out.append("chain")
     return out
+
+
+# ── OSM opening_hours → the text the hours parser reads ─────────────────
+_OSM_DAYS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"]
+_DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+_OSM_RULE_RE = re.compile(r"^(?P<days>(?:(?:Mo|Tu|We|Th|Fr|Sa|Su)(?:-(?:Mo|Tu|We|Th|Fr|Sa|Su))?(?:,\s*)?)+)?\s*"
+                          r"(?P<times>(?:\d{1,2}:\d{2}\s*-\s*\d{1,2}:\d{2}(?:,\s*)?)+|off|closed|24/7)\s*$", re.I)
+
+
+def _ampm(hhmm: str) -> str:
+    h, m = (int(x) for x in hhmm.split(":"))
+    if h >= 24:
+        h -= 24
+    suffix = "AM" if h < 12 else "PM"
+    h12 = h % 12 or 12
+    return f"{h12}:{m:02d} {suffix}"
+
+
+def osm_hours_to_text(spec: str | None) -> str | None:
+    """"Mo-Fr 11:00-21:00; Sa,Su 12:00-22:00" → "Monday: 11:00 AM–9:00 PM; …", the
+    form core.hours reads. The common grammar only (day ranges and lists,
+    time ranges, off, 24/7); anything else (months, public holidays,
+    "sunrise") returns None rather than a wrong week."""
+    if not spec or not spec.strip():
+        return None
+    week: dict[int, list[str]] = {}
+    if spec.strip() == "24/7":
+        return "; ".join(f"{d}: Open 24 hours" for d in _DAY_NAMES)
+    for rule in spec.split(";"):
+        rule = rule.strip()
+        if not rule or rule.upper().startswith("PH"):
+            continue
+        m = _OSM_RULE_RE.match(rule)
+        if not m:
+            return None
+        days: list[int] = []
+        for part in (m.group("days") or "Mo-Su").replace(" ", "").split(","):
+            if not part:
+                continue
+            if "-" in part:
+                a, b = part.split("-")
+                ia, ib = _OSM_DAYS.index(a), _OSM_DAYS.index(b)
+                days += list(range(ia, ib + 1)) if ia <= ib else list(range(ia, 7)) + list(range(0, ib + 1))
+            else:
+                days.append(_OSM_DAYS.index(part))
+        times = m.group("times").strip().lower()
+        for d in days:
+            if times in ("off", "closed"):
+                week[d] = ["Closed"]
+            elif times == "24/7":
+                week[d] = ["Open 24 hours"]
+            else:
+                week[d] = [f"{_ampm(a.strip())}–{_ampm(b.strip())}" for a, b in
+                           (t.split("-") for t in times.replace(" ", "").split(",") if t)]
+    if not week:
+        return None
+    return "; ".join(f"{_DAY_NAMES[d]}: {', '.join(week[d])}" for d in sorted(week))
 
 
 def stats(con: sqlite3.Connection) -> dict:

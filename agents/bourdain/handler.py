@@ -53,6 +53,7 @@ HELP = (
     "  • `/who` — who's eating, which leg, where I'm ranking from\n"
     "  • `/cost` — spend today, this week, this month; `/cost export` for a CSV\n"
     "  • `/kb stats` — what I know: places, facts, how fresh\n"
+    "  • `/kb mentions` — what the feeds wrote about this week; `/kb new` — openings\n"
     "  • `/household` · `/join <code>` · `/help`"
 )
 
@@ -595,9 +596,32 @@ def handle_kb(text: str, *, now: datetime) -> str:
         return "Export comes with the next build; `/kb stats` works now."
     con = kb_schema.connect()
     try:
+        if rest.startswith("mention") or rest.startswith("new"):
+            return render_mentions(con, now=now, days=7 if rest.startswith("mention") else 14)
         return kb_schema.render_stats(con, now=now)
     finally:
         con.close()
+
+
+def render_mentions(con, *, now: datetime, days: int = 7, limit: int = 25) -> str:
+    """`/kb mentions` — what the feeds wrote about in the last week (bridges/food), newest first;
+    `/kb new` — the openings of the last two weeks."""
+    from bridges.food import store as fstore
+    kinds = ("opening",) if days > 7 else None
+    rows = fstore.recent(con, days=days, now=now, kinds=kinds, limit=limit)
+    if not rows:
+        return ("Nothing from the feeds in the last %d days. The nightly job writes them; `/kb stats` says what's on file."
+                % days)
+    head = "Openings, last %d days:" % days if kinds else "From the feeds, last %d days:" % days
+    lines = [head]
+    for r in rows:
+        where = ", ".join(x for x in (r.get("neighborhood"), (r.get("city") or "").replace("_", " ").title()) if x)
+        tag = {"opening": "new", "closing": "closing", "closed": "closed", "list": "listed"}.get(r["kind"], "")
+        src = r["source_id"].replace("-", " ")
+        lines.append(f"• {r['name']}" + (f" ({where})" if where else "") + (f" — {tag}" if tag else "")
+                     + f" · {src}" + (f", {r['published']}" if r.get("published") else "")
+                     + ("" if r.get("place_id") else " · not yet on file"))
+    return "\n".join(lines)
 
 
 def _route_legacy(text: str, *, chat_id: str | int, now: datetime | None = None,

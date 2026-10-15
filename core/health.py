@@ -269,11 +269,62 @@ def gym_plan_stale(now: datetime, *, plan_path: Path | None = None) -> list[str]
             "re-sync it from SugarWOD."]
 
 
+FOOD_FEED_FAILS = 3
+FOOD_RUN_DAYS = 2
+
+
+def food_feeds_silent(now: datetime, *, path: str | None = None) -> list[str]:
+    """The nightly mentions job (bridges/food): a feed that brought nothing
+    for FOOD_FEED_FAILS nights, and the job itself not having run for
+    FOOD_RUN_DAYS days (only once it has ever run)."""
+    try:
+        import json
+        from core.kb import schema as kbs
+        con = kbs.connect(path)
+        try:
+            rows = con.execute("SELECT key, value FROM kb_meta WHERE key = 'food_nightly:last_run' OR key LIKE 'food_feed:%'").fetchall()
+        finally:
+            con.close()
+    except Exception:  # noqa: BLE001
+        return []
+    out: list[str] = []
+    meta = {}
+    for k, v in rows:
+        try:
+            meta[k] = json.loads(v) if v else {}
+        except ValueError:
+            meta[k] = {}
+    def ts(v) -> datetime | None:                       # the job writes minutes; _ts wants seconds
+        v = str(v or "")
+        return _ts(v + ":00" if len(v) == 16 else v)
+
+    last = meta.get("food_nightly:last_run") or {}
+    at = ts(last.get("at"))
+    if at is not None and now - at > timedelta(days=FOOD_RUN_DAYS):
+        out.append(f"Food: the mentions job hasn't run since {_day(at)}.")
+    for k, v in sorted(meta.items()):
+        if not k.startswith("food_feed:"):
+            continue
+        fails = int(v.get("fails") or 0)
+        if fails >= FOOD_FEED_FAILS:
+            sid = k.split(":", 1)[1]
+            name = sid
+            try:
+                from bridges.food.sources import by_id
+                name = (by_id(sid) or {}).get("name") or sid
+            except Exception:  # noqa: BLE001
+                pass
+            ok_at = ts(v.get("last_ok"))
+            since = f"since {_day(ok_at)}" if ok_at else "ever"
+            out.append(f"Food: the {name} feed has fetched nothing {since} ({fails} nights).")
+    return out
+
+
 def findings(now: datetime | None = None) -> list[str]:
     now = now or datetime.now()
     out: list[str] = []
     for check in (model_refusals, lost_messages, genie_dead_feeds, genie_feeds_dated_past, genie_feeds_stale,
-                  watch_silent, gym_plan_stale, benji_feeds_in_error):
+                  watch_silent, gym_plan_stale, benji_feeds_in_error, food_feeds_silent):
         try:
             out += check(now)
         except Exception:  # noqa: BLE001
