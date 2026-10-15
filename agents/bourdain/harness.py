@@ -488,11 +488,19 @@ class BourdainTenant:
         try:
             con = kb.connect(ctx.get("db_path"))
             try:
+                # 2026-10-15: the counters were literal zeros. kb_hits = picks the knowledge base held before
+                # this run started; live_fetches = network tool calls the run made. Together they say, run
+                # by run, whether the database could have answered.
+                started = (now - timedelta(seconds=max(1, result.latency_ms // 1000) + 1)).strftime("%Y-%m-%d %H:%M:%S")
+                known_before = {r[0] for r in con.execute(
+                    "SELECT place_id FROM kb_place WHERE created_at < ?", (started,))} if picks else set()
+                calls = list(getattr(result.exec, "calls", None) or []) if result.exec is not None else []
+                hits, fetches = hit_counters(picks=picks, known_before=known_before, calls=calls)
                 con.execute("INSERT INTO kb_search (trace_id, agent, frame_json, candidate_ids, fact_ids, queries_run, cost_usd, "
                             "kb_hits, live_fetches, at) VALUES (?,?,?,?,?,?,?,?,?,?)",
                             (result.trace_id, AGENT, json.dumps(result.frame.model_dump(exclude_none=True, exclude_defaults=True)),
                              json.dumps([p["place_id"] for p in picks]), json.dumps(result.answer.evidence_ids() if result.answer else []),
-                             result.search_queries, result.cost_usd, 0, 0, now.strftime("%Y-%m-%d %H:%M:%S")))
+                             result.search_queries, result.cost_usd, hits, fetches, now.strftime("%Y-%m-%d %H:%M:%S")))
                 con.commit()
             finally:
                 con.close()
@@ -501,6 +509,20 @@ class BourdainTenant:
 
 
 _TENANT: BourdainTenant | None = None
+
+
+# The tools that leave the machine, by name (the registry's `kind == "network"` tools).
+NETWORK_TOOLS = frozenset({"maps_search", "web_search", "read_page_facts", "acclaim", "weather", "geocode"})
+
+
+def hit_counters(*, picks: list[dict], known_before: set[str], calls: list[dict],
+                 network_tools: set[str] | frozenset[str] = NETWORK_TOOLS) -> tuple[int, int]:
+    """(kb_hits, live_fetches) for one run: picks the knowledge base already
+    held when the run started, and the network tool calls the run made
+    (failed ones included: they were still made)."""
+    hits = sum(1 for p in picks if p.get("place_id") in known_before)
+    fetches = sum(1 for c in calls if c.get("tool") in network_tools)
+    return hits, fetches
 
 
 def tenant() -> BourdainTenant:

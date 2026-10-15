@@ -21,6 +21,7 @@ records the live run wrote — the knowledge base ends up identical.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import urllib.parse
@@ -42,6 +43,8 @@ from core.kb import geo, query, schema as kb
 from core.tools import ToolRegistry, ToolResult
 from agents.bourdain import maps as bmaps
 from agents.bourdain import profile as cprofile
+
+logger = logging.getLogger(__name__)
 
 _REPO = Path(__file__).resolve().parents[2]
 _REPO_AS_REACHED = Path(os.path.abspath(__file__)).parents[2]     # the same, through any symlink
@@ -571,6 +574,25 @@ def build_registry(ctx: dict, *, allow: list[str] | None = None) -> ToolRegistry
             return ToolResult(name="maps_search", ok=True, value={"places": [], "source": bmaps.MAPS_SOURCE,
                               "note": "Google Maps returned no places for that; try other words, or web_search."},
                               cost_usd=cost, search_queries=len(results))
+        # Geocode first: a result farther than MAPS_MAX_KM from the centre is another town with the same name
+        # and is neither returned nor filed. One that can't be geocoded is kept (unknown is not far).
+        coords: dict[str, dict | None] = {}
+        far: list[bmaps.MapsPlace] = []
+        if places:
+            try:
+                coords = cgeo.geocode_many([mp.address for mp in places if mp.address], now=now) or {}
+            except Exception as e:  # noqa: BLE001 - the geocoder is a courtesy; the places still count
+                logger.warning("maps_search geocode failed: %s: %s", type(e).__name__, e)
+                coords = {}
+            if origin:
+                near: list[bmaps.MapsPlace] = []
+                for mp in places:
+                    g = coords.get(mp.address or "")
+                    if g and geo.haversine_km(origin[0], origin[1], g["lat"], g["lng"]) > MAPS_MAX_KM:
+                        far.append(mp)
+                    else:
+                        near.append(mp)
+                places = near
         con = _con(c)
         written: list[tuple[bmaps.MapsPlace, dict]] = []
         try:
@@ -579,7 +601,7 @@ def build_registry(ctx: dict, *, allow: list[str] | None = None) -> ToolRegistry
                 for mp in places:
                     written.append((mp, bmaps.write_place(con, mp, now=now, trace_id=c.get("trace_id"))))
                 con.commit()
-                _locate(con, [w for _, w in written], now, c)
+                _locate(con, [w for _, w in written], now, c, found=coords)
                 con.commit()
             for (w, _ctr), r in zip(centers, results):
                 if r.ok:
@@ -615,6 +637,10 @@ def build_registry(ctx: dict, *, allow: list[str] | None = None) -> ToolRegistry
             out["areas_failed"] = [w for (w, _), r in zip(centers, results) if not r.ok]
         if again:
             out["already_searched"] = [w for w, _ in again if w]
+        if far:
+            cities = sorted({bmaps._city(mp.address) or "another town" for mp in far})
+            out["far_away"] = len(far)
+            out["note"] += f" {len(far)} far from here were left out ({', '.join(cities)})."
         ev = [fid for _, w in written for fid in w["facts"].values()]
         return ToolResult(name="maps_search", ok=True, value=out, evidence_ids=ev, cost_usd=cost,
                           search_queries=len(results))
@@ -856,6 +882,10 @@ def _json_items(text: str) -> list[dict]:
 
 
 MAPS_AREA_WAIT_S = 15.0
+# A Maps result farther than this from the search centre is another town with the same name (LIVE 2026-10-11:
+# six Saratoga Springs, NY bakeries filed from a Saratoga, CA ask). Wider than any drive in the area.
+MAPS_MAX_KM = 150
+
 _QUERY_STOP = {"a", "an", "the", "and", "or", "with", "for", "of", "to", "in", "near", "around", "place", "places",
                "spot", "spots", "shop", "shops", "good", "best", "nice"}
 
@@ -879,9 +909,10 @@ def _fresh_maps_claims(con, place_id: str, now: datetime, mode: str) -> set[str]
     return out
 
 
-def _locate(con, written: list[dict], now: datetime, ctx: dict) -> None:
+def _locate(con, written: list[dict], now: datetime, ctx: dict, found: dict[str, dict | None] | None = None) -> None:
     """Coordinates for the places that have none: the Census geocoder for US
-    street addresses (several at a time), then OpenStreetMap for a few misses."""
+    street addresses (several at a time), then OpenStreetMap for a few misses.
+    `found` carries addresses the caller already geocoded (a miss there is final)."""
     need: dict[str, list[dict]] = {}
     for w in written:
         row = con.execute("SELECT l.lat, l.address FROM kb_location l WHERE l.location_id = ?", (w["location_id"],)).fetchone()
@@ -889,7 +920,10 @@ def _locate(con, written: list[dict], now: datetime, ctx: dict) -> None:
             need.setdefault(row[1], []).append(w)
     if not need:
         return
-    found = cgeo.geocode_many(list(need), now=now)
+    found = dict(found or {})
+    missing = [a for a in need if a not in found]
+    if missing:
+        found.update(cgeo.geocode_many(missing, now=now))
     for addr, g in found.items():
         if not g:
             continue
