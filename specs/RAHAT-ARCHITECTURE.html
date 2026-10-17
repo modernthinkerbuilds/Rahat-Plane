@@ -1,0 +1,1056 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<!-- Rahat end to end as an interactive page. Hosted copy: https://claude.ai/artifact/5Lsi2YiDVQQXxcBorudNeq ; this file is its source and opens in any browser. The harness inside one agent has its own page, ADR-018.html, beside it. -->
+<style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>Rahat Architecture</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Source+Sans+3:ital,wght@0,400;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a 72ch reading column for prose; figures break out to 1260px and scroll sideways inside their own panels on a phone.
+   Color encodes who does the work, the same key as the harness page: a model (amber), code (blue), a second model (purple),
+   a store in the vault (green), the control plane (crimson). Cyan is reserved for the thing you are watching move. */
+:root {
+  --bg: #eef1f7; --panel: #ffffff; --fg: #131925; --muted: #586377; --line: #c6cedb; --line-soft: #e1e6ee; --grid: #dfe4ec;
+  --model: #c0640a; --model-bg: #fff0dc;
+  --code: #1d55b3; --code-bg: #e5edfc;
+  --judge: #6a3ea6; --judge-bg: #f0e8fb;
+  --store: #1b7856; --store-bg: #dff3ea; --store-band: rgba(27, 120, 86, 0.06);
+  --plane: #a3243c; --plane-bg: #fbe6ea; --plane-band: rgba(163, 36, 60, 0.05);
+  --pulse: #0092c4; --pulse-soft: rgba(0, 146, 196, 0.22);
+  --off: #8a93a3; --off-bg: #eceff4;
+  --shadow: rgba(16, 24, 40, 0.16);
+  --display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --body: "Source Sans 3", "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d121a; --panel: #141b26; --fg: #e7ecf4; --muted: #9aa6b8; --line: #2a3546; --line-soft: #1d2634; --grid: #1b2330;
+    --model: #f3a64c; --model-bg: #2b2014;
+    --code: #80abf3; --code-bg: #13233a;
+    --judge: #bc99ee; --judge-bg: #251a37;
+    --store: #5fca9e; --store-bg: #10281e; --store-band: rgba(95, 202, 158, 0.06);
+    --plane: #f1879a; --plane-bg: #32181e; --plane-band: rgba(241, 135, 154, 0.06);
+    --pulse: #50d4f6; --pulse-soft: rgba(80, 212, 246, 0.24);
+    --off: #6f7a8c; --off-bg: #19202b;
+    --shadow: rgba(0, 0, 0, 0.5);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0d121a; --panel: #141b26; --fg: #e7ecf4; --muted: #9aa6b8; --line: #2a3546; --line-soft: #1d2634; --grid: #1b2330;
+  --model: #f3a64c; --model-bg: #2b2014;
+  --code: #80abf3; --code-bg: #13233a;
+  --judge: #bc99ee; --judge-bg: #251a37;
+  --store: #5fca9e; --store-bg: #10281e; --store-band: rgba(95, 202, 158, 0.06);
+  --plane: #f1879a; --plane-bg: #32181e; --plane-band: rgba(241, 135, 154, 0.06);
+  --pulse: #50d4f6; --pulse-soft: rgba(80, 212, 246, 0.24);
+  --off: #6f7a8c; --off-bg: #19202b;
+  --shadow: rgba(0, 0, 0, 0.5);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 17px; line-height: 1.5; margin: 0; }
+.wrap { max-width: 1300px; margin: 0 auto; padding-block: 30px 72px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.prose { max-width: 72ch; }
+h1 { font-family: var(--display); font-weight: 800; font-size: clamp(34px, 5.4vw, 56px); line-height: 1.0; letter-spacing: -0.022em; margin: 0 0 12px; text-wrap: balance; }
+h2 { font-family: var(--display); font-weight: 700; font-size: clamp(22px, 2.6vw, 28px); line-height: 1.15; margin: 66px 0 8px; text-wrap: balance; }
+h3 { font-family: var(--display); font-weight: 600; font-size: 16.5px; line-height: 1.25; margin: 0; text-wrap: balance; }
+p { margin: 0 0 14px; }
+a { color: var(--code); text-underline-offset: 2px; }
+a:focus-visible, button:focus-visible { outline: 3px solid var(--pulse); outline-offset: 2px; border-radius: 6px; }
+code { font-family: var(--mono); font-size: 0.86em; background: var(--line-soft); padding: 1px 5px; border-radius: 4px; }
+.eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+.lede { font-size: 20px; color: var(--muted); max-width: 64ch; margin-bottom: 18px; }
+.lede b { color: var(--fg); font-weight: 600; }
+.sec-eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 66px 0 4px; }
+.sec-eyebrow + h2 { margin-top: 0; }
+
+.counts { display: flex; flex-wrap: wrap; gap: 8px 10px; margin: 0 0 16px; }
+.count { font-family: var(--mono); font-size: 13px; padding: 6px 11px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); }
+.count b { font-family: var(--display); font-weight: 800; font-size: 16px; margin-right: 4px; font-variant-numeric: tabular-nums; }
+.count .d { color: var(--muted); }
+
+.chip { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 12px; letter-spacing: 0.02em; line-height: 1;
+  padding: 6px 10px; border-radius: 999px; border: 1.5px solid currentColor; white-space: nowrap; background: var(--panel); }
+.chip::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.chip.ok { color: var(--store); } .chip.shadow { color: var(--judge); } .chip.warn { color: var(--model); }
+.chip.off { color: var(--off); } .chip.pulse { color: var(--pulse); } .chip.plane { color: var(--plane); } .chip.code { color: var(--code); }
+
+.legend { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 14.5px; color: var(--muted); margin: 6px 0 0; }
+.legend span { display: inline-flex; align-items: center; gap: 7px; }
+.sw { width: 14px; height: 14px; border-radius: 4px; border: 1.8px solid; display: inline-block; }
+.sw.model { background: var(--model-bg); border-color: var(--model); } .sw.code { background: var(--code-bg); border-color: var(--code); }
+.sw.judge { background: var(--judge-bg); border-color: var(--judge); } .sw.vault { background: var(--store-bg); border-color: var(--store); }
+.sw.plane { background: var(--plane-bg); border-color: var(--plane); } .sw.pulse { background: var(--pulse); border-color: var(--pulse); border-radius: 50%; }
+.sw.ext { background: var(--panel); border-color: var(--muted); border-style: dashed; }
+
+figure { margin: 16px 0 0; }
+.fig { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow-x: auto; }
+.fig svg { display: block; height: auto; width: 100%; }
+.fig-map svg { min-width: 1060px; }
+.fig-day svg { min-width: 900px; }
+figcaption { font-size: 15px; color: var(--muted); margin-top: 10px; max-width: 88ch; }
+figcaption b { color: var(--fg); font-weight: 600; }
+
+svg .dotgrid { fill: var(--grid); }
+svg .t { font-family: var(--display); font-weight: 600; font-size: 13px; fill: var(--fg); }
+svg .t.big { font-size: 15px; }
+svg .s { font-family: var(--body); font-size: 11px; fill: var(--muted); }
+svg .tag { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.06em; fill: var(--muted); }
+svg .lbl { font-family: var(--body); font-size: 11px; fill: var(--muted); }
+svg .mk { fill: var(--fg); } svg .mk-lit { fill: var(--pulse); } svg .mk-store { fill: var(--store); } svg .mk-model { fill: var(--model); }
+svg .band-plane { fill: var(--plane-band); stroke: var(--plane); stroke-width: 1; stroke-dasharray: 2 4; }
+svg .band-store { fill: var(--store-band); stroke: var(--store); stroke-width: 1.2; stroke-dasharray: 6 4; }
+
+.edge { fill: none; stroke: var(--fg); stroke-width: 1.3; opacity: 0.78; transition: stroke 0.25s, stroke-width 0.25s, opacity 0.25s; }
+.edge.store { stroke: var(--store); opacity: 1; } .edge.model { stroke: var(--model); opacity: 1; } .edge.thin { stroke-width: 1; opacity: 0.55; }
+.edge.lit { stroke: var(--pulse); stroke-width: 2.8; opacity: 1; }
+.edge.dyn { stroke: var(--pulse); stroke-width: 2; stroke-dasharray: 5 5; opacity: 0.9; }
+
+.node { cursor: help; outline: none; }
+.node rect { stroke-width: 1.4; transition: stroke-width 0.2s, filter 0.25s, stroke 0.2s; }
+.n-code rect { fill: var(--code-bg); stroke: var(--code); }
+.n-model rect { fill: var(--model-bg); stroke: var(--model); }
+.n-judge rect { fill: var(--judge-bg); stroke: var(--judge); }
+.n-store rect { fill: var(--store-bg); stroke: var(--store); }
+.n-plane rect { fill: var(--plane-bg); stroke: var(--plane); }
+.n-neutral rect { fill: var(--panel); stroke: var(--fg); }
+.n-ext rect { fill: var(--panel); stroke: var(--muted); stroke-dasharray: 5 4; }
+.n-run rect { fill: var(--panel); stroke: var(--code); stroke-width: 1.8; }
+.n-link { cursor: pointer; }
+.n-link .go { fill: var(--model); font-family: var(--mono); font-size: 11px; font-weight: 500; }
+.node:hover rect, .node:focus-visible rect { stroke-width: 2.6; }
+.node:focus-visible rect { stroke: var(--pulse); }
+.node.seen rect { stroke-width: 2.2; }
+.node.on rect { stroke: var(--pulse); stroke-width: 3; filter: drop-shadow(0 0 7px var(--pulse-soft)); }
+.pulse-core { fill: var(--pulse); }
+.pulse-halo { fill: var(--pulse); opacity: 0.5; }
+
+/* the player */
+.player { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 18px 0 12px; }
+.player .lab { font-family: var(--mono); font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin-right: 4px; }
+.play { font: 600 14.5px/1.1 var(--body); color: var(--fg); background: var(--panel); border: 1.5px solid var(--line); border-radius: 999px;
+  padding: 8px 13px; cursor: pointer; transition: border-color 0.2s, box-shadow 0.2s; }
+.play:hover { border-color: var(--pulse); }
+.play[aria-pressed="true"] { border-color: var(--pulse); box-shadow: 0 0 0 3px var(--pulse-soft); }
+.play.stop { color: var(--muted); }
+.play .k { font-family: var(--mono); font-weight: 500; font-size: 12.5px; color: var(--muted); }
+.narr { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 14px; align-items: baseline; background: var(--panel);
+  border: 1px solid var(--line); border-left: 5px solid var(--pulse); border-radius: 0 10px 10px 0; padding: 12px 16px; margin-top: 12px; min-height: 58px; }
+.narr-n { font-family: var(--mono); font-size: 12px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.narr-t { font-size: 16.5px; min-width: 0; }
+
+/* tooltip */
+#tip { position: fixed; z-index: 60; width: max-content; max-width: min(350px, calc(100vw - 24px)); background: var(--panel); color: var(--fg);
+  border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 12px 32px var(--shadow); padding: 11px 13px 12px;
+  pointer-events: none; font-size: 14.5px; line-height: 1.42; }
+#tip .tip-h { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 5px; }
+#tip .tip-t { font-family: var(--display); font-weight: 700; font-size: 15px; }
+#tip .chip { font-size: 11px; padding: 4px 8px; }
+#tip .tip-b { margin: 0; }
+#tip .tip-c { display: block; margin-top: 7px; font-family: var(--mono); font-size: 11.5px; color: var(--muted); background: none; padding: 0; }
+
+/* the ladder */
+.lad { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 18px; margin-top: 18px; align-items: start; }
+@media (max-width: 900px) { .lad { grid-template-columns: 1fr; } }
+.samples { display: flex; flex-direction: column; gap: 8px; }
+.samples .play { text-align: left; border-radius: 10px; font-weight: 600; }
+.samples .play .k { display: block; margin-top: 3px; }
+.lad-out { background: var(--panel); border: 1px solid var(--line); border-left: 5px solid var(--pulse); border-radius: 0 10px 10px 0; padding: 12px 15px; font-size: 16px; min-height: 76px; }
+.lad-out b { font-family: var(--display); }
+.ladder { list-style: none; margin: 0; padding: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.ladder li { display: grid; grid-template-columns: 52px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 7px 12px;
+  border-bottom: 1px solid var(--line-soft); font-size: 14.5px; transition: background 0.18s, box-shadow 0.18s; cursor: help; }
+.ladder li:last-child { border-bottom: 0; }
+.ladder .rn { font-family: var(--mono); font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.ladder .who { font-family: var(--mono); font-size: 12px; white-space: nowrap; display: inline-flex; gap: 6px; align-items: center; }
+.ladder .who i { font-style: normal; padding: 3px 7px; border-radius: 6px; border: 1px solid; }
+.ladder .who i.code { color: var(--code); background: var(--code-bg); border-color: var(--code); }
+.ladder .who i.model { color: var(--model); background: var(--model-bg); border-color: var(--model); }
+.ladder li.checking { background: var(--line-soft); }
+.ladder li.passed .what { color: var(--muted); }
+.ladder li.claims { background: var(--code-bg); box-shadow: inset 4px 0 0 var(--pulse); }
+.ladder li.claims .rn { color: var(--pulse); font-weight: 500; }
+.ladder li.last { background: var(--model-bg); }
+.ladder li.last.claims { box-shadow: inset 4px 0 0 var(--pulse); }
+.lad-key { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 10px 0 0; font-size: 13.5px; color: var(--muted); }
+.lad-key span { display: inline-flex; align-items: center; gap: 7px; }
+.lad-key i { font-style: normal; font-family: var(--mono); font-size: 12px; padding: 3px 7px; border-radius: 6px; border: 1px solid; }
+.lad-key i.code { color: var(--code); background: var(--code-bg); border-color: var(--code); }
+.lad-key i.model { color: var(--model); background: var(--model-bg); border-color: var(--model); }
+.mark.hit rect.band-code { stroke: var(--pulse); stroke-width: 2.5; }
+
+/* the day */
+.day-ctl { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 16px 0 10px; }
+.mark { cursor: help; outline: none; }
+.mark circle, .mark rect.tick, .mark path { transition: transform 0.2s, stroke-width 0.2s; }
+.mark.hit circle, .mark.hit path { stroke: var(--pulse); stroke-width: 3; }
+.mark:hover circle, .mark:focus-visible circle, .mark:hover path, .mark:focus-visible path { stroke-width: 3; }
+svg .m-code { fill: var(--code-bg); stroke: var(--code); stroke-width: 1.8; }
+svg .m-model { fill: var(--model-bg); stroke: var(--model); stroke-width: 1.8; }
+svg .m-store { fill: var(--store-bg); stroke: var(--store); stroke-width: 1.8; }
+svg .m-plane { fill: var(--plane-bg); stroke: var(--plane); stroke-width: 1.8; }
+svg .m-off { fill: var(--panel); stroke: var(--off); stroke-width: 1.6; stroke-dasharray: 3 3; }
+svg .lane-bg { fill: var(--line-soft); opacity: 0.6; }
+svg .band-model { fill: var(--model-bg); stroke: var(--model); stroke-width: 1; }
+svg .band-code { fill: var(--code-bg); stroke: var(--code); stroke-width: 1; }
+svg .axis { stroke: var(--line); stroke-width: 1; }
+svg .cursor { stroke: var(--pulse); stroke-width: 2.5; }
+svg .now { stroke: var(--plane); stroke-width: 1.6; stroke-dasharray: 4 3; }
+svg .now-t { font-family: var(--mono); font-size: 10.5px; fill: var(--plane); }
+
+/* cards */
+.agents { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 18px; }
+@media (max-width: 980px) { .agents { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .agents { grid-template-columns: 1fr; } }
+.agent { background: var(--panel); border: 1px solid var(--line); border-top: 5px solid var(--c, var(--code)); border-radius: 10px; padding: 14px 16px 15px;
+  min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.agent.wide { grid-column: 1 / -1; }
+.agent .h { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
+.agent .door { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.agent p { margin: 0; font-size: 15.5px; }
+.agent dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 3px 12px; margin: 2px 0 0; font-size: 14.5px; }
+.agent dt { font-family: var(--mono); font-size: 11.5px; color: var(--muted); padding-top: 2px; text-transform: uppercase; letter-spacing: 0.04em; }
+.agent dd { margin: 0; color: var(--muted); }
+.agent .go { align-self: flex-start; font-weight: 600; }
+.stores { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 18px; }
+@media (max-width: 1080px) { .stores { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 600px) { .stores { grid-template-columns: 1fr; } }
+.store { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 13px 15px 14px; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.store.json { border-style: dashed; }
+.store h3 { display: flex; gap: 8px; align-items: center; }
+.store h3::before { content: ""; width: 10px; height: 10px; border-radius: 3px; background: var(--store); flex: none; }
+.store.json h3::before { background: transparent; border: 2px solid var(--store); }
+.store p { margin: 0; font-size: 14.5px; color: var(--muted); }
+.flow { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; font-size: 12.5px; }
+.flow .lbl { font-family: var(--mono); font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin-right: 2px; }
+.flow span.p { padding: 2px 7px; border-radius: 6px; background: var(--line-soft); }
+.leaves { margin-top: 14px; background: var(--panel); border: 1px solid var(--line); border-left: 5px solid var(--plane); border-radius: 0 10px 10px 0; padding: 12px 16px; max-width: 88ch; font-size: 15.5px; }
+.leaves b { font-family: var(--display); }
+
+.harness { margin-top: 18px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px; display: grid;
+  grid-template-columns: minmax(0, 1fr) auto; gap: 16px 24px; align-items: center; }
+@media (max-width: 760px) { .harness { grid-template-columns: 1fr; } }
+.steps { display: flex; flex-wrap: wrap; gap: 6px; }
+.step { font-family: var(--display); font-weight: 600; font-size: 14px; padding: 7px 11px; border-radius: 8px; border: 1.5px solid; }
+.step.code { color: var(--code); background: var(--code-bg); } .step.model { color: var(--model); background: var(--model-bg); }
+.step.judge { color: var(--judge); background: var(--judge-bg); }
+.harness p { margin: 10px 0 0; color: var(--muted); font-size: 15.5px; max-width: 70ch; }
+.btn { display: inline-flex; align-items: center; gap: 8px; font: 700 16px/1 var(--display); color: var(--panel); background: var(--code);
+  padding: 13px 18px; border-radius: 10px; text-decoration: none; white-space: nowrap; }
+.btn:hover { filter: brightness(1.08); }
+
+.rails { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 18px; }
+@media (max-width: 820px) { .rails { grid-template-columns: 1fr; } }
+.rail { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; min-width: 0; }
+.rail h3 { margin-bottom: 8px; }
+.rail ul { list-style: none; margin: 0; padding: 0; }
+.rail li { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 12px; padding: 8px 0; border-top: 1px solid var(--line-soft); font-size: 15px; }
+.rail li:first-child { border-top: 0; }
+.rail li b { font-weight: 600; }
+.rail li span { color: var(--muted); }
+@media (max-width: 520px) { .rail li { grid-template-columns: 1fr; gap: 2px; } }
+
+.bets { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 18px; }
+@media (max-width: 900px) { .bets { grid-template-columns: 1fr; } }
+.bet { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.bet p { margin: 0; font-size: 15px; color: var(--muted); }
+.bet .chip { align-self: flex-start; white-space: normal; line-height: 1.25; }
+
+.foot { margin-top: 56px; padding-top: 18px; border-top: 1px solid var(--line); font-size: 14.5px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 8px 22px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .edge, .node rect, .play, .ladder li { transition: none; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="eyebrow">Rahat · end to end · as built on October 17, 2026</p>
+  <h1>Rahat Architecture</h1>
+  <p class="lede"><b>Miya is the agent you talk to. Rahat is everything underneath it:</b> the doors messages come in by, the rules in code that meet them, the specialists, the checks between an answer and you, the memory they share, and the jobs that keep it fed while nobody is typing. It runs on one Mac mini at home.</p>
+  <div class="counts" aria-label="Counts as of October 17">
+    <span class="count"><b>3</b><span class="d">front doors</span></span>
+    <span class="count"><b>7</b><span class="d">agents</span></span>
+    <span class="count"><b>8</b><span class="d">services · 5 always on</span></span>
+    <span class="count"><b>121</b><span class="d">event sources</span></span>
+    <span class="count"><b>1</b><span class="d">SQLite file of record</span></span>
+    <span class="count"><b>4,209</b><span class="d">tests</span></span>
+  </div>
+  <div class="legend" aria-label="Color key">
+    <span><i class="sw model"></i>a model does it</span>
+    <span><i class="sw code"></i>code does it, exactly</span>
+    <span><i class="sw judge"></i>a second model</span>
+    <span><i class="sw vault"></i>the vault</span>
+    <span><i class="sw plane"></i>control plane</span>
+    <span><i class="sw ext"></i>outside Rahat</span>
+    <span><i class="sw pulse"></i>what you're watching</span>
+  </div>
+
+  <p class="sec-eyebrow">The whole system</p>
+  <h2>Everything, on one page</h2>
+  <div class="prose">
+    <p>Read it left to right: something comes in, meets a door and a rule in code, reaches a specialist, passes a check, and goes out. Underneath sit the control plane every call goes through and the vault every agent shares. Pick a moment to watch it move; hover or tap any box for what happens there. Bourdain's box opens the harness page.</p>
+  </div>
+
+  <div class="player" role="group" aria-label="Watch a moment">
+    <span class="lab">Watch</span>
+    <button class="play" data-scen="week" aria-pressed="false"><span class="k">/week</span> · Kobe's numbers</button>
+    <button class="play" data-scen="design" aria-pressed="false">Design a workout</button>
+    <button class="play" data-scen="watch" aria-pressed="false">The Watch syncs</button>
+    <button class="play" data-scen="events" aria-pressed="false">Weekend events</button>
+    <button class="play" data-scen="coffee" aria-pressed="false"><span class="k">/coffee</span> · Bourdain</button>
+    <button class="play" data-scen="cool" aria-pressed="false">9:30 pm cooldown</button>
+    <button class="play" data-scen="food" aria-pressed="false">Food feeds · 05:30</button>
+    <button class="play" data-scen="health" aria-pressed="false">Health line · 08:15</button>
+    <button class="play stop" id="p-stop" aria-label="Stop and reset">■ Stop</button>
+  </div>
+
+  <figure>
+    <div class="fig fig-map">
+      <svg id="map" viewBox="0 0 1240 704" role="img" xmlns="http://www.w3.org/2000/svg" aria-label="Rahat end to end. Three Telegram doors lead to three runners on a Mac mini. Miya's runner meets a 16-rung ladder of rules in code, then Miya, Kobe, Fraser and Huberman, then a validator and Fraser's contract, then Telegram. Genie's runner meets a household gate, then Genie and its plan rules. Bourdain's runner meets a grammar of lookups and asks, then the harness, then verify and a judge in shadow. Under them, the control plane: the model wire to Gemini, the Charter, the decisions and cost ledgers, the 08:15 health line and the tests. Under that, the vault: health data from the phone's bridge, the gym's week from the gym bridge, the events inventory from three daily event runs, the knowledge base from the nightly food run, plus memory, scoped state, records and the JSON profiles.">
+        <defs>
+          <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk"/></marker>
+          <marker id="a-lit" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-lit"/></marker>
+          <marker id="a-store" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-store"/></marker>
+          <marker id="a-model" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-model"/></marker>
+          <filter id="glow" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="4.5"/></filter>
+          <pattern id="dots" width="18" height="18" patternUnits="userSpaceOnUse"><circle cx="1.5" cy="1.5" r="1.1" class="dotgrid"/></pattern>
+        </defs>
+        <rect x="0" y="0" width="1240" height="704" fill="url(#dots)"/>
+
+        <text x="30" y="26" class="tag">COMES IN</text>
+        <text x="196" y="26" class="tag">DOORS · LAUNCHD</text>
+        <text x="372" y="26" class="tag">RULES, IN CODE</text>
+        <text x="558" y="26" class="tag">SPECIALISTS</text>
+        <text x="864" y="26" class="tag">CHECKS IN THE PATH</text>
+        <text x="1060" y="26" class="tag">GOES OUT</text>
+
+        <rect x="20" y="300" width="1200" height="88" rx="10" class="band-plane"/>
+        <text x="1210" y="315" text-anchor="end" class="tag">CONTROL PLANE · EVERY AGENT, EVERY CALL</text>
+        <rect x="360" y="406" width="860" height="290" rx="10" class="band-store"/>
+        <text x="372" y="424" class="tag">THE VAULT · vault/rahat.db, ONE SQLITE FILE ON THE MAC MINI · JSON BESIDE IT · NEVER IN GIT</text>
+
+        <g id="dyn"></g>
+
+        <!-- lane A: you → Miya -->
+        <g class="node n-neutral" id="n-you" data-tip="you" tabindex="0"><rect x="30" y="52" width="140" height="60" rx="6"/><text x="100" y="77" text-anchor="middle" class="t">You</text><text x="100" y="95" text-anchor="middle" class="s">Telegram · Bade Miya</text></g>
+        <g class="node n-run" id="n-miyarun" data-tip="miyarun" tabindex="0"><rect x="196" y="52" width="150" height="60" rx="6"/><text x="271" y="77" text-anchor="middle" class="t">miya.v2</text><text x="271" y="95" text-anchor="middle" class="s">runner · minute tick ⏱</text></g>
+        <g class="node n-code" id="n-ladder" data-tip="ladder" tabindex="0"><rect x="372" y="52" width="160" height="60" rx="6"/><text x="452" y="77" text-anchor="middle" class="t">The ladder</text><text x="452" y="95" text-anchor="middle" class="s">16 rungs · first claim wins</text></g>
+        <g class="node n-model" id="n-miya" data-tip="miya" tabindex="0"><rect x="558" y="38" width="280" height="34" rx="6"/><text x="698" y="60" text-anchor="middle" class="t">Miya · the orchestrator, one voice</text></g>
+        <g class="node n-model" id="n-kobe" data-tip="kobe" tabindex="0"><rect x="558" y="80" width="90" height="52" rx="6"/><text x="603" y="102" text-anchor="middle" class="t">Kobe</text><text x="603" y="119" text-anchor="middle" class="s">numbers</text></g>
+        <g class="node n-model" id="n-fraser" data-tip="fraser" tabindex="0"><rect x="653" y="80" width="90" height="52" rx="6"/><text x="698" y="102" text-anchor="middle" class="t">Fraser</text><text x="698" y="119" text-anchor="middle" class="s">workouts</text></g>
+        <g class="node n-model" id="n-huberman" data-tip="huberman" tabindex="0"><rect x="748" y="80" width="90" height="52" rx="6"/><text x="793" y="102" text-anchor="middle" class="t">Huberman</text><text x="793" y="119" text-anchor="middle" class="s">cooldowns</text></g>
+        <g class="node n-code" id="n-checksA" data-tip="checksA" tabindex="0"><rect x="864" y="52" width="170" height="60" rx="6"/><text x="949" y="77" text-anchor="middle" class="t">Validator · 7 checks</text><text x="949" y="95" text-anchor="middle" class="s">+ Fraser's contract · 10</text></g>
+        <g class="node n-neutral" id="n-tg" data-tip="tg" tabindex="0"><rect x="1060" y="52" width="150" height="220" rx="8"/><text x="1135" y="148" text-anchor="middle" class="t big">Telegram</text><text x="1135" y="168" text-anchor="middle" class="s">one voice per door</text><text x="1135" y="184" text-anchor="middle" class="s">refused → sent again</text><text x="1135" y="200" text-anchor="middle" class="s">slash-menu hints</text></g>
+
+        <path class="edge" id="e-you-miya" d="M170,82 L194,82" marker-end="url(#a)"/>
+        <path class="edge" id="e-miya-ladder" d="M346,82 L370,82" marker-end="url(#a)"/>
+        <path class="edge" id="e-ladder-miya" d="M532,70 L544,70 L544,55 L556,55" marker-end="url(#a)"/>
+        <path class="edge" id="e-ladder-agents" d="M532,94 L556,94" marker-end="url(#a)"/>
+        <path class="edge thin" d="M603,72 L603,80 M698,72 L698,80 M793,72 L793,80"/>
+        <path class="edge" id="e-agents-checks" d="M838,106 L851,106 L851,82 L862,82" marker-end="url(#a)"/>
+        <path class="edge" id="e-miya-checks" d="M838,55 L851,55 L851,82"/>
+        <path class="edge" id="e-checksA-tg" d="M1034,82 L1058,82" marker-end="url(#a)"/>
+
+        <!-- lane B: the household → Genie -->
+        <g class="node n-neutral" id="n-household" data-tip="household" tabindex="0"><rect x="30" y="148" width="140" height="116" rx="6"/><text x="100" y="198" text-anchor="middle" class="t">The household</text><text x="100" y="216" text-anchor="middle" class="s">Telegram · Genie</text><text x="100" y="231" text-anchor="middle" class="s">and Bourdain</text></g>
+        <g class="node n-run" id="n-genierun" data-tip="genierun" tabindex="0"><rect x="196" y="148" width="150" height="50" rx="6"/><text x="271" y="169" text-anchor="middle" class="t">genie</text><text x="271" y="186" text-anchor="middle" class="s">runner · 08:00 digest ⏱</text></g>
+        <g class="node n-code" id="n-gate" data-tip="gate" tabindex="0"><rect x="372" y="148" width="160" height="50" rx="6"/><text x="452" y="169" text-anchor="middle" class="t">Household gate</text><text x="452" y="186" text-anchor="middle" class="s">pairing · Genie's intents</text></g>
+        <g class="node n-model" id="n-genie" data-tip="genie" tabindex="0"><rect x="558" y="148" width="280" height="50" rx="6"/><text x="698" y="169" text-anchor="middle" class="t">Genie</text><text x="698" y="186" text-anchor="middle" class="s">weekends · the household calendar · events</text></g>
+        <g class="node n-code" id="n-genierules" data-tip="genierules" tabindex="0"><rect x="864" y="148" width="170" height="50" rx="6"/><text x="949" y="169" text-anchor="middle" class="t">Genie's rules</text><text x="949" y="186" text-anchor="middle" class="s">one per slot · six a day</text></g>
+        <path class="edge" id="e-house-genie" d="M170,173 L194,173" marker-end="url(#a)"/>
+        <path class="edge" id="e-grun-gate" d="M346,173 L370,173" marker-end="url(#a)"/>
+        <path class="edge" id="e-gate-genie" d="M532,173 L556,173" marker-end="url(#a)"/>
+        <path class="edge" id="e-genie-rules" d="M838,173 L862,173" marker-end="url(#a)"/>
+        <path class="edge" id="e-rules-tg" d="M1034,173 L1058,173" marker-end="url(#a)"/>
+
+        <!-- lane C: the household → Bourdain -->
+        <g class="node n-run" id="n-bourdainrun" data-tip="bourdainrun" tabindex="0"><rect x="196" y="214" width="150" height="50" rx="6"/><text x="271" y="235" text-anchor="middle" class="t">bourdain</text><text x="271" y="252" text-anchor="middle" class="s">runner · where you are</text></g>
+        <g class="node n-code" id="n-grammar" data-tip="grammar" tabindex="0"><rect x="372" y="214" width="160" height="50" rx="6"/><text x="452" y="235" text-anchor="middle" class="t">Grammar</text><text x="452" y="252" text-anchor="middle" class="s">a lookup or an ask</text></g>
+        <a href="https://claude.ai/artifact/THBk4pzgJvtenkf4RZmdjK" target="_blank" rel="noopener" aria-label="Open the harness page">
+          <g class="node n-model n-link" id="n-bourdain" data-tip="bourdain"><rect x="558" y="214" width="280" height="50" rx="6"/><text x="698" y="235" text-anchor="middle" class="t">Bourdain · on the harness</text><text x="698" y="252" text-anchor="middle" class="go">open the harness page ↗</text></g>
+        </a>
+        <g class="node n-judge" id="n-verify" data-tip="verify" tabindex="0"><rect x="864" y="214" width="170" height="50" rx="6"/><text x="949" y="235" text-anchor="middle" class="t">Verify · judge</text><text x="949" y="252" text-anchor="middle" class="s">code checks · judge in shadow</text></g>
+        <path class="edge" id="e-house-bourdain" d="M170,239 L194,239" marker-end="url(#a)"/>
+        <path class="edge" id="e-brun-grammar" d="M346,239 L370,239" marker-end="url(#a)"/>
+        <path class="edge" id="e-grammar-bourdain" d="M532,239 L556,239" marker-end="url(#a)"/>
+        <path class="edge" id="e-bourdain-verify" d="M838,239 L862,239" marker-end="url(#a)"/>
+        <path class="edge" id="e-verify-tg" d="M1034,239 L1058,239" marker-end="url(#a)"/>
+
+        <!-- every agent → the wire and the vault -->
+        <path class="edge thin" d="M558,280 L838,280"/>
+        <text x="698" y="276" text-anchor="middle" class="lbl">every agent</text>
+        <path class="edge model" id="e-agents-wire" d="M600,280 L600,292 L271,292 L271,318" marker-end="url(#a-model)"/>
+        <text x="436" y="287" text-anchor="middle" class="lbl">calls models</text>
+        <path class="edge store" id="e-agents-vault" d="M698,280 L698,404" marker-end="url(#a-store)"/>
+        <text x="706" y="399" class="lbl">reads and writes</text>
+
+        <!-- the control plane -->
+        <g class="node n-plane" id="n-rails" data-tip="rails" tabindex="0"><rect x="30" y="320" width="140" height="56" rx="6"/><text x="100" y="343" text-anchor="middle" class="t">The rails</text><text x="100" y="360" text-anchor="middle" class="s">4,209 tests · a gate</text></g>
+        <g class="node n-plane" id="n-wire" data-tip="wire" tabindex="0"><rect x="196" y="320" width="150" height="56" rx="6"/><text x="271" y="343" text-anchor="middle" class="t">Model wire</text><text x="271" y="360" text-anchor="middle" class="s">90 s timeout · retried</text></g>
+        <g class="node n-ext" id="n-gemini" data-tip="gemini" tabindex="0"><rect x="372" y="320" width="160" height="56" rx="6"/><text x="452" y="343" text-anchor="middle" class="t">Gemini</text><text x="452" y="360" text-anchor="middle" class="s">Flash · search · Maps</text></g>
+        <g class="node n-plane" id="n-charter" data-tip="charter" tabindex="0"><rect x="558" y="320" width="126" height="56" rx="6"/><text x="621" y="343" text-anchor="middle" class="t">Charter</text><text x="621" y="360" text-anchor="middle" class="s">quiet hours · vetoes</text></g>
+        <g class="node n-plane" id="n-decisions" data-tip="decisions" tabindex="0"><rect x="712" y="320" width="126" height="56" rx="6"/><text x="775" y="343" text-anchor="middle" class="t">Decisions</text><text x="775" y="360" text-anchor="middle" class="s">a trace per message</text></g>
+        <g class="node n-plane" id="n-cost" data-tip="cost" tabindex="0"><rect x="864" y="320" width="170" height="56" rx="6"/><text x="949" y="343" text-anchor="middle" class="t">Cost ledger</text><text x="949" y="360" text-anchor="middle" class="s">/cost · a brake per ask</text></g>
+        <g class="node n-plane" id="n-health" data-tip="health" tabindex="0"><rect x="1060" y="320" width="150" height="56" rx="6"/><text x="1135" y="343" text-anchor="middle" class="t">Health line</text><text x="1135" y="360" text-anchor="middle" class="s">08:15 · only if broken ⏱</text></g>
+        <path class="edge" id="e-wire-gemini" d="M346,348 L370,348" marker-end="url(#a)"/>
+
+        <!-- pipelines into the vault -->
+        <g class="node n-neutral" id="n-phone" data-tip="phone" tabindex="0"><rect x="30" y="438" width="140" height="46" rx="6"/><text x="100" y="458" text-anchor="middle" class="t">iPhone + Watch</text><text x="100" y="474" text-anchor="middle" class="s">Health Auto Export</text></g>
+        <g class="node n-run" id="n-vitals" data-tip="vitals" tabindex="0"><rect x="196" y="438" width="150" height="46" rx="6"/><text x="271" y="458" text-anchor="middle" class="t">vitals.v2</text><text x="271" y="474" text-anchor="middle" class="s">health bridge · :5000</text></g>
+        <g class="node n-store" id="n-healthdata" data-tip="healthdata" tabindex="0"><rect x="372" y="438" width="160" height="46" rx="6"/><text x="452" y="458" text-anchor="middle" class="t">Health data</text><text x="452" y="474" text-anchor="middle" class="s">minutes · sleep · workouts</text></g>
+        <g class="node n-neutral" id="n-gym" data-tip="gym" tabindex="0"><rect x="30" y="496" width="140" height="46" rx="6"/><text x="100" y="516" text-anchor="middle" class="t">The gym</text><text x="100" y="532" text-anchor="middle" class="s">SugarWOD</text></g>
+        <g class="node n-run" id="n-sugar" data-tip="sugar" tabindex="0"><rect x="196" y="496" width="150" height="46" rx="6"/><text x="271" y="516" text-anchor="middle" class="t">sugar.bridge</text><text x="271" y="532" text-anchor="middle" class="s">the week's programming</text></g>
+        <g class="node n-store" id="n-gymweek" data-tip="gymweek" tabindex="0"><rect x="372" y="496" width="160" height="46" rx="6"/><text x="452" y="516" text-anchor="middle" class="t">The gym's week</text><text x="452" y="532" text-anchor="middle" class="s">the week's plan file</text></g>
+        <g class="node n-ext" id="n-web" data-tip="web" tabindex="0"><rect x="30" y="554" width="140" height="104" rx="6"/><text x="100" y="592" text-anchor="middle" class="t">The web</text><text x="100" y="610" text-anchor="middle" class="s">121 event sources</text><text x="100" y="625" text-anchor="middle" class="s">12 food feeds</text><text x="100" y="640" text-anchor="middle" class="s">open data</text></g>
+        <g class="node n-run" id="n-events" data-tip="events" tabindex="0"><rect x="196" y="554" width="150" height="46" rx="6"/><text x="271" y="574" text-anchor="middle" class="t">events ⏱</text><text x="271" y="590" text-anchor="middle" class="s">07:00 · 12:30 · 18:00</text></g>
+        <g class="node n-store" id="n-inventory" data-tip="inventory" tabindex="0"><rect x="372" y="554" width="160" height="46" rx="6"/><text x="452" y="574" text-anchor="middle" class="t">Events inventory</text><text x="452" y="590" text-anchor="middle" class="s">deduped · tagged</text></g>
+        <g class="node n-run" id="n-food" data-tip="food" tabindex="0"><rect x="196" y="612" width="150" height="46" rx="6"/><text x="271" y="632" text-anchor="middle" class="t">food.nightly ⏱</text><text x="271" y="648" text-anchor="middle" class="s">05:30 · no model</text></g>
+        <g class="node n-store" id="n-kb" data-tip="kb" tabindex="0"><rect x="372" y="612" width="160" height="46" rx="6"/><text x="452" y="632" text-anchor="middle" class="t">Knowledge base</text><text x="452" y="648" text-anchor="middle" class="s">places · facts · sources</text></g>
+        <path class="edge" id="e-phone-vitals" d="M170,461 L194,461" marker-end="url(#a)"/>
+        <path class="edge store" id="e-vitals-health" d="M346,461 L370,461" marker-end="url(#a-store)"/>
+        <path class="edge" id="e-gym-sugar" d="M170,519 L194,519" marker-end="url(#a)"/>
+        <path class="edge store" id="e-sugar-gym" d="M346,519 L370,519" marker-end="url(#a-store)"/>
+        <path class="edge" id="e-web-events" d="M170,577 L194,577" marker-end="url(#a)"/>
+        <path class="edge store" id="e-events-inv" d="M346,577 L370,577" marker-end="url(#a-store)"/>
+        <path class="edge" id="e-web-food" d="M170,635 L194,635" marker-end="url(#a)"/>
+        <path class="edge store" id="e-food-kb" d="M346,635 L370,635" marker-end="url(#a-store)"/>
+
+        <!-- the shared stores -->
+        <g class="node n-store" id="n-memory" data-tip="memory" tabindex="0"><rect x="558" y="438" width="280" height="104" rx="6"/><text x="698" y="472" text-anchor="middle" class="t">Memory</text><text x="698" y="491" text-anchor="middle" class="s">entities · events · threads</text><text x="698" y="506" text-anchor="middle" class="s">preferences · relationships · archive</text><text x="698" y="521" text-anchor="middle" class="s">chat memory: four hours per chat</text></g>
+        <g class="node n-store" id="n-state" data-tip="state" tabindex="0"><rect x="864" y="438" width="346" height="104" rx="6"/><text x="1037" y="472" text-anchor="middle" class="t">Scoped state</text><text x="1037" y="491" text-anchor="middle" class="s">turn · session · day · trip · standing</text><text x="1037" y="506" text-anchor="middle" class="s">the last ask · where you are</text></g>
+        <g class="node n-store" id="n-records" data-tip="records" tabindex="0"><rect x="558" y="554" width="280" height="104" rx="6"/><text x="698" y="588" text-anchor="middle" class="t">Records</text><text x="698" y="607" text-anchor="middle" class="s">decisions · costs · harness runs</text><text x="698" y="622" text-anchor="middle" class="s">outcomes · verdicts · the Charter's log</text></g>
+        <g class="node n-store" id="n-profiles" data-tip="profiles" tabindex="0"><rect x="864" y="554" width="346" height="104" rx="6" style="stroke-dasharray:6 4"/><text x="1037" y="588" text-anchor="middle" class="t">Profiles and plans · JSON</text><text x="1037" y="607" text-anchor="middle" class="s">the household calendar and plans</text><text x="1037" y="622" text-anchor="middle" class="s">family and athlete profiles</text></g>
+
+        <g id="pulse-g" opacity="0" aria-hidden="true">
+          <circle r="13" class="pulse-halo" filter="url(#glow)"/>
+          <circle r="5.5" class="pulse-core"/>
+        </g>
+      </svg>
+    </div>
+    <div class="narr" aria-live="polite"><span class="narr-n" id="narr-n">ready</span><span class="narr-t" id="narr-t">Pick a moment above to watch it move. Hover or tap any box to see what happens there.</span></div>
+    <figcaption><b>What the picture shows.</b> A message meets rules in code before any model, and its answer meets checks in code before you. Data from the phone and the gym goes straight into the vault, with no model and no ladder; the web's events and food arrive on a clock, and only some event pages need a model to read them. The agents read all of it from the vault when asked. Every agent calls models through one wire, and every decision and cost lands in the same records.</figcaption>
+  </figure>
+
+  <p class="sec-eyebrow">Miya's routing</p>
+  <h2>Who answers: the ladder</h2>
+  <div class="prose"><p>Before any model sees a message to Miya, sixteen rules in code look at it from the top down. The first rule that claims it decides who answers: most send it straight to the agent that owns it, and two hand Miya's model a narrower job. Only what nobody claims reaches Miya's model whole. Each message below lands where the real classifier sends it.</p></div>
+  <div class="lad">
+    <div>
+      <div class="samples" role="group" aria-label="Pick a message">
+        <button class="play" data-lad="2" data-who="Kobe">“/week”<span class="k">a command</span></button>
+        <button class="play" data-lad="0" data-who="Fraser">“@fraser 45 min dumbbell session”<span class="k">an address</span></button>
+        <button class="play" data-lad="7" data-who="Huberman">“give me a 12 min stretch”<span class="k">a cooldown request</span></button>
+        <button class="play" data-lad="8" data-who="Fraser">“design a 45 minute dumbbell workout”<span class="k">a design</span></button>
+        <button class="play" data-lad="9" data-who="Kobe">“how many calories did I burn yesterday”<span class="k">a status question</span></button>
+        <button class="play" data-lad="14" data-who="Kobe">“what's the WOD tomorrow”<span class="k">the gym's workout</span></button>
+        <button class="play" data-lad="15" data-who="Genie">“plan our weekend”<span class="k">the household</span></button>
+        <button class="play" data-lad="16" data-who="Miya">“why do I feel tired lately”<span class="k">nobody claims it</span></button>
+      </div>
+      <div class="lad-out" id="lad-out" aria-live="polite" style="margin-top:12px">Pick a message to watch it fall through the rungs.</div>
+      <p class="lad-key"><span><i class="code">Kobe</i> straight to the agent that owns it</span><span><i class="model">Miya</i> Miya's model takes it</span></p>
+    </div>
+    <ol class="ladder" id="ladder">
+      <li data-tip="r1"><span class="rn">1</span><span class="what">@kobe, @fraser, @huberman, @genie, or /fraser …</span><span class="who"><i class="code">the named agent</i></span></li>
+      <li data-tip="r2a"><span class="rn">2a</span><span class="what">Genie's commands: /genie, /weekend_plan …</span><span class="who"><i class="code">Genie</i></span></li>
+      <li data-tip="r2"><span class="rn">2</span><span class="what">Any other slash command</span><span class="who"><i class="code">Kobe</i></span></li>
+      <li data-tip="r2b"><span class="rn">2b</span><span class="what">A what-if about your numbers</span><span class="who"><i class="model">Miya's model</i></span></li>
+      <li data-tip="r3"><span class="rn">3</span><span class="what">Plan changes: replan, pick a session, rest a day</span><span class="who"><i class="code">Kobe</i></span></li>
+      <li data-tip="r4"><span class="rn">4</span><span class="what">Logs: weight, recovery, burn</span><span class="who"><i class="code">Kobe</i></span></li>
+      <li data-tip="r4a"><span class="rn">4a</span><span class="what">Your typical burns, a weekly target</span><span class="who"><i class="code">Kobe</i></span></li>
+      <li data-tip="r4ah"><span class="rn">4a½</span><span class="what">A cooldown request</span><span class="who"><i class="code">Huberman</i></span></li>
+      <li data-tip="r4b"><span class="rn">4b</span><span class="what">Design intent: “design a workout”</span><span class="who"><i class="model">Miya → Fraser</i></span></li>
+      <li data-tip="r5"><span class="rn">5</span><span class="what">Status questions</span><span class="who"><i class="code">Kobe</i></span></li>
+      <li data-tip="r5b"><span class="rn">5b</span><span class="what">Plan views</span><span class="who"><i class="code">Kobe</i></span></li>
+      <li data-tip="r6"><span class="rn">6</span><span class="what">Profile changes</span><span class="who"><i class="code">Kobe</i></span></li>
+      <li data-tip="r6b"><span class="rn">6b</span><span class="what">Cooldown, stretch, mobility</span><span class="who"><i class="code">Huberman</i></span></li>
+      <li data-tip="r7"><span class="rn">7</span><span class="what">Recovery protocols</span><span class="who"><i class="code">Kobe</i></span></li>
+      <li data-tip="r8"><span class="rn">8</span><span class="what">The gym's workout</span><span class="who"><i class="code">Kobe</i></span></li>
+      <li data-tip="r8a"><span class="rn">8a</span><span class="what">Weekend and household planning</span><span class="who"><i class="code">Genie</i></span></li>
+      <li data-tip="rmiya" class="last"><span class="rn">—</span><span class="what">Nobody claims it</span><span class="who"><i class="model">Miya's model</i></span></li>
+    </ol>
+  </div>
+
+  <p class="sec-eyebrow">The runners</p>
+  <h2>A day in Rahat</h2>
+  <div class="prose"><p>Five services run all the time; the rest wake on a clock. Most of what Rahat does, it does while nobody is typing. Play the day to watch it, or hover a mark.</p></div>
+  <div class="day-ctl">
+    <button class="play" id="play-day" aria-pressed="false">▶ Play the day</button>
+    <span class="chip plane" id="now-chip">now: —</span>
+  </div>
+  <figure>
+    <div class="fig fig-day">
+      <svg id="day" viewBox="0 0 1200 330" role="img" xmlns="http://www.w3.org/2000/svg" aria-label="A 24-hour timeline. Always on: the three bots, the health bridge and the gym bridge. Feeds: the paid event search at 03:00 on Wednesdays and Saturdays, the food feeds at 05:30, the event runs at 07:00, 12:30 and 18:00. Miya's minute tick: the morning brief at 08:00, the health line at 08:15, walk nudges from 10:00 to 20:00 on a lagging day, the recovery nudge at 21:00, Huberman's cooldown at 21:30, the weekly reset on Sunday at 23:55. Genie's digest at 08:00. Built but not scheduled yet: a nightly replay at 03:10, a weekly report and a command screener on Sunday evening, a shadow diff at 21:35.">
+        <defs><pattern id="dots-d" width="18" height="18" patternUnits="userSpaceOnUse"><circle cx="1.5" cy="1.5" r="1.1" class="dotgrid"/></pattern></defs>
+        <rect x="0" y="0" width="1200" height="330" fill="url(#dots-d)"/>
+        <g id="axis"></g>
+        <text x="20" y="72" class="tag">ALWAYS ON</text>
+        <text x="20" y="122" class="tag">FEEDS</text>
+        <text x="20" y="172" class="tag">MIYA'S TICK</text>
+        <text x="20" y="222" class="tag">GENIE</text>
+        <text x="20" y="272" class="tag">BUILT, NOT</text>
+        <text x="20" y="285" class="tag">SCHEDULED</text>
+        <g class="mark" data-tip="d-always" tabindex="0"><rect x="160" y="58" width="1020" height="20" rx="10" class="band-code"/><text x="670" y="72" text-anchor="middle" class="s">three bots · the health bridge · the gym bridge</text></g>
+        <g id="marks"></g>
+        <line id="nowline" class="now" x1="0" y1="40" x2="0" y2="300" opacity="0"/>
+        <text id="nowtxt" class="now-t" x="0" y="314" text-anchor="middle" opacity="0">now</text>
+        <line id="cursor" class="cursor" x1="160" y1="40" x2="160" y2="300" opacity="0"/>
+      </svg>
+    </div>
+    <div class="narr" aria-live="polite"><span class="narr-n" id="day-n">a day</span><span class="narr-t" id="day-t">Five services never stop: the three bots, the health bridge and the gym bridge. Everything else on this line wakes on a clock, in Pacific time.</span></div>
+  </figure>
+
+  <p class="sec-eyebrow">The specialists</p>
+  <h2>The agents</h2>
+  <div class="prose"><p>Each agent starts on its own front door, where its failures are easy to see and can't break anything else. When it passes, it joins Miya, and Miya stays the one place to ask.</p></div>
+  <div class="agents">
+    <div class="agent wide" style="--c: var(--model)">
+      <div class="h"><h3>Miya · the orchestrator</h3><span class="chip ok">Live</span></div>
+      <span class="door">Door: the Bade Miya bot · runner: miya.v2 · code: new_plane/miya_runner/</span>
+      <p>The agent you talk to. The ladder sends what it recognizes straight to the agent that owns it; anything else goes to Miya's model, which looks things up, asks the specialists, reconciles them when they disagree, and answers in one voice. Every reply, a specialist's included, passes the validator and the Charter before it goes out. Its minute tick sends the 08:00 brief, the nudges, the 9:30 pm cooldown and the 08:15 health line.</p>
+    </div>
+    <div class="agent" style="--c: var(--code)">
+      <div class="h"><h3>Kobe · the numbers</h3><span class="chip ok">Live, behind Miya</span></div>
+      <dl><dt>Owns</dt><dd>The week's numbers: burn, targets, pace, the plan, the gym's workout.</dd>
+      <dt>Reads</dt><dd>Health data, the gym's week, the plan.</dd>
+      <dt>Path</dt><dd>Its own dispatcher and command table first, in code; a reasoner with tools for the rest.</dd></dl>
+    </div>
+    <div class="agent" style="--c: var(--model)">
+      <div class="h"><h3>Fraser · workouts</h3><span class="chip ok">Live, behind Miya</span></div>
+      <dl><dt>Owns</dt><dd>Workout design from your constraints, Kobe's week and the gym's coming sessions.</dd>
+      <dt>Checks</dt><dd>A 10-point contract in code before anything is sent; one repair; what isn't verified is said.</dd>
+      <dt>Records</dt><dd>Its outcomes, in the same tables as the harness.</dd></dl>
+    </div>
+    <div class="agent" style="--c: var(--model)">
+      <div class="h"><h3>Huberman · cooldowns</h3><span class="chip ok">Live, behind Miya</span></div>
+      <dl><dt>Owns</dt><dd>The 9:30 pm cooldown: the day's workout and recovery, a 25-drill library with rotation, a why for each drill.</dd>
+      <dt>Floor</dt><dd>A session from the library when the model can't answer; it says when it can't tell you trained.</dd></dl>
+    </div>
+    <div class="agent" style="--c: var(--store)">
+      <div class="h"><h3>Genie · the household</h3><span class="chip ok">Live, own bot and behind Miya</span></div>
+      <dl><dt>Owns</dt><dd>Weekends, the household calendar, and an 08:00 digest of the weekend's events.</dd>
+      <dt>Reads</dt><dd>The events inventory, fed by 121 sources.</dd>
+      <dt>Rules</dt><dd>Never two things in one slot; on a Sunday, the plan is today alone; stale feeds and a down search are said.</dd></dl>
+    </div>
+    <div class="agent" style="--c: var(--judge)">
+      <div class="h"><h3>Bourdain · where to eat</h3><span class="chip ok">Live, own bot</span></div>
+      <dl><dt>Built on</dt><dd>The harness: every answer runs eight steps, checked in code, with a judge in shadow.</dd>
+      <dt>Reads</dt><dd>A knowledge base with a source on every fact, an open-data gazetteer, food feeds every night, where you are.</dd></dl>
+      <a class="go" href="https://claude.ai/artifact/THBk4pzgJvtenkf4RZmdjK" target="_blank" rel="noopener">Open the harness page ↗</a>
+    </div>
+    <div class="agent" style="--c: var(--off)">
+      <div class="h"><h3>Bajrangi · a proof of concept</h3><span class="chip off">Proof of concept</span></div>
+      <dl><dt>Shows</dt><dd>A second domain on the same memory: an adapter, not a product.</dd></dl>
+    </div>
+  </div>
+
+  <p class="sec-eyebrow">The memory</p>
+  <h2>Where things live</h2>
+  <div class="prose"><p>One SQLite file on the Mac mini is the record of all of it, with a few JSON files beside it. None of it is in git: the public repo carries the code and synthetic tests, never the vault.</p></div>
+  <div class="stores">
+    <div class="store"><h3>Health data</h3><p>The Watch's minute series, sleep stages and workouts.</p>
+      <div class="flow"><span class="lbl">in</span><span class="p">the health bridge</span></div>
+      <div class="flow"><span class="lbl">out</span><span class="p">Kobe</span><span class="p">Huberman</span><span class="p">the health line</span></div></div>
+    <div class="store"><h3>The gym's week</h3><p>The week's programming as a plan file, from the gym's own app.</p>
+      <div class="flow"><span class="lbl">in</span><span class="p">the gym bridge</span></div>
+      <div class="flow"><span class="lbl">out</span><span class="p">Kobe</span><span class="p">Fraser</span><span class="p">Huberman</span></div></div>
+    <div class="store"><h3>Events inventory</h3><p>Every upcoming event, deduped on title, start and city, tagged by audience.</p>
+      <div class="flow"><span class="lbl">in</span><span class="p">the event runs</span></div>
+      <div class="flow"><span class="lbl">out</span><span class="p">Genie</span><span class="p">the health line</span></div></div>
+    <div class="store"><h3>Knowledge base</h3><p>Places, every fact with its source and read time; a gazetteer of every eating place in open data; mentions from the food feeds.</p>
+      <div class="flow"><span class="lbl">in</span><span class="p">the harness</span><span class="p">the food run</span><span class="p">open data</span></div>
+      <div class="flow"><span class="lbl">out</span><span class="p">Bourdain</span><span class="p">/list</span></div></div>
+    <div class="store"><h3>Memory</h3><p>Entities, events, threads, preferences, relationships, an archive. Entities and events are in daily use; consolidation isn't scheduled.</p>
+      <div class="flow"><span class="lbl">in</span><span class="p">Miya</span><span class="p">the agents</span></div>
+      <div class="flow"><span class="lbl">out</span><span class="p">Miya</span><span class="p">Kobe</span><span class="p">chat memory</span></div></div>
+    <div class="store"><h3>Scoped state</h3><p>Five scopes with expiry: turn, session, day, trip, standing. The last ask, and where you are for three hours.</p>
+      <div class="flow"><span class="lbl">in</span><span class="p">the harness</span><span class="p">Telegram location</span><span class="p">the phone</span></div>
+      <div class="flow"><span class="lbl">out</span><span class="p">Bourdain</span></div></div>
+    <div class="store"><h3>Records</h3><p>The decisions ledger, the cost ledger, harness runs and outcomes, the judge's verdicts and labels, the Charter's log.</p>
+      <div class="flow"><span class="lbl">in</span><span class="p">every agent</span><span class="p">the harness</span><span class="p">the Charter</span></div>
+      <div class="flow"><span class="lbl">out</span><span class="p">/cost</span><span class="p">the health line</span><span class="p">replays</span></div></div>
+    <div class="store json"><h3>Profiles and plans</h3><p>JSON beside the database: the household calendar and plans, the family and athlete profiles.</p>
+      <div class="flow"><span class="lbl">in</span><span class="p">you</span><span class="p">Genie</span><span class="p">Kobe</span></div>
+      <div class="flow"><span class="lbl">out</span><span class="p">every agent</span></div></div>
+  </div>
+  <div class="leaves"><b>What leaves the machine.</b> Each model or Maps call sends that request's context to Google, and a location sent to Maps is rounded to about a kilometre. Messages travel through Telegram. Everything else stays on the Mac mini.</div>
+
+  <p class="sec-eyebrow">Inside one agent</p>
+  <h2>The harness</h2>
+  <div class="harness">
+    <div>
+      <div class="steps" aria-label="The eight steps">
+        <span class="step model">1 Understand</span><span class="step code">2 Contract</span><span class="step model">3 Execute</span><span class="step code">4 Verify</span>
+        <span class="step judge">5 Judge</span><span class="step code">6 Control</span><span class="step code">7 Render</span><span class="step code">8 Record</span>
+      </div>
+      <p>One loop an agent's answer runs through, owned by the platform: the model reads and researches, code decides what counts as done, and a second model grades judgment once it has earned a say. One agent runs on it today, Bourdain; Fraser borrows its contract pattern; a second tenant is parked. It has its own page, with a message you can watch move through it.</p>
+    </div>
+    <a class="btn" href="https://claude.ai/artifact/THBk4pzgJvtenkf4RZmdjK" target="_blank" rel="noopener">Open the harness page ↗</a>
+  </div>
+
+  <p class="sec-eyebrow">The discipline</p>
+  <h2>The rails</h2>
+  <div class="rails">
+    <div class="rail"><h3>Before a change ships</h3><ul>
+      <li><b>A fix adds a pin</b><span>A <code>fix:</code> commit without a new regression test is refused at merge. 219 pin files, 1,877 tests.</span></li>
+      <li><b>Hermetic tests</b><span>4,209 tests, no network, no live database, no secrets loaded.</span></li>
+      <li><b>The pre-push gate</b><span>Private words, the bug-to-test policy, the registry, the silent-failure guard, the unit and contract layers. Anything red blocks the push.</span></li>
+      <li><b>Private words</b><span>A name, an address, a token or a chat id in anything a push would publish stops it.</span></li>
+    </ul></div>
+    <div class="rail"><h3>In production</h3><ul>
+      <li><b>Model calls end</b><span>A 90-second timeout on the shared client, a retry on a provider hiccup, and “still checking” when a Bourdain ask runs long.</span></li>
+      <li><b>Messages land</b><span>A reply Telegram refuses for its formatting goes again as plain text; a nudge that doesn't land is tried again the next minute.</span></li>
+      <li><b>It tells on itself</b><span>One line at 08:15 when something is broken; silence when nothing is.</span></li>
+      <li><b>Spend is visible</b><span>Every billable event in the cost ledger, shown by /cost; each harness ask runs under a brake.</span></li>
+    </ul></div>
+  </div>
+
+  <p class="sec-eyebrow">Shipped and the bet</p>
+  <h2>Where it's going</h2>
+  <div class="bets">
+    <div class="bet"><h3>Outcomes, not answers</h3><span class="chip warn">Measured for two agents; learning not built</span><p>Bourdain's answers and Fraser's designs are checked against named outcomes and recorded, and Bourdain's golden set replays for nothing. A loop that changes behavior from outcomes isn't built.</p></div>
+    <div class="bet"><h3>Memory that keeps what mattered</h3><span class="chip off">Not built</span><p>Shared typed memory is in daily use. Recall weighted by what changed an outcome, rather than by what was recent, is the bet.</p></div>
+    <div class="bet"><h3>A receipt for every fact</h3><span class="chip warn">Partial, one agent</span><p>Bourdain's facts carry their source and date, from the web, open data and the feeds. The profiles, memory and training numbers don't yet.</p></div>
+  </div>
+  <div class="prose" style="margin-top:16px"><p>Next on the data path: the database answers first, code applies the facts (who is eating, how far, open now), the model applies taste once, and the web is touched only when the database comes up short or you say “search”. That path isn't built yet.</p></div>
+
+  <div class="foot">
+    <span><a href="https://github.com/modernthinkerbuilds/Rahat-Plane" target="_blank" rel="noopener">The repo on GitHub</a></span>
+    <span><a href="https://github.com/modernthinkerbuilds/Rahat-Plane/blob/main/specs/ARCHITECTURE.md" target="_blank" rel="noopener">ARCHITECTURE.md</a></span>
+    <span><a href="https://claude.ai/artifact/THBk4pzgJvtenkf4RZmdjK" target="_blank" rel="noopener">The harness page</a></span>
+    <span>Counts as of October 17, 2026</span>
+  </div>
+</div>
+
+<div id="tip" role="tooltip" hidden>
+  <div class="tip-h"><span class="tip-t"></span><span class="chip"></span></div>
+  <p class="tip-b"></p>
+  <code class="tip-c"></code>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var TIPS = {
+    you: ["You · Telegram", "Live", "You talk to one agent, Miya, through the Bade Miya bot. Typing / shows every command it knows.", "new_plane/miya_runner/"],
+    household: ["The household", "Live", "Genie and Bourdain each have their own bot, so anyone in the household can use them from their own phone once it's paired.", "new_plane/genie_runner/ · bourdain_runner/"],
+    miyarun: ["miya.v2 · the Bade Miya runner", "Live", "A launchd service on the Mac mini, always on. It long-polls Telegram, gives every message a trace id, and runs a minute tick: the 08:00 brief, nudges, the 9:30 pm cooldown and the 08:15 health line.", "new_plane/miya_runner/__main__.py"],
+    genierun: ["genie · the Genie runner", "Live", "Always on. Pairs household phones, answers Genie's commands and plain questions, and sends the 08:00 events digest.", "new_plane/genie_runner/"],
+    bourdainrun: ["bourdain · the Bourdain runner", "Live", "Always on. Pairs the household, answers through the harness, and takes a location shared in Telegram as where you are.", "new_plane/bourdain_runner/"],
+    ladder: ["The ladder · 16 rungs", "Live", "Rules in code, checked top to bottom. The first rung that claims a message decides who answers: most send it straight to the agent that owns it; a what-if or a design goes through Miya. What no rung claims goes to Miya's model. The section below lets you drop messages through it.", "new_plane/miya_runner/delegate_classifier.py"],
+    gate: ["Household gate · Genie's intents", "Live", "Only paired phones get in. Genie's commands (/whatson, /weekend_plan) and its plain-language asks are matched in code first.", "agents/genie/"],
+    grammar: ["Grammar · a lookup or an ask", "Live", "Bourdain's commands, exact or nothing. A lookup (/list, /who, /cost, /kb) is answered by code; an ask (/coffee, /eat, “more”) goes to the harness as the words it stands for.", "agents/bourdain/handler.py"],
+    miya: ["Miya · the orchestrator", "Live", "When no rung claims a message, Miya's model looks things up, asks the specialists, reconciles them when they disagree, and answers in one voice. A specialist's reply is said in Miya's voice too, unless it is an exact answer from code.", "new_plane/miya_runner/orchestrator.py"],
+    kobe: ["Kobe · the numbers", "Live", "The week's numbers from the Watch and the plan: burn, targets, pace, the gym's workout. Its own dispatcher and command table answer first, in code; a reasoner with tools takes the rest.", "agents/the_scientist/"],
+    fraser: ["Fraser · workouts", "Live", "Designs a session from your constraints, Kobe's week and the gym's coming sessions. The model writes it; a 10-point contract in code checks it before it's sent.", "agents/fraser/"],
+    huberman: ["Huberman · cooldowns", "Live", "At 9:30 pm it reads the day's workout and recovery and picks from a 25-drill library, with rotation, explaining each drill. It says when it can't tell whether you trained.", "agents/huberman/"],
+    genie: ["Genie · the household's weekends", "Live", "Plans weekends, keeps the household calendar, and sends a daily digest of the weekend's events, tagged by audience.", "agents/genie/"],
+    bourdain: ["Bourdain · where to eat", "Live", "Every answer runs the harness's eight steps: understand, contract, execute, verify, judge, control, render, record. Click the box to open the harness page.", "agents/bourdain/ · core/harness/"],
+    checksA: ["Checks · the validator and Fraser's contract", "Live", "Every reply Miya sends, a specialist's included, passes the validator: seven checks against what is true, rewritten before send, including a claim that something changed when nothing was written. Fraser's designs also pass a ten-point contract, with one repair pass; what still fails is said.", "validator.py · agents/fraser/contract.py"],
+    genierules: ["Genie's rules", "Live", "A plan never puts two things in one slot, and on a Sunday it is today alone. The digest carries at most six picks a day, no more than three from one source, and says when the feeds are stale; a down live search is said in one line.", "agents/genie/ · bridges/events/digest.py"],
+    verify: ["Verify · judge", "Shadow", "Code checks every pick against its evidence: open at arrival, inside the travel time, each diet confirmed on a menu. A second model grades judgment, in shadow until it earns a say.", "core/verify.py · core/judge.py"],
+    tg: ["Telegram", "Live", "One voice per door. A reply Telegram refuses for its formatting goes again as plain text; a nudge that doesn't land is tried again the next minute. Each bot publishes its slash-command hints when it starts.", "new_plane/miya_runner/telegram.py"],
+    rails: ["The rails", "Live", "4,209 hermetic tests: no network, no live database, no secrets. A fix must add a regression pin, and the pre-push gate blocks a push that fails a test or would publish a private word.", "tests/ · scripts/hooks/pre-push"],
+    wire: ["The model wire", "Live", "Model calls go through one client: a 90-second timeout, a provider hiccup retried, a ledger row for what it cost. The harness adds a per-ask brake on tool calls, searches and dollars. Three older paths still call the model their own way.", "core/llm.py · core/llm_chat.py"],
+    gemini: ["Gemini", "Live", "Google's models: Flash for most steps, grounded web search, and Google Maps grounding for places. Each call sends that request's context to Google.", "outside Rahat"],
+    charter: ["The Charter", "Live", "One rulebook in code with a say on every reply Miya sends: approved, modified or vetoed, by policies such as quiet hours. An agent's veto also holds back another agent's nudge. Every verdict is logged.", "core/charter.py"],
+    decisions: ["The decisions ledger", "Live", "One row per step, under the message's trace id: who acted, what it did, its input and output, latency, tokens, cost and outcome. 7,408 rows by October 14.", "core/decisions.py"],
+    cost: ["The cost ledger", "Live", "A row per billable event, every token bucket priced. /cost shows today, this week and this month per agent, and the month's searches against the free allowance.", "core/ledger.py"],
+    health: ["The health line", "Live", "At 08:15, one message only when something is broken: a feed fetching nothing, a stale page, a silent Watch, lost messages, an old gym plan, refused model calls.", "core/health.py"],
+    phone: ["iPhone + Watch", "Live", "Health Auto Export sends the Watch's data to the Mac mini: 150+ metrics at minute resolution, sleep stages, typed workouts. A Shortcut can also push where you are.", "bridges/healthkit/"],
+    vitals: ["vitals.v2 · the health bridge", "Live", "Always on, on port 5000, behind a key. It writes the phone's exports into the vault and accepts a location push for Bourdain.", "bridges/healthkit/server.py"],
+    gym: ["The gym", "Live", "The gym's programming, from SugarWOD, sent over by a bookmarklet.", "bridges/sugarwod/"],
+    sugar: ["sugar.bridge · the gym bridge", "Live", "Always on. Writes the week's programming where Kobe, Fraser and Huberman read it.", "bridges/sugarwod/server.py"],
+    web: ["The web", "Live", "121 event sources (43 read in plain code, 64 pages a model reads daily, 14 grounded searches twice a week), 12 food feeds read in code, and open data from OpenStreetMap.", "bridges/events/ · bridges/food/"],
+    events: ["events · three times a day", "Live", "At 07:00, 12:30 and 18:00 it reads the event sources, dedupes them and tags them by audience. The paid search pass runs Wednesday and Saturday at 03:00.", "bridges/events/"],
+    food: ["food.nightly · 05:30", "Live", "Reads twelve food feeds in code, with no model: openings, closings and praise become mentions on places, and each place's own page is re-read for hours.", "bridges/food/nightly.py"],
+    healthdata: ["Health data", "Live", "The Watch's minute series, sleep stages and workouts. Kobe, Huberman and the health line read it.", "vault/rahat.db"],
+    gymweek: ["The gym's week", "Live", "The week's programming as a plan file. Kobe, Fraser and Huberman read it; the health line says when it's old.", "the gym bridge's plan file"],
+    inventory: ["Events inventory", "Live", "Every upcoming event, deduped on title, start and city, tagged by audience. A feed that goes quiet shows up on the health line.", "vault/rahat.db"],
+    kb: ["The knowledge base", "Live", "Bourdain's places, every fact with its source and read time, plus a gazetteer of every eating place in open data and the mentions from the food feeds.", "core/kb/"],
+    memory: ["Memory", "Live", "Five primitives in SQLite, plus an archive: entities, events, threads, preferences, relationships. Entities and events are in daily use; preferences and relationships barely run; nightly consolidation isn't scheduled. Chat memory keeps the last four hours of each chat.", "core/memory/ · core/chat_memory.py"],
+    state: ["Scoped state", "Live", "Five scopes with expiry: turn, session, day, trip, standing. It holds the last ask for follow-ups, and where you are for three hours.", "core/state_scopes.py"],
+    records: ["Records", "Live", "The decisions ledger, the cost ledger, harness runs and per-outcome results, the judge's verdicts and labels, and the Charter's log.", "vault/rahat.db"],
+    profiles: ["Profiles and plans · JSON", "Live", "Beside the database: the household calendar and plans, and the family and athlete profiles. Private, never in git.", "vault/*.json"],
+    r1: ["Rung 1 · an address", "Live", "@kobe, @fraser, @huberman or @genie, or /kobe, /fraser, /huberman, sends the message straight to that agent; @miya or /miya asks for Miya's own answer.", "rung 1"],
+    r2a: ["Rung 2a · Genie's commands", "Live", "/genie, /weekend_plan and Genie's other commands go to Genie.", "rung 2a"],
+    r2: ["Rung 2 · a slash command", "Live", "Every other slash command is Kobe's: /week, /today, /pace and the rest, answered from its command table in code.", "rung 2"],
+    r2b: ["Rung 2b · a what-if", "Live", "“What if I were to…” about your numbers goes to Miya's model, which answers with Kobe's facts and writes nothing.", "rung 2b"],
+    r3: ["Rung 3 · plan changes", "Live", "Replan, pick a session for a day, rest a day: Kobe changes the plan.", "rung 3"],
+    r4: ["Rung 4 · logs", "Live", "A weight, a recovery score or a burn, recorded by Kobe.", "rung 4"],
+    r4a: ["Rung 4a · your numbers", "Live", "Your typical burn per day type, or a weekly target, set by Kobe.", "rung 4a"],
+    r4ah: ["Rung 4a½ · a cooldown request", "Live", "A request verb with a cooldown word goes to Huberman, ahead of the design rule.", "rung 4a½"],
+    r4b: ["Rung 4b · design intent", "Live", "“Design a workout” skips every Kobe lookup and goes to Miya, which hands it to Fraser's design, checked by its contract.", "rung 4b"],
+    r5: ["Rung 5 · status", "Live", "Where am I this week, how much did I burn: Kobe's dispatcher answers from the numbers, in code.", "rung 5"],
+    r5b: ["Rung 5b · plan views", "Live", "Show the plan, with each day's target, from Kobe.", "rung 5b"],
+    r6: ["Rung 6 · profile changes", "Live", "Changes to your profile, recorded by Kobe.", "rung 6"],
+    r6b: ["Rung 6b · cooldown, stretch, mobility", "Live", "Any other cooldown or mobility ask goes to Huberman.", "rung 6b"],
+    r7: ["Rung 7 · recovery protocols", "Live", "Breathing, pre-fuel and post-workout protocols from Kobe.", "rung 7"],
+    r8: ["Rung 8 · the gym's workout", "Live", "The gym's programming for a day, from Kobe, verbatim, never paraphrased by a model.", "rung 8"],
+    r8a: ["Rung 8a · the household", "Live", "Weekend and household planning goes to Genie. It sits after every Kobe rule, so it only gets what nobody else owns.", "rung 8a"],
+    rmiya: ["Nobody claims it · Miya's model", "Live", "Miya's model takes the whole question: it looks things up, asks the specialists, and answers in one voice. A plain-language intent layer sits just above it, behind a flag that is off.", "new_plane/miya_runner/orchestrator.py"],
+    "d-always": ["Always on", "Live", "Five launchd services that never stop: the three bots (miya.v2, genie, bourdain), the health bridge on port 5000, and the gym bridge.", "launchd on the Mac mini"]
+  };
+  var CHIP = { "Live": "ok", "New": "pulse", "Shadow": "shadow", "Not built": "off", "Not yet": "off", "Parked": "warn", "Partly": "warn", "Built": "code" };
+
+  /* ── tooltips ── */
+  var tip = document.getElementById("tip");
+  var tT = tip.querySelector(".tip-t"), tS = tip.querySelector(".chip"), tB = tip.querySelector(".tip-b"), tC = tip.querySelector(".tip-c");
+  var pinned = null;
+  function fill(key) {
+    var d = TIPS[key]; if (!d) return false;
+    tT.textContent = d[0]; tS.textContent = d[1]; tS.className = "chip " + (CHIP[d[1]] || "ok");
+    tB.textContent = d[2]; tC.textContent = d[3] || ""; tC.hidden = !d[3];
+    return true;
+  }
+  function place(x, y) {
+    tip.hidden = false;
+    var r = tip.getBoundingClientRect(), pad = 12, left = x + 16, top = y + 18;
+    if (left + r.width > window.innerWidth - pad) left = Math.max(pad, x - r.width - 16);
+    if (top + r.height > window.innerHeight - pad) top = Math.max(pad, y - r.height - 18);
+    tip.style.left = left + "px"; tip.style.top = top + "px";
+  }
+  function showFor(el) { if (!fill(el.getAttribute("data-tip"))) return; var r = el.getBoundingClientRect(); place(r.left + Math.min(r.width / 2, 120), r.bottom - 6); }
+  function hide() { tip.hidden = true; pinned = null; }
+  function bindTips(root) {
+    Array.prototype.forEach.call(root.querySelectorAll("[data-tip]"), function (el) {
+      if (el.__tip) return; el.__tip = true;
+      var isLink = !!el.closest("a");
+      el.addEventListener("pointerenter", function (e) { if (e.pointerType === "touch" || pinned) return; if (fill(el.getAttribute("data-tip"))) place(e.clientX, e.clientY); });
+      el.addEventListener("pointermove", function (e) {
+        if (e.pointerType === "touch" || pinned) return;
+        if (tip.hidden && !fill(el.getAttribute("data-tip"))) return;
+        place(e.clientX, e.clientY);
+      });
+      el.addEventListener("pointerleave", function (e) { if (e.pointerType === "touch" || pinned) return; tip.hidden = true; });
+      el.addEventListener("focus", function () { if (!pinned) showFor(el); });
+      el.addEventListener("blur", function () { if (!pinned) tip.hidden = true; });
+      if (!isLink) {
+        el.addEventListener("click", function (e) {
+          e.stopPropagation();
+          if (pinned === el) { hide(); return; }
+          if (fill(el.getAttribute("data-tip"))) { pinned = el; place(e.clientX, e.clientY); }
+        });
+      }
+    });
+  }
+  bindTips(document);
+  document.addEventListener("click", function () { if (pinned) hide(); });
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape") hide(); });
+  window.addEventListener("scroll", function () { if (!tip.hidden) hide(); }, { passive: true });
+
+  var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  function q(id) { return document.getElementById(id); }
+  function wait(ms, ok) { return new Promise(function (res) { setTimeout(function () { res(ok()); }, ms); }); }
+
+  /* ── the map player ── */
+  var svg = q("map"), dyn = q("dyn"), dotG = q("pulse-g"), nN = q("narr-n"), nT = q("narr-t"), REST = nT.textContent;
+  var run = 0;
+  var SVGNS = "http://www.w3.org/2000/svg";
+  var S = {
+    week: [
+      ["n-you", null, "You ask Bade Miya for /week."],
+      ["n-miyarun", "e-you-miya", "The miya.v2 runner picks it up and gives it a trace id."],
+      ["n-ladder", "e-miya-ladder", "Rung 2 of the ladder claims it: a slash command, so it's Kobe's."],
+      ["n-kobe", "e-ladder-agents", "Kobe's own command table answers /week, in code."],
+      ["n-healthdata", ">n-kobe", "It reads the Watch's data from the vault…"],
+      ["n-kobe", ">n-healthdata", "…and works out the week: what's burned so far, what's left of the target. No model call."],
+      ["n-checksA", ">n-kobe|e-agents-checks", "The validator checks the reply against what is true."],
+      ["n-charter", ">n-checksA", "The Charter gets its say, as it does on every reply."],
+      ["n-tg", ">n-charter", "Back to you on Telegram, word for word: an exact answer from code isn't reworded."],
+      ["n-decisions", ">n-tg", "Every step lands in the decisions ledger under the message's trace id."]
+    ],
+    design: [
+      ["n-you", null, "“Design a 45-minute dumbbell session.”"],
+      ["n-miyarun", "e-you-miya", "miya.v2 takes it."],
+      ["n-ladder", "e-miya-ladder", "Rung 4b claims it as design intent, ahead of every Kobe lookup."],
+      ["n-miya", "e-ladder-miya", "Miya hands it to Fraser's design flow."],
+      ["n-fraser", ">n-miya", "Fraser reads the constraints in code: minutes, equipment, what to leave out."],
+      ["n-gymweek", ">n-fraser", "It reads the gym's coming sessions, so today's work doesn't repeat them…"],
+      ["n-kobe", ">n-gymweek", "…and Kobe's day: its type, its target, what's burned."],
+      ["n-fraser", ">n-kobe", "Now the model can write the session."],
+      ["n-wire", ">n-fraser", "Through the model wire, under the 90-second timeout…"],
+      ["n-gemini", "e-wire-gemini", "…to Gemini."],
+      ["n-fraser", ">n-gemini", "The design comes back as text."],
+      ["n-checksA", ">n-fraser|e-agents-checks", "Fraser's contract: ten checks in code, from the warm-up and cool-down to loads, cues, duration and the gym's week. One repair pass; what still fails is said."],
+      ["n-tg", "e-checksA-tg", "The session goes out as Fraser wrote it, not reworded."],
+      ["n-records", ">n-tg", "One row per contract outcome, in the harness's outcome table."]
+    ],
+    watch: [
+      ["n-phone", null, "Your phone's Health Auto Export sends the latest data."],
+      ["n-vitals", "e-phone-vitals", "The health bridge on the Mac mini takes it, behind a key."],
+      ["n-healthdata", "e-vitals-health", "Into the vault: minute series, sleep stages, workouts. No model, no ladder."],
+      ["n-kobe", ">n-healthdata", "Kobe reads it the next time you ask; Huberman reads it at 9:30 tonight."],
+      ["n-health", ">n-healthdata", "If the Watch goes quiet, the 08:15 health line says so."]
+    ],
+    events: [
+      ["n-events", null, "07:00: the events run wakes. It runs again at 12:30 and 18:00."],
+      ["n-web", ">n-events", "121 sources: 43 read in plain code with no model, 64 pages a model reads once a day."],
+      ["n-events", ">n-web", "Back on the Mac mini, every event is deduped on title, start and city, and tagged by audience."],
+      ["n-inventory", "e-events-inv", "Into the events inventory."],
+      ["n-genierun", null, "08:00: Genie's runner wakes for the digest."],
+      ["n-genie", ">n-genierun", "Genie picks the weekend's events…"],
+      ["n-inventory", ">n-genie", "…from the inventory…"],
+      ["n-genie", ">n-inventory", "…chosen, not first-come."],
+      ["n-genierules", "e-genie-rules", "At most six picks, no more than three from one source, and a line if the feeds are stale."],
+      ["n-tg", "e-rules-tg", "The digest goes to the household, a link on each event."]
+    ],
+    coffee: [
+      ["n-household", null, "Someone in the household taps /coffee."],
+      ["n-bourdainrun", "e-house-bourdain", "The Bourdain runner takes it."],
+      ["n-grammar", "e-brun-grammar", "/coffee is an ask, so it goes to the harness as the word “coffee”."],
+      ["n-bourdain", "e-grammar-bourdain", "Bourdain runs the harness's eight steps. Click this box for the harness page."],
+      ["n-state", ">n-bourdain", "Where are you? A location shared in Telegram in the last three hours, or home."],
+      ["n-bourdain", ">n-state", "The model researches with tools, under a brake on calls, searches and dollars:"],
+      ["n-kb", ">n-bourdain", "the knowledge base, where every fact carries its source…"],
+      ["n-wire", ">n-kb", "…and, through the model wire…"],
+      ["n-gemini", "e-wire-gemini", "…Google Maps grounding for what the base lacks."],
+      ["n-bourdain", ">n-gemini", "Evidence comes back as records, not prose."],
+      ["n-verify", "e-bourdain-verify", "Code verifies every pick against its evidence; the judge grades the answer in shadow."],
+      ["n-tg", "e-verify-tg", "Cafés near you, with a sources line and the time it was checked."],
+      ["n-records", ">n-tg", "The run and each outcome are recorded."]
+    ],
+    cool: [
+      ["n-miyarun", null, "21:30: the minute tick inside miya.v2."],
+      ["n-huberman", ">n-miyarun", "Huberman wakes, once a night."],
+      ["n-healthdata", ">n-huberman", "It reads today's workouts and recovery from the Watch's data…"],
+      ["n-gymweek", ">n-healthdata", "…and what the gym programmed today."],
+      ["n-huberman", ">n-gymweek", "It builds the session from a 25-drill library, rotating so it changes night to night."],
+      ["n-wire", ">n-huberman", "The model writes the coaching; if it can't answer, the session still comes from the library."],
+      ["n-gemini", "e-wire-gemini", "Gemini, under the 90-second timeout."],
+      ["n-tg", ">n-gemini", "The cooldown arrives on its own; if Telegram doesn't take it, it's tried again the next minute."]
+    ],
+    food: [
+      ["n-food", null, "05:30: the food run, with nobody awake."],
+      ["n-web", ">n-food", "Twelve food feeds, read in code: openings, closings, praise."],
+      ["n-food", ">n-web", "The places they name are matched in code; a place with old or missing hours has its own page re-read."],
+      ["n-kb", "e-food-kb", "Mentions and facts go into the knowledge base, each with its source. No model."]
+    ],
+    health: [
+      ["n-miyarun", null, "08:15: the minute tick runs the health checks."],
+      ["n-health", ">n-miyarun", "Is anything broken?"],
+      ["n-inventory", ">n-health", "Are the event feeds fetching, and are their pages current?"],
+      ["n-healthdata", ">n-inventory", "Has the Watch gone quiet?"],
+      ["n-gymweek", ">n-healthdata", "Is the gym's plan old?"],
+      ["n-kb", ">n-gymweek", "Have the food feeds brought nothing for three nights?"],
+      ["n-health", ">n-kb", "Lost messages and refused model calls, from the logs."],
+      ["n-tg", ">n-health", "One line to you only when something is broken. Silence otherwise."]
+    ]
+  };
+  function setDot(x, y, on) { dotG.setAttribute("transform", "translate(" + x + "," + y + ")"); dotG.setAttribute("opacity", on ? "1" : "0"); }
+  function center(id) { var el = q(id); var r = el.querySelector("rect").getBBox(); return [r.x + r.width / 2, r.y + r.height / 2]; }
+  function clearMarks() {
+    Array.prototype.forEach.call(svg.querySelectorAll(".node.on, .node.seen"), function (n) { n.classList.remove("on", "seen"); });
+    Array.prototype.forEach.call(svg.querySelectorAll(".edge.lit"), function (e) {
+      e.classList.remove("lit"); if (e.getAttribute("data-m") !== null) e.setAttribute("marker-end", e.getAttribute("data-m"));
+    });
+    while (dyn.firstChild) dyn.removeChild(dyn.firstChild);
+  }
+  function light(id) {
+    Array.prototype.forEach.call(svg.querySelectorAll(".node.on"), function (n) { n.classList.remove("on"); n.classList.add("seen"); });
+    var n = q(id); if (n) n.classList.add("on");
+  }
+  function litEdge(e) {
+    if (e.getAttribute("data-m") === null) e.setAttribute("data-m", e.getAttribute("marker-end") || "");
+    e.classList.add("lit"); if (e.getAttribute("marker-end")) e.setAttribute("marker-end", "url(#a-lit)");
+  }
+  function arc(fromId, toId) {
+    var a = center(fromId), b = center(toId), dx = b[0] - a[0], dy = b[1] - a[1], len = Math.sqrt(dx * dx + dy * dy) || 1;
+    var bend = Math.min(60, len * 0.14), mx = (a[0] + b[0]) / 2 - dy / len * bend, my = (a[1] + b[1]) / 2 + dx / len * bend;
+    var p = document.createElementNS(SVGNS, "path");
+    p.setAttribute("d", "M" + a[0] + "," + a[1] + " Q" + mx + "," + my + " " + b[0] + "," + b[1]);
+    p.setAttribute("class", "edge dyn");
+    dyn.appendChild(p);
+    return p;
+  }
+  function travel(path, rev, token) {
+    return new Promise(function (res) {
+      var L = path.getTotalLength(), ms = Math.max(380, Math.min(1300, 260 + L * 1.4)), t0 = null;
+      function f(now) {
+        if (token !== run) return res(false);
+        if (t0 === null) t0 = now;
+        var t = Math.min(1, (now - t0) / ms), e = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+        var pt = path.getPointAtLength((rev ? 1 - e : e) * L); setDot(pt.x, pt.y, true);
+        if (t < 1) requestAnimationFrame(f); else res(true);
+      }
+      requestAnimationFrame(f);
+    });
+  }
+  function press(sel, key, attr) {
+    Array.prototype.forEach.call(document.querySelectorAll(sel), function (b) { b.setAttribute("aria-pressed", b.getAttribute(attr) === key ? "true" : "false"); });
+  }
+  function stop() { run++; clearMarks(); setDot(0, 0, false); press(".play[data-scen]", null, "data-scen"); nN.textContent = "ready"; nT.textContent = REST; }
+  async function play(key) {
+    var token = ++run, steps = S[key]; if (!steps) return;
+    clearMarks(); press(".play[data-scen]", key, "data-scen");
+    var alive = function () { return token === run; };
+    for (var i = 0; i < steps.length; i++) {
+      var node = steps[i][0], via = steps[i][1], say = steps[i][2], path = null, rev = false, extra = [];
+      if (via && via.indexOf("|") > 0) { extra = via.split("|").slice(1); via = via.split("|")[0]; }
+      extra.forEach(function (id) { var e = q(id); if (e) litEdge(e); });
+      if (via && via.charAt(0) === ">") { path = arc(via.slice(1), node); }
+      else if (via) { rev = via.charAt(0) === "-"; path = q(rev ? via.slice(1) : via); if (path) litEdge(path); }
+      if (path && !reduce) { if (!(await travel(path, rev, token))) return; }
+      else { var c = center(node); setDot(c[0], c[1], !reduce); }
+      if (!alive()) return;
+      light(node);
+      nN.textContent = (i + 1) + " / " + steps.length; nT.textContent = say;
+      var words = say.split(/\s+/).length;
+      if (!(await wait(Math.max(1100, Math.min(4300, 700 + words * 150)), alive))) return;
+    }
+    if (alive()) { setDot(0, 0, false); press(".play[data-scen]", null, "data-scen"); nN.textContent = "done"; }
+  }
+  Array.prototype.forEach.call(document.querySelectorAll(".play[data-scen]"), function (b) {
+    b.addEventListener("click", function () { play(b.getAttribute("data-scen")); });
+  });
+  q("p-stop").addEventListener("click", stop);
+  if (!reduce && "IntersectionObserver" in window) {
+    var started = false;
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (en.isIntersecting && !started) { started = true; io.disconnect(); setTimeout(function () { if (run === 0) play("week"); }, 700); }
+      });
+    }, { threshold: 0.35 });
+    io.observe(svg);
+  }
+
+  /* ── the ladder ── */
+  var rows = Array.prototype.slice.call(document.querySelectorAll("#ladder li")), ladOut = q("lad-out"), lrun = 0;
+  var CLAIM = {
+    0: "Rung 1 claims it: an address. It goes straight to Fraser, and Miya says the answer in its own voice.",
+    2: "Rung 2 claims it: a slash command. Kobe's command table answers in code, word for word; no model.",
+    7: "Rung 4a½ claims it: a cooldown request. It goes straight to Huberman, and Miya says the session in its own voice.",
+    8: "Rung 4b claims it: design intent. It skips every Kobe lookup; Miya hands it to Fraser's design, and the contract checks it.",
+    9: "Rung 5 claims it: a status question. Kobe's dispatcher answers from the numbers, in code; no model.",
+    14: "Rung 8 claims it: the gym's workout. Kobe returns it verbatim; no model.",
+    15: "Rung 8a claims it: weekend planning. Genie takes it, and its plan goes out as Genie wrote it.",
+    16: "No rung claims it, so Miya's model takes the whole question: it looks things up, asks the specialists, and answers in one voice."
+  };
+  async function drop(target, btn) {
+    var token = ++lrun, alive = function () { return token === lrun; };
+    rows.forEach(function (r) { r.classList.remove("checking", "passed", "claims"); });
+    Array.prototype.forEach.call(document.querySelectorAll(".play[data-lad]"), function (b) { b.setAttribute("aria-pressed", b === btn ? "true" : "false"); });
+    ladOut.textContent = "Checking the rungs, top down…";
+    for (var i = 0; i < target; i++) {
+      rows[i].classList.add("checking");
+      if (!reduce) { if (!(await wait(170, alive))) return; }
+      rows[i].classList.remove("checking"); rows[i].classList.add("passed");
+    }
+    if (!alive()) return;
+    rows[target].classList.add("claims");
+    ladOut.innerHTML = "";
+    var b = document.createElement("b"); b.textContent = (btn.getAttribute("data-who") || "") + ". ";
+    ladOut.appendChild(b); ladOut.appendChild(document.createTextNode(CLAIM[target] || ""));
+  }
+  Array.prototype.forEach.call(document.querySelectorAll(".play[data-lad]"), function (b) {
+    b.addEventListener("click", function () { drop(parseInt(b.getAttribute("data-lad"), 10), b); });
+  });
+
+  /* ── a day ── */
+  var X0 = 160, X1 = 1180, PER = (X1 - X0) / 1440;
+  function xAt(min) { return X0 + min * PER; }
+  var axis = q("axis"), marks = q("marks");
+  [0, 3, 6, 9, 12, 15, 18, 21, 24].forEach(function (h) {
+    var x = xAt(h * 60);
+    var l = document.createElementNS(SVGNS, "line"); l.setAttribute("x1", x); l.setAttribute("x2", x); l.setAttribute("y1", 40); l.setAttribute("y2", 300); l.setAttribute("class", "axis"); axis.appendChild(l);
+    var t = document.createElementNS(SVGNS, "text"); t.setAttribute("x", h === 24 ? x + 12 : x); t.setAttribute("y", 30); t.setAttribute("text-anchor", h === 24 ? "end" : "middle"); t.setAttribute("class", "tag");
+    t.textContent = h === 0 || h === 24 ? "midnight" : h === 12 ? "noon" : (h < 12 ? h + " am" : (h - 12) + " pm"); axis.appendChild(t);
+  });
+  var DAY = [
+    // [minute, lane y, kind, key, title, status, body, code, label]
+    [180, 116, "m-model", "d-search", "Event search · Wed, Sat 03:00", "Live", "The paid pass: 14 grounded searches for what no feed covers, twice a week, and on /refresh.", "com.rahat.events.search", "search (Wed, Sat)"],
+    [330, 116, "m-store", "d-food", "food.nightly · 05:30", "Live", "Twelve food feeds read in code, no model; mentions and facts into the knowledge base; places' own pages re-read for hours.", "com.rahat.food.nightly", "food"],
+    [420, 116, "m-store", "d-ev1", "events · 07:00", "Live", "The first of three event runs: every source read, deduped, tagged by audience.", "com.rahat.events", "events"],
+    [750, 116, "m-store", "d-ev2", "events · 12:30", "Live", "The midday event run.", "com.rahat.events", "events"],
+    [1080, 116, "m-store", "d-ev3", "events · 18:00", "Live", "The evening event run.", "com.rahat.events", "events"],
+    [480, 166, "m-code", "d-brief", "Morning brief · 08:00", "Live", "The day's plan: its type, the gym pick, the target, the week so far. Held back if another agent has vetoed it.", "agents/the_scientist/", "brief"],
+    [495, 166, "m-plane", "d-health", "Health line · 08:15", "Live", "One line only when something is broken; silence otherwise.", "core/health.py", ""],
+    [1260, 166, "m-code", "d-recovery", "Recovery nudge · 21:00", "Live", "If the day's burn is below its target, a nudge toward recovery.", "agents/the_scientist/", "recovery", "end"],
+    [1290, 166, "m-model", "d-cool", "Huberman's cooldown · 21:30", "Live", "Once a night between 21:30 and 21:59: the day's workout and recovery, a session from a 25-drill library.", "agents/huberman/", "cooldown", "start"],
+    [1435, 166, "m-code", "d-reset", "Weekly reset · Sunday 23:55", "Live", "A recap of the week, and next week's target locked in.", "agents/the_scientist/", ""],
+    [480, 216, "m-store", "d-digest", "Genie's digest · 08:00", "Live", "The weekend's events, chosen for the household, a link on each.", "new_plane/genie_runner/", "digest"],
+    [190, 266, "m-off", "d-replay", "Nightly replay · 03:10", "Built", "Replays Bourdain's golden set from its recorded calls and scores it by outcomes, for nothing. Built, not scheduled yet.", "com.rahat.nightly-eval", "replay"],
+    [1085, 266, "m-off", "d-report", "Weekly report · Sunday 18:05", "Built", "One screen: spend against the free allowance, the harness's clean rate, the last replay, the judge's agreement, the owner's corrections. No model. Built, not scheduled yet.", "com.rahat.weekly-report", "report"],
+    [1100, 266, "m-off", "d-screener", "Command screener · Sunday 18:20", "Built", "Reads the week's asks and proposes new exact commands; the owner adds them by hand. Built, not scheduled yet.", "com.rahat.command-screener", ""],
+    [1295, 266, "m-off", "d-shadow", "Shadow diff · 21:35", "Built", "The old pipeline's answer beside the harness's, per ask, with cost. Built, not scheduled yet.", "com.rahat.bourdain-shadow-diff", "diff"]
+  ];
+  // walk-nudge band and cooldown window
+  var band = document.createElementNS(SVGNS, "g"); band.setAttribute("class", "mark"); band.setAttribute("data-tip", "d-walk"); band.setAttribute("tabindex", "0"); band.setAttribute("id", "d-walk");
+  var br = document.createElementNS(SVGNS, "rect"); br.setAttribute("x", xAt(600)); br.setAttribute("y", 158); br.setAttribute("width", xAt(1200) - xAt(600)); br.setAttribute("height", 16); br.setAttribute("rx", 8); br.setAttribute("class", "band-code");
+  var bt = document.createElementNS(SVGNS, "text"); bt.setAttribute("x", (xAt(600) + xAt(1200)) / 2); bt.setAttribute("y", 170); bt.setAttribute("text-anchor", "middle"); bt.setAttribute("class", "s"); bt.textContent = "walk nudges on a day that's behind";
+  band.appendChild(br); band.appendChild(bt); marks.appendChild(band);
+  TIPS["d-walk"] = ["Walk nudges · 10:00–20:00", "Live", "On a day that's behind its pace, a nudge to walk, a few times at most; held back if another agent has vetoed it.", "agents/the_scientist/"];
+  DAY.forEach(function (d) {
+    TIPS[d[3]] = [d[4], d[5], d[6], d[7]];
+    var g = document.createElementNS(SVGNS, "g"); g.setAttribute("class", "mark"); g.setAttribute("data-tip", d[3]); g.setAttribute("tabindex", "0"); g.setAttribute("id", d[3]);
+    var c = document.createElementNS(SVGNS, "circle"); c.setAttribute("cx", xAt(d[0])); c.setAttribute("cy", d[1]); c.setAttribute("r", 7.5); c.setAttribute("class", d[2]);
+    g.appendChild(c);
+    if (d[8]) {
+      var anchor = d[9] || "middle", dx = anchor === "end" ? 5 : anchor === "start" ? -5 : 0;
+      var t = document.createElementNS(SVGNS, "text"); t.setAttribute("x", xAt(d[0]) + dx); t.setAttribute("y", d[1] - 13); t.setAttribute("text-anchor", anchor); t.setAttribute("class", "lbl"); t.textContent = d[8]; g.appendChild(t);
+    }
+    marks.appendChild(g);
+  });
+  bindTips(q("day"));
+  function pacificMinutes() {
+    try {
+      var parts = new Intl.DateTimeFormat("en-US", { timeZone: "America/Los_Angeles", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(new Date());
+      var h = 0, m = 0; parts.forEach(function (p) { if (p.type === "hour") h = parseInt(p.value, 10) % 24; if (p.type === "minute") m = parseInt(p.value, 10); });
+      return h * 60 + m;
+    } catch (e) { return null; }
+  }
+  function showNow() {
+    var m = pacificMinutes(); if (m === null) return;
+    var x = xAt(m), nl = q("nowline"), nt = q("nowtxt");
+    nl.setAttribute("x1", x); nl.setAttribute("x2", x); nl.setAttribute("opacity", "1");
+    nt.setAttribute("x", x); nt.setAttribute("opacity", "1");
+    var hh = Math.floor(m / 60), mm = m % 60;
+    var s = ((hh % 12) || 12) + ":" + (mm < 10 ? "0" : "") + mm + (hh < 12 ? " am" : " pm");
+    nt.textContent = "now · " + s; q("now-chip").textContent = "now: " + s + " Pacific";
+  }
+  showNow(); setInterval(showNow, 60000);
+  var drun = 0, dN = q("day-n"), dT = q("day-t"), DREST = dT.textContent, cursor = q("cursor"), dayBtn = q("play-day");
+  var order = DAY.slice().sort(function (a, b) { return a[0] - b[0]; });
+  order.splice(order.findIndex(function (d) { return d[0] > 600; }), 0, [600, 166, "", "d-walk", "Walk nudges · 10:00–20:00", "Live", "On a day that's behind its pace, a nudge to walk, a few times at most.", "", ""]);
+  function fmt(min) { var h = Math.floor(min / 60) % 24, m = min % 60; return (h < 10 ? "0" : "") + h + ":" + (m < 10 ? "0" : "") + m; }
+  async function playDay() {
+    var token = ++drun, alive = function () { return token === drun; };
+    dayBtn.setAttribute("aria-pressed", "true");
+    Array.prototype.forEach.call(q("day").querySelectorAll(".mark.hit"), function (m) { m.classList.remove("hit"); });
+    cursor.setAttribute("opacity", "1");
+    var i = 0, t0 = null, DUR = reduce ? 0 : 22000;
+    while (i < order.length) {
+      if (!reduce) {
+        var target = order[i][0];
+        var reached = await new Promise(function (res) {
+          function f(now) {
+            if (!alive()) return res(false);
+            if (t0 === null) t0 = now;
+            var min = Math.min(1440, (now - t0) / DUR * 1440);
+            cursor.setAttribute("x1", xAt(min)); cursor.setAttribute("x2", xAt(min));
+            if (min >= target) res(true); else requestAnimationFrame(f);
+          }
+          requestAnimationFrame(f);
+        });
+        if (!reached) return;
+      } else { cursor.setAttribute("x1", xAt(order[i][0])); cursor.setAttribute("x2", xAt(order[i][0])); }
+      var d = order[i], el = q(d[3]) || null;
+      if (el && el.classList) el.classList.add("hit");
+      dN.textContent = fmt(d[0]); dT.textContent = d[4] + ". " + d[6];
+      i++;
+      if (reduce) { if (!(await wait(1600, alive))) return; }
+      else { var pause = await wait(900, alive); if (!pause) return; t0 = performance.now() - (order[i - 1][0] / 1440) * DUR; }
+    }
+    if (alive()) { dayBtn.setAttribute("aria-pressed", "false"); dN.textContent = "a day"; dT.textContent = "That's a day. The five always-on services never stopped; everything else woke on a clock."; cursor.setAttribute("opacity", "0"); }
+  }
+  dayBtn.addEventListener("click", function () { if (dayBtn.getAttribute("aria-pressed") === "true") { drun++; dayBtn.setAttribute("aria-pressed", "false"); cursor.setAttribute("opacity", "0"); dN.textContent = "a day"; dT.textContent = DREST; } else playDay(); });
+})();
+</script>
+</body>
+</html>
