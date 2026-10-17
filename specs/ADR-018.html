@@ -1,0 +1,937 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<!-- ADR-018 as an interactive page. Hosted copy: https://claude.ai/artifact/THBk4pzgJvtenkf4RZmdjK ; this file is its source and opens in any browser. The decision record itself is ADR-018-outcome-contracts-and-independent-evaluation.md, beside it. -->
+<style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>Rahat Harness Architecture</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Source+Sans+3:ital,wght@0,400;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a 72ch reading column for prose; figures break out to the full 1220px and scroll sideways inside their own panels on a phone.
+   Color encodes who does the work, as in the ADR: a model (amber), code (blue), a second model (purple), a platform store (green),
+   the control plane (crimson). Cyan is reserved for the message you are watching move. */
+:root {
+  --bg: #eef1f7; --panel: #ffffff; --fg: #131925; --muted: #586377; --line: #c6cedb; --line-soft: #e1e6ee; --grid: #dfe4ec;
+  --model: #c0640a; --model-bg: #fff0dc;
+  --code: #1d55b3; --code-bg: #e5edfc;
+  --judge: #6a3ea6; --judge-bg: #f0e8fb;
+  --store: #1b7856; --store-bg: #dff3ea;
+  --plane: #a3243c; --plane-bg: #fbe6ea;
+  --pulse: #0092c4; --pulse-soft: rgba(0, 146, 196, 0.22);
+  --off: #8a93a3; --off-bg: #eceff4;
+  --shadow: rgba(16, 24, 40, 0.16);
+  --display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --body: "Source Sans 3", "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d121a; --panel: #141b26; --fg: #e7ecf4; --muted: #9aa6b8; --line: #2a3546; --line-soft: #1d2634; --grid: #1b2330;
+    --model: #f3a64c; --model-bg: #2b2014;
+    --code: #80abf3; --code-bg: #13233a;
+    --judge: #bc99ee; --judge-bg: #251a37;
+    --store: #5fca9e; --store-bg: #10281e;
+    --plane: #f1879a; --plane-bg: #32181e;
+    --pulse: #50d4f6; --pulse-soft: rgba(80, 212, 246, 0.24);
+    --off: #6f7a8c; --off-bg: #19202b;
+    --shadow: rgba(0, 0, 0, 0.5);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0d121a; --panel: #141b26; --fg: #e7ecf4; --muted: #9aa6b8; --line: #2a3546; --line-soft: #1d2634; --grid: #1b2330;
+  --model: #f3a64c; --model-bg: #2b2014;
+  --code: #80abf3; --code-bg: #13233a;
+  --judge: #bc99ee; --judge-bg: #251a37;
+  --store: #5fca9e; --store-bg: #10281e;
+  --plane: #f1879a; --plane-bg: #32181e;
+  --pulse: #50d4f6; --pulse-soft: rgba(80, 212, 246, 0.24);
+  --off: #6f7a8c; --off-bg: #19202b;
+  --shadow: rgba(0, 0, 0, 0.5);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 17px; line-height: 1.5; margin: 0; }
+.wrap { max-width: 1260px; margin: 0 auto; padding-block: 30px 72px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.prose { max-width: 72ch; }
+h1 { font-family: var(--display); font-weight: 800; font-size: clamp(32px, 5vw, 50px); line-height: 1.02; letter-spacing: -0.02em; margin: 0 0 12px; text-wrap: balance; }
+h2 { font-family: var(--display); font-weight: 700; font-size: clamp(22px, 2.6vw, 27px); line-height: 1.15; margin: 64px 0 8px; text-wrap: balance; }
+h3 { font-family: var(--display); font-weight: 600; font-size: 16.5px; line-height: 1.25; margin: 0; text-wrap: balance; }
+p { margin: 0 0 14px; }
+a { color: var(--code); text-underline-offset: 2px; }
+a:focus-visible, button:focus-visible { outline: 3px solid var(--pulse); outline-offset: 2px; border-radius: 6px; }
+code { font-family: var(--mono); font-size: 0.86em; background: var(--line-soft); padding: 1px 5px; border-radius: 4px; }
+.eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+.lede { font-size: 19.5px; color: var(--muted); max-width: 66ch; margin-bottom: 18px; }
+.lede b { color: var(--fg); font-weight: 600; }
+
+/* status chips */
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 18px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 12px; letter-spacing: 0.02em; line-height: 1;
+  padding: 6px 10px; border-radius: 999px; border: 1.5px solid currentColor; white-space: nowrap; background: var(--panel); }
+.chip::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.chip.ok { color: var(--store); } .chip.shadow { color: var(--judge); } .chip.warn { color: var(--model); }
+.chip.off { color: var(--off); } .chip.pulse { color: var(--pulse); } .chip.plane { color: var(--plane); } .chip.code { color: var(--code); }
+
+.legend { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 14.5px; color: var(--muted); margin: 6px 0 0; }
+.legend span { display: inline-flex; align-items: center; gap: 7px; }
+.sw { width: 14px; height: 14px; border-radius: 4px; border: 1.8px solid; display: inline-block; }
+.sw.model { background: var(--model-bg); border-color: var(--model); } .sw.code { background: var(--code-bg); border-color: var(--code); }
+.sw.judge { background: var(--judge-bg); border-color: var(--judge); } .sw.store { background: var(--store-bg); border-color: var(--store); }
+.sw.plane { background: var(--plane-bg); border-color: var(--plane); } .sw.pulse { background: var(--pulse); border-color: var(--pulse); border-radius: 50%; }
+.sw.off { background: var(--off-bg); border-color: var(--off); border-style: dashed; }
+
+/* figures */
+figure { margin: 16px 0 0; }
+.fig { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow-x: auto; }
+.fig svg { display: block; height: auto; width: 100%; }
+.fig1 svg { min-width: 1020px; }
+.fig2 svg { min-width: 780px; }
+.fig3 svg { min-width: 820px; }
+figcaption { font-size: 15px; color: var(--muted); margin-top: 10px; max-width: 86ch; }
+figcaption b { color: var(--fg); font-weight: 600; }
+.hint { font-size: 14px; color: var(--muted); margin: 8px 0 0; }
+
+svg .dotgrid { fill: var(--grid); }
+svg .t { font-family: var(--display); font-weight: 600; font-size: 13px; fill: var(--fg); }
+svg .s { font-family: var(--body); font-size: 11px; fill: var(--muted); }
+svg .tag { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.06em; fill: var(--muted); }
+svg .lbl { font-family: var(--body); font-size: 11px; fill: var(--muted); }
+svg .lbl.strong { fill: var(--fg); }
+svg .mk { fill: var(--fg); } svg .mk-lit { fill: var(--pulse); } svg .mk-model { fill: var(--model); }
+svg .mk-store { fill: var(--store); } svg .mk-plane { fill: var(--plane); } svg .mk-off { fill: var(--off); } svg .mk-judge { fill: var(--judge); }
+
+.edge { fill: none; stroke: var(--fg); stroke-width: 1.3; opacity: 0.78; transition: stroke 0.25s, stroke-width 0.25s, opacity 0.25s; }
+.edge.model { stroke: var(--model); opacity: 1; } .edge.store { stroke: var(--store); opacity: 1; } .edge.plane { stroke: var(--plane); opacity: 1; }
+.edge.off { stroke: var(--off); opacity: 1; } .edge.judge { stroke: var(--judge); opacity: 1; } .edge.dash { stroke-dasharray: 5 4; }
+.edge.lit { stroke: var(--pulse); stroke-width: 2.8; opacity: 1; }
+
+.node { cursor: help; outline: none; }
+.node rect, .node circle.dot { stroke-width: 1.4; transition: stroke-width 0.2s, filter 0.25s, stroke 0.2s; }
+.n-code rect { fill: var(--code-bg); stroke: var(--code); }
+.n-model rect { fill: var(--model-bg); stroke: var(--model); }
+.n-judge rect { fill: var(--judge-bg); stroke: var(--judge); }
+.n-store rect { fill: var(--store-bg); stroke: var(--store); }
+.n-plane rect { fill: var(--plane-bg); stroke: var(--plane); }
+.n-neutral rect { fill: var(--panel); stroke: var(--fg); }
+.n-off rect { fill: var(--off-bg); stroke: var(--off); stroke-dasharray: 5 4; }
+.n-loc rect { fill: var(--panel); stroke: var(--pulse); stroke-width: 1.8; }
+.n-door rect { fill: var(--panel); stroke: var(--muted); stroke-dasharray: 5 4; }
+.n-judge-solid rect { fill: var(--judge); stroke: var(--judge); }
+.n-judge-solid text { fill: var(--panel); }
+.node:hover rect, .node:focus-visible rect { stroke-width: 2.6; }
+.node:focus-visible rect { stroke: var(--pulse); }
+.node.seen rect { stroke-width: 2.2; }
+.node.on rect { stroke: var(--pulse); stroke-width: 3; filter: drop-shadow(0 0 7px var(--pulse-soft)); }
+.pulse-core { fill: var(--pulse); }
+.pulse-halo { fill: var(--pulse); opacity: 0.5; }
+.here { fill: var(--judge); }
+
+/* the player */
+.player { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 18px 0 12px; }
+.player .lab { font-family: var(--mono); font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin-right: 4px; }
+.play { font: 600 14.5px/1.1 var(--body); color: var(--fg); background: var(--panel); border: 1.5px solid var(--line); border-radius: 999px;
+  padding: 8px 13px; cursor: pointer; transition: border-color 0.2s, box-shadow 0.2s; }
+.play:hover { border-color: var(--pulse); }
+.play[aria-pressed="true"] { border-color: var(--pulse); box-shadow: 0 0 0 3px var(--pulse-soft); }
+.play.stop { color: var(--muted); }
+.play .k { font-family: var(--mono); font-weight: 500; font-size: 12.5px; color: var(--muted); }
+.narr { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 14px; align-items: baseline; background: var(--panel);
+  border: 1px solid var(--line); border-left: 5px solid var(--pulse); border-radius: 0 10px 10px 0; padding: 12px 16px; margin-top: 12px; min-height: 58px; }
+.narr-n { font-family: var(--mono); font-size: 12px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.narr-t { font-size: 16.5px; min-width: 0; }
+
+/* tooltip */
+#tip { position: fixed; z-index: 60; width: max-content; max-width: min(340px, calc(100vw - 24px)); background: var(--panel); color: var(--fg);
+  border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 12px 32px var(--shadow); padding: 11px 13px 12px;
+  pointer-events: none; font-size: 14.5px; line-height: 1.42; }
+#tip .tip-h { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 5px; }
+#tip .tip-t { font-family: var(--display); font-weight: 700; font-size: 15px; }
+#tip .chip { font-size: 11px; padding: 4px 8px; }
+#tip .tip-b { margin: 0; }
+#tip .tip-c { display: block; margin-top: 7px; font-family: var(--mono); font-size: 11.5px; color: var(--muted); background: none; padding: 0; }
+
+/* status board */
+.board { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; margin-top: 18px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 13px 15px 14px; min-width: 0;
+  display: flex; flex-direction: column; gap: 6px; }
+.card .h { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.card .sec { font-family: var(--mono); font-size: 11.5px; color: var(--muted); letter-spacing: 0.03em; }
+.card p { margin: 0; font-size: 15px; color: var(--muted); }
+.card p b { color: var(--fg); font-weight: 600; }
+
+/* amendments */
+.tl { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-top: 22px; position: relative; }
+.tl::before { content: ""; position: absolute; left: 10px; right: 10px; top: 13px; height: 2px; background: var(--line); }
+.am { position: relative; padding-top: 34px; min-width: 0; }
+.am::before { content: ""; position: absolute; top: 6px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--panel);
+  border: 3px solid var(--c, var(--code)); }
+.am .box { background: var(--panel); border: 1px solid var(--line); border-top: 4px solid var(--c, var(--code)); border-radius: 8px; padding: 12px 14px 13px; height: 100%; }
+.am .d { font-family: var(--mono); font-size: 11.5px; color: var(--muted); display: flex; gap: 8px; align-items: baseline; }
+.am .d b { font-family: var(--display); font-weight: 800; font-size: 15px; color: var(--c, var(--code)); }
+.am h3 { margin: 6px 0 6px; }
+.am p { font-size: 14.5px; color: var(--muted); margin: 0; }
+@media (max-width: 980px) {
+  .tl { grid-template-columns: 1fr; }
+  .tl::before { left: 9px; right: auto; top: 10px; bottom: 10px; width: 2px; height: auto; }
+  .am { padding-top: 0; padding-left: 34px; }
+  .am::before { top: 14px; left: 2px; }
+}
+
+/* who owns what */
+.own { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 18px; }
+@media (max-width: 860px) { .own { grid-template-columns: 1fr; } }
+.region { background: var(--panel); border: 1px solid var(--line); border-top: 5px solid var(--c); border-radius: 10px; padding: 14px 16px 16px; min-width: 0; }
+.region .where { font-family: var(--mono); font-size: 12px; color: var(--muted); margin: 4px 0 10px; }
+.region ul { margin: 0; padding-left: 18px; font-size: 15px; }
+.region li { margin: 5px 0; }
+.region li b { font-weight: 600; }
+
+/* phases */
+.phases { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-top: 18px; }
+.phase { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.phase .n { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.phase .g { font-size: 14px; color: var(--muted); }
+.phase .chip { align-self: flex-start; white-space: normal; }
+
+.foot { margin-top: 56px; padding-top: 18px; border-top: 1px solid var(--line); font-size: 14.5px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 8px 22px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .edge, .node rect, .play { transition: none; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="eyebrow">Rahat · ADR-018 · outcome contracts and independent evaluation</p>
+  <h1>Rahat Harness Architecture</h1>
+  <p class="lede">How a Rahat agent answers a message: <b>one exact check, then the model reads, code checks, and a second model grades judgment.</b> Bourdain, the where-to-eat agent, has answered through this harness since October 4.</p>
+  <div class="chips" aria-label="Status">
+    <span class="chip ok">Accepted</span>
+    <span class="chip ok">In production since Oct 4</span>
+    <span class="chip shadow">Judge in shadow</span>
+    <span class="chip code">5 amendments · Oct 4–17</span>
+  </div>
+  <div class="legend" aria-label="Color key">
+    <span><i class="sw model"></i>a model does it</span>
+    <span><i class="sw code"></i>code does it, exactly</span>
+    <span><i class="sw judge"></i>a second model, fresh context</span>
+    <span><i class="sw store"></i>a platform store</span>
+    <span><i class="sw plane"></i>control plane</span>
+    <span><i class="sw off"></i>not built yet</span>
+    <span><i class="sw pulse"></i>the message you're watching</span>
+  </div>
+
+  <h2 id="flow-h">One message, start to finish</h2>
+  <div class="prose">
+    <p>Every message gets one exact check first. A lookup is answered by code. An ask, typed or tapped, goes to the harness, where the model reads and researches and code decides what counts as done. Pick a message to watch its path; hover or tap any box to see what happens there.</p>
+  </div>
+
+  <div class="player" role="group" aria-label="Watch a message">
+    <span class="lab">Watch</span>
+    <button class="play" id="p-ask" data-scen="ask" aria-pressed="false">“Where should we eat?”</button>
+    <button class="play" id="p-coffee" data-scen="coffee" aria-pressed="false"><span class="k">/coffee</span> · an ask</button>
+    <button class="play" id="p-list" data-scen="list" aria-pressed="false"><span class="k">/list</span> · a lookup</button>
+    <button class="play" id="p-share" data-scen="share" aria-pressed="false">Share your location</button>
+    <button class="play" id="p-town" data-scen="town" aria-pressed="false">A town, alone</button>
+    <button class="play" id="p-repair" data-scen="repair" aria-pressed="false">A repair</button>
+    <button class="play stop" id="p-stop" aria-label="Stop and reset">■ Stop</button>
+  </div>
+
+  <figure>
+    <div class="fig fig1">
+      <svg id="flow" viewBox="0 0 1220 590" role="img" xmlns="http://www.w3.org/2000/svg" aria-label="A message gets one exact check against the agent's grammar. A lookup such as /list is answered by code from the knowledge base and the session. An ask such as /coffee is handed to the harness as the word it stands for, and so is anything else typed. The harness runs Understand, the tenant's reading rules, Contract, Execute with tools, Verify, Judge, Control, Render and Record; Control can send the answer back to Execute for at most two repairs. Tools read the knowledge base first and the web only for what it lacks. A location shared from the phone becomes where you are, in scoped state, for three hours. Record writes the trace and the cost ledger.">
+        <defs>
+          <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk"/></marker>
+          <marker id="a-lit" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-lit"/></marker>
+          <marker id="a-model" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-model"/></marker>
+          <marker id="a-store" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-store"/></marker>
+          <marker id="a-plane" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-plane"/></marker>
+          <marker id="a-off" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-off"/></marker>
+          <filter id="glow" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="4.5"/></filter>
+          <pattern id="dots" width="18" height="18" patternUnits="userSpaceOnUse"><circle cx="1.5" cy="1.5" r="1.1" class="dotgrid"/></pattern>
+        </defs>
+        <rect x="0" y="0" width="1220" height="590" fill="url(#dots)"/>
+
+        <!-- ═══ inbound ═══ -->
+        <text x="40" y="24" class="tag">INBOUND · ONE EXACT CHECK, THEN THE MODEL</text>
+
+        <g class="node n-neutral" id="n-msg" data-tip="msg" tabindex="0">
+          <rect x="40" y="36" width="150" height="60" rx="6"/>
+          <text x="115" y="62" text-anchor="middle" class="t">Message</text>
+          <text x="115" y="80" text-anchor="middle" class="s">Telegram · one trace id</text>
+        </g>
+        <g class="node n-code" id="n-check" data-tip="check" tabindex="0">
+          <rect x="226" y="36" width="236" height="60" rx="6"/>
+          <text x="344" y="62" text-anchor="middle" class="t">Exact command?</text>
+          <text x="344" y="80" text-anchor="middle" class="s">the manifest's grammar · no guessing</text>
+        </g>
+        <g class="node n-code" id="n-lookup" data-tip="lookup" tabindex="0">
+          <rect x="506" y="36" width="316" height="60" rx="6"/>
+          <text x="664" y="62" text-anchor="middle" class="t">Lookup · code answers</text>
+          <text x="664" y="80" text-anchor="middle" class="s">/list · /who · /where · /cost · /kb · /help</text>
+        </g>
+        <g class="node n-neutral" id="n-reply" data-tip="reply" tabindex="0">
+          <rect x="1046" y="36" width="136" height="60" rx="6"/>
+          <text x="1114" y="62" text-anchor="middle" class="t">Reply</text>
+          <text x="1114" y="80" text-anchor="middle" class="s">never empty</text>
+        </g>
+        <g class="node n-code" id="n-ask" data-tip="ask" tabindex="0">
+          <rect x="506" y="124" width="316" height="52" rx="6"/>
+          <text x="664" y="145" text-anchor="middle" class="t">Ask · handed over as words</text>
+          <text x="664" y="163" text-anchor="middle" class="s">/coffee → “coffee” · /eat · /dessert · /save · “more”</text>
+        </g>
+        <g class="node n-door" id="n-pipes" data-tip="pipes" tabindex="0">
+          <rect x="846" y="124" width="190" height="52" rx="6"/>
+          <text x="941" y="145" text-anchor="middle" class="t">Devices &amp; schedules</text>
+          <text x="941" y="163" text-anchor="middle" class="s">own pipelines · no model</text>
+        </g>
+
+        <path class="edge" id="e-msg-check" d="M190,66 L224,66" marker-end="url(#a)"/>
+        <path class="edge" id="e-check-lookup" d="M462,66 L504,66" marker-end="url(#a)"/>
+        <text x="484" y="58" text-anchor="middle" class="lbl">lookup</text>
+        <path class="edge" id="e-lookup-reply" d="M822,66 L1044,66" marker-end="url(#a)"/>
+        <text x="934" y="58" text-anchor="middle" class="lbl">code reply · under a second</text>
+        <path class="edge" id="e-check-ask" d="M400,96 L400,150 L504,150" marker-end="url(#a)"/>
+        <text x="452" y="144" text-anchor="middle" class="lbl">ask</text>
+        <path class="edge" id="e-free" d="M290,96 L290,208 L99,208 L99,234" marker-end="url(#a)"/>
+        <text x="298" y="176" class="lbl">anything else → the model</text>
+        <path class="edge" id="e-ask" d="M664,176 L664,208 L99,208 L99,234" marker-end="url(#a)"/>
+        <text x="672" y="198" class="lbl">as words</text>
+
+        <!-- ═══ the harness ═══ -->
+        <text x="118" y="228" class="tag">THE HARNESS · EIGHT STEPS</text>
+        <g class="node n-model" id="n-understand" data-tip="understand" tabindex="0">
+          <rect x="40" y="236" width="118" height="70" rx="6"/>
+          <text x="99" y="260" text-anchor="middle" class="t">1 Understand</text>
+          <text x="99" y="279" text-anchor="middle" class="s">model → typed frame</text>
+          <text x="99" y="294" text-anchor="middle" class="s">+ a sanity check</text>
+        </g>
+        <g class="node n-code" id="n-rules" data-tip="rules" tabindex="0">
+          <rect x="172" y="236" width="88" height="70" rx="6"/>
+          <text x="216" y="257" text-anchor="middle" class="t">Reading</text>
+          <text x="216" y="273" text-anchor="middle" class="t">rules</text>
+          <text x="216" y="294" text-anchor="middle" class="s">tenant code</text>
+        </g>
+        <g class="node n-code" id="n-contract" data-tip="contract" tabindex="0">
+          <rect x="274" y="236" width="116" height="70" rx="6"/>
+          <text x="332" y="260" text-anchor="middle" class="t">2 Contract</text>
+          <text x="332" y="279" text-anchor="middle" class="s">code → checklist</text>
+          <text x="332" y="294" text-anchor="middle" class="s">musts + shoulds</text>
+        </g>
+        <g class="node n-model" id="n-execute" data-tip="execute" tabindex="0">
+          <rect x="404" y="236" width="118" height="70" rx="6"/>
+          <text x="463" y="260" text-anchor="middle" class="t">3 Execute</text>
+          <text x="463" y="279" text-anchor="middle" class="s">model + tools</text>
+          <text x="463" y="294" text-anchor="middle" class="s">cites evidence ids</text>
+        </g>
+        <g class="node n-code" id="n-verify" data-tip="verify" tabindex="0">
+          <rect x="536" y="236" width="116" height="70" rx="6"/>
+          <text x="594" y="260" text-anchor="middle" class="t">4 Verify</text>
+          <text x="594" y="279" text-anchor="middle" class="s">code → failures</text>
+          <text x="594" y="294" text-anchor="middle" class="s">each with a hint</text>
+        </g>
+        <g class="node n-judge" id="n-judge" data-tip="judge" tabindex="0">
+          <rect x="666" y="236" width="116" height="70" rx="6"/>
+          <text x="724" y="260" text-anchor="middle" class="t">5 Judge</text>
+          <text x="724" y="279" text-anchor="middle" class="s">fresh model</text>
+          <text x="724" y="294" text-anchor="middle" class="s">in shadow today</text>
+        </g>
+        <g class="node n-code" id="n-control" data-tip="control" tabindex="0">
+          <rect x="796" y="236" width="116" height="70" rx="6"/>
+          <text x="854" y="260" text-anchor="middle" class="t">6 Control</text>
+          <text x="854" y="279" text-anchor="middle" class="s">send · repair · drop</text>
+          <text x="854" y="294" text-anchor="middle" class="s">never empty</text>
+        </g>
+        <g class="node n-code" id="n-render" data-tip="render" tabindex="0">
+          <rect x="926" y="236" width="116" height="70" rx="6"/>
+          <text x="984" y="260" text-anchor="middle" class="t">7 Render</text>
+          <text x="984" y="279" text-anchor="middle" class="s">templates</text>
+          <text x="984" y="294" text-anchor="middle" class="s">facts from evidence</text>
+        </g>
+        <g class="node n-code" id="n-record" data-tip="record" tabindex="0">
+          <rect x="1056" y="236" width="126" height="70" rx="6"/>
+          <text x="1119" y="260" text-anchor="middle" class="t">8 Record</text>
+          <text x="1119" y="279" text-anchor="middle" class="s">trace + ledger</text>
+          <text x="1119" y="294" text-anchor="middle" class="s">the last ask kept</text>
+        </g>
+
+        <path class="edge" id="e-u-r" d="M158,271 L170,271" marker-end="url(#a)"/>
+        <path class="edge" id="e-r-c" d="M260,271 L272,271" marker-end="url(#a)"/>
+        <path class="edge" id="e-c-x" d="M390,271 L402,271" marker-end="url(#a)"/>
+        <path class="edge" id="e-x-v" d="M522,271 L534,271" marker-end="url(#a)"/>
+        <path class="edge" id="e-v-j" d="M652,271 L664,271" marker-end="url(#a)"/>
+        <path class="edge" id="e-j-ctl" d="M782,271 L794,271" marker-end="url(#a)"/>
+        <path class="edge" id="e-ctl-r" d="M912,271 L924,271" marker-end="url(#a)"/>
+        <path class="edge" id="e-r-rec" d="M1042,271 L1054,271" marker-end="url(#a)"/>
+        <path class="edge" id="e-render-reply" d="M984,236 L984,214 L1114,214 L1114,98" marker-end="url(#a)"/>
+        <text x="1122" y="160" class="lbl">the reply</text>
+
+        <path class="edge model dash" id="e-repair" d="M854,306 L854,326 L500,326 L500,308" marker-end="url(#a-model)"/>
+        <text x="677" y="342" text-anchor="middle" class="lbl">a must fails → repair with the hints, at most twice</text>
+
+        <!-- under the steps -->
+        <g class="node n-off" id="n-memo" data-tip="memo" tabindex="0">
+          <rect x="40" y="372" width="150" height="58" rx="6"/>
+          <text x="115" y="396" text-anchor="middle" class="t">Memo cache</text>
+          <text x="115" y="414" text-anchor="middle" class="s">not built yet</text>
+        </g>
+        <path class="edge off dash" id="e-u-memo" d="M99,306 L99,370" marker-end="url(#a-off)"/>
+
+        <g class="node n-model" id="n-tools" data-tip="tools" tabindex="0">
+          <rect x="380" y="372" width="170" height="58" rx="6"/>
+          <text x="465" y="392" text-anchor="middle" class="t">Tools · allow-list</text>
+          <text x="465" y="408" text-anchor="middle" class="s">knowledge base first · Maps · web</text>
+          <text x="465" y="422" text-anchor="middle" class="s">no network if nothing to find</text>
+        </g>
+        <path class="edge" id="e-x-tools" d="M440,306 L440,370" marker-end="url(#a)"/>
+        <text x="432" y="352" text-anchor="end" class="lbl">calls</text>
+        <path class="edge" id="e-tools-x" d="M470,372 L470,308" marker-end="url(#a)"/>
+        <text x="477" y="352" class="lbl">evidence</text>
+
+        <!-- ═══ platform stores ═══ -->
+        <text x="40" y="466" class="tag">PLATFORM STORES · READ AT STEP TIME</text>
+        <g class="node n-loc" id="n-loc" data-tip="loc" tabindex="0">
+          <rect x="40" y="476" width="150" height="64" rx="6"/>
+          <text x="115" y="500" text-anchor="middle" class="t">Where you are</text>
+          <text x="115" y="517" text-anchor="middle" class="s">Telegram share</text>
+          <text x="115" y="531" text-anchor="middle" class="s">or the phone's push</text>
+        </g>
+        <g class="node n-store" id="n-state" data-tip="state" tabindex="0">
+          <rect x="214" y="476" width="236" height="64" rx="6"/>
+          <text x="332" y="500" text-anchor="middle" class="t">Scoped state</text>
+          <text x="332" y="517" text-anchor="middle" class="s">turn · session · day · trip · standing</text>
+          <text x="332" y="531" text-anchor="middle" class="s">last ask · where you are (3 h)</text>
+        </g>
+        <g class="node n-store" id="n-kb" data-tip="kb" tabindex="0">
+          <rect x="474" y="476" width="262" height="64" rx="6"/>
+          <text x="605" y="500" text-anchor="middle" class="t">Knowledge base</text>
+          <text x="605" y="517" text-anchor="middle" class="s">places · facts with source and time</text>
+          <text x="605" y="531" text-anchor="middle" class="s">saves · gazetteer · feed mentions</text>
+        </g>
+        <g class="node n-store" id="n-web" data-tip="web" tabindex="0">
+          <rect x="760" y="476" width="196" height="64" rx="6"/>
+          <text x="858" y="500" text-anchor="middle" class="t">Source registry → web</text>
+          <text x="858" y="517" text-anchor="middle" class="s">Maps grounding · search</text>
+          <text x="858" y="531" text-anchor="middle" class="s">a place's own page</text>
+        </g>
+        <g class="node n-plane" id="n-trace" data-tip="trace" tabindex="0">
+          <rect x="980" y="476" width="202" height="64" rx="6"/>
+          <text x="1081" y="500" text-anchor="middle" class="t">Trace + cost ledger</text>
+          <text x="1081" y="517" text-anchor="middle" class="s">a span per step</text>
+          <text x="1081" y="531" text-anchor="middle" class="s">a row per billable event</text>
+        </g>
+
+        <path class="edge store" id="e-loc-state" d="M190,508 L212,508" marker-end="url(#a-store)"/>
+        <path class="edge store" id="e-state-rules" d="M300,474 L300,452 L216,452 L216,308" marker-end="url(#a-store)"/>
+        <text x="224" y="392" class="lbl">last ask · where you are</text>
+        <path class="edge store" id="e-tools-kb" d="M445,430 L445,458 L560,458 L560,474" marker-end="url(#a-store)"/>
+        <text x="568" y="471" class="lbl">base first · written back</text>
+        <path class="edge store" id="e-tools-web" d="M520,430 L520,446 L858,446 L858,474" marker-end="url(#a-store)"/>
+        <text x="700" y="440" text-anchor="middle" class="lbl">only for what the base lacks</text>
+        <path class="edge plane" id="e-rec-trace" d="M1119,306 L1119,474" marker-end="url(#a-plane)"/>
+        <text x="1127" y="400" class="lbl">spans · cost</text>
+
+        <text x="40" y="572" class="s">Brake per ask: 12 tool calls · 10 searches · $0.50, a wide ask 18 · 14 · $0.80 · no daily cap · a degraded answer says so in one line</text>
+
+        <g id="pulse-g" opacity="0" aria-hidden="true">
+          <circle r="13" class="pulse-halo" filter="url(#glow)"/>
+          <circle r="5.5" class="pulse-core"/>
+        </g>
+      </svg>
+    </div>
+    <div class="narr" aria-live="polite"><span class="narr-n" id="narr-n">ready</span><span class="narr-t" id="narr-t">Pick a message above to watch its path. Hover or tap any box to see what happens there.</span></div>
+    <figcaption><b>What the picture shows.</b> Code answers only what it can answer exactly: a lookup reads the knowledge base and the session, the same memory the harness reads. Everything that asks for something reaches the model, and only the model's answers are checked and judged. The facts in a reply come from evidence records with a source and a read time; the model picks places but never writes a number.</figcaption>
+  </figure>
+
+  <h2>Where each part stands</h2>
+  <div class="prose"><p>As of October 17. Sections refer to the ADR.</p></div>
+  <div class="board">
+    <div class="card"><div class="h"><h3>Routing</h3><span class="chip ok">Live</span></div><span class="sec">§2.1 · A4</span><p>One exact check, then the model. A command is <b>a lookup or an ask</b>; there is no second pipeline with a memory of its own.</p></div>
+    <div class="card"><div class="h"><h3>The eight steps</h3><span class="chip ok">Live</span></div><span class="sec">§2.2 · A1 · A3</span><p>Serving Bourdain since Oct 4, with the tenant's reading rules between Understand and Contract.</p></div>
+    <div class="card"><div class="h"><h3>One model wire</h3><span class="chip warn">Partly</span></div><span class="sec">§2.3</span><p>Every harness call goes through it. <b>Three older paths outside the harness</b> still reach the model their own way.</p></div>
+    <div class="card"><div class="h"><h3>Manifest and outcomes</h3><span class="chip ok">Live</span></div><span class="sec">§2.4 · §2.5</span><p>Grammar, tools, budgets and judge settings in <code>manifest.json</code>; a versioned outcome library per agent.</p></div>
+    <div class="card"><div class="h"><h3>Evidence and knowledge base</h3><span class="chip ok">Live</span></div><span class="sec">§2.6</span><p>Every fact with its source and read time. It now <b>grows every night with no model</b>: an open-data gazetteer, food feeds, places' own pages.</p></div>
+    <div class="card"><div class="h"><h3>Sources and scoped state</h3><span class="chip ok">Live</span></div><span class="sec">§2.7 · A2 · A5</span><p>A policy per host; five scopes with expiry; <b>where you are</b> from the phone or Telegram, for three hours.</p></div>
+    <div class="card"><div class="h"><h3>The judge</h3><span class="chip shadow">Shadow</span></div><span class="sec">§2.8</span><p>Logs a verdict on every answer. It earns a say at <b>50 owner labels and 80% agreement</b>; corrections have labeled answers since Oct 11.</p></div>
+    <div class="card"><div class="h"><h3>Cost</h3><span class="chip ok">Live</span></div><span class="sec">§2.9 · A1</span><p>A ledger row per billable event, <code>/cost</code> by day, week and month, a brake per ask. No daily cap.</p></div>
+    <div class="card"><div class="h"><h3>Traces and evals</h3><span class="chip ok">Live</span></div><span class="sec">§2.10</span><p>A span per step; outcome-scored replay every night. The golden set is re-recorded in November.</p></div>
+    <div class="card"><div class="h"><h3>Gate order</h3><span class="chip ok">Live</span></div><span class="sec">§2.11</span><p>Code gates run before model gates, in an order a test pins.</p></div>
+    <div class="card"><div class="h"><h3>Memo cache · /prep</h3><span class="chip off">Not built</span></div><span class="sec">§2.1 · Phase 3</span><p>The cached answer for a repeated ask, and building a trip's knowledge base before the trip. <b>The database-first path comes first.</b></p></div>
+    <div class="card"><div class="h"><h3>A second tenant</h3><span class="chip warn">Parked</span></div><span class="sec">Phase 4</span><p>Parked by the owner on Oct 11. Fraser checks workouts against a contract in code, but isn't a tenant.</p></div>
+  </div>
+
+  <h2>Five amendments since it was proposed</h2>
+  <div class="prose"><p>Each one is the code catching up with something the household ran into. The ADR's §7 has the full text.</p></div>
+  <div class="tl">
+    <div class="am" style="--c: var(--model)"><div class="box"><div class="d"><b>A1</b>Oct 4 · 5 · 11</div><h3>Reading rules, and a brake for wide asks</h3><p>The first morning in serve mode answered seven of eight asks with nothing. Code now settles what the household's words make plain: a follow-up keeps the ask, no one named means the usual party.</p></div></div>
+    <div class="am" style="--c: var(--store)"><div class="box"><div class="d"><b>A2</b>Oct 14 · 15</div><h3>Publisher feeds, by the owner's decision</h3><p>Twenty event calendars and four food feeds are read even where robots.txt asks readers out. No mirrors, caches or proxies; failures show in the daily health line.</p></div></div>
+    <div class="am" style="--c: var(--model)"><div class="box"><div class="d"><b>A3</b>Oct 15</div><h3>Research only when something is to be found</h3><p>A save, a verdict or a question runs without the network, in two rounds. “Search”, “use Gemini” or “something new” always widens the hunt.</p></div></div>
+    <div class="am" style="--c: var(--code)"><div class="box"><div class="d"><b>A4</b>Oct 17</div><h3>One brain, one memory</h3><p>/coffee asked “where are you?” from an old trip's tables. Now an ask goes to the harness as words, and a lookup reads the harness's own memory.</p></div></div>
+    <div class="am" style="--c: var(--pulse)"><div class="box"><div class="d"><b>A5</b>Oct 17</div><h3>Where you are</h3><p>A location shared in Telegram, or pushed by the phone, is where every ask ranks from for three hours. A town said alone moves it too.</p></div></div>
+  </div>
+
+  <h2>What the judge sees, and the say it has to earn</h2>
+  <div class="prose"><p>The judge can't be talked into agreeing, because it never sees the work: it gets the inputs and the answer, nothing in between, and it may not introduce a fact. Its say over a reply grows only as its verdicts match what the household actually said.</p></div>
+  <figure>
+    <div class="fig fig2">
+      <svg viewBox="0 0 860 330" role="img" xmlns="http://www.w3.org/2000/svg" aria-label="The executor's prompt, reasoning and tool transcript are blocked from the judge. The judge receives the ask, the frame, the contract, the answer and its evidence, and returns pass, fail or unsure per outcome with one line and the evidence used. Its authority rises from shadow, where Bourdain's judge is today, to annotate at 80 percent agreement with the owner's labels and to block or repair at 90 percent.">
+        <defs>
+          <marker id="j-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk"/></marker>
+          <pattern id="dots2" width="18" height="18" patternUnits="userSpaceOnUse"><circle cx="1.5" cy="1.5" r="1.1" class="dotgrid"/></pattern>
+        </defs>
+        <rect x="0" y="0" width="860" height="330" fill="url(#dots2)"/>
+        <g class="node n-model" data-tip="jexec" tabindex="0">
+          <rect x="20" y="30" width="230" height="120" rx="6"/>
+          <text x="135" y="54" text-anchor="middle" class="t">Executor · model + tools</text>
+          <text x="135" y="76" text-anchor="middle" class="s">its prompt</text>
+          <text x="135" y="92" text-anchor="middle" class="s">its reasoning</text>
+          <text x="135" y="108" text-anchor="middle" class="s">its tool transcript</text>
+          <text x="135" y="124" text-anchor="middle" class="s">earlier verdicts</text>
+          <text x="135" y="142" text-anchor="middle" class="tag">NEVER SHOWN</text>
+        </g>
+        <path class="edge off dash" d="M250,90 L328,90"/>
+        <path class="edge plane" d="M297,77 L317,103 M317,77 L297,103" style="stroke-width:2.4"/>
+        <g class="node n-neutral" data-tip="jin" tabindex="0">
+          <rect x="20" y="172" width="230" height="104" rx="6"/>
+          <text x="135" y="194" text-anchor="middle" class="t">What the judge receives</text>
+          <text x="135" y="214" text-anchor="middle" class="s">the ask · the frame · the contract</text>
+          <text x="135" y="230" text-anchor="middle" class="s">the structured answer</text>
+          <text x="135" y="246" text-anchor="middle" class="s">the evidence records it rests on</text>
+          <text x="135" y="264" text-anchor="middle" class="s">the agent's checklist, with examples</text>
+        </g>
+        <path class="edge" d="M250,224 L330,224 L330,162" marker-end="url(#j-a)"/>
+        <g class="node n-judge" data-tip="jjudge" tabindex="0">
+          <rect x="330" y="30" width="200" height="130" rx="6"/>
+          <text x="430" y="54" text-anchor="middle" class="t">Judge · fresh context</text>
+          <text x="430" y="74" text-anchor="middle" class="s">Gemini Flash, temperature 0</text>
+          <text x="430" y="90" text-anchor="middle" class="s">model + prompt version pinned</text>
+          <text x="430" y="106" text-anchor="middle" class="s">into every verdict row</text>
+          <text x="430" y="128" text-anchor="middle" class="s">judgment outcomes only:</text>
+          <text x="430" y="144" text-anchor="middle" class="s">never a fact, never a hard rule</text>
+        </g>
+        <path class="edge" d="M530,95 L598,95" marker-end="url(#j-a)"/>
+        <g class="node n-neutral" data-tip="jout" tabindex="0">
+          <rect x="600" y="30" width="240" height="130" rx="6"/>
+          <text x="720" y="54" text-anchor="middle" class="t">Per outcome</text>
+          <text x="720" y="76" text-anchor="middle" class="s">pass / fail / unsure</text>
+          <text x="720" y="92" text-anchor="middle" class="s">one line of reason</text>
+          <text x="720" y="108" text-anchor="middle" class="s">the evidence ids it relied on</text>
+          <text x="720" y="124" text-anchor="middle" class="s">a reason citing a fact not in evidence</text>
+          <text x="720" y="140" text-anchor="middle" class="s">fails the judge's own validation</text>
+        </g>
+        <text x="330" y="194" class="tag">AUTHORITY, EARNED BY AGREEMENT WITH THE OWNER'S LABELS</text>
+        <g class="node n-neutral" data-tip="jshadow" tabindex="0">
+          <rect x="330" y="206" width="170" height="44" rx="4"/>
+          <text x="415" y="225" text-anchor="middle" class="t">shadow</text>
+          <text x="415" y="241" text-anchor="middle" class="s">logs only · under 80%</text>
+        </g>
+        <g class="node n-judge" data-tip="jannotate" tabindex="0">
+          <rect x="500" y="206" width="170" height="44" rx="4"/>
+          <text x="585" y="225" text-anchor="middle" class="t">annotate</text>
+          <text x="585" y="241" text-anchor="middle" class="s">one caution line · 80%+</text>
+        </g>
+        <g class="node n-judge-solid" data-tip="jblock" tabindex="0">
+          <rect x="670" y="206" width="170" height="44" rx="4"/>
+          <text x="755" y="225" text-anchor="middle" class="t">block or repair</text>
+          <text x="755" y="241" text-anchor="middle" class="s">90%+ per outcome</text>
+        </g>
+        <path class="here" d="M408,262 L422,262 L415,253 z"/>
+        <text x="415" y="278" text-anchor="middle" class="lbl strong">Bourdain's judge today</text>
+        <text x="330" y="304" class="s">At least 50 owner labels before anything leaves shadow; a judge falls a level after two weeks below its threshold.</text>
+        <text x="330" y="320" class="s">The verifier runs first, always: the judge grades only answers that passed every mechanical must.</text>
+      </svg>
+    </div>
+    <figcaption><b>What the picture shows.</b> Independence comes from the boundary, not from a second vendor. The judge is pinned to a model and a prompt version, may not add facts, and stays advisory until its verdicts agree with the owner's own corrections and acceptances.</figcaption>
+  </figure>
+
+  <h2>The knowledge base</h2>
+  <div class="prose"><p>One record per physical place, with two kinds of truth around it: what the web says, every claim with its source and read time, and what the household says, every save and verdict with who said it and when. Facts are never overwritten; a new reading is a new row, and the newest dated source wins.</p></div>
+  <figure>
+    <div class="fig fig3">
+      <svg viewBox="0 0 900 450" role="img" xmlns="http://www.w3.org/2000/svg" aria-label="Six inputs feed one place record: every ask, the household's saves, critics' lists, the nightly food feeds, the open-data gazetteer and the original seed. On the left, what the web says: evidence records projected into hours, ratings, menu items, status and acclaim. On the right, what the household says: saves, verdicts, visits and aliases. Below, geography: locations, landmarks and legs.">
+        <defs>
+          <marker id="k-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-store"/></marker>
+          <pattern id="dots3" width="18" height="18" patternUnits="userSpaceOnUse"><circle cx="1.5" cy="1.5" r="1.1" class="dotgrid"/></pattern>
+        </defs>
+        <rect x="0" y="0" width="900" height="450" fill="url(#dots3)"/>
+        <text x="450" y="22" text-anchor="middle" class="tag">HOW IT GETS IN · EVERY ROW CARRIES ITS SOURCE AND A TRACE</text>
+        <g class="node n-neutral" data-tip="ksearch" tabindex="0"><rect x="30" y="34" width="130" height="42" rx="5" style="stroke:var(--store)"/><text x="95" y="52" text-anchor="middle" class="t">every ask</text><text x="95" y="67" text-anchor="middle" class="s">kb_search</text></g>
+        <g class="node n-neutral" data-tip="ksave" tabindex="0"><rect x="172" y="34" width="130" height="42" rx="5" style="stroke:var(--store)"/><text x="237" y="52" text-anchor="middle" class="t">your saves</text><text x="237" y="67" text-anchor="middle" class="s">kb_save</text></g>
+        <g class="node n-neutral" data-tip="klist" tabindex="0"><rect x="314" y="34" width="130" height="42" rx="5" style="stroke:var(--store)"/><text x="379" y="52" text-anchor="middle" class="t">critics' lists</text><text x="379" y="67" text-anchor="middle" class="s">kb_list · kb_acclaim</text></g>
+        <g class="node n-neutral" data-tip="kfeeds" tabindex="0"><rect x="456" y="34" width="130" height="42" rx="5" style="stroke:var(--store)"/><text x="521" y="52" text-anchor="middle" class="t">food feeds</text><text x="521" y="67" text-anchor="middle" class="s">nightly · kb_mention</text></g>
+        <g class="node n-neutral" data-tip="kgaz" tabindex="0"><rect x="598" y="34" width="130" height="42" rx="5" style="stroke:var(--store)"/><text x="663" y="52" text-anchor="middle" class="t">the gazetteer</text><text x="663" y="67" text-anchor="middle" class="s">open data · promoted</text></g>
+        <g class="node n-neutral" data-tip="kseed" tabindex="0"><rect x="740" y="34" width="130" height="42" rx="5" style="stroke:var(--store)"/><text x="805" y="52" text-anchor="middle" class="t">the seed</text><text x="805" y="67" text-anchor="middle" class="s">migrated, every field</text></g>
+        <path class="edge store" d="M95,76 L95,106 M237,76 L237,106 M379,76 L379,106 M521,76 L521,106 M663,76 L663,106 M805,76 L805,106 M95,106 L805,106"/>
+        <path class="edge store" d="M450,106 L450,148" marker-end="url(#k-a)"/>
+
+        <g class="node n-store" data-tip="kplace" tabindex="0">
+          <rect x="340" y="150" width="220" height="110" rx="8" style="stroke-width:1.8"/>
+          <text x="450" y="176" text-anchor="middle" class="t">kb_place</text>
+          <text x="450" y="194" text-anchor="middle" class="s">one physical location · brands group them</text>
+          <text x="450" y="210" text-anchor="middle" class="s">id = name + geohash (or city + address)</text>
+          <text x="450" y="226" text-anchor="middle" class="s">cuisine · price · status · founded</text>
+          <text x="450" y="242" text-anchor="middle" class="s">format + room tags · merges logged</text>
+        </g>
+
+        <text x="150" y="130" text-anchor="middle" class="tag">WHAT THE WEB SAYS</text>
+        <g class="node n-neutral" data-tip="kfact" tabindex="0">
+          <rect x="30" y="140" width="240" height="62" rx="5" style="stroke:var(--store);stroke-width:1.6"/>
+          <text x="150" y="160" text-anchor="middle" class="t">kb_fact · the evidence record</text>
+          <text x="150" y="176" text-anchor="middle" class="s">claim · value · source url + name + rank</text>
+          <text x="150" y="190" text-anchor="middle" class="s">method · read time · freshness · trace</text>
+        </g>
+        <text x="150" y="216" text-anchor="middle" class="tag">TYPED PROJECTIONS OF FACTS</text>
+        <g class="node n-neutral" data-tip="khours" tabindex="0"><rect x="30" y="224" width="112" height="34" rx="5" style="stroke:var(--store)"/><text x="86" y="245" text-anchor="middle" class="s">kb_hours</text></g>
+        <g class="node n-neutral" data-tip="krating" tabindex="0"><rect x="158" y="224" width="112" height="34" rx="5" style="stroke:var(--store)"/><text x="214" y="245" text-anchor="middle" class="s">kb_rating, counted</text></g>
+        <g class="node n-neutral" data-tip="kmenu" tabindex="0"><rect x="30" y="270" width="112" height="34" rx="5" style="stroke:var(--store)"/><text x="86" y="291" text-anchor="middle" class="s">kb_menu_item</text></g>
+        <g class="node n-neutral" data-tip="kstatus" tabindex="0"><rect x="158" y="270" width="112" height="34" rx="5" style="stroke:var(--store)"/><text x="214" y="291" text-anchor="middle" class="s">status · phone · site</text></g>
+        <g class="node n-neutral" data-tip="kacclaim" tabindex="0"><rect x="30" y="316" width="240" height="34" rx="5" style="stroke:var(--store)"/><text x="150" y="337" text-anchor="middle" class="s">kb_acclaim ← a critic's list, dated</text></g>
+        <path class="edge store" d="M270,171 L338,171" marker-end="url(#k-a)"/>
+        <text x="304" y="164" text-anchor="middle" class="lbl">about</text>
+
+        <text x="750" y="130" text-anchor="middle" class="tag">WHAT THE HOUSEHOLD SAYS</text>
+        <g class="node n-neutral" data-tip="ksave2" tabindex="0"><rect x="630" y="140" width="112" height="42" rx="5" style="stroke:var(--store)"/><text x="686" y="158" text-anchor="middle" class="t">kb_save</text><text x="686" y="173" text-anchor="middle" class="s">who · heard from</text></g>
+        <g class="node n-neutral" data-tip="kverdict" tabindex="0"><rect x="758" y="140" width="112" height="42" rx="5" style="stroke:var(--store)"/><text x="814" y="158" text-anchor="middle" class="t">kb_verdict</text><text x="814" y="173" text-anchor="middle" class="s">chain · price · loved</text></g>
+        <g class="node n-neutral" data-tip="kvisit" tabindex="0"><rect x="630" y="194" width="112" height="42" rx="5" style="stroke:var(--store)"/><text x="686" y="212" text-anchor="middle" class="t">kb_visit</text><text x="686" y="227" text-anchor="middle" class="s">when · who · what</text></g>
+        <g class="node n-neutral" data-tip="kalias" tabindex="0"><rect x="758" y="194" width="112" height="42" rx="5" style="stroke:var(--store)"/><text x="814" y="212" text-anchor="middle" class="t">kb_alias</text><text x="814" y="227" text-anchor="middle" class="s">a misheard name</text></g>
+        <g class="node n-neutral" data-tip="kviews" tabindex="0"><rect x="630" y="248" width="240" height="42" rx="5" style="stroke:var(--store)"/><text x="750" y="266" text-anchor="middle" class="t">views: recent meals · regulars</text><text x="750" y="281" text-anchor="middle" class="s">variety window · loved twice</text></g>
+        <g class="node n-neutral" data-tip="kreport" tabindex="0"><rect x="630" y="302" width="240" height="48" rx="5" style="stroke:var(--store)"/><text x="750" y="321" text-anchor="middle" class="s">a report (“3.9 on their site”) is evidence too,</text><text x="750" y="337" text-anchor="middle" class="s">and outranks the web for the household's bar</text></g>
+        <path class="edge store" d="M562,205 L628,205" marker-end="url(#k-a)"/>
+        <text x="595" y="198" text-anchor="middle" class="lbl">about</text>
+
+        <text x="450" y="384" text-anchor="middle" class="tag">WHERE · COORDINATES NATIVE · MINUTES LABELED “ABOUT”</text>
+        <g class="node n-neutral" data-tip="kloc" tabindex="0"><rect x="250" y="394" width="120" height="30" rx="5" style="stroke:var(--store)"/><text x="310" y="413" text-anchor="middle" class="s">kb_location</text></g>
+        <g class="node n-neutral" data-tip="klandmark" tabindex="0"><rect x="390" y="394" width="120" height="30" rx="5" style="stroke:var(--store)"/><text x="450" y="413" text-anchor="middle" class="s">kb_landmark</text></g>
+        <g class="node n-neutral" data-tip="kleg" tabindex="0"><rect x="530" y="394" width="120" height="30" rx="5" style="stroke:var(--store)"/><text x="590" y="413" text-anchor="middle" class="s">kb_leg · trip or home</text></g>
+        <path class="edge store" d="M450,260 L450,300 L310,300 L310,392" marker-end="url(#k-a)"/>
+        <path class="edge store" d="M450,300 L450,392" marker-end="url(#k-a)"/>
+        <path class="edge store" d="M450,300 L590,300 L590,392" marker-end="url(#k-a)"/>
+      </svg>
+    </div>
+    <figcaption><b>What the picture shows.</b> The evidence record is one table, <code>kb_fact</code>; hours, ratings and menu items are typed projections of it, so every number in a reply traces to a URL and a time. The household's own words sit on the other side of the same place, as evidence of a different kind. The base now grows every night without a model, so an ask finds more of the answer already there.</figcaption>
+  </figure>
+
+  <h2>Who owns what</h2>
+  <div class="prose"><p>Three kinds of code, three speeds of change. The control plane governs every agent and changes rarely. The harness runs one message and is built once. A tenant supplies data and tools, and is where product work happens week to week.</p></div>
+  <div class="own">
+    <div class="region" style="--c: var(--plane)">
+      <h3>Control plane</h3>
+      <div class="where">core/ · new_plane/ · shared</div>
+      <ul>
+        <li><b>Cost ledger</b>: a row per model call, search, fetch and judge call; <code>/cost</code>.</li>
+        <li><b>Traces</b>: one id per message, a span per step, a replay viewer.</li>
+        <li><b>Judge service</b>: one call shape and calibration; checklists come from tenants.</li>
+        <li><b>Eval runner</b>: outcome-scored replay from recorded calls, every night.</li>
+        <li><b>Weekly command screener</b>: proposes commands; the owner approves.</li>
+      </ul>
+    </div>
+    <div class="region" style="--c: var(--code)">
+      <h3>Harness</h3>
+      <div class="where">core/harness/ · built once</div>
+      <ul>
+        <li><b>Inbound</b>: exact commands, then the model; lookups and asks.</li>
+        <li><b>Frame and contract</b> schemas with bounded retries.</li>
+        <li><b>One model wire</b>: tools, structured output, search, recorded calls.</li>
+        <li><b>Verifier, controller, renderer, recorder</b>.</li>
+        <li><b>Scoped state</b> and the time and place primitives.</li>
+      </ul>
+    </div>
+    <div class="region" style="--c: var(--model)">
+      <h3>Tenant: Bourdain</h3>
+      <div class="where">agents/bourdain/ · data and tools</div>
+      <ul>
+        <li><b>Manifest</b>: grammar, 22 tools, budgets, banned phrases.</li>
+        <li><b>System prompt</b> and the <b>reading rules</b>.</li>
+        <li><b>Outcome library</b> and <b>judge checklist</b>, versioned data.</li>
+        <li><b>Tools</b> that read the knowledge base first.</li>
+        <li><b>Golden sets</b>, kept private.</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2>The order of work</h2>
+  <div class="phases">
+    <div class="phase"><span class="n">ADR-018</span><h3>The decision</h3><span class="chip ok">Accepted</span><span class="g">Proposed Oct 3 with the owner's decisions.</span></div>
+    <div class="phase"><span class="n">Phase 1a</span><h3>Foundations</h3><span class="chip ok">Done · Oct 3</span><span class="g">Wire, ledger, traces, knowledge base, manifest, scopes.</span></div>
+    <div class="phase"><span class="n">Phase 1b</span><h3>The loop</h3><span class="chip ok">Done · Oct 4</span><span class="g">Verifier, controller, renderer, judge, eval runner.</span></div>
+    <div class="phase"><span class="n">Phase 2</span><h3>Shadow</h3><span class="chip ok">Done · Oct 4</span><span class="g">The harness ran beside the old route, with a daily diff.</span></div>
+    <div class="phase"><span class="n">Phase 3</span><h3>Serve</h3><span class="chip ok">Live · Oct 4</span><span class="g">Bourdain answers through the harness. Not done: /prep; the judge's say.</span></div>
+    <div class="phase"><span class="n">Phase 4</span><h3>A second tenant</h3><span class="chip warn">Parked · Oct 11</span><span class="g">A manifest, a library, a checklist, a table set.</span></div>
+  </div>
+
+  <div class="foot">
+    <span>The decision record: <a href="https://github.com/modernthinkerbuilds/Rahat-Plane/blob/main/specs/ADR-018-outcome-contracts-and-independent-evaluation.md">ADR-018 on GitHub</a></span>
+    <span>Updated October 17, 2026</span>
+  </div>
+</div>
+
+<div id="tip" role="tooltip" hidden>
+  <div class="tip-h"><span class="tip-t"></span><span class="chip"></span></div>
+  <p class="tip-b"></p>
+  <code class="tip-c"></code>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var TIPS = {
+    msg: ["Message", "Live", "A person types to an agent's Telegram bot. Each message gets one trace id that every step writes to.", "new_plane/bourdain_runner/"],
+    check: ["Exact command?", "Live", "One check against the grammar in the agent's manifest: the first word is a declared command, or the whole message is a declared reply. Exact or nothing; no guessing over free text. A weekly screener proposes new commands and the owner approves them.", "core/inbound.py · manifest.json"],
+    lookup: ["Lookup · code answers", "Live", "/list, /who, /where, /cost, /kb and /help are answered by code from the knowledge base and the harness's own session, never from a second store. Never judged. (A4)", "agents/bourdain/handler.py · saved.py"],
+    ask: ["Ask · a typed shortcut", "New", "/eat, /coffee, /dessert, /save and the replies “more”, “which one”, “something else”, “just me” and “going” go to the harness as the words they stand for: /coffee near the park becomes “coffee near the park”. Before Oct 17 a second pipeline answered them from its own tables. (A4)", "handler.py · ask_for()"],
+    reply: ["Reply", "Live", "One message back, never empty. The reading comes first as a header, so a wrong reading costs one word to fix; then the picks, the sources and the time it was checked.", "core/harness/render.py"],
+    pipes: ["Devices and schedules", "Live", "Health exports, the gym's workout feed and scheduled ticks enter by their own door: a pipeline, never this ladder, never the model, never judged.", "bridges/ · new_plane/"],
+    understand: ["1 · Understand", "Live", "The model reads the message and the session into a typed frame: who is eating, the meal, where from, where to look, when, what is ruled out. Validated against a schema with bounded retries; a cheap second reading checks that it says what the message says.", "core/harness/run.py · frame.py"],
+    rules: ["Reading rules · tenant code", "Live", "Deterministic rules on the model's reading; they never route. A follow-up keeps what it doesn't change; a message naming no one keeps the usual party; a meal word leading the message is the meal; a place alone moves “where you are” and continues the last ask. (A1, A4)", "agents/bourdain/harness.py · refine_frame()"],
+    contract: ["2 · Contract", "Live", "Code assembles the outcomes this answer must meet, from the frame and the agent's versioned library: musts and shoulds with parameters. Household rules learned from verdicts become musts.", "core/harness/contract.py · outcomes.json"],
+    execute: ["3 · Execute", "Live", "The model researches with the manifest's tools, up to 8 rounds under the per-ask brake, then answers in a schema that names places by id and cites evidence ids, never values. A holding line goes out after 5 seconds. A wrong citation is dropped, never the place.", "core/harness/execute.py"],
+    tools: ["Tools · the allow-list", "Live", "22 tools: the knowledge base first, then Google Maps grounding, web search, a place's own page, geocoding and weather, plus the writes (save, verdict, location). A message with nothing to find runs without the network tools, in at most two rounds. (A3)", "agents/bourdain/tools.py"],
+    verify: ["4 · Verify", "Live", "Pure functions over the frame, contract, answer, evidence and clock: open at arrival, inside the travel time, each diet confirmed on a menu, price, chains, the room. Every failure comes back with a fix hint. No network, no model.", "core/verify.py"],
+    judge: ["5 · Judge", "Shadow", "A second model in a fresh context grades only judgment outcomes, such as whether the answer met the ask and whether the why is specific. It sees the inputs and the answer, never the executor's work. In shadow: it logs, it doesn't decide.", "core/judge.py"],
+    control: ["6 · Control", "Live", "Every must passes: render. Otherwise up to two repair rounds with the hints, inside the time budget; then drop the failing pick or state the gap. Never an empty reply: an answer that says nothing doesn't validate.", "core/harness/control.py"],
+    render: ["7 · Render", "Live", "Deterministic templates. Every number, time and address is read from an evidence record; the model never writes a fact's final text. Banned phrases are struck; one phone screen; a sources line and the time checked.", "core/harness/render.py"],
+    record: ["8 · Record", "Live", "One trace per message with a span per step; per-outcome results, repairs, tool calls, search queries, cost and latency. The last ask is kept so a follow-up inherits it, and counters say how much the knowledge base served.", "core/harness/record.py"],
+    memo: ["Memo cache", "Not built", "Same reading, still fresh: the cached, verified answer, labeled. Not built yet; the database-first path comes first. (A3)", "ADR-018 §2.1"],
+    state: ["Scoped state", "Live", "Five scopes: turn, session, day, trip, standing, and every write has an expiry. The session holds the last ask, for follow-ups, and where you are, for three hours after the last point.", "core/state_scopes.py"],
+    kb: ["Knowledge base", "Live", "One record per physical place; every fact with its source and read time, append-only, newest wins; the household's saves and verdicts beside them. It grows every night without a model: a gazetteer of every eating place in open data, mentions from twelve food feeds, places' own pages re-read.", "core/kb/ · bridges/food/"],
+    web: ["Source registry → the web", "Live", "Every host has a policy. Google Maps grounding (its facts purged after 90 days, per Google's terms), grounded search, a place's own page. Fetched text is data, never instructions. Publisher feeds are read on the owner's decision. (A2)", "core/sources.py · sources.json"],
+    trace: ["Trace + cost ledger", "Live", "A row per billable event: model call, search query, fetch, judge call. Rollups by day, week and month; /cost and /cost export. No daily cap: the brake is per ask.", "core/ledger.py · core/decisions.py"],
+    loc: ["Where you are", "New", "A location shared in Telegram, once or live “until I turn it off”, or pushed by the phone, becomes the origin for three hours after the last point. /who shows its source and age. Coordinates are never logged. (A5)", "agents/bourdain/location.py"],
+    jexec: ["What the judge never sees", "Live", "The executor's prompt, its reasoning, its tool transcript and earlier verdicts. Independence comes from this boundary, not from a second vendor.", "core/judge.py"],
+    jin: ["What the judge receives", "Live", "The ask, the frame, the contract, the structured answer, the evidence records it rests on, and the agent's checklist with two to four labeled examples per judged outcome.", "agents/bourdain/judge_checklist"],
+    jjudge: ["The judge", "Shadow", "Gemini Flash at temperature 0, its model and prompt version written into every verdict row. Judgment outcomes only: never a fact, never a hard rule.", "manifest.json · judge"],
+    jout: ["Per outcome", "Live", "Pass, fail or unsure, one line of reason, and the evidence ids it relied on. A reason that cites a fact not in evidence fails the judge's own validation.", "core/judge.py"],
+    jshadow: ["Shadow", "Shadow", "Logs only. This is where Bourdain's judge is today: it needs 50 owner labels at 80% agreement to earn a say. Corrections have labeled the previous answer since Oct 11.", "core/judge.py · authority_for()"],
+    jannotate: ["Annotate", "Not yet", "One caution line on the reply, once the judge agrees with the owner's labels 80% of the time, measured per agent.", "ADR-018 §2.8"],
+    jblock: ["Block or repair", "Not yet", "The judge's fail sends the answer back for repair, measured per outcome at 90% agreement. A judge falls a level after two weeks below threshold.", "ADR-018 §2.8"],
+    ksearch: ["Every ask", "Live", "Each harness run writes a row: the reading, the candidates, the facts used, the searches run, the cost, and how many picks the base already held.", "kb_search"],
+    ksave: ["Your saves", "Live", "“save X, a friend loved it”, a Maps link or a pasted list. Who saved it, where they heard of it, for which day. /list reads them nearest first.", "kb_save"],
+    klist: ["Critics' lists", "Live", "Dated lists from critics and guides. A place on one gets an acclaim record with the writer, the rank, the date and the link.", "kb_list · kb_acclaim"],
+    kfeeds: ["Food feeds, nightly", "Live", "Twelve feeds read in code every night: openings, closings and praise become mentions, resolved to places; a closing writes a status fact. No model.", "bridges/food/ · kb_mention"],
+    kgaz: ["The gazetteer", "Live", "Every eating place in OpenStreetMap for the area, with its site, phone and hours where tagged. A row becomes a place only when an ask or a feed touches it.", "core/kb/gazetteer.py"],
+    kseed: ["The seed", "Live", "The first trip's hand-built lists, migrated with every field accounted for.", "core/kb/migrate.py"],
+    kplace: ["kb_place", "Live", "One physical location; a brand groups locations. The id is the name plus a geohash, or the city plus the address. Merges are logged.", "core/kb/schema.py"],
+    kfact: ["kb_fact · the evidence record", "Live", "Claim type, value, source URL and name, rank, method, read time, freshness and trace. Append-only; the newest dated source wins at read time.", "kb_fact"],
+    khours: ["Hours", "Live", "Parsed from a fact into weekday intervals, so “open at arrival” is arithmetic, not a guess.", "kb_hours · core/hours.py"],
+    krating: ["Ratings", "Live", "A rating with its source and its count. A pick without a counted rating is never the recommendation.", "kb_rating"],
+    kmenu: ["Menu items", "Live", "Dishes with diet tags, so a diner's line can be confirmed on a menu rather than assumed.", "kb_menu_item"],
+    kstatus: ["Status, phone, site", "Live", "Open, closed or moved; how to call; the place's own page, which the nightly job re-reads.", "kb_fact"],
+    kacclaim: ["Acclaim", "Live", "Praise from a dated list, shown with its date. It never expires, and never pretends to be new.", "kb_acclaim"],
+    ksave2: ["Saves", "Live", "Who saved it, where they heard of it, an occasion or a day.", "kb_save"],
+    kverdict: ["Verdicts", "Live", "“That's a chain”, “too pricey”, “loved it”. A standing verdict becomes a must on every later answer.", "kb_verdict"],
+    kvisit: ["Visits", "Live", "When, who and what was eaten, which keeps answers varied across a two-week window.", "kb_visit"],
+    kalias: ["Aliases", "Live", "A dictated or misheard name mapped to the place once, so the next ask finds it.", "kb_alias"],
+    kviews: ["Recent meals and regulars", "Live", "Views over visits: what was eaten lately, and places loved twice, which are examples to learn from, not answers to repeat.", "kb views"],
+    kreport: ["A household report", "Live", "What a person says about a place is evidence with the method “user report”, and it outranks the web for the household's own bar.", "kb_fact · user_report"],
+    kloc: ["Locations", "Live", "Coordinates for every place, so distance is computed and labeled “about”, never guessed.", "kb_location · core/kb/geo.py"],
+    klandmark: ["Landmarks", "Live", "Named points a person might start from or head to.", "kb_landmark"],
+    kleg: ["Legs", "Live", "A trip leg or home, each with its clock, its travel mode and a default radius.", "kb_leg"]
+  };
+  var CHIP = { "Live": "ok", "New": "pulse", "Shadow": "shadow", "Not built": "off", "Not yet": "off", "Parked": "warn", "Partly": "warn" };
+
+  /* ── tooltips ── */
+  var tip = document.getElementById("tip");
+  var tT = tip.querySelector(".tip-t"), tS = tip.querySelector(".chip"), tB = tip.querySelector(".tip-b"), tC = tip.querySelector(".tip-c");
+  var pinned = null;
+  function fill(key) {
+    var d = TIPS[key]; if (!d) return false;
+    tT.textContent = d[0]; tS.textContent = d[1]; tS.className = "chip " + (CHIP[d[1]] || "ok");
+    tB.textContent = d[2]; tC.textContent = d[3] || ""; tC.hidden = !d[3];
+    return true;
+  }
+  function place(x, y) {
+    tip.hidden = false;
+    var r = tip.getBoundingClientRect(), pad = 12, left = x + 16, top = y + 18;
+    if (left + r.width > window.innerWidth - pad) left = Math.max(pad, x - r.width - 16);
+    if (top + r.height > window.innerHeight - pad) top = Math.max(pad, y - r.height - 18);
+    tip.style.left = left + "px"; tip.style.top = top + "px";
+  }
+  function showFor(el) { if (!fill(el.getAttribute("data-tip"))) return; var r = el.getBoundingClientRect(); place(r.left + Math.min(r.width / 2, 120), r.bottom - 6); }
+  function hide() { tip.hidden = true; pinned = null; }
+  Array.prototype.forEach.call(document.querySelectorAll("[data-tip]"), function (el) {
+    el.addEventListener("pointerenter", function (e) { if (e.pointerType === "touch" || pinned) return; if (fill(el.getAttribute("data-tip"))) place(e.clientX, e.clientY); });
+    el.addEventListener("pointermove", function (e) { if (e.pointerType === "touch" || pinned || tip.hidden) return; place(e.clientX, e.clientY); });
+    el.addEventListener("pointerleave", function (e) { if (e.pointerType === "touch" || pinned) return; tip.hidden = true; });
+    el.addEventListener("focus", function () { if (!pinned) showFor(el); });
+    el.addEventListener("blur", function () { if (!pinned) tip.hidden = true; });
+    el.addEventListener("click", function (e) {
+      e.stopPropagation();
+      if (pinned === el) { hide(); return; }
+      if (fill(el.getAttribute("data-tip"))) { pinned = el; place(e.clientX, e.clientY); }
+    });
+    el.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); showFor(el); } });
+  });
+  document.addEventListener("click", function () { if (pinned) hide(); });
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape") hide(); });
+  window.addEventListener("scroll", function () { if (!tip.hidden) hide(); }, { passive: true });
+
+  /* ── the message player ── */
+  var svg = document.getElementById("flow");
+  var dotG = document.getElementById("pulse-g");
+  var nN = document.getElementById("narr-n"), nT = document.getElementById("narr-t");
+  var REST = nT.textContent;
+  var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var run = 0;
+
+  var S = {
+    ask: [
+      ["n-msg", null, "A message arrives: “where should we eat tonight?”"],
+      ["n-check", "e-msg-check", "One exact check against the manifest's grammar. It isn't a command."],
+      ["n-understand", "e-free", "1 · Understand. The model reads it into a typed frame: dinner, the usual party, from where you are, tonight."],
+      ["n-rules", "e-u-r", "Reading rules. The message names no one, so the household's usual party stands, with every diner's rules."],
+      ["n-contract", "e-r-c", "2 · Contract. Code assembles the checklist: open at arrival, inside the travel time, each diet confirmed on a menu."],
+      ["n-execute", "e-c-x", "3 · Execute. The model starts researching with its tools."],
+      ["n-tools", "e-x-tools", "The knowledge base first; Maps and the web only for what it lacks."],
+      ["n-kb", "e-tools-kb", "What the web says is written back: one record per place, every fact with its source and read time."],
+      ["n-tools", "-e-tools-kb", "Every tool returns evidence records, not prose."],
+      ["n-execute", "e-tools-x", "The answer names places by id and cites evidence ids. The model never supplies a fact."],
+      ["n-verify", "e-x-v", "4 · Verify. Code checks every fact and hard rule, and returns every failure with a hint."],
+      ["n-judge", "e-v-j", "5 · Judge. A fresh model grades judgment only: did it answer the ask, is the why specific. In shadow, it logs."],
+      ["n-control", "e-j-ctl", "6 · Control. Every must passed, so there is nothing to repair."],
+      ["n-render", "e-ctl-r", "7 · Render. Templates fill every number, time and address from the evidence."],
+      ["n-reply", "e-render-reply", "The reply: the reading as a header, up to three picks, one recommendation, sources, the time it was checked."],
+      ["n-record", "e-r-rec", "8 · Record. One trace with a span per step, and the last ask kept for a follow-up."],
+      ["n-trace", "e-rec-trace", "Every model call and search query lands in the cost ledger. /cost shows the day, week and month."]
+    ],
+    coffee: [
+      ["n-msg", null, "You tap /coffee."],
+      ["n-check", "e-msg-check", "An exact command, and an ask, so code doesn't answer it."],
+      ["n-ask", "e-check-ask", "It goes on as the word it stands for: “coffee”. Until Oct 17, a second pipeline answered it and asked “where are you?”."],
+      ["n-understand", "e-ask", "1 · Understand. The model reads “coffee” the same way as anything typed."],
+      ["n-rules", "e-u-r", "Reading rules. The message leads with a meal word, so the meal is coffee, whatever the model read."],
+      ["n-rules", "e-state-rules", "Where you are comes from the session: a location you shared, or home."],
+      ["n-contract", "e-r-c", "2 · Contract. Coffee's outcomes join the checklist."],
+      ["n-execute", "e-c-x", "3 · Execute. Cafés around you, from the knowledge base first."],
+      ["n-verify", "e-x-v", "4 · Verify. Open now, inside the drive, each diet confirmed."],
+      ["n-judge", "e-v-j", "5 · Judge, in shadow."],
+      ["n-control", "e-j-ctl", "6 · Control. Every must passes."],
+      ["n-render", "e-ctl-r", "7 · Render. The header reads “coffee · from home”."],
+      ["n-reply", "e-render-reply", "Cafés, nearest first, each with its why and the time it was checked."],
+      ["n-record", "e-r-rec", "8 · Record. The last ask is kept, so a follow-up still means coffee."]
+    ],
+    list: [
+      ["n-msg", null, "You tap /list."],
+      ["n-check", "e-msg-check", "An exact command, and a lookup."],
+      ["n-lookup", "e-check-lookup", "Code reads your saves from the knowledge base and ranks them from where you are: a location you shared, else home."],
+      ["n-reply", "e-lookup-reply", "Nearest first, with about-minutes and today's hours; saves in other cities fold into one line. No model, under a second."]
+    ],
+    share: [
+      ["n-loc", null, "You share your location in Telegram: once, or live “until I turn it off”."],
+      ["n-state", "e-loc-state", "It becomes “where you are” for three hours after the last point. A live share keeps it current. Coordinates are never logged."],
+      ["n-rules", "e-state-rules", "The next ask reads it, and so do /list and /who: “Ranking from: … · Telegram, 1 min ago”."]
+    ],
+    town: [
+      ["n-msg", null, "Right after a coffee ask, you type a town: “Sausalito”."],
+      ["n-check", "e-msg-check", "Not a command."],
+      ["n-understand", "e-free", "1 · Understand. The model may read it as small talk, with no meal at all."],
+      ["n-rules", "e-u-r", "Reading rules. A place alone, within 90 minutes of an ask, is the same ask from there."],
+      ["n-state", "-e-state-rules", "Code moves “where you are” to the town for three hours."],
+      ["n-rules", "e-state-rules", "And keeps the last ask: coffee, for the same people."],
+      ["n-contract", "e-r-c", "2 · Contract. Coffee, ranked from the town."],
+      ["n-execute", "e-c-x", "3 · Execute."],
+      ["n-verify", "e-x-v", "4 · Verify."],
+      ["n-judge", "e-v-j", "5 · Judge."],
+      ["n-control", "e-j-ctl", "6 · Control. An answer that says nothing would not pass here."],
+      ["n-render", "e-ctl-r", "7 · Render."],
+      ["n-reply", "e-render-reply", "Coffee near the town. Not lunch, and never an empty header."]
+    ],
+    repair: [
+      ["n-msg", null, "“Dinner at 8:30.”"],
+      ["n-check", "e-msg-check", "Not a command."],
+      ["n-understand", "e-free", "1 · Understand: dinner, arriving at 8:30."],
+      ["n-rules", "e-u-r", "Reading rules."],
+      ["n-contract", "e-r-c", "2 · Contract: open at arrival is a must."],
+      ["n-execute", "e-c-x", "3 · Execute: three picks."],
+      ["n-verify", "e-x-v", "4 · Verify: one pick closes at 9. A hard failure, with a hint: pick one open past 9:30."],
+      ["n-judge", "e-v-j", "5 · Judge, in shadow."],
+      ["n-control", "e-j-ctl", "6 · Control: a must failed, so it repairs instead of sending."],
+      ["n-execute", "e-repair", "Back to Execute with the hint. At most two repairs, inside the time budget."],
+      ["n-verify", "e-x-v", "4 · Verify again: every must passes."],
+      ["n-judge", "e-v-j", "5 · Judge."],
+      ["n-control", "e-j-ctl", "6 · Control: send."],
+      ["n-render", "e-ctl-r", "7 · Render."],
+      ["n-reply", "e-render-reply", "If a repair can't fix a pick, it is dropped or the gap is stated. A failing pick is never shown with a warning."]
+    ]
+  };
+
+  function q(id) { return document.getElementById(id); }
+  function setDot(x, y, on) { dotG.setAttribute("transform", "translate(" + x + "," + y + ")"); dotG.setAttribute("opacity", on ? "1" : "0"); }
+  function centerOf(id) { var r = q(id).querySelector("rect").getBBox(); return [r.x + r.width / 2, r.y + r.height / 2]; }
+  function clearMarks() {
+    Array.prototype.forEach.call(svg.querySelectorAll(".node.on, .node.seen"), function (n) { n.classList.remove("on", "seen"); });
+    Array.prototype.forEach.call(svg.querySelectorAll(".edge.lit"), function (e) {
+      e.classList.remove("lit"); if (e.getAttribute("data-m")) e.setAttribute("marker-end", e.getAttribute("data-m"));
+    });
+  }
+  function light(id) {
+    Array.prototype.forEach.call(svg.querySelectorAll(".node.on"), function (n) { n.classList.remove("on"); n.classList.add("seen"); });
+    var n = q(id); if (n) n.classList.add("on");
+  }
+  function litEdge(e) {
+    if (!e.getAttribute("data-m")) e.setAttribute("data-m", e.getAttribute("marker-end") || "");
+    e.classList.add("lit"); if (e.getAttribute("marker-end")) e.setAttribute("marker-end", "url(#a-lit)");
+  }
+  function travel(path, rev, token) {
+    return new Promise(function (res) {
+      var L = path.getTotalLength(), ms = Math.max(360, Math.min(1250, 260 + L * 1.5)), t0 = null;
+      function f(now) {
+        if (token !== run) return res(false);
+        if (t0 === null) t0 = now;
+        var t = Math.min(1, (now - t0) / ms), e = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+        var p = path.getPointAtLength((rev ? 1 - e : e) * L); setDot(p.x, p.y, true);
+        if (t < 1) requestAnimationFrame(f); else res(true);
+      }
+      requestAnimationFrame(f);
+    });
+  }
+  function wait(ms, token) { return new Promise(function (res) { setTimeout(function () { res(token === run); }, ms); }); }
+  function press(key) {
+    Array.prototype.forEach.call(document.querySelectorAll(".play[data-scen]"), function (b) { b.setAttribute("aria-pressed", b.getAttribute("data-scen") === key ? "true" : "false"); });
+  }
+  function stop() { run++; clearMarks(); setDot(0, 0, false); press(null); nN.textContent = "ready"; nT.textContent = REST; }
+  async function play(key) {
+    var token = ++run, steps = S[key]; if (!steps) return;
+    clearMarks(); press(key);
+    for (var i = 0; i < steps.length; i++) {
+      var st = steps[i], node = st[0], via = st[1], say = st[2];
+      if (via) {
+        var rev = via.charAt(0) === "-", path = q(rev ? via.slice(1) : via);
+        if (path) {
+          litEdge(path);
+          if (!reduce) { if (!(await travel(path, rev, token))) return; }
+        }
+      } else {
+        var c = centerOf(node); setDot(c[0], c[1], !reduce);
+      }
+      if (token !== run) return;
+      light(node);
+      if (reduce) { var c2 = centerOf(node); setDot(c2[0], c2[1], false); }
+      nN.textContent = (i + 1) + " / " + steps.length; nT.textContent = say;
+      var words = say.split(/\s+/).length;
+      if (!(await wait(Math.max(1100, Math.min(4200, 700 + words * 150)), token))) return;
+    }
+    if (token === run) { setDot(0, 0, false); press(null); nN.textContent = "done"; }
+  }
+  Array.prototype.forEach.call(document.querySelectorAll(".play[data-scen]"), function (b) {
+    b.addEventListener("click", function () { play(b.getAttribute("data-scen")); });
+  });
+  q("p-stop").addEventListener("click", stop);
+
+  /* play one message, once, the first time the figure comes into view */
+  if (!reduce && "IntersectionObserver" in window) {
+    var started = false;
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (en.isIntersecting && !started) { started = true; io.disconnect(); setTimeout(function () { if (run === 0) play("coffee"); }, 700); }
+      });
+    }, { threshold: 0.4 });
+    io.observe(svg);
+  }
+})();
+</script>
+</body>
+</html>
