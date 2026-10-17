@@ -1,6 +1,7 @@
 # ADR-018 — Outcome contracts and independent evaluation
 
-**Status:** Proposed (2026-10-03) — awaiting owner approval before Phase 1 code.
+**Status:** Accepted (owner) · in production since 2026-10-04: the first tenant, Bourdain, is served by the harness · amended 2026-10-04, 2026-10-14/15 and 2026-10-17 (§7).
+**History:** proposed 2026-10-03 with the owner's decisions of that day (§6) · Phases 1a, 1b and 2 built 2026-10-03/04 · Phase 3 (serve) for Bourdain from 2026-10-04 · Phase 4 (a second tenant) parked by the owner on 2026-10-11 · where each part stands: §7.1.
 **Author:** Architect A (platform lane).
 **Builds on:** ADR-011 (deterministic shell, LLM core), ADR-003 (storage convention), ADR-015 (outcome-validated learning).
 **Amends:** ADR-005 (budget enforcement), ADR-009 (single dispatcher), ADR-012 (shared tool-calling runtime), ADR-016 (platform seams), ADR-017 (NL intent layer).
@@ -38,6 +39,8 @@ For every agent on the harness, the inbound path is two rungs.
 
 Rules: the grammar matches **exactly or not at all**; it is data in the manifest, reviewed like code, and grows only by hand. A **weekly command screener** (control plane) reads the week's traces, clusters recurring asks by the *frame* the model produced, and proposes new commands with counts and evidence; the owner approves; the architect adds the command with a golden case. A test asserts that no handler reachable without the model inspects free text beyond the declared list. The memo cache (same frame, still fresh → the cached verified answer, labeled) lives **inside** the harness after Understand, so a hit is keyed on what was meant rather than on the words. ADR-017's paraphrase layer is not part of the tenant ladder (§3).
 
+> **Amended 2026-10-17 (§7, A4).** A command is a *lookup*, answered by code from the harness's own stores, or an *ask*, handed to the harness as the words it stands for (`/coffee` → "coffee"). There is no second pipeline with a memory of its own. The memo cache above is not built yet (§7.1).
+
 ### 2.2 The harness: eight steps, platform-owned
 
 `core/` and `new_plane/` own every step; a tenant supplies a manifest, a system prompt, a frame schema, an outcome library, a judge checklist, tools, templates and golden sets.
@@ -55,11 +58,15 @@ Rules: the grammar matches **exactly or not at all**; it is data in the manifest
 
 Standing rules (profiles, household rules, the contract, the banned list) are re-injected per step from stores, never carried only in the transcript. Steps are idempotent and checkpointed so a confirm card can resume without repeating a side effect.
 
+> **Amended (§7).** Between Understand and Contract the tenant may apply deterministic reading rules to the model's frame (A1, A4); a message with nothing to find runs Execute without the network tools (A3).
+
 ### 2.3 One model wire
 
 `core.llm` becomes the only way any Rahat code calls a model. It gains `chat()` (system prompt, messages, native function declarations, grounded search) and `structured()` (schema-validated output), alongside `generate()`. Every call: checks the per-ask brake and the manifest's optional budget; records a ledger row (§2.9) with the four token buckets and the **search query count from the response metadata**; carries the `trace_id`; and is replayable from a cassette keyed on the whole request (model, system prompt, messages, tool schemas, config). `core.gemini_reasoner_io.chat` becomes a thin call into this wire; the Scientist's behavior is pinned before and after (COORDINATION).
 
 This amends ADR-012's non-goal. ADR-012 chose "LLM-as-planner-over-text" for hermeticity; hermeticity now comes from request-keyed cassettes, and a tolerant text parser is the class of fragility this ADR removes.
+
+> **As built (§7.1).** The wire is `core/llm_chat.py` (`chat`, `structured`) beside `core.llm.generate`; three model paths outside the harness still reach the model by older routes.
 
 ### 2.4 The manifest
 
@@ -82,7 +89,7 @@ quiet_hours: ...
 judge_model: {tier, prompt_version}
 ```
 
-`name`, `description`, `aliases` remain for the front-door classifier. Adding an agent is a manifest, a system prompt, a library, a checklist, tools and golden sets; not a `route()`.
+*As built:* `agents/<name>/manifest.json` (JSON rather than YAML), validated by `core/manifest.py`. `name`, `description`, `aliases` remain for the front-door classifier. Adding an agent is a manifest, a system prompt, a library, a checklist, tools and golden sets; not a `route()`.
 
 ### 2.5 The outcome library and the contract
 
@@ -97,6 +104,8 @@ An outcome is one checkable statement with a stable ID, a pass condition, a chec
 ### 2.7 Source governance and scoped state
 
 A **source registry** (`core/sources.yaml`) names every host or API with `policy` (allowed / blocked / link_only), robots check date, rate limit, cache TTL, trust tier, cost and terms. Blocked means dropped: a robots or terms block, a 403 or a 429 removes the source for the ask and records why; no mirror, cache, scrape or proxy. No paid data APIs. Free, terms-compliant public APIs (a government weather API called as documented; an open-data geocoder within its usage policy) are adapters that return evidence records. Fetched content is data, never instructions: instruction-shaped text is neutralized before any model sees it, and nothing read from the web can change the contract, write state, send a message or call a tool (a regression case asserts this).
+
+> **Amended 2026-10-14/15 (§7, A2).** A publisher's own feed or calendar link is read on the owner's decision even where robots.txt asks automated readers out.
 
 **Five state scopes**, declared per fact: turn, session, day, trip, standing. Every write names its scope and expiry; reads filter by now. A today-only fact never becomes standing without a confirm card (the Charter gates promotion). Rules carry the verdict that created them. Speaker and subject are first-class (ADR-016 Seam 2, implemented for the household): a sender maps to a member; guests are session-scoped members with rules. No correction window: continuity is keyed on the session's last answer. The session store moves from JSON to SQLite rows per chat.
 
@@ -117,6 +126,8 @@ The judge is **one service in `core`** for every agent. Each conversational agen
 A **ledger row for every billable event**: model call (agent, step, model, tokens in/out/thought/tool-prompt, cost), each grounded **search query** (Gemini 3 bills per query the model runs, not per call), page fetch, judge call, cache hit (cost zero, counted); with `trace_id`, mode and timestamp. Rollups by day, week and month, per agent and overall, by event type and step; `/cost` and `/cost export`; the month's query count against the free allowance on the weekly report.
 
 Position, decided 2026-10-03: the per-actor daily cap (ADR-005) is **off** for conversational agents and opt-in per manifest; a **per-ask brake** is on (12 tool calls, 10 search queries, $0.50; then answer with what is verified and say what was skipped); the free search allowance is **counted, never limited on**; the provider's own project spending limit is kept as a **disaster brake** at roughly a month's worst case, never as spend control. Degradation (offline, capped by the provider, out of allowance, stopped by the brake) is disclosed in one line and distinguishes which lever tripped; it never serves stale data as fresh and never returns the help text.
+
+> **Amended 2026-10-04 (§7, A1).** A wide ask has its own brake: 18 tool calls, 14 search queries, $0.80.
 
 **The floor.** When the model is down, commands and cache hits still answer. One fenced exception to "no keyword lists": a last-resort frame (meal and cuisine words only), reachable only on the model-down path, answering from the knowledge base with an honest line, and a test asserting it is unreachable when the model is up.
 
@@ -176,3 +187,42 @@ Rules of work: `RAHAT_TEST_MODE=1` on every test and DB command; hermetic tests 
 ## 6. Decisions recorded with this ADR (2026-10-03)
 
 One model wire with native tools and schemas; search counted per query; the per-ask brake at 12 / 10 / $0.50; the judge as one Rahat service with per-agent checklists, on the Flash tier at temperature 0 with its version pinned per verdict; authority measured per agent for annotate and per outcome for block; the fenced model-down floor; an open-data geocoder and the government weather API as free, terms-compliant adapters; foundations before the loop with a gate between; the orchestrator route added by the platform lane with coordination; members as ids with roles in code; commands first, then the model, with a weekly screener proposing and the owner approving.
+
+---
+
+## 7. Status and amendments (2026-10-17)
+
+### 7.1 Where each part stands
+
+| Part | State |
+|---|---|
+| §2.1 Routing | Built: `core/inbound.py` matches the manifest's grammar exactly or not at all; re-cut on 2026-10-17 (A4). The weekly command screener is built (`scripts/command_screener.py`). **Not built:** the memo cache; the database-first path (A3) comes first. |
+| §2.2 The eight steps | Live for Bourdain (`core/harness/`), with the tenant's reading rules between Understand and Contract (A1, A4) and a citation sanitizer after Execute: a wrong evidence id costs the citation, never the place. |
+| §2.3 One model wire | `core/llm_chat.py` (`chat`, `structured`) carries every harness call, with request-keyed cassettes, the brake, a ledger row and the trace id. **Not done:** three paths outside the harness still reach the model by older routes, outside the brake (Miya's synthesizer, Kobe's reasoner, and Fraser's design, whose cost is not recorded); `core.gemini_reasoner_io.chat` is not yet a call into the wire. |
+| §2.4 Manifest | Built as `agents/<name>/manifest.json`, validated by `core/manifest.py`. |
+| §2.5 Outcomes and contract | Built; Bourdain's library is `agents/bourdain/outcomes.json`. |
+| §2.6 Evidence and knowledge base | Built (`core/kb/`). Added since: a gazetteer of every eating place in open data (`kb_gazetteer`; a row becomes a place only when an ask or a feed touches it), mentions read from food feeds (`kb_mention`) and a nightly re-read of places' own pages, all without a model. Facts grounded on Google Maps are purged after 90 days, per Google's terms. |
+| §2.7 Sources and scoped state | Built (`core/sources.py`, `core/sources.json`, `core/state_scopes.py`); amended by A2 and A5. |
+| §2.8 Judge | Built (`core/judge.py`) and in **shadow**: the manifest caps its authority there, and it earns annotate only with 50 owner labels at 80% agreement. Corrections label the previous answer since 2026-10-11. |
+| §2.9 Cost | Built: the ledger, `/cost` and `/cost export`, the per-ask brake (A1), the fenced floor. No daily cap. |
+| §2.10 Traces and evals | Built: a span per step, `scripts/replay_harness.py`, outcome-scored replay (`scripts/eval_outcomes.py`) with a nightly job, reaction labels. The golden set's re-recording is paused until November. |
+| §2.11 Gate order | Built; `tests/test_gate_order.py`. |
+| Phase 3 | Serving Bourdain since 2026-10-04. **Not done:** `/prep`, building a trip's knowledge base before the trip. |
+| Phase 4 | Parked by the owner on 2026-10-11. Fraser checks a workout design against a contract in code and writes its outcomes to the harness's tables, but is not a tenant. |
+
+### 7.2 Amendments
+
+**A1 (2026-10-04, extended 10-05 and 10-11) — Reading rules after Understand; a brake for a wide ask.** The first morning in serve mode answered seven of eight asks with nothing; most causes were readings the model got slightly wrong in ways the household's own words settle. The tenant's `refine_frame` now applies deterministic rules to the model's frame before the contract is assembled: a follow-up keeps what it does not change; a place held up as a style reference is never an exclusion or a verdict; a message that names no one keeps the household's usual party; "my partner's profile" means the partner's rules only. The rules narrow or carry forward what the model read; they never route, and the model still reads every message. A wide ask (a drive of 30 minutes or more, the whole area, "more options") gets up to five picks and its own brake: 18 tool calls, 14 search queries, $0.80 (`budgets.per_ask_wide`).
+
+**A2 (2026-10-14/15) — Feeds whose robots.txt asks readers out.** §2.7 drops a source on a robots block. The owner decided to read a publisher's own calendar subscribe link or RSS feed even where robots.txt asks automated readers out: twenty event calendars (2026-10-14) and four food feeds (2026-10-15), each marked in its registry. A terms block still drops a source; a 403 or a 429 is a failure the daily health line reports; nothing is fetched through a mirror, a cache of a blocked page or a proxy, and a page behind a bot challenge is left out.
+
+**A3 (2026-10-15) — Research only when something is to be found.** Seven of the first nineteen serve-mode asks were a save, a verdict, a question or a reply, and each ran the full research loop. A message whose reading has nothing to find (no eating, planning or place check) now runs Execute without the network tools, in at most two rounds and four tool calls. Words asking for a search ("search", "look online", "use Gemini", "broaden", "more options") or for places the household doesn't know ("something new", "haven't tried") are read in code and always win. Decided the same day, next: a database-first path, in which the model applies the household's taste to the knowledge base in one call and the research loop runs when the list is thin, when the model says so, or when the household asks.
+
+**A4 (2026-10-17) — One brain, one memory (§2.1).** As written, §2.1 sent every command to a deterministic handler. For the first tenant those handlers were the pre-harness pipeline, with stores of its own, so a command and a typed message were answered by two brains with two memories: at home, `/coffee` asked "where are you?" from a past trip's tables, the answer (a town) reached the harness as a new message with no ask behind it, and `/list` showed a past trip's city. Now a command is one of two kinds:
+
+- a **lookup** (`/list`, `/who`, `/where`, `/cost`, `/kb`, `/help`, `/join`, `/household`): answered by code from the knowledge base and the harness's own session, never from a second store;
+- an **ask** (`/eat`, `/coffee`, `/dessert`, `/save`, and the exact replies "more", "which one", "something else", "just me", "going"): a typed shortcut into the harness, handed over as the words it stands for (`/coffee near the park` → "coffee near the park", `/eat` → "where should we eat").
+
+The grammar is still exact match or nothing, and nothing inspects free text before the model. Two reading rules join A1: a message that leads with a meal word is that meal; a message that is only a place moves the origin there (A5) and, within 90 minutes of an ask, continues that ask from there with everything else kept. The pre-harness pipeline now answers only when the harness is off or in shadow, or as the fallback when it crashes. An answer that says nothing no longer validates, so an empty reply cannot pass every check.
+
+**A5 (2026-10-17) — Where the household is.** The session scope (§2.7) gains a key every ask reads: `location`, a point with a label and its source, standing for three hours after the last point. It is written by a place named alone in a message (resolved in code from the knowledge base, the landmarks, a table of towns or the gazetteer), by a location shared in Telegram (once, or live, including "until I turn it off"), or by a push from the household's phone to the local bridge. Without one, the harness ranks from home. `/who` shows the point's source and age. Coordinates are never logged.

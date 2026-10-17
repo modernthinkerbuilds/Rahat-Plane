@@ -1,6 +1,7 @@
 # ADR-009 — Single ordered dispatcher (Option C)
 
 **Status:** Proposed (2026-05-19)
+**Amended by:** ADR-018 §3 (accepted; in production since 2026-10-04): for agents on the harness the dispatcher is the manifest's exact grammar, and "every factual query gets a regex entry" is withdrawn for them; the Scientist's routes are unchanged.
 **Author:** Chief Architect (post-2026-05-18 production incident review)
 **Supersedes:** Partial routing logic in ADR-006, ADR-007, ADR-008
 

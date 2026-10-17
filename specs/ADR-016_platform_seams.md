@@ -1,6 +1,7 @@
 # ADR-016 — Platform seams before the 2nd agent / surface / tenant
 
 **Status:** Accepted (2026-06-14)
+**Amended by:** ADR-018 §3 (accepted; in production since 2026-10-04): Seam 2 (subject scoping) is implemented for the household; Seam 3 (the agent dimension) is the manifest.
 **Author:** Platform / KTLO architect
 **Relates to:** PM thesis `RAHAT_PM_THESIS_2026-05-27.md` §4 rules #1 (Subject),
 #2 (channel-abstract gateway), #5 (portable audit); ADR-009 (single

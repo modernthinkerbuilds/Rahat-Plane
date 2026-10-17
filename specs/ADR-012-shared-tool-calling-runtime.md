@@ -1,6 +1,6 @@
 # ADR-012 — Shared Tool-Calling Runtime (the 20-agent substrate)
 
-**Status:** Proposed (2026-05-24) — awaiting go-ahead. Does not change live code.
+**Status:** Accepted as amended by ADR-018 §3 — the harness's Execute step, in production since 2026-10-04: native function calling and schema-validated output are the wire, and "LLM-as-planner-over-text" is retired. Proposed 2026-05-24.
 **Context owner:** Modern Builder
 **Builds on ADR-011 (deterministic shell / LLM core). Makes the four-part agent contract real in code.**
 

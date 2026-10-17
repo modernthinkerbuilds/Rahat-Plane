@@ -1,6 +1,7 @@
 # ADR-005 — Token-budget enforcement
 
 **Status:** Accepted
+**Amended by:** ADR-018 §3 (accepted; in production since 2026-10-04): daily caps are opt-in per manifest and off for conversational agents; the ledger and the per-ask brake are the control.
 **Date:** 2026-05-14
 **Owner:** Modern Builder
 **Related:** ADR-001 (control plane), ADR-003 (storage convention), ADR-004 (five-file pattern), `core/decisions.py`, `core/budget.py`

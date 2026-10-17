@@ -4,6 +4,8 @@ Status: **Accepted (shipped behind flag, default OFF)** · 2026-06-18 ·
 authored in the 48h autonomous window · supersedes nothing; extends
 ADR-009 (single dispatcher) and ADR-016 (platform seams, Seam 3).
 
+Amended by ADR-018 §3 (accepted; in production since 2026-10-04): not part of the harness tenants' ladder; it stays flag-gated for the Scientist.
+
 ## Context
 
 The user's standing complaint: *"my queries are in natural language and I
