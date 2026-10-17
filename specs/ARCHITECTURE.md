@@ -14,7 +14,7 @@
 
 > **v3.0 update note (2026-10-17).** v2.0 (May 2026) described a model-first Kobe and a memory design. This version is rewritten as built, by Architect A (platform lane), and checked against the code and the records on October 17; every count carries its date (Appendix B). What changed since v2.0:
 >
-> 1. **Three front doors on the new-plane runners** ([ADR-013](./ADR-013_migrate_to_new_plane.md)): Miya on the Bade Miya bot for the owner; Genie and Bourdain on their own bots for the household.
+> 1. **Three front doors on the new-plane runners** ([ADR-013](./ADR-013_migrate_to_new_plane.md)): Miya on the Miya bot for the owner; Genie and Bourdain on their own bots for the household.
 > 2. **Rules before models.** Sixteen ordered rules in code claim the messages they recognize; only what none of them claims reaches Miya's model. Inside Kobe, a single ordered dispatcher answers what it recognizes before the reasoner runs, so v2.0's "every inbound message goes to the reasoner first" no longer holds.
 > 3. **Checks in the path.** Every reply Miya sends, a specialist's included, goes through one sink: the validator, a never-empty guard and the Charter. Fraser's designs pass a ten-point contract. Bourdain's picks are verified in code.
 > 4. **The harness** ([ADR-018](./ADR-018-outcome-contracts-and-independent-evaluation.md)): since October 4 every Bourdain answer runs eight steps, with outcome contracts checked in code, a judge in shadow and golden sets that replay for $0.
@@ -55,7 +55,7 @@ Rahat is the platform under Miya, a personal AI agent. It runs on one Mac mini a
 
 **What runs today (October 17):**
 
-- **Three front doors.** The Bade Miya bot (Miya, with Kobe, Fraser, Huberman and Genie behind it), the Genie bot and the Bourdain bot.
+- **Three front doors.** The Miya bot (Miya, with Kobe, Fraser, Huberman and Genie behind it), the Genie bot and the Bourdain bot.
 - **Seven agents.** Miya (the orchestrator), Kobe (the week's numbers), Fraser (workout design), Huberman (cooldowns), Genie (household weekends and events), Bourdain (where to eat) and Bajrangi (a memory proof of concept).
 - **Rules before models.** A 16-rung ladder in code routes Miya's messages; Kobe's dispatcher and Genie's intents answer what they recognize in code; Bourdain's grammar answers its lookups in code.
 - **Checks before the owner sees anything.** One governance sink for every Miya reply (§5.1), Fraser's design contract, Bourdain's verify step, and the Charter's policies.
@@ -95,7 +95,7 @@ One owner, who talks to Miya; his household, who use Genie and Bourdain from the
 ### 2.3 Hard constraints
 
 1. **Sovereignty.** State lives on the Mac mini. Cloud APIs (Gemini, Telegram, open-data services) are tools, not homes for state. §13 lists exactly what leaves the machine.
-2. **One voice per door.** Miya is the one place the owner asks; specialists never talk to him directly through the Bade Miya bot.
+2. **One voice per door.** Miya is the one place the owner asks; specialists never talk to him directly through the Miya bot.
 3. **Deterministic where it matters** ([ADR-011](./ADR-011-deterministic-shell-llm-core.md)). State, arithmetic, routing and vetoes are code. Intent, taste and phrasing are the model's.
 4. **Every change gated.** Hermetic tests on every push; a regression pin for every fix; nothing red ships.
 5. **A public repo with a private life.** No personal data in commits or tests; the pre-push gate blocks a push that would publish a private word.
@@ -129,7 +129,7 @@ Each principle is paired with the alternative rejected and the cost accepted.
 ### 4.1 The map
 
 ```
-  Bade Miya bot         Genie bot               Bourdain bot
+  Miya bot              Genie bot               Bourdain bot
   the owner             the household           the household
        │                       │                       │
 ┌──────▼──────────────┐ ┌──────▼──────────────┐ ┌──────▼──────────────┐
@@ -169,7 +169,7 @@ Eight launchd services on the Mac mini. The always-on ones restart on exit (`Kee
 
 | Service | Runs | What it does | Code |
 |---|---|---|---|
-| `com.rahat.miya.v2` | Always on | The Bade Miya bot: long-polls Telegram, routes through the ladder, runs Miya and the minute tick | [`new_plane/miya_runner/`](../new_plane/miya_runner/) |
+| `com.rahat.miya.v2` | Always on | The Miya bot: long-polls Telegram, routes through the ladder, runs Miya and the minute tick | [`new_plane/miya_runner/`](../new_plane/miya_runner/) |
 | `com.rahat.genie` | Always on | The Genie bot: pairing, Genie's commands and questions, the 08:00 digest | [`new_plane/genie_runner/`](../new_plane/genie_runner/) |
 | `com.rahat.bourdain` | Always on | The Bourdain bot: pairing, the grammar, the harness, shared locations | [`new_plane/bourdain_runner/`](../new_plane/bourdain_runner/) |
 | `com.rahat.vitals.v2` | Always on | The health bridge on port 5000, behind a key: the phone's HealthKit exports, and a location push for Bourdain | [`bridges/healthkit/`](../bridges/healthkit/) |
@@ -192,7 +192,7 @@ v2.0's decomposition still holds, with October's contents:
 
 ## 5. How a message flows
 
-### 5.1 Miya (the Bade Miya bot)
+### 5.1 Miya (the Miya bot)
 
 1. **Receive.** The runner long-polls Telegram and gives every message a trace id.
 2. **The ladder** ([`delegate_classifier.py`](../new_plane/miya_runner/delegate_classifier.py)). Rules in code, checked top to bottom; the first that claims the message decides who answers.
@@ -251,7 +251,7 @@ The plain-language intent layer ([ADR-017](./ADR-017_nl_intent_layer.md)) sits j
 
 | Agent | Door | Owns | How it answers | Status |
 |---|---|---|---|---|
-| **Miya** | Bade Miya | The conversation | The ladder, then a specialist or Miya's synthesizer; one voice | Live |
+| **Miya** | The Miya bot | The conversation | The ladder, then a specialist or Miya's synthesizer; one voice | Live |
 | **Kobe** | Behind Miya | The week's numbers, the plan, the gym's workout | Dispatcher and commands in code; delegation; a reasoner with tools | Live |
 | **Fraser** | Behind Miya | Workout design | Constraints read in code; the model writes; a ten-check contract, one repair pass; outcomes recorded | Live |
 | **Huberman** | Behind Miya, and the 9:30 pm tick | Cooldowns | A 25-drill library with rotation; the model coaches each drill; the library alone when the model can't answer | Live since Aug 24 |
@@ -488,7 +488,7 @@ The rule from v2.0 still decides promotion: an item moves to Now when an agent i
 
 | Path | What's there |
 |---|---|
-| [`new_plane/miya_runner/`](../new_plane/miya_runner/) | The Bade Miya runner: the ladder, the orchestrator and its sink, the synthesizer, the validator, the cost router, the Telegram client, menus, agent registry |
+| [`new_plane/miya_runner/`](../new_plane/miya_runner/) | The Miya runner: the ladder, the orchestrator and its sink, the synthesizer, the validator, the cost router, the Telegram client, menus, agent registry |
 | [`new_plane/genie_runner/`](../new_plane/genie_runner/), [`new_plane/bourdain_runner/`](../new_plane/bourdain_runner/) | The household bots' runners |
 | [`agents/`](../agents/) | One folder per agent (Kobe's code is in `agents/the_scientist/`) |
 | [`core/harness/`](../core/harness/) | The harness's steps: frame, contract, execute, answer, evidence, control, render, record, run |
