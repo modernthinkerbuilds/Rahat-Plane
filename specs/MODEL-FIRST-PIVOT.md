@@ -1,6 +1,6 @@
 # Model-First Pivot — Rahat Mesh
 
-**Author:** Claude (L8 Agent Architect)
+**Author:** Venkat Sadras
 **Date:** 2026-05-07 (updated 2026-05-08)
 **Status:** Implemented; Gemini-only after the 2026-05-08 update note below.
 **Supersedes:** primary recommendation in `LLM-COST-OPTIMIZATION.md` (P0.2). The cost-opt doc's telemetry work (P0.1) and LRU cache idea (P0.3) survive; everything else folds into this pivot.

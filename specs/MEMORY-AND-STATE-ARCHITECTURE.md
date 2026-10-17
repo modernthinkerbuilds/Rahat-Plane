@@ -1,6 +1,6 @@
 # Memory & State — Mesh-Wide Architecture
 
-**Author:** Claude (L8 Agent Architect)
+**Author:** Venkat Sadras
 **Date:** 2026-05-08 (rev 2)
 **Status:** Proposal, awaiting green-light. Stops the reactive-patching cycle.
 **Scope:** All agents on Rahat. Reusable mesh-wide primitives + per-agent adapters.

@@ -1,6 +1,6 @@
 # LLM Cost & Quality Optimization — Rahat Mesh
 
-**Author:** Claude (L8 Agent Architect review)
+**Author:** Venkat Sadras
 **Date:** 2026-05-07 (provider note 2026-05-08)
 **Status:** PARTIALLY SUPERSEDED by `specs/MODEL-FIRST-PIVOT.md` — see notes below.
 **Repo state:** post-architecture refactor, 1 active agent (Scientist), Miya orchestrator live

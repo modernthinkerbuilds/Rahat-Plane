@@ -1,6 +1,6 @@
 # State-of-the-Art Multi-Agent Architectures — Survey + Recommendation for Rahat
 
-**Author:** Claude (L8 Agent Architect)
+**Author:** Venkat Sadras
 **Date:** 2026-05-08
 **Status:** Architecture review. Decision input for the memory + orchestration rebuild.
 
