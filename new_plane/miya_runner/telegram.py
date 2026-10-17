@@ -50,6 +50,21 @@ class TelegramUpdate:
     raw: dict[str, Any]
 
 
+@dataclass
+class TelegramLocation:
+    """A location the household sent: a point from the phone (📎 → Location),
+    or a live location, which arrives once as a message and then as
+    `edited_message` updates while the sharing lasts (`live_period` seconds)."""
+    update_id: int
+    chat_id: str
+    lat: float
+    lng: float
+    live: bool                 # a live share (first message or an edit)
+    edit: bool                 # an edited_message: a live point moving, not a new share
+    accuracy_m: float | None
+    raw: dict[str, Any]
+
+
 class TelegramClient:
     """One client per bot token. Stateless across HTTP calls; the loop
     state (`last_update_id`) is held by `poll_forever()`'s caller."""
@@ -119,7 +134,7 @@ class TelegramClient:
         return resp.get("result", []) if resp.get("ok") else []
 
     def send_message(self, chat_id: str, text: str, *,
-                     parse_mode: str = "Markdown") -> dict[str, Any]:
+                     parse_mode: str = "Markdown", reply_markup: dict[str, Any] | None = None) -> dict[str, Any]:
         """sendMessage with Markdown by default. Returns the last chunk's
         API JSON; its "ok" is true only when EVERY chunk was delivered, so
         a caller can log what happened (`delivered(resp)`) instead of
@@ -145,6 +160,8 @@ class TelegramClient:
                     logger.info("telegram sendMessage chat=%s markdown_repaired=1 escaped=%d",
                                 chat_id, escaped)
             payload = {"chat_id": chat_id, "text": body, "parse_mode": parse_mode}
+            if reply_markup:
+                payload["reply_markup"] = reply_markup
             resp = self._http_post("sendMessage", payload)
             if not resp:
                 resp = self._http_post("sendMessage", payload)
@@ -153,10 +170,10 @@ class TelegramClient:
                 # chunk as written, as plain text, beats nothing.
                 logger.warning("telegram sendMessage chat=%s refused as %s — sent as plain text",
                                chat_id, parse_mode)
-                resp = self._http_post(
-                    "sendMessage",
-                    {"chat_id": chat_id, "text": chunk},
-                )
+                plain = {"chat_id": chat_id, "text": chunk}
+                if reply_markup:
+                    plain["reply_markup"] = reply_markup
+                resp = self._http_post("sendMessage", plain)
             all_ok = all_ok and bool(resp.get("ok"))
         if not all_ok and resp.get("ok"):
             resp = {**resp, "ok": False}          # an earlier chunk was lost
@@ -218,6 +235,33 @@ def parse_update(up: dict[str, Any]) -> TelegramUpdate | None:
         text=txt,
         raw=up,
     )
+
+
+def parse_location(up: dict[str, Any]) -> TelegramLocation | None:
+    """The location in a raw update, or None when it carries none. Separate
+    from `parse_update` so the bots that never asked for locations keep
+    skipping them (that one still answers None for a message with no text)."""
+    edit = "edited_message" in up and "message" not in up
+    msg = up.get("message") or up.get("edited_message") or {}
+    loc = msg.get("location") or {}
+    chat = msg.get("chat") or {}
+    try:
+        lat, lng = float(loc["latitude"]), float(loc["longitude"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if not chat.get("id"):
+        return None
+    acc = loc.get("horizontal_accuracy")
+    return TelegramLocation(update_id=int(up.get("update_id", 0)), chat_id=str(chat["id"]), lat=lat, lng=lng,
+                            live=bool(loc.get("live_period")) or edit, edit=edit,
+                            accuracy_m=float(acc) if isinstance(acc, (int, float)) else None, raw=up)
+
+
+def location_keyboard(label: str = "📍 Send my location") -> dict[str, Any]:
+    """A one-tap reply keyboard that sends the phone's location (private chats only, by Telegram's rule);
+    it folds away after one use."""
+    return {"keyboard": [[{"text": label, "request_location": True}]], "resize_keyboard": True,
+            "one_time_keyboard": True}
 
 
 _MD_MARKERS = "_*`["

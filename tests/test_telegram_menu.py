@@ -78,7 +78,7 @@ def test_publish_sets_only_when_telegrams_copy_differs():
     logs: list[str] = []
     tg = _Tg(current=[])
     assert menu.publish(tg, "bourdain", log=logs.append) == "set"
-    assert tg.set_calls == [menu.as_commands(menu.BOURDAIN)] and "set 10 commands" in logs[-1]
+    assert tg.set_calls == [menu.as_commands(menu.BOURDAIN)] and "set 11 commands" in logs[-1]
     tg2 = _Tg(current=menu.as_commands(menu.BOURDAIN))
     assert menu.publish(tg2, "bourdain", log=logs.append) == "unchanged" and tg2.set_calls == []
     tg3 = _Tg(current=[])

@@ -142,6 +142,30 @@ def process_message(chat_id: str | int, text: str,
     return reply
 
 
+def process_location(chat_id: str | int, lat: float, lng: float, *, now: datetime | None = None,
+                     live: bool = False, edit: bool = False) -> str | None:
+    """A location the household shared → the three-hour "where you are"
+    override, and one reply (None for a live share's later points, which
+    move the point without a word). Never raises; a stranger gets the
+    pairing line, as for any message."""
+    from core import decisions
+    cid = str(chat_id)
+    tid = decisions.new_trace()
+    try:
+        with decisions.span("bourdain_bot.location", trace_id=tid, actor="bourdain",
+                            input={"live": live, "edit": edit}) as s:
+            if _ensure_primary(cid) is None:
+                reply = None if edit else _NOT_PAIRED
+            else:
+                from agents.bourdain import handler
+                reply = handler.handle_location(cid, lat, lng, now=now or trip_now(), live=live, edit=edit)
+            s.output = (reply or "")[:120]
+    except Exception as e:  # noqa: BLE001 — the poll loop must survive
+        logger.exception("bourdain_bot location failed: %s", e)
+        reply = None if edit else _FALLBACK
+    return reply
+
+
 def _process(cid: str, text: str, now: datetime,
              send: Callable[[str], None] | None = None) -> str:
     low = text.lower()

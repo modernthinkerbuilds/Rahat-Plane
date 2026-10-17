@@ -72,6 +72,7 @@ BOURDAIN: list[tuple[str, str]] = [
     ("dessert", "Dessert near here"),
     ("list", "Your saved places, nearest first; /list <city> for a trip city"),
     ("who", "Who's eating, which leg, where I'm ranking from"),
+    ("where", "Where I'm ranking from, with a button to send your location"),
     ("kb", "What I know: /kb stats · /kb mentions (the feeds this week) · /kb new (openings)"),
     ("cost", "Spend today, this week, this month · /cost export"),
     ("household", "Who is paired to this bot"),

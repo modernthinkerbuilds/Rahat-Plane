@@ -32,9 +32,9 @@ if os.getenv("RAHAT_TEST_MODE") != "1":
 
 from new_plane.miya_runner import menu as _menu  # noqa: E402
 from new_plane.miya_runner.telegram import (  # noqa: E402
-    TelegramClient, TelegramConflictError, delivered, parse_update,
+    TelegramClient, TelegramConflictError, delivered, location_keyboard, parse_location, parse_update,
 )
-from new_plane.bourdain_runner.bot import process_message  # noqa: E402
+from new_plane.bourdain_runner.bot import process_location, process_message  # noqa: E402
 
 logger = logging.getLogger("bourdain_bot")
 _RUNNING = True
@@ -86,6 +86,15 @@ def cmd_serve() -> int:
     while _RUNNING:
         try:
             for raw in tg.get_updates(offset=last_id + 1):
+                loc = parse_location(raw)
+                if loc is not None:
+                    # A shared location (never logged as numbers): where the household is for three hours.
+                    last_id = max(last_id, loc.update_id)
+                    logger.info("[in] chat=%s location live=%s edit=%s", loc.chat_id, loc.live, loc.edit)
+                    reply = process_location(loc.chat_id, loc.lat, loc.lng, live=loc.live, edit=loc.edit)
+                    if reply:
+                        _log_out(loc.chat_id, reply, tg.send_message(loc.chat_id, reply))
+                    continue
                 tu = parse_update(raw)
                 if tu is None:
                     last_id = max(last_id, int(raw.get("update_id", last_id)))
@@ -95,7 +104,7 @@ def cmd_serve() -> int:
                 reply = process_message(
                     tu.chat_id, tu.text,
                     send=lambda t, _cid=tu.chat_id: tg.send_message(_cid, t))
-                _log_out(tu.chat_id, reply, tg.send_message(tu.chat_id, reply))
+                _log_out(tu.chat_id, reply, tg.send_message(tu.chat_id, reply, reply_markup=reply_markup_for(tu.text)))
             consecutive_errors = 0
             conflict_errors = 0
             time.sleep(0.5)
@@ -116,6 +125,13 @@ def cmd_serve() -> int:
                            type(e).__name__, e, wait)
             time.sleep(wait)
     return 0
+
+
+def reply_markup_for(text: str) -> dict | None:
+    """`/where` answers with a one-tap "send my location" button under it (owner, 2026-10-17: the bot
+    should rank from where he is; the phone can say where in one tap)."""
+    head = (text or "").strip().lower().split("@", 1)[0].split(" ", 1)[0]
+    return location_keyboard() if head == "/where" else None
 
 
 def _log_out(chat_id, reply: str, resp) -> None:
