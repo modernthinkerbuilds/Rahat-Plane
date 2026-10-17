@@ -139,6 +139,26 @@ def test_a_live_share_moves_the_point_without_a_word(home):
     assert len(rows) == 1 and rows[0]["expires_at"] == (NOW + timedelta(hours=3, minutes=20)).strftime("%Y-%m-%d %H:%M:%S")
 
 
+def test_a_live_share_shared_until_turned_off_writes_only_when_the_phone_moves(home):
+    """Telegram's "Until I turn it off" sends a point every few seconds on the move: the store takes one per
+    block or per ten minutes, and the override is always the latest point written."""
+    from core import io as cio
+    handler.handle_location("111", 37.40, -122.10, now=NOW, live=True)
+    for i in range(1, 30):                                     # standing still for five minutes
+        handler.handle_location("111", 37.40 + i * 0.00001, -122.10, now=NOW + timedelta(seconds=10 * i), live=True,
+                                edit=True)
+    import sqlite3
+    con = sqlite3.connect(str(cio.DB_PATH))
+    n = con.execute("SELECT COUNT(*) FROM state_scoped WHERE agent='bourdain' AND key='location'").fetchone()[0]
+    con.close()
+    assert n == 1
+    handler.handle_location("111", 37.41, -122.10, now=NOW + timedelta(minutes=6), live=True, edit=True)   # a km on
+    assert _ctx(home, NOW + timedelta(minutes=7))["origin_latlng"] == (37.41, -122.10)
+    handler.handle_location("111", 37.41, -122.10, now=NOW + timedelta(minutes=18), live=True, edit=True)  # still, 12 min
+    rows = ss.get_all(bh.AGENT, "111", "location", now=NOW + timedelta(minutes=19))
+    assert rows[-1]["expires_at"] == (NOW + timedelta(hours=3, minutes=18)).strftime("%Y-%m-%d %H:%M:%S")
+
+
 def test_a_shared_point_is_what_the_list_and_the_who_line_rank_from(home):
     handler.handle_location("111", 37.401, -122.102, now=NOW)
     assert "Ranking from: Beta Town" in handler.handle_who("111", now=NOW)

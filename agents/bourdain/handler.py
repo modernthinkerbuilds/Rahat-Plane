@@ -797,7 +797,8 @@ def handle_location(cid: str, lat: float, lng: float, *, now: datetime, live: bo
     Owner, 2026-10-17: "Can't it pick from the location I am in?" """
     from agents.bourdain import harness as bh, location
     home = (bh.tenant().profile().get("home") or {})
-    out = location.remember(cid, lat, lng, now=now, source="telegram", live=live, home=home, db_path=db_path)
+    out = location.remember(cid, lat, lng, now=now, source="telegram", live=live, home=home, db_path=db_path,
+                            only_if_moved=edit)
     if edit:
         return None
     hours = int(location.HOURS)

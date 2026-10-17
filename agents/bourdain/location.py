@@ -34,6 +34,10 @@ from core.kb import cities, geo
 AGENT = "bourdain"
 HOURS = 3.0                      # a point stands this long; refreshed by every new point
 HOME_KM = 1.0                    # this close to home is home
+# A live share sends a point every few seconds while the phone moves; one is written when the household has
+# moved this far, or this long has passed — the ranking is no finer than a block, and the store stays small.
+LIVE_MIN_KM = 0.15
+LIVE_MIN_MINUTES = 10
 ENV_FILE = "RAHAT_LOCATION_FILE"
 SOURCES = {"telegram": "Telegram", "phone": "your phone", "file": "your phone", "words": "you said", "tool": "you said"}
 _PAIR = re.compile(r"^\s*(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)\s*$")
@@ -54,14 +58,23 @@ def label_for(lat: float, lng: float, *, home: dict | None) -> tuple[str, str | 
 
 
 def remember(chat_id: str, lat: float, lng: float, *, now: datetime, source: str = "phone", live: bool = False,
-             at: datetime | None = None, home: dict | None = None, db_path: str | Path | None = None) -> dict:
-    """Write the three-hour override for a point the household is at. Returns {label, city, source}."""
+             at: datetime | None = None, home: dict | None = None, db_path: str | Path | None = None,
+             only_if_moved: bool = False) -> dict:
+    """Write the three-hour override for a point the household is at. Returns {label, city, source, written}.
+    With `only_if_moved` (a live share's later points) nothing is written while the point is within
+    LIVE_MIN_KM of the one in force and that one is younger than LIVE_MIN_MINUTES."""
+    if only_if_moved:
+        cur = current(str(chat_id), now=now, db_path=db_path)
+        if cur and cur.get("lat") is not None and cur.get("age_min") is not None \
+                and cur["age_min"] < LIVE_MIN_MINUTES \
+                and geo.haversine_km(lat, lng, float(cur["lat"]), float(cur["lng"])) < LIVE_MIN_KM:
+            return {"label": cur.get("label"), "city": cur.get("city"), "source": cur.get("source"), "written": False}
     label, city = label_for(lat, lng, home=home)
     value = {"label": label, "lat": float(lat), "lng": float(lng), "city": city, "shared": True, "live": bool(live),
              "source": source, "at": (at or now).strftime(_FMT)}
     ss.put(AGENT, str(chat_id), "location", value, scope="session", now=now, replace=True, expires_in_hours=HOURS,
            db_path=db_path)
-    return {"label": label, "city": city, "source": source}
+    return {"label": label, "city": city, "source": source, "written": True}
 
 
 def current(chat_id: str, *, now: datetime, db_path: str | Path | None = None) -> dict | None:
