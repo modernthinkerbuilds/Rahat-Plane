@@ -2724,6 +2724,9 @@ def _slash_help() -> str:
         "`/pain` lists active, `/pain clear <where>` resolves it\n"
         "• `/profile` — view your 1RMs + constraints Fraser sizes from; "
         "`/profile set <lift> <kg>` updates a max (e.g. `/profile set deadlift 160`)\n"
+        "• `/fraser …` · `/kobe …` · `/huberman …` — ask that agent directly "
+        "(e.g. `/fraser design a 45 min session`)\n"
+        "• `/whatson` · `/weekend_plan` · `/digest` · `/calendar` — Genie, from here\n"
         "• `/help` — this card"
     )
 

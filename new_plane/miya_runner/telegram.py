@@ -90,6 +90,20 @@ class TelegramClient:
         """Idempotent — clears any webhook so long-poll works."""
         self._http("deleteWebhook")
 
+    def get_my_commands(self) -> list[dict[str, str]]:
+        """The bot's slash-command menu as Telegram holds it (default scope)."""
+        resp = self._http("getMyCommands")
+        if not resp.get("ok"):
+            return []
+        return [{"command": str(c.get("command")), "description": str(c.get("description"))}
+                for c in (resp.get("result") or []) if isinstance(c, dict)]
+
+    def set_my_commands(self, commands: list[dict[str, str]]) -> bool:
+        """Replace the bot's slash-command menu (what the app shows when "/" is
+        typed). True when Telegram accepted the list."""
+        resp = self._http_post("setMyCommands", {"commands": commands})
+        return bool(resp.get("ok"))
+
     def get_updates(self, offset: int = 0, *,
                     long_poll_s: int = DEFAULT_LONG_POLL_S) -> list[dict]:
         """Long-poll for updates. Returns the raw `result` list.

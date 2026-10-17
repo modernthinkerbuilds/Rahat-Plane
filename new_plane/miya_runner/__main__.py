@@ -33,6 +33,7 @@ import sys
 import time
 from pathlib import Path
 
+from new_plane.miya_runner import menu as _menu
 from new_plane.miya_runner import adapter_client as adapter
 from new_plane.miya_runner.orchestrator import Turn, handle
 from new_plane.miya_runner.telegram import (
@@ -282,6 +283,7 @@ def cmd_serve(_args: list[str]) -> int:
     expected_chat_id = os.getenv("NEW_MIYA_CHAT_ID")
     tg = TelegramClient(token, expected_chat_id=expected_chat_id)
     tg.delete_webhook()
+    _menu.publish(tg, "miya")          # the slash-command hints Telegram shows (2026-10-16)
     _client_mode = ("http:" + adapter.ADAPTER_URL
                     if os.getenv("NEW_MIYA_USE_HTTP_CLIENT", "0") == "1"
                     else "native (no remote adapter)")

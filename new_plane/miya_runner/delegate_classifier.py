@@ -40,8 +40,11 @@ _SLASH_RE = re.compile(r"^\s*/\s*[a-z]", re.I)
 # ─── Explicit @-address routing ───────────────────────────────────────
 # Matches "@kobe" / "@fraser" / "@huberman" / "@genie" (with optional
 # whitespace). The orchestrator strips the prefix before delegating.
+# "/fraser …", "/kobe …", "/huberman …", "/miya …" are the same address in slash form (2026-10-16: the
+# Telegram menu can only list slash commands, so each agent gets one); "/genie" stays Genie's own
+# command below. A group chat may append "@BotName" to a slash command; it is peeled here too.
 _ADDRESS_RE = re.compile(
-    r"^\s*@(kobe|fraser|huberman|genie|miya)\b\s*(.*)$",
+    r"^\s*(?:@(kobe|fraser|huberman|genie|miya)|/(kobe|fraser|huberman|miya))(?:@\w+)?\b\s*(.*)$",
     re.I | re.DOTALL,
 )
 
@@ -370,8 +373,8 @@ def classify_delegation(msg: str) -> tuple[str, str]:
     # 1. Explicit @-address overrides everything else.
     addr_match = _ADDRESS_RE.match(text)
     if addr_match:
-        agent = addr_match.group(1).lower()
-        body = (addr_match.group(2) or "").strip()
+        agent = (addr_match.group(1) or addr_match.group(2)).lower()
+        body = (addr_match.group(3) or "").strip()
         if not body:
             # "@kobe" alone is meaningless; treat as orchestrate so user
             # gets a "what would you like?" rather than empty Kobe call.

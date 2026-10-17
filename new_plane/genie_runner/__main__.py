@@ -37,6 +37,7 @@ from dotenv import load_dotenv  # noqa: E402
 if os.getenv("RAHAT_TEST_MODE") != "1":
     load_dotenv(Path(_REPO_ROOT) / ".env")
 
+from new_plane.miya_runner import menu as _menu  # noqa: E402
 from new_plane.miya_runner.telegram import (  # noqa: E402
     TelegramClient, TelegramConflictError, delivered, parse_update,
 )
@@ -88,6 +89,7 @@ def cmd_serve() -> int:
 
     tg = TelegramClient(token)
     tg.delete_webhook()
+    _menu.publish(tg, "genie")          # the slash-command hints Telegram shows (2026-10-16)
     logger.info("Genie bot live | primary_chat=%s | pair_code=%s | "
                 "location=%s",
                 os.getenv("GENIE_PRIMARY_CHAT") or "unset",
