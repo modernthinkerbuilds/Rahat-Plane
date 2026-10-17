@@ -182,7 +182,8 @@ def _process(cid: str, text: str, now: datetime,
         return _NOT_PAIRED
     if low.startswith("/household"):
         return _handle_household(cid, role)
-    from agents.bourdain import handler
+    from agents.bourdain import handler, location
+    location.refresh_from_file(cid, now=now)        # the phone's file, when one is configured (never raises)
     if low.startswith("/start") or low.startswith("/help"):
         return handler.HELP
     return handler.route(text, chat_id=cid, now=now, holding_line=send)

@@ -67,6 +67,7 @@ if curl -s http://127.0.0.1:5000/health | grep -q '"ok"'; then
     echo "    $KEY"
     IP=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo "<mac-ip>")
     echo "  Endpoint URL for Health Auto Export:  http://$IP:5000/hae"
+    echo "  Location endpoint (iPhone Shortcut):  http://$IP:5000/location  (same X-API-Key; away from home it needs Tailscale)"
 else
     echo "✗ bridge not answering — check $REPO/vault/vitals.log"
     exit 1

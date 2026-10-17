@@ -561,7 +561,9 @@ def handle_who(cid: str, *, now: datetime) -> str:
                      f" · stay: {md_escape(str(leg.get('stay_name') or 'not set'))}")
     else:
         lines.append("Home — no trip leg today.")
-    lines.append(f"Ranking from: {md_escape(str(ctx.get('origin_label') or 'home'))}")
+    from agents.bourdain import location
+    where = location.where_line(str(cid), now=now) or str(ctx.get("origin_label") or "home")
+    lines.append(f"Ranking from: {md_escape(where)}")
     tz = str(leg.get("tz") or "")
     lines.append(f"Clock: {now:%a %b %-d, %-I:%M %p} {_ZONES.get(tz, tz)}".rstrip())
     return "\n".join(lines)
@@ -785,37 +787,21 @@ def _route_serve(text: str, *, cid: str, now: datetime, holding_line: Callable[[
     return harness_bridge.answer(ask, chat_id=cid, now=now, holding_line=holding_line)
 
 
-# A shared point this close to home is home (the phone's accuracy is tens of metres; a block is enough).
-HOME_KM = 1.0
-
-
 def handle_location(cid: str, lat: float, lng: float, *, now: datetime, live: bool = False, edit: bool = False,
                     db_path: str | None = None) -> str | None:
-    """A location the phone sent (📎 → Location, or a live share) is where the
-    household is: the same three-hour override `set_location` and a place
-    named in words write, with the exact point. The label is "home" within
-    a kilometre of home, else the nearest town, else "where you are". A
-    live share's later points (edits) refresh it silently: None, no reply.
+    """A location the phone sent through Telegram (📎 → Location, or a live
+    share) is where the household is: the same three-hour override
+    `set_location` and a place named in words write, with the exact point
+    (`agents.bourdain.location`). A live share's later points (edits)
+    refresh it silently: None, no reply.
     Owner, 2026-10-17: "Can't it pick from the location I am in?" """
-    from agents.bourdain import harness as bh, tools as btools
-    from core import state_scopes as ss
-    from core.kb import cities, geo
+    from agents.bourdain import harness as bh, location
     home = (bh.tenant().profile().get("home") or {})
-    label, city = "where you are", None
-    if home.get("lat") is not None and home.get("lng") is not None and \
-            geo.haversine_km(lat, lng, float(home["lat"]), float(home["lng"])) <= HOME_KM:
-        label = "home"
-    else:
-        near = cities.nearest(lat, lng)
-        if near:
-            label, city = near, cities.key(near)
-    ss.put(bh.AGENT, str(cid), "location", {"label": label, "lat": lat, "lng": lng, "city": city, "shared": True,
-                                            "live": bool(live)},
-           scope="session", now=now, replace=True, expires_in_hours=btools.LOCATION_OVERRIDE_HOURS, db_path=db_path)
+    out = location.remember(cid, lat, lng, now=now, source="telegram", live=live, home=home, db_path=db_path)
     if edit:
         return None
-    hours = int(btools.LOCATION_OVERRIDE_HOURS)
-    where = md_escape(label)
+    hours = int(location.HOURS)
+    where = md_escape(out["label"])
     if live:
         return (f"📍 Got your live location — ranking from {where} while you share it, and for {hours} hours "
                 f"after the last point. Ask \"coffee\" or `/list`.")

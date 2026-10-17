@@ -16,10 +16,12 @@ Requests" ON in the app.
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 import sqlite3
 import sys
+from datetime import datetime
 from pathlib import Path
 
 _REPO_ROOT = str(Path(__file__).resolve().parent.parent.parent)
@@ -115,6 +117,54 @@ async def hae(request: Request,
                 ",".join(summary["metrics_seen"])[:200])
     return {"status": "success", **{k: v for k, v in summary.items()
                                     if k != "metrics_seen"}}
+
+
+@app.post("/location")
+async def location(request: Request, x_api_key: str | None = Header(default=None)) -> dict:
+    """Where the household is, pushed by the phone (2026-10-17): an iPhone
+    Shortcut automation — "when Telegram is opened", "when I leave home",
+    "when CarPlay disconnects" — POSTs {"lat": …, "lng": …} (optional
+    "at": ISO time, "member": primary|spouse, "chat_id"). Bourdain ranks
+    its next three hours of asks from the point. The same key as /hae;
+    the numbers are never logged."""
+    _check_key(x_api_key)
+    try:
+        data = await request.json()
+    except Exception:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail="invalid JSON")
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=400, detail="expected an object")
+    from agents.bourdain import location as bloc
+    pt = bloc.parse_point(json.dumps(data))
+    if not pt:
+        raise HTTPException(status_code=400, detail="lat and lng required")
+    lat, lng, at = pt
+    if not (-90.0 <= lat <= 90.0 and -180.0 <= lng <= 180.0):
+        raise HTTPException(status_code=400, detail="lat/lng out of range")
+    chat = str(data.get("chat_id") or "").strip() or _chat_for_member(str(data.get("member") or "primary"))
+    if not chat:
+        raise HTTPException(status_code=409, detail="no chat for that member: pair the bot first")
+    now = datetime.now()
+    out = bloc.remember(chat, lat, lng, now=now, source="phone", at=at, home=bloc.household_home(),
+                        db_path=_db_path())
+    logger.info("location: member=%s label=%s", data.get("member") or "primary", out["label"])
+    return {"status": "success", "label": out["label"], "hours": bloc.HOURS}
+
+
+def _chat_for_member(member: str) -> str | None:
+    """The chat a member talks to Bourdain from: the primary from the configured chat or the household
+    registry; the spouse from the registry."""
+    from agents.bourdain import location as bloc
+    if member == "primary":
+        return bloc.primary_chat()
+    try:
+        from agents.bourdain import state
+        for cid, info in state.list_household_chats().items():
+            if (info or {}).get("role") == member:
+                return str(cid)
+    except Exception:  # noqa: BLE001
+        pass
+    return None
 
 
 @app.post("/vitals")

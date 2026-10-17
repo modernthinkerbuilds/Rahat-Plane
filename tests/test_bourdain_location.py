@@ -161,3 +161,89 @@ def test_the_bot_answers_a_shared_location_and_keeps_strangers_out(home, monkeyp
 
 def test_help_says_how_to_share_a_location():
     assert "share your location" in handler.HELP and "/where" in handler.HELP
+
+
+# ── the phone, pushing (an iPhone Shortcut automation) ───────────────────
+from agents.bourdain import location  # noqa: E402
+
+
+def test_the_who_line_says_where_the_point_came_from_and_how_old_it_is(home):
+    assert location.where_line("111", now=NOW) is None
+    location.remember("111", 37.401, -122.102, now=NOW - timedelta(minutes=12), source="phone")
+    assert location.where_line("111", now=NOW) == "Beta Town · your phone, 12 min ago"
+    assert "Ranking from: Beta Town · your phone, 12 min ago" in handler.handle_who("111", now=NOW)
+    location.remember("111", 37.401, -122.102, now=NOW, source="telegram")
+    assert location.where_line("111", now=NOW) == "Beta Town · Telegram, just now"
+    location.remember("111", 37.401, -122.102, now=NOW - timedelta(hours=2, minutes=30), source="file")
+    assert location.where_line("111", now=NOW) == "Beta Town · your phone, 2 h ago"
+
+
+@pytest.mark.parametrize("text, expect", [
+    ('{"lat": 37.4, "lng": -122.1}', (37.4, -122.1, None)),
+    ('{"latitude": "37.4", "longitude": "-122.1", "at": "2026-10-17T13:50:00"}', (37.4, -122.1, datetime(2026, 10, 17, 13, 50))),
+    ("37.4, -122.1", (37.4, -122.1, None)),
+    ("37.4 -122.1", (37.4, -122.1, None)),
+    ("hello", None), ("", None), ('{"lat": "x"}', None), ("[1,2]", None),
+])
+def test_a_point_is_read_from_what_the_phone_writes(text, expect):
+    assert location.parse_point(text) == expect
+
+
+def test_the_phones_file_is_read_when_fresh_and_ignored_when_stale(tmp_path):
+    f = tmp_path / "location.json"
+    f.write_text('{"lat": 37.4, "lng": -122.1, "at": "2026-10-17T13:50:00"}')
+    assert location.from_file(f, now=NOW) == {"lat": 37.4, "lng": -122.1, "at": datetime(2026, 10, 17, 13, 50)}
+    assert location.from_file(f, now=NOW + timedelta(hours=4)) is None            # three hours old: home again
+    f.write_text("37.5, -122.2")                                                  # no time: the file's own clock
+    pt = location.from_file(f, now=datetime.now())
+    assert pt and (pt["lat"], pt["lng"]) == (37.5, -122.2)
+    assert location.from_file(tmp_path / "missing.json", now=NOW) is None
+    f.write_text("not a point")
+    assert location.from_file(f, now=NOW) is None
+
+
+def test_the_file_is_remembered_once_and_never_over_something_newer(home, tmp_path, monkeypatch):
+    f = tmp_path / "location.json"
+    f.write_text('{"lat": 37.401, "lng": -122.102, "at": "2026-10-17T13:50:00"}')
+    monkeypatch.setenv(location.ENV_FILE, str(f))
+    assert location.refresh_from_file("111", now=NOW) is True
+    cur = location.current("111", now=NOW)
+    assert cur["source"] == "file" and cur["label"] == TOWN and cur["at"] == "2026-10-17 13:50:00"
+    assert location.refresh_from_file("111", now=NOW + timedelta(minutes=1)) is False      # the same point
+    # the household says a place after the file's point: the words win until the phone writes a newer point
+    location.remember("111", 36.0, -121.0, now=NOW + timedelta(minutes=2), source="words")
+    assert location.refresh_from_file("111", now=NOW + timedelta(minutes=3)) is False
+    f.write_text('{"lat": 37.402, "lng": -122.103, "at": "2026-10-17T14:10:00"}')
+    assert location.refresh_from_file("111", now=NOW + timedelta(minutes=6)) is True
+    assert location.current("111", now=NOW + timedelta(minutes=6))["at"] == "2026-10-17 14:10:00"
+    monkeypatch.delenv(location.ENV_FILE)
+    assert location.refresh_from_file("111", now=NOW) is False
+
+
+def test_the_bot_reads_the_phones_file_before_every_message(home, tmp_path, monkeypatch):
+    monkeypatch.setenv("BOURDAIN_PRIMARY_CHAT", "111")
+    monkeypatch.setenv("BOURDAIN_PAIR_CODE", "s3cret")
+    f = tmp_path / "location.json"
+    f.write_text('{"lat": 37.401, "lng": -122.102, "at": "2026-10-17T14:00:00"}')
+    monkeypatch.setenv(location.ENV_FILE, str(f))
+    out = bot.process_message("111", "/who", now=NOW)
+    assert "Ranking from: Beta Town · your phone, 5 min ago" in out
+
+
+def test_the_bridge_takes_a_point_from_the_phone(home, tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    monkeypatch.setenv("RAHAT_VITALS_DB", str(tmp_path / "loc.db"))
+    monkeypatch.setenv("HAE_API_KEY", "k")
+    monkeypatch.setenv("BOURDAIN_PRIMARY_CHAT", "111")
+    from bridges.healthkit import server
+    client = TestClient(server.app)
+    r = client.post("/location", json={"lat": 37.401, "lng": -122.102}, headers={"X-API-Key": "k"})
+    assert r.status_code == 200 and r.json()["label"] == TOWN and r.json()["hours"] == 3.0
+    cur = location.current("111", now=datetime.now())
+    assert cur and cur["source"] == "phone" and (cur["lat"], cur["lng"]) == (37.401, -122.102)
+    assert client.post("/location", json={"lat": 37.4, "lng": -122.1}).status_code == 401
+    assert client.post("/location", json={"lat": "x"}, headers={"X-API-Key": "k"}).status_code == 400
+    assert client.post("/location", json={"lat": 91, "lng": 0}, headers={"X-API-Key": "k"}).status_code == 400
+    assert client.post("/location", json=[1, 2], headers={"X-API-Key": "k"}).status_code == 400
+    r = client.post("/location", json={"lat": 37.4, "lng": -122.1, "member": "spouse"}, headers={"X-API-Key": "k"})
+    assert r.status_code == 409                                       # no spouse chat paired in this test
