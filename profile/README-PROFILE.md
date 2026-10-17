@@ -2,44 +2,19 @@
 
 > **Bay Area PM at a large tech company. Miya is my personal AI agent. Rahat is the platform underneath it: checks in the path, a harness every answer runs through, and a record of every decision. It runs in my life every day.**
 
-An agent can be fluent and wrong at the same time, and you can't tell from reading it. Run more than one and they contradict each other, act at moments they shouldn't, and remember the wrong things.
+<a href="https://modernthinkerbuilds.github.io/Rahat-Plane/specs/RAHAT-ARCHITECTURE.html"><img src="https://raw.githubusercontent.com/modernthinkerbuilds/Rahat-Plane/main/specs/img/rahat-map.gif" width="100%" alt="Rahat end to end: a /week message travels from Telegram through Miya's runner and the routing ladder to Kobe, with the checks, the control plane and the vault around it"></a>
 
-Those problems don't live in the model. They live in the layer underneath it. That layer is what I build.
+<sub>A <code>/week</code> message moving through Rahat. Click it for the live page, then tap any box.</sub>
 
-The code is open source (Apache 2.0): **[github.com/modernthinkerbuilds/Rahat-Plane](https://github.com/modernthinkerbuilds/Rahat-Plane)**
-
----
-
-## The map
-
-```
-          Miya bot               Genie bot           Bourdain bot
-            me                 the household         the household
-             │                       │                     │
-┌────────────▼───────────┐ ┌─────────▼────────┐ ┌──────────▼─────────┐
-│ Miya                   │ │ Genie            │ │ Bourdain           │
-│ ├ Kobe: the numbers    │ │ weekends, the    │ │ where do we eat?   │
-│ ├ Fraser: workouts     │ │ family calendar, │ │ on the harness:    │
-│ ├ Huberman: cooldowns  │ │ local events     │ │ 8 steps, checked;  │
-│ └ Genie                │ │                  │ │ joins Miya         │
-│                        │ │                  │ │ when it passes     │
-└────────────┬───────────┘ └─────────┬────────┘ └──────────┬─────────┘
-             │                       │                     │
-┌────────────▼───────────────────────▼─────────────────────▼─────────┐
-│ Rahat: one platform under all of them                              │
-│ checks in the path · one rulebook (the Charter) ·                  │
-│ a budget gate on the newer paths · a record of every decision ·    │
-│ a judge that has to earn its vote                                  │
-├────────────────────────────────────────────────────────────────────┤
-│ One SQLite file on a Mac mini: memory, decisions, outcomes,        │
-│ knowledge with its sources, costs; fed by HealthKit, the           │
-│ gym's programming and 121 local event sources                      │
-└────────────────────────────────────────────────────────────────────┘
-```
+| [**See it move →**](https://modernthinkerbuilds.github.io/Rahat-Plane/specs/RAHAT-ARCHITECTURE.html) | [**Inside one agent →**](https://modernthinkerbuilds.github.io/Rahat-Plane/specs/ADR-018.html) | [**The code →**](https://github.com/modernthinkerbuilds/Rahat-Plane) |
+|:---:|:---:|:---:|
+| The whole system on one page. Tap any box, or watch a message travel. | The harness every answer runs through, step by step. | Open source (Apache 2.0): the architecture, the decision records, the tests. |
 
 **Miya** is the one I talk to. Behind it, Rahat runs seven agents: Miya orchestrates Kobe (the numbers), Fraser (workout design), Huberman (the 9:30 pm cooldown) and Genie (weekends, the household calendar, local events). Bourdain answers "where do we eat?" on its own door while it's being tested. Bajrangi is a proof of concept.
 
-**[See the whole system move →](https://modernthinkerbuilds.github.io/Rahat-Plane/specs/RAHAT-ARCHITECTURE.html)** Tap any box for what happens there, or watch a message travel through it.
+An agent can be fluent and wrong at the same time, and you can't tell from reading it. Run more than one and they contradict each other, act at moments they shouldn't, and remember the wrong things.
+
+Those problems don't live in the model. They live in the layer underneath it. That layer is what I build.
 
 ---
 

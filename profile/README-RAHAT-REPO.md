@@ -6,9 +6,13 @@
 
 *Miya is the one I talk to. Rahat is everything underneath: specialist agents that prove themselves on their own front door before they join Miya, checks in the path, a harness every answer runs through, and a record of every decision. Built at human scale.*
 
-**[→ How Rahat actually runs](./specs/ARCHITECTURE.md)** &middot; the as-built diagram, the routing ladder, the agents, the harness.
+<a href="https://modernthinkerbuilds.github.io/Rahat-Plane/specs/RAHAT-ARCHITECTURE.html"><img src="./specs/img/rahat-map.gif" width="100%" alt="Rahat end to end: a /week message travels from Telegram through Miya's runner and the routing ladder to Kobe, with the checks, the control plane and the vault around it"></a>
 
-**See it move:** [Rahat end to end](https://modernthinkerbuilds.github.io/Rahat-Plane/specs/RAHAT-ARCHITECTURE.html) &middot; [the harness inside one agent](https://modernthinkerbuilds.github.io/Rahat-Plane/specs/ADR-018.html)
+<sub>A <code>/week</code> message moving through Rahat, from Telegram through the routing ladder to Kobe. Click it for the live page, then tap any box.</sub>
+
+| [**See it move →**](https://modernthinkerbuilds.github.io/Rahat-Plane/specs/RAHAT-ARCHITECTURE.html) | [**Inside one agent →**](https://modernthinkerbuilds.github.io/Rahat-Plane/specs/ADR-018.html) | [**How it's built →**](./specs/ARCHITECTURE.md) |
+|:---:|:---:|:---:|
+| The whole system on one page. Tap any box, or watch a message travel. | The harness every answer runs through (ADR-018), step by step. | The as-built architecture, the decision records and the tests. |
 
 </div>
 
@@ -82,7 +86,9 @@ An agent can be fluent and wrong at the same time, and you can't tell from readi
 
 ## The harness ([ADR-018](./specs/ADR-018-outcome-contracts-and-independent-evaluation.md))
 
-**[Watch an ask go through it, step by step →](https://modernthinkerbuilds.github.io/Rahat-Plane/specs/ADR-018.html)**
+<a href="https://modernthinkerbuilds.github.io/Rahat-Plane/specs/ADR-018.html"><img src="./specs/img/rahat-harness.gif" width="100%" alt="The harness: an ask passes one exact check, then the eight steps from Understand to Record, with the knowledge base and the cost ledger underneath"></a>
+
+<sub>An ask going through the harness. Click it for the live page.</sub>
 
 One loop an agent's answer runs through, owned by the platform, not by the agent. An agent joins with a manifest, an outcome library, a checklist and its tools ([`agents/bourdain/`](./agents/bourdain/): 51 outcomes, 3 of them mandatory).
 
