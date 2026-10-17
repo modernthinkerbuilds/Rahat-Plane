@@ -39,6 +39,8 @@ The code is open source (Apache 2.0): **[github.com/modernthinkerbuilds/Rahat-Pl
 
 **Miya** is the one I talk to. Behind it, Rahat runs seven agents: Miya orchestrates Kobe (the numbers), Fraser (workout design), Huberman (the 9:30 pm cooldown) and Genie (weekends, the household calendar, local events). Bourdain answers "where do we eat?" on its own door while it's being tested. Bajrangi is a proof of concept.
 
+**[See the whole system move →](https://modernthinkerbuilds.github.io/Rahat-Plane/specs/RAHAT-ARCHITECTURE.html)** Tap any box for what happens there, or watch a message travel through it.
+
 ---
 
 ## What's running today
@@ -46,14 +48,14 @@ The code is open source (Apache 2.0): **[github.com/modernthinkerbuilds/Rahat-Pl
 On a Mac mini at home, around the clock. Every line is in the repo.
 
 - **Checks in the path, not requests in the prompt.** A validator checks Miya's replies against what's actually true, with seven checks, and rewrites a reply before it sends. Fraser's workout designs pass a 10-point contract in code before they go out: one repair if something fails, and if it still fails the reply says what isn't verified.
-- **A harness for agents** ([ADR-018](https://github.com/modernthinkerbuilds/Rahat-Plane/blob/main/specs/ADR-018-outcome-contracts-and-independent-evaluation.md)). Eight steps from understanding the ask to recording the run, with the outcomes each answer must meet checked in code. One agent is on it (Bourdain), and a second uses its contract (Fraser).
+- **A harness for agents** ([ADR-018](https://github.com/modernthinkerbuilds/Rahat-Plane/blob/main/specs/ADR-018-outcome-contracts-and-independent-evaluation.md)). Eight steps from understanding the ask to recording the run, with the outcomes each answer must meet checked in code. One agent is on it (Bourdain), and a second uses its contract (Fraser). [Watch an ask go through it →](https://modernthinkerbuilds.github.io/Rahat-Plane/specs/ADR-018.html)
 - **A judge that has to earn its vote.** A second model grades what code can't, like taste and fit. It stays in shadow until it agrees with my own labels: 80% on at least 50 of them before it may annotate, 90% on one outcome before it may block. Today it has 3 labels, so it's all shadow.
 - **Knowledge with receipts.** Every fact in Bourdain's knowledge base carries its source and the date it was read: 326 places and 3,397 facts as of Oct 14.
 - **Evals that replay for $0.** Every model and tool call is recorded against its request, so a run replays without a network or a bill. The golden sets are 72 real asks, kept private; the public tests run on synthetic twins.
 - **A decision ledger.** One row per decision, with the agent, the rule, the latency and the cost: 7,408 rows since May 8.
 - **It tells on itself.** One line at 08:15 when something is broken (a dead feed, a stale page, a silent Watch, lost messages, refused model calls), and silence otherwise.
 - **Real data in.** 121 local event sources, 43 of them read in plain code with no model; 150+ health metrics at minute resolution.
-- **4,121 tests**, behind a pre-push gate that blocks anything red, including a push that would publish a private word.
+- **4,209 tests**, behind a pre-push gate that blocks anything red, including a push that would publish a private word.
 
 **[→ How Rahat actually runs](https://github.com/modernthinkerbuilds/Rahat-Plane/blob/main/specs/ARCHITECTURE.md)**
 

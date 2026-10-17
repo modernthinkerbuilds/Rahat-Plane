@@ -8,6 +8,8 @@
 
 **[→ How Rahat actually runs](./specs/ARCHITECTURE.md)** &middot; the as-built diagram, the routing ladder, the agents, the harness.
 
+**See it move:** [Rahat end to end](https://modernthinkerbuilds.github.io/Rahat-Plane/specs/RAHAT-ARCHITECTURE.html) &middot; [the harness inside one agent](https://modernthinkerbuilds.github.io/Rahat-Plane/specs/ADR-018.html)
+
 </div>
 
 ---
@@ -16,7 +18,7 @@ An agent can be fluent and wrong at the same time, and you can't tell from readi
 
 > **Miya is my personal AI agent. Rahat is the platform it runs on, built and run at home: specialists that share one memory, one rulebook and one record of every decision. It runs in my life every day.**
 
-`3` front doors · `7` agents · `7` services (5 always on) · `121` event sources · `1` SQLite file of record · `4,121` tests
+`3` front doors · `7` agents · `8` services (5 always on) · `121` event sources · `1` SQLite file of record · `4,209` tests
 
 <sub>Counts as of Oct 14–17, 2026.</sub>
 
@@ -79,6 +81,8 @@ An agent can be fluent and wrong at the same time, and you can't tell from readi
 ---
 
 ## The harness ([ADR-018](./specs/ADR-018-outcome-contracts-and-independent-evaluation.md))
+
+**[Watch an ask go through it, step by step →](https://modernthinkerbuilds.github.io/Rahat-Plane/specs/ADR-018.html)**
 
 One loop an agent's answer runs through, owned by the platform, not by the agent. An agent joins with a manifest, an outcome library, a checklist and its tools ([`agents/bourdain/`](./agents/bourdain/): 51 outcomes, 3 of them mandatory).
 
@@ -184,20 +188,22 @@ RAHAT_TEST_MODE=1 python -m tests.run_all
  │ private words           │ a name, address, token or chat id in     │
  │                         │ anything the push would publish          │
  │ bug-to-test policy      │ every fix carries its own test           │
- │ regression registry     │ 1,814 tests in 215 pins                  │
+ │ regression registry     │ 1,877 tests in 219 pins                  │
  │ silent-failure guard    │ every agent answers its canonical asks   │
  │                         │ with a real reply, never a stub          │
  │ unit · contract layers  │                                          │
  └─────────────────────────┴──────────────────────────────────────────┘
- the full suite: 4,121 tests, hermetic: no network, no live
+ the full suite: 4,209 tests, hermetic: no network, no live
  database, no secrets loaded (RAHAT_TEST_MODE=1)
 
  IN PRODUCTION
  ┌─────────────────────────┬──────────────────────────────────────────┐
- │ every model call ends   │ 90 s timeout, one retry, a "still        │
- │                         │ checking" line when an ask runs long     │
- │ every message lands     │ a reply Telegram refuses is logged as    │
- │                         │ not delivered and sent again             │
+ │ model calls end         │ 90 s timeout on the shared client, a     │
+ │                         │ retry on a provider hiccup, "still       │
+ │                         │ checking" when a Bourdain ask runs long  │
+ │ messages land           │ a reply Telegram refuses for its         │
+ │                         │ formatting goes again as plain text; a   │
+ │                         │ missed nudge is tried the next minute    │
  │ it tells on itself      │ one line at 08:15 when something is      │
  │                         │ broken; silence when nothing is          │
  └─────────────────────────┴──────────────────────────────────────────┘
