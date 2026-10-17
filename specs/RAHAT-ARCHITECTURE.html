@@ -339,7 +339,7 @@ svg .now-t { font-family: var(--mono); font-size: 10.5px; fill: var(--plane); }
         <g id="dyn"></g>
 
         <!-- lane A: you → Miya -->
-        <g class="node n-neutral" id="n-you" data-tip="you" tabindex="0"><rect x="30" y="52" width="140" height="60" rx="6"/><text x="100" y="77" text-anchor="middle" class="t">You</text><text x="100" y="95" text-anchor="middle" class="s">Telegram · Miya</text></g>
+        <g class="node n-neutral" id="n-you" data-tip="you" tabindex="0"><rect x="30" y="52" width="140" height="60" rx="6"/><text x="100" y="77" text-anchor="middle" class="t">You</text><text x="100" y="95" text-anchor="middle" class="s">Telegram · Bade Miya</text></g>
         <g class="node n-run" id="n-miyarun" data-tip="miyarun" tabindex="0"><rect x="196" y="52" width="150" height="60" rx="6"/><text x="271" y="77" text-anchor="middle" class="t">miya.v2</text><text x="271" y="95" text-anchor="middle" class="s">runner · minute tick ⏱</text></g>
         <g class="node n-code" id="n-ladder" data-tip="ladder" tabindex="0"><rect x="372" y="52" width="160" height="60" rx="6"/><text x="452" y="77" text-anchor="middle" class="t">The ladder</text><text x="452" y="95" text-anchor="middle" class="s">16 rungs · first claim wins</text></g>
         <g class="node n-model" id="n-miya" data-tip="miya" tabindex="0"><rect x="558" y="38" width="280" height="34" rx="6"/><text x="698" y="60" text-anchor="middle" class="t">Miya · the orchestrator, one voice</text></g>
@@ -512,7 +512,7 @@ svg .now-t { font-family: var(--mono); font-size: 10.5px; fill: var(--plane); }
   <div class="agents">
     <div class="agent wide" style="--c: var(--model)">
       <div class="h"><h3>Miya · the orchestrator</h3><span class="chip ok">Live</span></div>
-      <span class="door">Door: the Miya bot · runner: miya.v2 · code: new_plane/miya_runner/</span>
+      <span class="door">Door: the Bade Miya bot · runner: miya.v2 · code: new_plane/miya_runner/</span>
       <p>The agent you talk to. The ladder sends what it recognizes straight to the agent that owns it; anything else goes to Miya's model, which looks things up, asks the specialists, reconciles them when they disagree, and answers in one voice. Every reply, a specialist's included, passes the validator and the Charter before it goes out. Its minute tick sends the 08:00 brief, the nudges, the 9:30 pm cooldown and the 08:15 health line.</p>
     </div>
     <div class="agent" style="--c: var(--code)">
@@ -638,9 +638,9 @@ svg .now-t { font-family: var(--mono); font-size: 10.5px; fill: var(--plane); }
 (function () {
   "use strict";
   var TIPS = {
-    you: ["You · Telegram", "Live", "You talk to one agent, Miya, on Telegram. Typing / shows every command it knows.", "new_plane/miya_runner/"],
+    you: ["You · Telegram", "Live", "You talk to one agent, Miya, through the Bade Miya bot. Typing / shows every command it knows.", "new_plane/miya_runner/"],
     household: ["The household", "Live", "Genie and Bourdain each have their own bot, so anyone in the household can use them from their own phone once it's paired.", "new_plane/genie_runner/ · bourdain_runner/"],
-    miyarun: ["miya.v2 · the Miya runner", "Live", "A launchd service on the Mac mini, always on. It long-polls Telegram, gives every message a trace id, and runs a minute tick: the 08:00 brief, nudges, the 9:30 pm cooldown and the 08:15 health line.", "new_plane/miya_runner/__main__.py"],
+    miyarun: ["miya.v2 · the Bade Miya runner", "Live", "A launchd service on the Mac mini, always on. It long-polls Telegram, gives every message a trace id, and runs a minute tick: the 08:00 brief, nudges, the 9:30 pm cooldown and the 08:15 health line.", "new_plane/miya_runner/__main__.py"],
     genierun: ["genie · the Genie runner", "Live", "Always on. Pairs household phones, answers Genie's commands and plain questions, and sends the 08:00 events digest.", "new_plane/genie_runner/"],
     bourdainrun: ["bourdain · the Bourdain runner", "Live", "Always on. Pairs the household, answers through the harness, and takes a location shared in Telegram as where you are.", "new_plane/bourdain_runner/"],
     ladder: ["The ladder · 16 rungs", "Live", "Rules in code, checked top to bottom. The first rung that claims a message decides who answers: most send it straight to the agent that owns it; a what-if or a design goes through Miya. What no rung claims goes to Miya's model. The section below lets you drop messages through it.", "new_plane/miya_runner/delegate_classifier.py"],
@@ -755,7 +755,7 @@ svg .now-t { font-family: var(--mono); font-size: 10.5px; fill: var(--plane); }
   var SVGNS = "http://www.w3.org/2000/svg";
   var S = {
     week: [
-      ["n-you", null, "You ask Miya for /week."],
+      ["n-you", null, "You ask Bade Miya for /week."],
       ["n-miyarun", "e-you-miya", "The miya.v2 runner picks it up and gives it a trace id."],
       ["n-ladder", "e-miya-ladder", "Rung 2 of the ladder claims it: a slash command, so it's Kobe's."],
       ["n-kobe", "e-ladder-agents", "Kobe's own command table answers /week, in code."],
