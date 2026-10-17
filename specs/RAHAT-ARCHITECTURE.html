@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<!-- Rahat end to end as an interactive page. Hosted copy: https://claude.ai/artifact/5Lsi2YiDVQQXxcBorudNeq ; this file is its source and opens in any browser. The harness inside one agent has its own page, ADR-018.html, beside it. -->
+<!-- Rahat end to end as an interactive page. Hosted copies: https://modernthinkerbuilds.github.io/Rahat-Plane/specs/RAHAT-ARCHITECTURE.html (GitHub Pages) and https://claude.ai/artifact/5Lsi2YiDVQQXxcBorudNeq ; this file is their source and opens in any browser. The harness inside one agent has its own page, ADR-018.html, beside it. -->
 <style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
 <title>Rahat Architecture</title>
 <meta name="claude:viewport-fit-sides" content="cover">
@@ -373,7 +373,7 @@ svg .now-t { font-family: var(--mono); font-size: 10.5px; fill: var(--plane); }
         <!-- lane C: the household → Bourdain -->
         <g class="node n-run" id="n-bourdainrun" data-tip="bourdainrun" tabindex="0"><rect x="196" y="214" width="150" height="50" rx="6"/><text x="271" y="235" text-anchor="middle" class="t">bourdain</text><text x="271" y="252" text-anchor="middle" class="s">runner · where you are</text></g>
         <g class="node n-code" id="n-grammar" data-tip="grammar" tabindex="0"><rect x="372" y="214" width="160" height="50" rx="6"/><text x="452" y="235" text-anchor="middle" class="t">Grammar</text><text x="452" y="252" text-anchor="middle" class="s">a lookup or an ask</text></g>
-        <a href="https://claude.ai/artifact/THBk4pzgJvtenkf4RZmdjK" target="_blank" rel="noopener" aria-label="Open the harness page">
+        <a href="ADR-018.html" aria-label="Open the harness page">
           <g class="node n-model n-link" id="n-bourdain" data-tip="bourdain"><rect x="558" y="214" width="280" height="50" rx="6"/><text x="698" y="235" text-anchor="middle" class="t">Bourdain · on the harness</text><text x="698" y="252" text-anchor="middle" class="go">open the harness page ↗</text></g>
         </a>
         <g class="node n-judge" id="n-verify" data-tip="verify" tabindex="0"><rect x="864" y="214" width="170" height="50" rx="6"/><text x="949" y="235" text-anchor="middle" class="t">Verify · judge</text><text x="949" y="252" text-anchor="middle" class="s">code checks · judge in shadow</text></g>
@@ -542,7 +542,7 @@ svg .now-t { font-family: var(--mono); font-size: 10.5px; fill: var(--plane); }
       <div class="h"><h3>Bourdain · where to eat</h3><span class="chip ok">Live, own bot</span></div>
       <dl><dt>Built on</dt><dd>The harness: every answer runs eight steps, checked in code, with a judge in shadow.</dd>
       <dt>Reads</dt><dd>A knowledge base with a source on every fact, an open-data gazetteer, food feeds every night, where you are.</dd></dl>
-      <a class="go" href="https://claude.ai/artifact/THBk4pzgJvtenkf4RZmdjK" target="_blank" rel="noopener">Open the harness page ↗</a>
+      <a class="go" href="ADR-018.html">Open the harness page ↗</a>
     </div>
     <div class="agent" style="--c: var(--off)">
       <div class="h"><h3>Bajrangi · a proof of concept</h3><span class="chip off">Proof of concept</span></div>
@@ -591,7 +591,7 @@ svg .now-t { font-family: var(--mono); font-size: 10.5px; fill: var(--plane); }
       </div>
       <p>One loop an agent's answer runs through, owned by the platform: the model reads and researches, code decides what counts as done, and a second model grades judgment once it has earned a say. One agent runs on it today, Bourdain; Fraser borrows its contract pattern; a second tenant is parked. It has its own page, with a message you can watch move through it.</p>
     </div>
-    <a class="btn" href="https://claude.ai/artifact/THBk4pzgJvtenkf4RZmdjK" target="_blank" rel="noopener">Open the harness page ↗</a>
+    <a class="btn" href="ADR-018.html">Open the harness page ↗</a>
   </div>
 
   <p class="sec-eyebrow">The discipline</p>
@@ -623,7 +623,7 @@ svg .now-t { font-family: var(--mono); font-size: 10.5px; fill: var(--plane); }
   <div class="foot">
     <span><a href="https://github.com/modernthinkerbuilds/Rahat-Plane" target="_blank" rel="noopener">The repo on GitHub</a></span>
     <span><a href="https://github.com/modernthinkerbuilds/Rahat-Plane/blob/main/specs/ARCHITECTURE.md" target="_blank" rel="noopener">ARCHITECTURE.md</a></span>
-    <span><a href="https://claude.ai/artifact/THBk4pzgJvtenkf4RZmdjK" target="_blank" rel="noopener">The harness page</a></span>
+    <span><a href="ADR-018.html">The harness page</a></span>
     <span>Counts as of October 17, 2026</span>
   </div>
 </div>
