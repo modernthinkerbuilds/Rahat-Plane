@@ -250,6 +250,10 @@ def control(agent: str, *, first: ExecResult, verify_for: Callable[[Answer], cve
     out.answer = answer
     out.disclosures = disclosures
     out.text = rendered.text.strip() or GAP_LINE
+    if getattr(rendered, "empty", False):
+        # A header and a time is not a reply (LIVE 2026-10-17): say so rather than send it.
+        out.text = GAP_LINE
+        out.gap_stated = True
     out.outcome_results = outcome_results(report, out.judge)
     return out
 

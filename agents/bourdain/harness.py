@@ -32,9 +32,9 @@ from core.harness import render as hrender
 from core.harness.answer import Answer
 from core.harness.contract import Contract, load_library
 from core.harness.evidence import Evidence
-from core.harness.frame import Frame, ReferencePlace, frame_json_schema
+from core.harness.frame import Frame, PlaceRef, ReferencePlace, frame_json_schema
 from core.harness.run import RunResult
-from core.kb import query, schema as kb
+from core.kb import cities, query, schema as kb
 from core.tools import ToolRegistry
 from agents.bourdain import profile as cprofile
 from agents.bourdain import tools as btools
@@ -95,6 +95,23 @@ NEW_WORDS = re.compile(
 # Intents that need something found; the rest (a save, a verdict, a profile change, a question, a reply)
 # are answered from the knowledge base and the session, without the network tools.
 RESEARCH_INTENTS = frozenset({"eat", "plan", "place_check"})
+
+# A meal-led message ("coffee", "lunch near downtown", "/dessert" handed over as "dessert") is that meal, whatever
+# the model read (LIVE 2026-10-17: a coffee ask came back as Saturday lunch, the meal taken from the clock).
+MEAL_LEAD = re.compile(r"^\s*(?:/)?(?P<meal>coffee|breakfast|brunch|lunch|dinner|dessert|snack|late[\s-]?night)\b", re.I)
+# Intents a bare place or a meal word turns into an ask; a verdict, a save or a plan edit is left as read.
+CHATTY_INTENTS = frozenset({"chat", "question", "logistics", "recall"})
+# A message that is only a place, this long after an ask, is the same ask from there.
+PLACE_REPLY_WINDOW_MIN = 90
+HOME_WORDS = frozenset({"home", "the house", "at home", "our place", "my place"})
+
+
+def meal_lead(text: str) -> str | None:
+    m = MEAL_LEAD.match(text or "")
+    if not m:
+        return None
+    meal = m.group("meal").lower()
+    return "late" if meal.startswith("late") else meal
 
 
 class BourdainTenant:
@@ -227,6 +244,50 @@ class BourdainTenant:
         want = {"primary": "spouse", "spouse": "primary"}.get((members.get(speaker) or {}).get("role"))
         return next((m for m, v in members.items() if v.get("role") == want), None) if want else None
 
+    @staticmethod
+    def _place_label(frame: Frame, bare: str) -> str:
+        """The place as the model read it when it read one from the message, else the words themselves."""
+        for ref in (frame.origin, frame.area):
+            if ref is not None and ref.source == "message" and ref.label and ref.kind != "unknown":
+                return ref.label
+        return bare
+
+    @staticmethod
+    def _locate(label: str, ctx: dict) -> tuple[tuple[float, float] | None, str | None]:
+        """Coordinates and the city key for a place named in words, from the knowledge base, the landmarks,
+        the city table and the gazetteer; (None, None) when nothing knows it."""
+        con = kb.connect(ctx.get("db_path"))
+        try:
+            latlng = btools.locate(con, label, ctx)
+        finally:
+            con.close()
+        found = cities.find(label)
+        city = cities.key(found[0]) if found else None
+        return latlng, city
+
+    @staticmethod
+    def _move_origin(ctx: dict, label: str, latlng: tuple[float, float], city: str | None) -> None:
+        """The three-hour location override the set_location tool writes, written in code."""
+        ss.put(AGENT, str(ctx.get("chat_id") or ""), "location",
+               {"label": label, "lat": latlng[0], "lng": latlng[1], "city": city}, scope="session", now=ctx["now"],
+               replace=True, expires_in_hours=btools.LOCATION_OVERRIDE_HOURS, source_trace=ctx.get("trace_id"),
+               db_path=ctx.get("db_path"))
+        ctx["origin_latlng"], ctx["origin_label"] = latlng, label
+        ctx.setdefault("state_writes", []).append({"kind": "location", "label": label})
+
+    @staticmethod
+    def _recent_ask(ctx: dict) -> bool:
+        """True when the session's last answer was an ask to eat, inside the place-reply window."""
+        last = ctx.get("last_answer") or {}
+        lf = last.get("frame") or {}
+        if "eat" not in (lf.get("intents") or []):
+            return False
+        try:
+            at = datetime.strptime(str(last.get("at")), "%Y-%m-%d %H:%M")
+        except (TypeError, ValueError):
+            return False
+        return 0 <= (ctx["now"] - at).total_seconds() / 60 <= PLACE_REPLY_WINDOW_MIN
+
     def refine_frame(self, frame: Frame, ctx: dict) -> tuple[Frame, list[str]]:
         """Deterministic rules on the model's reading.
 
@@ -248,6 +309,12 @@ class BourdainTenant:
           an ask that had narrowed it keeps the narrower party.
         * "Places that match my wife's profile" asks for the partner's rules
           and only theirs, whatever the model read (the trip's T08 and T11).
+        * A meal-led message ("coffee", "lunch near downtown") is that meal
+          (LIVE 2026-10-17: a coffee ask answered as lunch).
+        * A message that is only a place ("Los Altos", "in Berkeley") moves
+          the origin there for three hours, in code, and continues a recent
+          ask from there with its what kept (LIVE 2026-10-17: the town,
+          answered to "where are you?", ran as an empty new ask).
         """
         notes: list[str] = []
         upd: dict = {}
@@ -266,6 +333,43 @@ class BourdainTenant:
             notes.append("the message asks for places the household doesn't already know")
         if attrs != list(frame.attributes):
             upd["attributes"] = attrs
+        has_what = any(getattr(frame, k) for k in self._WHAT)
+        intents = list(frame.intents)
+        meal = meal_lead(ask)
+        if meal:
+            if frame.meal != meal:
+                upd["meal"] = meal
+                notes.append(f"the message leads with {meal}: that is the meal")
+            if "eat" not in intents and not (set(intents) - CHATTY_INTENTS):
+                intents = [i for i in intents if i not in CHATTY_INTENTS] + ["eat"]
+                upd["intents"] = intents
+            has_what = True
+        refers = bool(frame.refers_to_last_answer)
+        area_set = frame.area is not None
+        bare = (cities.bare_place(ask) if not has_what and not frame.verdicts and not frame.saves
+                and not frame.plan_edits and not frame.overrides and not (set(intents) - CHATTY_INTENTS - {"eat"})
+                else None)
+        if bare:
+            # A message that is only a place ("Los Altos", "in Berkeley", "at the Ferry Building") is where the
+            # household is: the origin moves for three hours, as the set_location tool would write it, and a
+            # recent ask continues from there with everything it asked kept. LIVE 2026-10-17: "Los Altos",
+            # answered to "where are you?", ran as a new ask with no origin, no meal and nothing to say.
+            label = self._place_label(frame, bare)
+            latlng, city = self._locate(label, ctx)
+            if latlng is not None:
+                self._move_origin(ctx, label, latlng, city)
+                kind = "home" if label.lower() in HOME_WORDS else ("area" if city else "place")
+                upd["origin"] = PlaceRef(label=label, kind=kind, source="message").model_dump()
+                notes.append(f"ranking from {label} for the next {int(btools.LOCATION_OVERRIDE_HOURS)} hours")
+            if not area_set and latlng is not None and label.lower() not in HOME_WORDS:
+                upd["area"] = PlaceRef(label=label, kind="area" if city else "place", source="message").model_dump()
+                area_set = True
+            if self._recent_ask(ctx):
+                refers = True
+                if "eat" not in intents:
+                    intents = [i for i in intents if i not in CHATTY_INTENTS] + ["eat"]
+                    upd["intents"] = intents
+                notes.append("a place alone after an ask: the same ask from there")
         usual = [d for d in (ctx.get("diners") or [])]
         narrowed = bool(usual) and set(frame.diners) < set(usual) and not frame.guests
         kept_narrow = bool(frame.refers_to_last_answer and last.get("diners")
@@ -282,17 +386,25 @@ class BourdainTenant:
             if dropped:
                 upd["assumptions"] = [a for a in frame.assumptions if a not in dropped]
             notes.append("the message names no one: the household's usual party")
-        has_what = any(getattr(frame, k) for k in self._WHAT)
-        if frame.refers_to_last_answer and last and not has_what:
+        if refers and last and not has_what:
+            kept = []
             for k in self._WHAT:
-                if last.get(k):
+                if last.get(k) and not upd.get(k):
                     upd[k] = last[k]
-            if not frame.radius and not frame.area:
+                    kept.append(k)
+            if not frame.radius and not area_set:          # a new where drops the old radius
                 for k in ("radius", "area"):
                     if last.get(k):
                         upd[k] = last[k]
-            if upd:
-                notes.append("kept from the last ask: " + ", ".join(sorted(upd)))
+                        kept.append(k)
+            if (last.get("diners") and "diners" not in upd and not PARTY_WORDS.search(ask)
+                    and set(last["diners"]) != set(frame.diners)):
+                upd["diners"] = list(last["diners"])
+                kept.append("diners")
+            if kept:
+                notes.append("kept from the last ask: " + ", ".join(sorted(kept)))
+            if not frame.refers_to_last_answer:
+                upd["refers_to_last_answer"] = True
         ref = frame.reference_place
         if ref is None and upd.get("reference_place"):
             ref = ReferencePlace.model_validate(upd["reference_place"])

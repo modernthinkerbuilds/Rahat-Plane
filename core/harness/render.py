@@ -41,6 +41,7 @@ class Rendered:
     text: str = ""
     sources: list[str] = field(default_factory=list)
     problems: list[str] = field(default_factory=list)      # banned phrases, missing places
+    empty: bool = False                                     # nothing between the header and the tail
     disclosures: list[str] = field(default_factory=list)
     chars: int = 0
     trimmed: bool = False
@@ -197,6 +198,10 @@ def render(frame: Frame, answer: Answer, evidence: Evidence, *, now: datetime, m
     if sources:
         out.sources = sources
     tail = ("Sources: " + md_escape(", ".join(sources[:6])) + " · " if sources else "") + f"Checked {_fmt_time(now)}"
+    body = [ln for ln in lines if ln.strip() and not (head and ln == f"_{md_escape(head)}_")]
+    if not body:
+        out.empty = True
+        out.problems.append("the reply has no body: a header and a time only")
     lines.append(tail)
 
     text = "\n".join(lines)

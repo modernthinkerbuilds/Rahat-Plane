@@ -110,7 +110,7 @@ def test_a_save_runs_without_the_network_and_in_two_rounds(world, monkeypatch): 
     seen: list[dict] = []
     w = Wire(frame=frame, rounds=[[{"name": "resolve_name", "args": {"text": "Casa Pasta"}}],
                                   [{"name": "maps_search", "args": {"query": "Casa Pasta"}}], []],
-             answers=[{"kind": "ack", "picks": [], "assumptions": [], "note": "saved"}])
+             answers=[{"kind": "ack", "picks": [], "assumptions": [], "lines": ["Saved Casa Pasta, from a friend."]}])
     real = w.__call__
 
     def spy(req):

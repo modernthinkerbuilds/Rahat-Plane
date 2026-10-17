@@ -212,7 +212,17 @@ def coherence_problems(answer: Answer) -> list[str]:
         probs.append('kind is "plan" but plan is empty')
     if answer.kind == "question" and not (answer.question or "").strip():
         probs.append('kind is "question" but question is empty')
+    if answer.kind in ("answer", "ack", "check") and not _says_something(answer):
+        # LIVE 2026-10-17: kind "answer" with no lines, no picks and no question validated, and the household
+        # received a header and "Checked 12:11 PM" — nothing else.
+        probs.append(f'kind is "{answer.kind}" but the answer says nothing: put the reply in `lines` (one or two '
+                     'sentences), or name picks, or ask one question with kind "question"')
     return probs
+
+
+def _says_something(answer: Answer) -> bool:
+    return bool(any((ln or "").strip() for ln in answer.lines) or answer.picks or answer.plan
+                or (answer.question or "").strip() or answer.none_claim is not None or answer.left_out)
 
 
 def answer_json_schema() -> dict:

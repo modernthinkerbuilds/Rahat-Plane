@@ -39,7 +39,7 @@ from core import hours as chours
 from core import llm_chat
 from core import state_scopes as ss
 from core import weather as cweather
-from core.kb import gazetteer as gz, geo, query, schema as kb
+from core.kb import cities, gazetteer as gz, geo, query, schema as kb
 from core.tools import ToolRegistry, ToolResult
 from agents.bourdain import maps as bmaps
 from agents.bourdain import profile as cprofile
@@ -1029,6 +1029,13 @@ def _point(con, label: str, ctx: dict) -> tuple[float, float] | None:
         p = query.place(con, lab)
         if p and p.get("lat") is not None:
             return (p["lat"], p["lng"])
+    if lab in ("home", "the house", "at home", "our place", "my place"):
+        leg = ctx.get("leg") or {}
+        if leg.get("kind") == "home" and leg.get("stay_lat") is not None:
+            return (leg["stay_lat"], leg["stay_lng"])
+        home = (ctx.get("profile") or {}).get("home") or {}
+        if home.get("lat") is not None and home.get("lng") is not None:
+            return (home["lat"], home["lng"])
     if lab in ("stay", "the stay", "hotel", "the hotel", "home", "the house", "origin", "here"):
         o = ctx.get("origin_latlng")
         if o:
@@ -1043,7 +1050,28 @@ def _point(con, label: str, ctx: dict) -> tuple[float, float] | None:
     for p in query.find_place(con, label):
         if p.get("lat") is not None:
             return (p["lat"], p["lng"])
+    # A town named in words ("Los Altos", "downtown Berkeley"): its centre, from the table (LIVE 2026-10-17: the
+    # household answered "where are you?" with its town and nothing resolved it, so the ask ran with no origin).
+    pt = cities.point(label)
+    if pt is None:
+        found = cities.find(label)
+        pt = found[1] if found else None
+    if pt is not None:
+        return pt
+    try:                                            # a gazetteer row by its exact name (never a substring)
+        near = ctx.get("origin_latlng") if ctx else None
+        for g in gz.find(con, label, near=near, limit=3):
+            if g.get("lat") is not None and kb.norm_name(g.get("name") or "") == kb.norm_name(label):
+                return (g["lat"], g["lng"])
+    except Exception:  # noqa: BLE001 - the gazetteer table is optional
+        pass
     return None
+
+
+def locate(con, label: str, ctx: dict) -> tuple[float, float] | None:
+    """Coordinates for a place the household named: "lat,lng", a place id, the stay or home, a landmark, a
+    knowledge-base place, a town from the city table, a gazetteer row. None when nothing matches."""
+    return _point(con, label, ctx)
 
 
 def _write_candidate(con, cand: Candidate, cite_urls: list[str], ctx: dict) -> dict:

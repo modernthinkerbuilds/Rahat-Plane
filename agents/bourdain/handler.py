@@ -43,12 +43,12 @@ HELP = (
     "\"pizza tonight\", \"anything from my list near me\".\n"
     "Then: \"more\" · \"which one\" · \"something else\" (live search) · "
     "\"just me\" / \"we\" to change who's eating.\n"
-    "Tell me where you are: \"at the hotel\", \"in Chelsea\", "
-    "\"in Cambridge\".\n"
+    "Tell me where you are: \"at home\", \"in <town>\", \"at the hotel\", "
+    "\"near <a landmark>\" — I rank from there for three hours.\n"
     "After a meal: \"loved it\", \"just ok\", \"don't go back\".\n"
     "\n"
     "  • `/eat [meal]` · `/coffee` · `/dessert`\n"
-    "  • `/list` — your saved places for the city you're in\n"
+    "  • `/list` — your saved places, nearest first; `/list <city>` for a trip city\n"
     "  • `save <name>, <where you heard>` or paste a Maps link or a list\n"
     "  • `/who` — who's eating, which leg, where I'm ranking from\n"
     "  • `/cost` — spend today, this week, this month; `/cost export` for a CSV\n"
@@ -706,20 +706,94 @@ def route(text: str, *, chat_id: str | int, now: datetime | None = None,
           holding_line: Callable[[str], None] | None = None) -> str:
     """One inbound message → one reply (ADR-018 §2.1, decision D13).
 
-    First the strict grammar check (exact commands and exact replies from
-    the manifest); a hit is answered by code. Anything else goes to the
-    model-backed harness when RAHAT_BOURDAIN_HARNESS=serve, or to the
-    legacy pipeline with the harness running in shadow beside it
-    (RAHAT_BOURDAIN_HARNESS=shadow, the default outside tests)."""
+    When the harness serves (RAHAT_BOURDAIN_HARNESS=serve) every message
+    reaches one brain with one memory: the grammar's lookups (`/list`,
+    `/who`, `/cost`, `/kb`, help) are answered by code from the knowledge
+    base and the harness's own session, and the grammar's asks (`/eat`,
+    `/coffee`, `/dessert`, `/save`, "more", "which one", "something else",
+    "just me", "going") are handed to the harness as the words they stand
+    for. Otherwise the legacy pipeline answers, with the harness running
+    in shadow beside it on free text (RAHAT_BOURDAIN_HARNESS=shadow, the
+    default outside tests), or not at all (off).
+
+    LIVE 2026-10-17: with the harness serving, `/coffee` still ran the
+    trip-era pipeline — no trip leg at home, so "Where are you?"; the
+    household's answer went to the harness, which had never heard the
+    ask — and `/list` read the trip's saves nearest the previous month's
+    hotel. One memory from here on (the re-architecture of that day)."""
     from agents.bourdain import harness_bridge
     cid = str(chat_id)
     now = now or datetime.now()
     text = (text or "").strip()
     mode = harness_bridge.mode()
-    in_grammar = (not text) or harness_bridge.is_grammar(text)
-    if mode == "serve" and not in_grammar:
-        return harness_bridge.answer(text, chat_id=cid, now=now, holding_line=holding_line)
+    if mode == "serve":
+        return _route_serve(text, cid=cid, now=now, holding_line=holding_line)
     reply = _route_legacy(text, chat_id=cid, now=now, llm=llm)
-    if mode == "shadow" and not in_grammar:
+    if mode == "shadow" and text and not harness_bridge.is_grammar(text):
         harness_bridge.shadow(text, chat_id=cid, now=now, legacy_reply=reply)
     return reply
+
+
+# What a grammar ask says, in the words the harness reads: `/coffee near downtown` → "coffee near downtown".
+_ASK_COMMANDS = {"/eat": "where should we eat", "/coffee": "coffee", "/dessert": "dessert"}
+_HELP_HITS = {"/help", "/start", "hi", "hello", "help"}
+
+
+def ask_for(command: str, args: str) -> str:
+    """The words a grammar ask stands for. `/eat lunch` → "lunch"; `/eat` → "where should we eat";
+    `/coffee near downtown` → "coffee near downtown"; `/save X, a friend` → "save X, a friend"."""
+    args = (args or "").strip()
+    if command == "/eat":
+        return args or _ASK_COMMANDS[command]
+    if command == "/save":
+        return "save " + args
+    base = _ASK_COMMANDS.get(command, command.lstrip("/"))
+    return f"{base} {args}".strip()
+
+
+def _route_serve(text: str, *, cid: str, now: datetime, holding_line: Callable[[str], None] | None) -> str:
+    """Serve mode: code for the lookups, the harness for everything that is an ask."""
+    from agents.bourdain import harness_bridge
+    from core import inbound
+    hit = inbound.match(text, harness_bridge.grammar()) if text else None
+    if not text or (hit and hit.command in _HELP_HITS):
+        return HELP
+    ask = text
+    if hit and hit.kind == "command":
+        cmd, args = hit.command, hit.args
+        if cmd in ("/who", "/where"):
+            return handle_who(cid, now=now)
+        if cmd == "/cost":
+            return handle_cost(text, now=now)
+        if cmd == "/kb":
+            return handle_kb(text, now=now)
+        if cmd == "/list":
+            return handle_saved(cid, args, now=now)
+        if cmd == "/save" and not args:
+            return "What should I save? `/save <name>, <where you heard>` — or paste a Maps link."
+        if cmd == "/prep":
+            return "Trip prep isn't a command yet — tell me the city and the dates in words and I'll note them."
+        if cmd in ("/join", "/household"):
+            return HELP
+        ask = ask_for(cmd, args)
+    elif not hit:
+        if inbound.is_command_shaped(text):          # a slash command the manifest doesn't declare: the list, not the model
+            return HELP
+        m = _LIST_RE.match(text)
+        if m:
+            return handle_saved(cid, m.group("city"), now=now)
+    return harness_bridge.answer(ask, chat_id=cid, now=now, holding_line=holding_line)
+
+
+def handle_saved(cid: str, args: str, *, now: datetime, db_path: str | None = None) -> str:
+    """`/list [city]` from the knowledge base, nearest first from where the harness ranks from."""
+    from agents.bourdain import harness as bh, saved
+    from core.kb import schema as kb
+    tenant = bh.tenant()
+    ctx = tenant.build_ctx(str(cid), now, "", db_path=db_path, cassette_dir=None, trace_id="list")
+    con = kb.connect(db_path)
+    try:
+        return saved.render(con, now=now, origin=ctx.get("origin_latlng"), origin_label=ctx.get("origin_label"),
+                            minutes_mode=ctx.get("minutes_mode", "drive"), city=saved.city_filter(args))
+    finally:
+        con.close()

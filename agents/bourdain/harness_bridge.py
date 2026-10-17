@@ -8,9 +8,13 @@ harness (ADR-018 §4, Phase 2 shadow → Phase 3 serve).
           background thread and appends what it would have said, with
           its per-outcome results, to `vault/bourdain_shadow.jsonl`
           (the daily diff reads it). Default outside test mode.
-* serve:  the harness answers every message that is not an exact
-          command or exact reply (decision D13: strict grammar, then
-          the model); the legacy route keeps the grammar.
+* serve:  one brain, one memory (decision D13, re-cut 2026-10-17): the
+          grammar's lookups (`/list`, `/who`, `/cost`, `/kb`, help) are
+          answered by code from the knowledge base and the harness's own
+          session; the grammar's asks (`/eat`, `/coffee`, `/dessert`,
+          `/save`, "more", "which one", "something else", "just me",
+          "going") and every free-text message go to the harness. The
+          legacy pipeline is only the crash fallback here.
 
 Under RAHAT_TEST_MODE the default is off (no background runs from
 other tests); tests set the variable explicitly and call `shadow(...,
