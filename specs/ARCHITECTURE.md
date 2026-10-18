@@ -1,6 +1,7 @@
-# Rahat: A Sovereign Intent Runtime for Personal AI Agents
+# Rahat: the platform under Miya, as built
 
-**Document class:** Architecture review (ARB-grade), as built
+**Miya is my personal AI agent. Rahat is the platform underneath it:** the doors messages come in by, the rules in code that meet them, the specialist agents, the checks between an answer and me, the memory they share, and the jobs that keep it fed.
+
 **Version:** 3.0 · 2026-10-17
 **Author:** Venkat Sadras
 **Status:** In production on one Mac mini, for one owner and his household: three front doors, seven agents, eight launchd services. Every section says what is shipped and what is not built.
@@ -90,7 +91,7 @@ Personal AI today is reactive: the user prompts, the model answers, neither reme
 
 ### 2.2 Who it serves
 
-One owner, who talks to Miya; his household, who use Genie and Bourdain from their own phones. Every concrete personal value (profiles, household rules, home, health data) lives only in the vault on the Mac mini. The public repository carries the code and synthetic tests, never the vault.
+One owner, who talks to Miya; his household, who use Genie from their own phones, and Bourdain. Every concrete personal value (profiles, household rules, home, health data) lives only in the vault on the Mac mini. The public repository carries the code and synthetic tests, never the vault.
 
 ### 2.3 Hard constraints
 
