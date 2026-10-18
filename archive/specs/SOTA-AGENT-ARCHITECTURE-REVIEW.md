@@ -266,7 +266,7 @@ The agent decides when to recall. Models are good enough at this now (Letta's re
 
 ### Layer 4 — Per-agent adapters (mesh extensibility)
 
-Each agent registers its entity types + assembler + extractor — same as the previous proposal. Scientist registers `goal/plan/commitment/tier_change`. Bajrangi registers `recovery_protocol/sleep_concern`. Foodie registers `cuisine_focus/meal_log`. Each agent's adapter is ~100 LOC.
+Each agent registers its entity types + assembler + extractor — same as the previous proposal. Scientist registers `goal/plan/commitment/tier_change`. Recovery registers `recovery_protocol/sleep_concern`. Foodie registers `cuisine_focus/meal_log`. Each agent's adapter is ~100 LOC.
 
 ### Layer 5 — Sleep-time consolidation worker (NEW vs previous proposal)
 
@@ -286,7 +286,7 @@ Today Miya is regex + LLM classifier. Formalize it as an explicit supervisor wit
 
   - **Declared agent capabilities** — each agent's manifest lists what it can answer
   - **Routing state** — which agent is the "active" one in the current thread
-  - **Cross-agent broker** — when the Scientist's reasoner needs Bajrangi's HRV state, Miya brokers the read with permission
+  - **Cross-agent broker** — when the Scientist's reasoner needs Recovery's HRV state, Miya brokers the read with permission
 
 This is the LangGraph supervisor pattern, implemented in 200 LOC of Rahat-native code rather than 50K LOC of LangGraph.
 
@@ -339,10 +339,10 @@ The proposed Rahat architecture is the only one that hits *all* the rows. Every 
 **Day 8 (buffer / hardening) — Eval suite + first cross-agent test.**
   - Add G40+ cases for archival memory correctness
   - Add G50+ cases for sleep-time consolidation
-  - Stub a second agent (e.g. minimal Bajrangi) to verify cross-agent broker works
+  - Stub a second agent (e.g. minimal Recovery) to verify cross-agent broker works
   - Soak
 
-After this, every future agent (Bajrangi, Curriculum, Foodie, Japan-recall) is **~½ day to onboard** — define entity types, write a small adapter, register with Miya. No new tables, no new patterns.
+After this, every future agent (Recovery, Curriculum, Foodie, Japan-recall) is **~½ day to onboard** — define entity types, write a small adapter, register with Miya. No new tables, no new patterns.
 
 ---
 
@@ -377,6 +377,6 @@ If you want a shorter pilot: **5 days for the previous proposal (substrate + Sci
 
 If you want the full thing: **8 days** ships the SOTA architecture.
 
-After this lands, the next agent — Bajrangi for HRV/sleep — is a 1-day add. Curriculum for your kids is a 1-day add. Foodie is a 1-day add. The compounding is the point.
+After this lands, the next agent — Recovery for HRV/sleep — is a 1-day add. Curriculum for your kids is a 1-day add. Foodie is a 1-day add. The compounding is the point.
 
 Tell me which.

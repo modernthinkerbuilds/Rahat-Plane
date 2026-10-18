@@ -22,7 +22,7 @@ An agent can be fluent and wrong at the same time, and you can't tell from readi
 
 > **Miya is my personal AI agent. Rahat is the platform it runs on, built and run at home: specialists that share one memory, one rulebook and one record of every decision. It runs in my life every day.**
 
-`3` front doors · `7` agents · `8` services (5 always on) · `121` event sources · `1` SQLite file of record · `4,209` tests
+`3` front doors · `6` agents · `8` services (5 always on) · `121` event sources · `1` SQLite file of record · `4,209` tests
 
 <sub>Counts as of Oct 14–17, 2026.</sub>
 
@@ -76,7 +76,6 @@ An agent can be fluent and wrong at the same time, and you can't tell from readi
 | **Huberman** | The 9:30 pm cooldown: reads the day's workout and recovery and picks from a 25-drill library, with rotation. [`agents/huberman/`](./agents/huberman/) | Live, behind Miya |
 | **Genie** | Weekends, a household calendar that schedules rather than lists, and a digest of local events. [`agents/genie/`](./agents/genie/) | Live, behind Miya, with its own bot for the household; my wife uses it too, from her own phone |
 | **Bourdain** | "Where do we eat?" Answers from what it already knows, your saved places first, and searches live when that comes up short; every answer runs the harness (below). [`agents/bourdain/`](./agents/bourdain/) | Live on its own bot since Sep 20; on the harness since Oct 4; joins Miya when it passes |
-| **Bajrangi** | Memory-adapter proof of concept: a second domain on the same memory. [`agents/bajrangi/`](./agents/bajrangi/) | Proof of concept |
 
 **How an agent joins.** Each one starts on its own front door, with its own bot and its own tests, where its failures are easy to see and can't break anything else. When it passes, it's wired in behind Miya ([`agent_boot.py`](./new_plane/miya_runner/agent_boot.py)), and Miya stays the one place I ask. Genie came in that way, and it took a weekend. Bourdain is next.
 

@@ -395,7 +395,7 @@ To be precise about scope:
 - **It does not replace the tick scheduler.** Morning briefs, hourly nudges, etc. remain deterministic and fire on a clock — they don't go through the reasoner. (Though they call the same tools to compose their content, which gives us consistency.)
 - **It does not replace the Charter.** Charter still mediates outbound. `kind=notify.user.reply` for reasoner replies, `kind=notify.user.nudge` for tick-fired nudges. Quiet hours rule on the latter still works.
 - **It does not replace Miya routing.** Miya still picks which agent gets the message. The reasoner-vs-dispatcher question is *inside* a single agent. Miya's classifier (the cheaper LLM call) keeps its LRU cache and its own optimization arc.
-- **It does not yet apply to other agents.** Bajrangi, the toddler curriculum agent, etc. inherit the pattern when they're built — not retrofitted, since they don't exist yet.
+- **It does not yet apply to other agents.** Recovery, the toddler curriculum agent, etc. inherit the pattern when they're built — not retrofitted, since they don't exist yet.
 
 ---
 

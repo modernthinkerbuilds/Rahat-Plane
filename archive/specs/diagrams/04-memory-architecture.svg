@@ -123,7 +123,7 @@
 
   <rect class="box" x="400" y="416" width="320" height="120" rx="6"/>
   <text class="ink lbl" x="560" y="434" text-anchor="middle" font-weight="600">Huberman adapter (stub)</text>
-  <text class="muted small" x="560" y="450" text-anchor="middle">agents/bajrangi/memory.py</text>
+  <text class="muted small" x="560" y="450" text-anchor="middle">a second agent's memory.py</text>
   <text class="ink small" x="416" y="470">Entity types:</text>
   <text class="muted small" x="416" y="484">  recovery_protocol · sleep_concern · hrv_window</text>
   <text class="ink small" x="416" y="502">Assembler builds:</text>

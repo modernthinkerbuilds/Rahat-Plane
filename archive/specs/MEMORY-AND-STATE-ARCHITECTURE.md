@@ -14,7 +14,7 @@ Ten rounds of fixes have been band-aids. The real bug is structural: agents trea
 This spec proposes a **two-layer memory architecture**:
 
   - **Layer 1 — Universal substrate** (mesh-wide, agent-agnostic): five primitives — `events`, `entities`, `threads`, `preferences`, `relationships` — that any agent uses. Single source of truth, single SQLite namespace, shared retention/observability.
-  - **Layer 2 — Agent-specific adapters** (per agent, opt-in): each agent registers its own entity types and its own pre-prompt context assembler + post-reply state extractor. The Scientist tracks `goal`, `plan`, `tier`. Bajrangi tracks `recovery_protocol`, `sleep_concern`. A foodie agent tracks `cuisine_focus`, `meal_history`. Curriculum tracks `lesson`, `milestone`. None of them share a forced schema.
+  - **Layer 2 — Agent-specific adapters** (per agent, opt-in): each agent registers its own entity types and its own pre-prompt context assembler + post-reply state extractor. The Scientist tracks `goal`, `plan`, `tier`. Recovery tracks `recovery_protocol`, `sleep_concern`. A foodie agent tracks `cuisine_focus`, `meal_history`. Curriculum tracks `lesson`, `milestone`. None of them share a forced schema.
 
 The substrate gives every agent the same memory primitives. The adapter gives every agent the freedom to model its own domain. Cross-agent queries (Miya routing, "user mentioned a Japan trip in Foodie last month") become possible without coupling.
 
@@ -26,7 +26,7 @@ Estimated cost: 5 days for the substrate + Scientist adapter, then ~½ day per f
 
 The first version proposed five Scientist-shaped tables (`active_goal`, `commitments`, `active_plan`, `preferences`, `threads`) as if they were universal. They aren't. Two examples:
 
-  - **Bajrangi (HRV/sleep agent)** has no "goal" in the Scientist sense. It has a *current recovery concern* ("trending HRV crash since Tue") and a *protocol* ("low-intensity for 48h"). Those are real state that needs persistence, but they don't fit the Scientist schema.
+  - **Recovery (HRV/sleep agent)** has no "goal" in the Scientist sense. It has a *current recovery concern* ("trending HRV crash since Tue") and a *protocol* ("low-intensity for 48h"). Those are real state that needs persistence, but they don't fit the Scientist schema.
   - **A future Foodie agent** has no "plan." It has a *cuisine focus this week* (e.g. "South Indian, low-salt"), a *meal history*, and *learned dietary preferences*. Again real state, again incompatible with the Scientist schema.
 
 If we ship the Scientist schema as the universal one, every new agent will either contort to fit (bad) or get its own parallel schema (worse — fragmented memory across the mesh).
@@ -55,7 +55,7 @@ If we ship the Scientist schema as the universal one, every new agent will eithe
 │  • preferences       — sticky k/v per agent. Confidence decay.        │
 │  • relationships     — entity-to-entity links, can cross agents      │
 │                        ("this Scientist commitment relates to that   │
-│                        Bajrangi protocol"). Enables cross-agent      │
+│                        Recovery protocol"). Enables cross-agent      │
 │                        reasoning.                                    │
 │                                                                       │
 │  API surface (all agent-scoped by default; cross-agent via Miya):    │
@@ -73,7 +73,7 @@ If we ship the Scientist schema as the universal one, every new agent will eithe
         ↓                           ↓                           ↓
 ┌─────────────────┐        ┌─────────────────┐        ┌─────────────────┐
 │ LAYER 2 ADAPTER │        │ LAYER 2 ADAPTER │        │ LAYER 2 ADAPTER │
-│ Scientist       │        │ Bajrangi (HRV)  │        │ Foodie (cuisine)│
+│ Scientist       │        │ Recovery (HRV)  │        │ Foodie (cuisine)│
 │                 │        │                 │        │                 │
 │ entity types:   │        │ entity types:   │        │ entity types:   │
 │   - goal        │        │   - recovery    │        │   - cuisine     │
@@ -113,7 +113,7 @@ Five tables, all SQLite, all small:
 CREATE TABLE memory_events (
     event_id      INTEGER PRIMARY KEY AUTOINCREMENT,
     ts            DATETIME DEFAULT CURRENT_TIMESTAMP,
-    agent         TEXT NOT NULL,         -- 'scientist' | 'bajrangi' | 'miya' | ...
+    agent         TEXT NOT NULL,         -- 'scientist' | 'recovery' | 'miya' | ...
     kind          TEXT NOT NULL,         -- agent-defined: 'msg.in' | 'msg.out' | 'tool.call' | 'commitment.made' | 'vital.hrv' | ...
     payload       TEXT,                  -- JSON
     actor         TEXT,                  -- who/what triggered (user | agent | tick | sensor)
@@ -164,7 +164,7 @@ CREATE TABLE memory_preferences (
 );
 
 -- Cross-entity links. Lets Miya correlate "this Scientist commitment
--- relates to that Bajrangi recovery protocol."
+-- relates to that Recovery agent's protocol."
 CREATE TABLE memory_relationships (
     rel_id        INTEGER PRIMARY KEY AUTOINCREMENT,
     entity_a      INTEGER NOT NULL,
@@ -240,7 +240,7 @@ def extract_state(user_msg: str, bot_reply: str) -> None:
     # And so on.
 ```
 
-Bajrangi's adapter would look completely different (smaller, no goal/plan, just `recovery_protocol` + `sleep_concern`). Foodie's would have `cuisine_focus` + `meal_log`. Same substrate, completely different domain modeling.
+Recovery's adapter would look completely different (smaller, no goal/plan, just `recovery_protocol` + `sleep_concern`). Foodie's would have `cuisine_focus` + `meal_log`. Same substrate, completely different domain modeling.
 
 ---
 
@@ -280,7 +280,7 @@ Same as the rev-1 doc, but now the fix is mesh-wide, not Scientist-only:
 | Bot uses wrong year for "05/18" | `[Today:]` prefix injection | Stays — universal across agents |
 | Bot's plan totals don't match | "verify totals" prompt rule | Tools become rarer because state is preloaded; deterministic post-check on plan totals |
 | Bot says "you've hit the target" at 686/6000 | "no false celebration" prompt rule | Assembler shows `[This week: 686/6000]` — model can't credibly claim the gap doesn't exist |
-| Bajrangi's "current recovery concern" forgotten between sessions | (would need its own patch) | Same substrate; Bajrangi's adapter just defines its own entity types |
+| Recovery's "current recovery concern" forgotten between sessions | (would need its own patch) | Same substrate; Recovery's adapter just defines its own entity types |
 | Foodie agent's "cuisine focus this week" forgotten | (would need its own patch) | Same substrate; Foodie defines `cuisine_focus` entities |
 
 The shift: **stop telling each agent's model what to remember. Show it the remembered state via a per-agent adapter over a shared substrate.**
@@ -292,7 +292,7 @@ The shift: **stop telling each agent's model what to remember. Show it the remem
 Because the substrate is unified, Miya (the orchestrator) gains powerful cross-agent capabilities for free:
 
   - "User mentioned a Japan trip 3 weeks ago to the Foodie agent — surface that to the Scientist when they ask about jet lag recovery." → `memory.list_entities(type='trip', status='active')` returns the Foodie's trip entity.
-  - "User committed to a hammer week with the Scientist on May 8 — Bajrangi should know to flag HRV more aggressively this week." → cross-agent commitment query.
+  - "User committed to a hammer week with the Scientist on May 8 — Recovery should know to flag HRV more aggressively this week." → cross-agent commitment query.
   - "User's preferences across agents" — `memory.list_preferences(agent=any)` aggregates.
 
 These weren't possible with the rev-1 Scientist-only schema. They cost nothing in the rev-2 substrate.
@@ -311,7 +311,7 @@ These weren't possible with the rev-1 Scientist-only schema. They cost nothing i
 
 **Day 5 — Hardening.** Cross-agent ergonomics test: create a stub Foodie adapter to confirm the substrate composes. Soak the Scientist with the new architecture for 24h. Roll back hatch via `RAHAT_LEGACY_DISPATCH=1` stays available.
 
-After day 5: each future agent (Bajrangi, Curriculum, Foodie, Japan-recall) takes ~½ day to add — define entity types, write a small adapter, reuse the substrate. No new tables. No new patterns.
+After day 5: each future agent (Recovery, Curriculum, Foodie, Japan-recall) takes ~½ day to add — define entity types, write a small adapter, reuse the substrate. No new tables. No new patterns.
 
 ---
 
@@ -328,7 +328,7 @@ After day 5: each future agent (Bajrangi, Curriculum, Foodie, Japan-recall) take
 
 **Path A — full substrate + Scientist adapter (5 days).** Mesh-wide foundation, ready for every future agent. Recommended.
 
-**Path B — Scientist-only memory now, generalize later (3 days).** Faster but bakes Scientist assumptions in; we'd refactor when Bajrangi or Curriculum lands.
+**Path B — Scientist-only memory now, generalize later (3 days).** Faster but bakes Scientist assumptions in; we'd refactor when Recovery or Curriculum lands.
 
 **Path C — keep patching.** Bug rate stays high; structural fragility persists.
 

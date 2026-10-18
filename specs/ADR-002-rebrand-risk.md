@@ -1,4 +1,4 @@
-# ADR-002 — Rebrand risk: Scientist→Kobe, Bajrangi→Huberman
+# ADR-002 — Rebrand risk: Scientist→Kobe, the recovery agent→Huberman
 
 **Date:** 2026-05-12  
 **Status:** Accepted  

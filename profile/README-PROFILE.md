@@ -10,7 +10,7 @@
 |:---:|:---:|:---:|
 | The whole system on one page. Tap any box, or watch a message travel. | The harness every answer runs through, step by step. | Open source (Apache 2.0): the architecture, the decision records, the tests. |
 
-**Miya** is the one I talk to. Behind it, Rahat runs seven agents: Miya orchestrates Kobe (the numbers), Fraser (workout design), Huberman (the 9:30 pm cooldown) and Genie (weekends, the household calendar, local events). Bourdain answers "where do we eat?" on its own door while it's being tested. Bajrangi is a proof of concept.
+**Miya** is the one I talk to. Behind it, Rahat runs six agents: Miya orchestrates Kobe (the numbers), Fraser (workout design), Huberman (the 9:30 pm cooldown) and Genie (weekends, the household calendar, local events). Bourdain answers "where do we eat?" on its own door while it's being tested.
 
 An agent can be fluent and wrong at the same time, and you can't tell from reading it. Run more than one and they contradict each other, act at moments they shouldn't, and remember the wrong things.
 

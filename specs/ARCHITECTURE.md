@@ -4,7 +4,7 @@
 
 **Version:** 3.0 · 2026-10-17
 **Author:** Venkat Sadras
-**Status:** In production on one Mac mini, for one owner and his household: three front doors, seven agents, eight launchd services. Every section says what is shipped and what is not built.
+**Status:** In production on one Mac mini, for one owner and his household: three front doors, six agents, eight launchd services. Every section says what is shipped and what is not built.
 
 > **See it move.** Two interactive pages tell this document's story in pictures you can click:
 >
@@ -57,7 +57,7 @@ Rahat is the platform under Miya, a personal AI agent. It runs on one Mac mini a
 **What runs today (October 17):**
 
 - **Three front doors.** The Miya bot (Miya, with Kobe, Fraser, Huberman and Genie behind it), the Genie bot and the Bourdain bot.
-- **Seven agents.** Miya (the orchestrator), Kobe (the week's numbers), Fraser (workout design), Huberman (cooldowns), Genie (household weekends and events), Bourdain (where to eat) and Bajrangi (a memory proof of concept).
+- **Six agents.** Miya (the orchestrator), Kobe (the week's numbers), Fraser (workout design), Huberman (cooldowns), Genie (household weekends and events) and Bourdain (where to eat).
 - **Rules before models.** A 16-rung ladder in code routes Miya's messages; Kobe's dispatcher and Genie's intents answer what they recognize in code; Bourdain's grammar answers its lookups in code.
 - **Checks before the owner sees anything.** One governance sink for every Miya reply (§5.1), Fraser's design contract, Bourdain's verify step, and the Charter's policies.
 - **One harness for agents** (§7), serving Bourdain since October 4.
@@ -258,9 +258,8 @@ The plain-language intent layer ([ADR-017](./ADR-017_nl_intent_layer.md)) sits j
 | **Huberman** | Behind Miya, and the 9:30 pm tick | Cooldowns | A 25-drill library with rotation; the model coaches each drill; the library alone when the model can't answer | Live since Aug 24 |
 | **Genie** | Its own bot, and behind Miya | Weekends, the household calendar, the events digest | Intents in code; live discovery with search; the digest from the inventory | Live; behind Miya since Aug 6 |
 | **Bourdain** | Its own bot | Where to eat | The harness | Live since Sep 20; on the harness since Oct 4 |
-| **Bajrangi** | None | A second domain on the same memory | A memory-adapter proof of concept | Proof of concept |
 
-Code: [`agents/the_scientist/`](../agents/the_scientist/) (Kobe), [`agents/fraser/`](../agents/fraser/), [`agents/huberman/`](../agents/huberman/), [`agents/genie/`](../agents/genie/), [`agents/bourdain/`](../agents/bourdain/), [`agents/bajrangi/`](../agents/bajrangi/). One more agent lives in a private build lane and is deliberately outside these public docs; it runs on the same substrate documented here.
+Code: [`agents/the_scientist/`](../agents/the_scientist/) (Kobe), [`agents/fraser/`](../agents/fraser/), [`agents/huberman/`](../agents/huberman/), [`agents/genie/`](../agents/genie/) and [`agents/bourdain/`](../agents/bourdain/). One more agent lives in a private build lane and is deliberately outside these public docs; it runs on the same substrate documented here.
 
 **How an agent joins.** It starts on its own front door, with its own bot and tests, where its failures are easy to see and can't break anything else. When it passes, it is registered behind Miya in [`agent_boot.py`](../new_plane/miya_runner/agent_boot.py). An agent registered since June 17 must emit numeric facts as typed fields (`emits_structured_facts`); the contract test refuses one that doesn't. The front door's own judged criteria are written ([`core/checklists/front_door.json`](../core/checklists/front_door.json)) and not yet running.
 

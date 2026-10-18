@@ -209,4 +209,4 @@ is unchanged — Enums serialize to their string values, so the
 | Fraser | protocols, state, **tools**, handler, main, agent | Five-file (this ADR) |
 | Coach | TBD | Five-file (this ADR applies) |
 | Curriculum | TBD | Five-file (this ADR applies) |
-| Huberman (was Bajrangi) | TBD | Five-file (this ADR applies); rebrand per ADR-002 |
+| Huberman | TBD | Five-file (this ADR applies); rebrand per ADR-002 |

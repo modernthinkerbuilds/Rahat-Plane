@@ -283,7 +283,7 @@ Effort when triggered: **~3 hr**
 #### P2.2 — Per-agent model selection registry
 **Trigger:** when ≥3 agents have distinct LLM needs.
 
-A central `core/model_policy.py` mapping `(agent_name, op_kind)` → model. Lets us route the Scientist's free-form coach to Haiku, Bajrangi's HRV reasoning to Sonnet 4.6, the toddler-curriculum agent to Haiku, etc. Today this is hardcoded in two places; centralizing pays off only with ≥3 agents.
+A central `core/model_policy.py` mapping `(agent_name, op_kind)` → model. Lets us route the Scientist's free-form coach to Haiku, Recovery's HRV reasoning to Sonnet 4.6, the toddler-curriculum agent to Haiku, etc. Today this is hardcoded in two places; centralizing pays off only with ≥3 agents.
 
 Effort when triggered: **~1.5 hr**
 
