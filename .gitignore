@@ -60,6 +60,8 @@ NIGHTLY_*_STATUS.md
 # Tracking it means every test run dirties the working tree (#36).
 tests/last_run_report.md
 tests/last_run_status.json
+tests/last_run.json
+tests/last_run_stdout.log
 
 # Generated daily evangelist digests (scheduled task output) — artifacts,
 # not source.

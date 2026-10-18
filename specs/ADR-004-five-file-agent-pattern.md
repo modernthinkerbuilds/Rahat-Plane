@@ -1,6 +1,7 @@
 # ADR-004 — Five-file agent pattern
 
-**Status:** Accepted
+**Status:** Accepted  
+**As built (2026-10-18):** Kobe, Fraser and Genie follow the pattern; Huberman has no agent or main file; a harness tenant (Bourdain) declares itself in a manifest instead (ADR-018 §2.4).  
 **Date:** 2026-05-14
 **Owner:** Modern Builder
 **Related:** ADR-001 (Rahat control plane), ADR-002 (rebrand risk), ADR-003 (multi-agent storage convention)

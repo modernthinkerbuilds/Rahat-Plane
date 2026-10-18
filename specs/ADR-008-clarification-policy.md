@@ -2,6 +2,7 @@
 
 **Date:** 2026-05-16  
 **Status:** Accepted (Chief Architect, owner-approved 2026-05-16 evening)  
+**As built (2026-10-18):** the router this ADR builds on (ADR-006) lives in `core/miya.py`, the library orchestrator. On the Miya bot, a clarification is `new_plane/miya_runner/pending.py`: a pending question with a time limit.  
 **Context:** The 2026-05-16 screenshots showed the bot producing
 confidently-wrong answers when intent was ambiguous. Owner: "I want
 the probabilistic scenarios to be addressed." Pair to ADR-006

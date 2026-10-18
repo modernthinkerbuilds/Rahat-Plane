@@ -2,6 +2,7 @@
 
 **Date:** 2026-05-13  
 **Status:** Accepted  
+**As built (2026-10-18):** the rule still guards Kobe's legacy tables (`tests/test_storage_convention.py`). The harness's tenants keep their knowledge in the knowledge base and their runs in the harness tables (ADR-018 §2.6), which this ADR didn't foresee.  
 **Context:** The substrate (`core/memory/*`) was built agent-agnostic
 from day one (every table carries an `agent` column). Kobe, written
 before the substrate landed, still owns four legacy Scientist-private

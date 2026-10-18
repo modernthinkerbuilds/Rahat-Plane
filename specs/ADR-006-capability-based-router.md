@@ -2,6 +2,7 @@
 
 **Date:** 2026-05-16  
 **Status:** Accepted (Chief Architect, owner-approved 2026-05-16 evening)  
+**As built (2026-10-18):** the classifier lives in `core/miya.py`, the library orchestrator, and the agents' description contracts are pinned by `tests/test_kobe_mesh_routing.py`. The Miya bot itself routes by the ladder in `new_plane/miya_runner/delegate_classifier.py` (ARCHITECTURE.md §5.1), and Kobe delegates by patterns.  
 **Context:** The 2026-05-16 production screenshots showed every workout
 question routing to Kobe (which hallucinated answers) while Fraser sat
 registered but invisible. Diagnosis confirmed `FraserAgent.triggers=[]`

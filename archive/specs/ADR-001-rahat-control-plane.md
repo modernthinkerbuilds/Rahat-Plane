@@ -1,5 +1,7 @@
 # ADR-001: Rahat Control Plane — Now / Next / Later
 
+> **Archived 2026-10-18.** A May plan that was never accepted. The roadmap is [ARCHITECTURE.md §15](../../specs/ARCHITECTURE.md); this file is kept for history.
+
 **Status:** Proposed (awaiting owner approval)
 **Date:** 2026-05-05 (rev 2 — Charter rename, timeline corrected, episodic promoted)
 **Reviewer hat:** L8 Principal Engineer / Agent Architect

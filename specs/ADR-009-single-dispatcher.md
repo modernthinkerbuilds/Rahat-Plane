@@ -1,7 +1,8 @@
 # ADR-009 — Single ordered dispatcher (Option C)
 
 **Status:** Proposed (2026-05-19)
-**Amended by:** ADR-018 §3 (accepted; in production since 2026-10-04): for agents on the harness the dispatcher is the manifest's exact grammar, and "every factual query gets a regex entry" is withdrawn for them; the Scientist's routes are unchanged.
+**Amended by:** ADR-018 §3 (accepted; in production since 2026-10-04): for agents on the harness the dispatcher is the manifest's exact grammar, and "every factual query gets a regex entry" is withdrawn for them; the Scientist's routes are unchanged.  
+**As built (2026-10-18):** in production. `core/dispatcher.py` runs first in Kobe's route and is on by default (`RAHAT_USE_DISPATCHER`); this file's status was never moved past Proposed.  
 **Author:** Chief Architect (post-2026-05-18 production incident review)
 **Supersedes:** Partial routing logic in ADR-006, ADR-007, ADR-008
 

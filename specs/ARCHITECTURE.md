@@ -22,7 +22,7 @@
 > 6. **The system reports its own breakage** (the 08:15 health line) **and prices every call that goes through the wire** (the cost ledger).
 > 7. **4,209 hermetic tests** (v2.0 had 475 eval cases), a regression pin for every fix, and gates on push, on merge and in CI.
 >
-> Two v2.0 statements were wrong by October and are corrected here: memory consolidation is not scheduled (not since May), and not every model call goes through one gate (three older paths call the model directly, §10.1). The v2.0 drawings in `specs/diagrams/` are kept for history; the pages above replace them.
+> Two v2.0 statements were wrong by October and are corrected here: memory consolidation is not scheduled (not since May), and not every model call goes through one gate (three older paths call the model directly, §10.1). The v2.0 drawings are kept in `archive/specs/diagrams/`; the pages above replace them. [`specs/README.md`](./README.md) indexes this folder.
 
 ---
 
@@ -429,12 +429,10 @@ Miya's agents are registered in code ([`agent_boot.py`](../new_plane/miya_runner
 
 | ADR | Decision | Status |
 |---|---|---|
-| [001](./ADR-001-rahat-control-plane.md) | The control plane, Now / Next / Later | Proposed |
 | [002](./ADR-002-rebrand-risk.md) | Agent renames and their risk | Accepted |
 | [003](./ADR-003-multi-agent-storage-convention.md) | A storage convention for many agents | Accepted |
 | [004](./ADR-004-five-file-agent-pattern.md) | The five-file agent pattern | Accepted |
 | [005](./ADR-005-budget-enforcement.md) | Token-budget enforcement | Accepted; amended by ADR-018 |
-| [006](./ADR-006-capability-based-router.md) | A capability-based router, no hardcoded triggers | Accepted |
 | [007](./ADR-007-cross-agent-delegation.md) | Cross-agent delegation | Accepted |
 | [008](./ADR-008-clarification-policy.md) | When to ask a clarifying question | Accepted |
 | [009](./ADR-009-single-dispatcher.md) | A single ordered dispatcher | The file says Proposed; the dispatcher runs in Kobe's route, on by default; amended by ADR-018 |
@@ -447,7 +445,7 @@ Miya's agents are registered in code ([`agent_boot.py`](../new_plane/miya_runner
 | [017](./ADR-017_nl_intent_layer.md) | A plain-language intent layer | Accepted, behind a flag that is off; amended by ADR-018 |
 | [018](./ADR-018-outcome-contracts-and-independent-evaluation.md) | Outcome contracts and independent evaluation: the harness | Accepted; in production since October 4 |
 
-There is no ADR-010 in this repository.
+There is no ADR-010 in this repository. [`specs/README.md`](./README.md) groups these by theme. Two ADRs moved to [`archive/`](../archive/README.md) on October 18: ADR-001, the first Now/Next/Later plan, never accepted; and ADR-006, an LLM router over agent descriptions that the Miya bot doesn't use (it routes by the ladder, §5.1).
 
 ---
 
@@ -497,7 +495,8 @@ The rule from v2.0 still decides promotion: an item moves to Now when an agent i
 | [`bridges/`](../bridges/) | Health, gym, events and food ingestion |
 | [`scripts/`](../scripts/) | Launchd templates, the gates, evals, reports and loaders |
 | [`tests/`](../tests/) | The regression registry, the layered suites and the module tests |
-| [`specs/`](./) | The ADRs, this document and the two interactive pages |
+| [`specs/`](./) | This document, the ADRs ([index](./README.md)) and the two interactive pages |
+| [`archive/`](../archive/) | Documents, scripts and tests that no longer describe or run the system (October 18) |
 
 ## Appendix B. Counts, dated
 
