@@ -22,11 +22,11 @@ os.environ.setdefault("RAHAT_TEST_MODE", "1")
 
 from agents.bourdain import checks, handler, harness as bh, harness_bridge  # noqa: E402
 from core import inbound, state_scopes as ss  # noqa: E402
-from core.harness import answer as ans, contract as hc  # noqa: E402
+from core.harness import answer as ans, contract as hc, evidence as hev, render as hr  # noqa: E402
 from core.harness.frame import Frame  # noqa: E402
 from new_plane.miya_runner import menu  # noqa: E402
 from tests.test_harness_loop import world  # noqa: E402,F401  (the fixture)
-from tests.test_verify_render import LIB, PROFILE, _add_place, _con, _ctx, _frame, _run  # noqa: E402
+from tests.test_verify_render import BANNED, LIB, NOW as VNOW, PROFILE, _add_place, _con, _ctx, _frame, _run  # noqa: E402
 from tests.test_verify_render import db  # noqa: E402,F401  (the fixture)
 
 USUAL = ["primary", "spouse", "infant"]
@@ -172,3 +172,17 @@ def test_a_split_without_a_gf_pastry_does_not_rescue_the_cafe(db):  # noqa: F811
     bakery = _place(db, "Panaderia Diez", grid=(0.3, 51), tags=("bakery",))
     hard, _ = _p13(db, [_pick(cafe, "Cafe Nueve"), _pick(bakery, "Panaderia Diez", role="split")])
     assert any("paired with" in m and "no gluten-free pastry" in m for m in hard)
+
+
+def test_the_paired_bakery_is_labelled_for_what_it_is(db):  # noqa: F811
+    cafe = _place(db, "Cafe Once", grid=(0.3, 60))
+    bakery = _place(db, "Panaderia Doce", grid=(0.3, 61), menu=[{"name": "GF lemon scone", "gf": "yes"}], tags=("bakery",))
+    a = ans.Answer(kind="picks", picks=[_pick(cafe, "Cafe Once"), _pick(bakery, "Panaderia Doce", "GF lemon scone",
+                                                                         role="split")])
+    con = _con(db)
+    ev = hev.Evidence(con, now=VNOW, mode="trip")
+    asked = hr.render(_frame(meal="coffee", attributes=["gf_pastry"]), a, ev, now=VNOW, mode="trip", banned=BANNED).text
+    plain = hr.render(_frame(meal="coffee"), a, ev, now=VNOW, mode="trip", banned=BANNED).text
+    con.close()
+    assert "*Panaderia Doce* (the GF pastry, a short walk)" in asked
+    assert "*Panaderia Doce* (split order)" in plain

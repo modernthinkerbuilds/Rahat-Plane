@@ -244,7 +244,10 @@ def _pick_block(pick: Pick, idx: int | None, frame: Frame, evidence: Evidence, *
         bits.append(f"{n} locations")
     label = f"{idx}. " if idx else ""
     branch = f" [{md_escape(pick.branch)}]" if pick.branch else ""
-    role = " (backup)" if pick.role == "backup" else (" (split order)" if pick.role == "split" else "")
+    # A split is half of an order; on a coffee-and-GF-pastry ask it is the GF bakery a short walk from the café
+    # before it (outcome P13, 2026-10-18), and the label says so.
+    split = " (the GF pastry, a short walk)" if "gf_pastry" in frame.attributes else " (split order)"
+    role = " (backup)" if pick.role == "backup" else (split if pick.role == "split" else "")
     lines = [f"{label}*{md_escape(pe.name)}*{branch}{role} — {md_escape(' · '.join(bits))}"]
     where = p.get("neighborhood") or p.get("address")
     if where:
