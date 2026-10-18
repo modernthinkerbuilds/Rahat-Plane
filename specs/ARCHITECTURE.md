@@ -236,7 +236,7 @@ The plain-language intent layer ([ADR-017](./ADR-017_nl_intent_layer.md)) sits j
 
 ### 5.3 Bourdain (its own bot)
 
-- **The grammar** ([`manifest.json`](../agents/bourdain/manifest.json)): fourteen commands and eight exact replies. Lookups (`/list`, `/who`, `/where`, `/cost`, `/kb`, `/help`, `/join`, `/household`) are answered by code from the knowledge base and the harness's own session. Asks (`/eat`, `/coffee`, `/dessert`, `/save`, "more", "which one", "something else", "just me", "going") are handed to the harness as the words they stand for, so one brain with one memory answers every ask (October 17).
+- **The grammar** ([`manifest.json`](../agents/bourdain/manifest.json)): fifteen commands and eight exact replies. Lookups (`/list`, `/who`, `/where`, `/cost`, `/kb`, `/help`, `/join`, `/household`) are answered by code from the knowledge base and the harness's own session. Asks (`/eat`, `/coffee`, `/coffee_gf`, `/dessert`, `/save`, "more", "which one", "something else", "just me", "going") are handed to the harness as the words they stand for, so one brain with one memory answers every ask (October 17).
 - **Where you are:** a location shared in Telegram (once, or live until the owner stops it, throttled to meaningful moves), a push from the phone to the health bridge, or a town named in words. It is kept for three hours in scoped state; after that the origin is home. Only the place's label is logged.
 - **Everything else** is the harness: §7.
 
@@ -275,7 +275,7 @@ A strict command check runs first ([`core/inbound.py`](../core/inbound.py)); the
 | Step | Who | What happens |
 |---|---|---|
 | 1. Understand | Model (the cheaper one) | A typed reading of the message (the agent's frame schema), refined by rules in code |
-| 2. Contract | Code | The outcomes this answer must meet, drawn from the agent's outcome library (Bourdain: 51 outcomes, 3 always required) |
+| 2. Contract | Code | The outcomes this answer must meet, drawn from the agent's outcome library (Bourdain: 52 outcomes, 3 always required) |
 | 3. Execute | Model with tools | Research with the agent's allow-listed tools under a brake (Bourdain: 12 tool calls, 10 searches and $0.50 an ask; a wide ask gets 18, 14 and $0.80); the evidence comes back as records, not prose |
 | 4. Verify | Code | Every pick checked against its evidence: open when you'd arrive, inside the travel time, each diet confirmed |
 | 5. Judge | A second model | Grades judgment against a 21-criterion checklist; in shadow, without authority |
@@ -510,7 +510,7 @@ The rule from v2.0 still decides promotion: an item moves to Now when an agent i
 | Food feeds | 12 | Oct 17 |
 | Gazetteer places | 21,555 | Oct 17 |
 | Tests | 4,209 (1,877 in 219 regression pins) | Oct 17 |
-| Bourdain outcome library | 51 outcomes, 3 always required | Oct 17 |
+| Bourdain outcome library | 52 outcomes, 3 always required | Oct 18 |
 | Judge checklist | 21 criteria | Oct 17 |
 | Golden sets (private) | 72 Bourdain asks, 14 Genie asks | Oct 17 |
 | Harness runs | 22 (19 Bourdain answers, 3 Fraser designs) | Oct 4–11 |

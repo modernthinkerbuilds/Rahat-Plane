@@ -11,6 +11,7 @@
     "commands": [
       "/eat",
       "/coffee",
+      "/coffee_gf",
       "/dessert",
       "/list",
       "/save",

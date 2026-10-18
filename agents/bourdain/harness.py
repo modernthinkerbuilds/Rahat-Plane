@@ -50,7 +50,7 @@ GAP_WORDS = {
     "P6": "not a room for the baby", "P7": "a bar-led room", "P8": "over your price range", "P9": "a chain",
     "E1": "facts I couldn't source", "E2": "not open at that time", "E5": "outside your travel time",
     "U6": "something you ruled out", "U7": "already turned down", "N2": "one of your regulars",
-    "A1": "no address I could map",
+    "A1": "no address I could map", "P13": "no gluten-free pastry here or a short walk away",
 }
 
 # A wide ask wants a spread of options, not one answer (LIVE 2026-10-04: "anywhere in the area, I can
@@ -99,6 +99,16 @@ RESEARCH_INTENTS = frozenset({"eat", "plan", "place_check"})
 # A meal-led message ("coffee", "lunch near downtown", "/dessert" handed over as "dessert") is that meal, whatever
 # the model read (LIVE 2026-10-17: a coffee ask came back as Saturday lunch, the meal taken from the clock).
 MEAL_LEAD = re.compile(r"^\s*(?:/)?(?P<meal>coffee|breakfast|brunch|lunch|dinner|dessert|snack|late[\s-]?night)\b", re.I)
+
+# Coffee with a gluten-free pastry, asked together (owner, 2026-10-18: "places that have coffee and gluten-free
+# pastries or coffee and nearby gluten-free pastries"). The words, or `/coffee_gf`, carry the gf_pastry attribute;
+# the contract then requires a GF pastry at every place offered, or a GF bakery a short walk from it (outcome P13).
+COFFEE_WORDS = re.compile(r"\b(coffee|espresso|latte|cappuccino|cortado|flat white|caf[eé])\b", re.I)
+GF_PASTRY_WORDS = re.compile(
+    r"\b(?:gf|gluten[\s-]?free)\s+(?:\w+\s+){0,2}(?:pastr(?:y|ies)|bak(?:ery|eries|ed goods)|croissants?|muffins?|"
+    r"scones?|cakes?|cookies?|donuts?|doughnuts?|treats?|sweets?)\b"
+    r"|\b(?:pastr(?:y|ies)|bakery|bakeries|baked goods|croissants?|muffins?|scones?)\b[^.?!]{0,30}?\b(?:gf|gluten[\s-]?free)\b",
+    re.I)
 # Intents a bare place or a meal word turns into an ask; a verdict, a save or a plan edit is left as read.
 CHATTY_INTENTS = frozenset({"chat", "question", "logistics", "recall"})
 # A message that is only a place, this long after an ask, is the same ask from there.
@@ -331,6 +341,10 @@ class BourdainTenant:
             if "new_places" not in attrs:
                 attrs.append("new_places")
             notes.append("the message asks for places the household doesn't already know")
+        gf_pastry = bool(COFFEE_WORDS.search(ask) and GF_PASTRY_WORDS.search(ask))
+        if gf_pastry and "gf_pastry" not in attrs:
+            attrs.append("gf_pastry")
+            notes.append("coffee with a gluten-free pastry: one at every place, or a GF bakery a short walk away")
         if attrs != list(frame.attributes):
             upd["attributes"] = attrs
         has_what = any(getattr(frame, k) for k in self._WHAT)
@@ -340,6 +354,14 @@ class BourdainTenant:
             if frame.meal != meal:
                 upd["meal"] = meal
                 notes.append(f"the message leads with {meal}: that is the meal")
+            if "eat" not in intents and not (set(intents) - CHATTY_INTENTS):
+                intents = [i for i in intents if i not in CHATTY_INTENTS] + ["eat"]
+                upd["intents"] = intents
+            has_what = True
+        if gf_pastry:
+            if (upd.get("meal") or frame.meal) != "coffee":
+                upd["meal"] = "coffee"
+                notes.append("coffee with a gluten-free pastry: the meal is coffee")
             if "eat" not in intents and not (set(intents) - CHATTY_INTENTS):
                 intents = [i for i in intents if i not in CHATTY_INTENTS] + ["eat"]
                 upd["intents"] = intents
@@ -392,6 +414,11 @@ class BourdainTenant:
                 if last.get(k) and not upd.get(k):
                     upd[k] = last[k]
                     kept.append(k)
+                elif k == "attributes" and last.get(k):      # "something else" after /coffee_gf keeps the GF pastry
+                    merged = list(upd[k]) + [a for a in last[k] if a not in upd[k]]
+                    if merged != upd[k]:
+                        upd[k] = merged
+                        kept.append(k)
             if not frame.radius and not area_set:          # a new where drops the old radius
                 for k in ("radius", "area"):
                     if last.get(k):

@@ -17,7 +17,7 @@ import re
 
 from core.harness.contract import ContractOutcome
 from core.verify import Failure, VerifyContext, family_of, matches_cuisine
-from core.kb import schema as kb
+from core.kb import geo, schema as kb
 
 MEAT = {"beef", "steak", "pork", "bacon", "ham", "sausage", "chorizo", "pepperoni", "prosciutto", "salami",
         "pancetta", "lamb", "mutton", "goat", "veal", "duck", "turkey", "meatball", "meatballs", "lardons",
@@ -84,6 +84,38 @@ _NEG_RE = re.compile(
     r"((?:(?!with\b|and\b|but\b|plus\b|on\b|over\b|frills\b|fuss\b|reservations\b)[\w']+[\s-]*){1,4}"
     r"(?:\([^)]*\))?)", re.I)
 _FREE_RE = re.compile(r"\b(\w+)-free\b", re.I)
+
+
+# Coffee with a GF pastry (P13): what counts as a pastry, and how far a paired GF bakery may be.
+PASTRY_WORDS = {"pastry", "pastries", "croissant", "croissants", "muffin", "muffins", "scone", "scones", "cake", "cakes",
+                "cupcake", "cupcakes", "cookie", "cookies", "brownie", "brownies", "donut", "donuts", "doughnut",
+                "doughnuts", "danish", "brioche", "tart", "tarts", "pie", "biscuit", "biscuits", "cannoli", "bun", "buns",
+                "bread", "loaf", "galette", "financier", "financiers", "madeleine", "madeleines", "macaron", "macarons"}
+PAIR_WALK_MIN = 10
+_GF_NONE = re.compile(r"\bno\s+(?:[a-z-]+\s+){0,3}(?:gf|gluten[\s-]?free)\b|\b(?:gf|gluten[\s-]?free)\b[^.;]{0,30}"
+                      r"\b(?:none|not available|unavailable|sold out)\b|\bask (?:whether|if)\b", re.I)
+
+
+def _gf_pastry(pe, pick) -> str | None:
+    """'confirmed' when a diner's line names a GF pastry the place's records back (a gluten-free kitchen, a
+    menu item marked GF, or a line verified against a menu); 'named' when a line names one without that
+    backing; 'no' when the menu says the named pastry isn't GF; None when no line names a GF pastry."""
+    found = None
+    for line in pick.diner_lines:
+        text = f"{line.dish} {line.note or ''}"
+        if not (_tokens(text) & PASTRY_WORDS):
+            continue
+        item = pe.menu_match(line.dish)
+        gf_on_menu = (item or {}).get("gf") if item else None
+        if gf_on_menu == "no":
+            found = found or "no"
+            continue
+        if not GF_MARK.search(text) or _GF_NONE.search(text):
+            continue
+        if _dedicated_gf(pe) or gf_on_menu in ("yes", "on_request") or line.verified:
+            return "confirmed"
+        found = "named"
+    return found
 
 
 def _tokens(s: str) -> set[str]:
@@ -447,6 +479,50 @@ def register(reg) -> None:
             out.append(Failure(o.id, "no dessert after lunch", "add a dessert stop", hard=False))
         if "dinner" in labels and not re.search(r"gelato|ice cream|dessert", labels.split("dinner", 1)[-1]):
             out.append(Failure(o.id, "no gelato after dinner", "add a gelato stop", hard=False))
+        return out
+
+    @reg.register("P13")
+    def coffee_and_gf_pastry(ctx: VerifyContext, o: ContractOutcome) -> list[Failure]:
+        """Coffee and a GF pastry, asked together (owner, 2026-10-18: "I need coffee and gluten-free pastries ...
+        places that have coffee and gluten-free pastries or coffee and nearby gluten-free pastries"). Every place
+        offered names a GF pastry for a diner, or the pick right after it is a split: a GF bakery within
+        PAIR_WALK_MIN minutes' walk that does. A pastry the menu says isn't GF fails; one named but not backed by
+        the place's records passes, with a note to call first."""
+        out: list[Failure] = []
+        picks = ctx.answer.picks
+        for i, pick in enumerate(picks):
+            if pick.role == "split":
+                continue
+            pe = ctx.place(pick.place_id)
+            here = _gf_pastry(pe, pick)
+            nxt = picks[i + 1] if i + 1 < len(picks) and picks[i + 1].role == "split" else None
+            if here in ("confirmed", "named"):
+                if here == "named":
+                    out.append(Failure(o.id, f"{pe.name}: the GF pastry isn't on anything I read from the place",
+                                       "say to call first", place_id=pick.place_id, hard=False))
+                continue
+            if nxt is None:
+                why = "the menu says that pastry isn't gluten-free" if here == "no" else "no gluten-free pastry named"
+                out.append(Failure(o.id, f"{pe.name}: {why}, and no GF bakery paired a short walk away",
+                                   f"name a GF pastry from what the tools returned, add a GF bakery within {PAIR_WALK_MIN} "
+                                   "min walk as a split pick right after it, or leave the place out", place_id=pick.place_id))
+                continue
+            ne = ctx.place(nxt.place_id)
+            there = _gf_pastry(ne, nxt)
+            a, b = pe.latlng, ne.latlng
+            walk = geo.about_minutes(a[0], a[1], b[0], b[1], mode="walk") if a and b else None
+            if there not in ("confirmed", "named"):
+                out.append(Failure(o.id, f"{ne.name}: paired with {pe.name}, but no gluten-free pastry named there",
+                                   "name the GF pastry, or pair a different bakery", place_id=nxt.place_id))
+            elif walk is None:
+                out.append(Failure(o.id, f"{ne.name}: no mapped address to measure the walk from {pe.name}",
+                                   "pair a bakery with a mapped address", place_id=nxt.place_id))
+            elif walk > PAIR_WALK_MIN:
+                out.append(Failure(o.id, f"{ne.name}: about {walk} min walk from {pe.name}, past {PAIR_WALK_MIN}",
+                                   f"pair a GF bakery within {PAIR_WALK_MIN} min walk", place_id=nxt.place_id))
+            elif there == "named":
+                out.append(Failure(o.id, f"{ne.name}: the GF pastry isn't on anything I read from the place",
+                                   "say to call first", place_id=nxt.place_id, hard=False))
         return out
 
     @reg.register("D1")

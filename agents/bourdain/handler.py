@@ -47,7 +47,7 @@ HELP = (
     "button), or say \"at home\", \"in <town>\", \"at the hotel\" — I rank from there for three hours.\n"
     "After a meal: \"loved it\", \"just ok\", \"don't go back\".\n"
     "\n"
-    "  • `/eat [meal]` · `/coffee` · `/dessert`\n"
+    "  • `/eat [meal]` · `/coffee` · `/coffee_gf` (with a gluten-free pastry) · `/dessert`\n"
     "  • `/list` — your saved places, nearest first; `/list <city>` for a trip city\n"
     "  • `save <name>, <where you heard>` or paste a Maps link or a list\n"
     "  • `/who` — who's eating, which leg, where I'm ranking from · `/where` — the same, with a send-my-location button\n"
@@ -648,6 +648,8 @@ def _route_legacy(text: str, *, chat_id: str | int, now: datetime | None = None,
         return handle_list(cid, text, now=now)
     if low.startswith("/eat"):
         return handle_eat(cid, text[4:].strip() or "eat", now=now, llm=llm)
+    if low.startswith("/coffee_gf"):
+        return handle_eat(cid, "coffee gluten-free pastries " + text[10:], now=now, llm=llm)
     if low.startswith("/coffee"):
         return handle_eat(cid, "coffee " + text[7:], now=now, llm=llm)
     if low.startswith("/dessert"):
@@ -712,7 +714,7 @@ def route(text: str, *, chat_id: str | int, now: datetime | None = None,
     reaches one brain with one memory: the grammar's lookups (`/list`,
     `/who`, `/cost`, `/kb`, help) are answered by code from the knowledge
     base and the harness's own session, and the grammar's asks (`/eat`,
-    `/coffee`, `/dessert`, `/save`, "more", "which one", "something else",
+    `/coffee`, `/coffee_gf`, `/dessert`, `/save`, "more", "which one", "something else",
     "just me", "going") are handed to the harness as the words they stand
     for. Otherwise the legacy pipeline answers, with the harness running
     in shadow beside it on free text (RAHAT_BOURDAIN_HARNESS=shadow, the
@@ -737,7 +739,8 @@ def route(text: str, *, chat_id: str | int, now: datetime | None = None,
 
 
 # What a grammar ask says, in the words the harness reads: `/coffee near downtown` → "coffee near downtown".
-_ASK_COMMANDS = {"/eat": "where should we eat", "/coffee": "coffee", "/dessert": "dessert"}
+_ASK_COMMANDS = {"/eat": "where should we eat", "/coffee": "coffee",
+                 "/coffee_gf": "coffee and gluten-free pastries", "/dessert": "dessert"}
 _HELP_HITS = {"/help", "/start", "hi", "hello", "help"}
 
 

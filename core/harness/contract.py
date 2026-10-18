@@ -97,6 +97,7 @@ APPLIES: dict[str, Callable[[Frame], bool | None]] = {
     "spouse_eating": lambda f: "spouse" in f.diners,
     "infant_along": lambda f: "infant" in f.diners,
     "coffee": lambda f: (f.meal or "") == "coffee",
+    "gf_pastry_asked": lambda f: "gf_pastry" in f.attributes,      # coffee with a GF pastry, asked together
     "format_stated": lambda f: bool(f.formats),
     "after_boring": lambda f: "boring" in f.verdicts_in_force or any(v.kind == "boring" for v in f.verdicts),
     "hazard": lambda f: f.weather_hazard,

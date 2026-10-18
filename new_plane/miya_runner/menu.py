@@ -69,6 +69,7 @@ GENIE: list[tuple[str, str]] = [
 BOURDAIN: list[tuple[str, str]] = [
     ("eat", "Where to eat: /eat, /eat lunch, /eat pizza tonight"),
     ("coffee", "Coffee near here"),
+    ("coffee_gf", "Coffee and a gluten-free pastry, or a GF bakery a short walk away"),
     ("dessert", "Dessert near here"),
     ("list", "Your saved places, nearest first; /list <city> for a trip city"),
     ("who", "Who's eating, which leg, where I'm ranking from"),

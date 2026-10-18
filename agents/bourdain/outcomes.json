@@ -1,5 +1,5 @@
 {
-  "version": "1.0",
+  "version": "1.1",
   "outcomes": [
     {"id": "U1", "text": "Every part of the message is answered: each question, ask and verdict.", "applies": "always", "check": "J", "priority": "must"},
     {"id": "U2", "text": "The meal or slot is the one asked about, not the clock's; a meal already had is history.", "applies": "eat", "check": "J", "priority": "must", "params_from": ["meal", "history"]},
@@ -22,6 +22,7 @@
     {"id": "P10", "text": "Rating: the floor, a named source, a minimum review count; no pick without a counted rating; household-reported scores honored.", "applies": "names_places", "check": "M", "priority": "must"},
     {"id": "P11", "text": "Coffee ritual: a local roaster's espresso with a GF pastry for the primary member.", "applies": "coffee", "check": "M+J", "priority": "should"},
     {"id": "P12", "text": "The day's rhythm: coffee slots, dessert after lunch, gelato after dinner.", "applies": "plan", "check": "M", "priority": "should"},
+    {"id": "P13", "text": "Coffee and a gluten-free pastry, asked together: every place offered pours coffee and names a GF pastry for a diner, confirmed on a menu when one was read; when the best coffee has none, the pick right after it is a GF bakery within a short walk, marked as a split.", "applies": "gf_pastry_asked", "check": "M", "priority": "must"},
 
     {"id": "E1", "text": "Provenance: every fact in the reply maps to an evidence record with a source URL and a read time; the model supplies none.", "applies": "always", "check": "M", "priority": "must"},
     {"id": "E2", "text": "Serving at arrival: open that day at the arrival time, last order respected, the dish on that day's menu.", "applies": "names_places", "check": "M", "priority": "must", "params_from": ["time"]},
