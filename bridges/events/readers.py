@@ -33,11 +33,25 @@ matches them): infant, toddler, kids, teens, adults, and "adults-only"
 when a door policy is stated. A feed that labels "Babies" or "Toddlers" is the
 honest source for "infant friendly events this weekend".
 
+Per-source keys the readers honour (2026-10-19): `skip`, a pattern for
+titles that are not outings (a city calendar's council meetings, a
+library's class visits and room holds); `horizon_days`, a longer look
+ahead for a quiet calendar that posts a few events a season.
+`fetch(report=…)` says what a feed held when nothing landed in the
+window (how many events, the newest date, how many were skipped), so the
+refresh log can tell an abandoned calendar from a broken reader, and
+`failure_reason` puts a failed fetch in a few words ("HTTP 403", "no
+such host", "redirect loop").
+
+An iCal event can list its other dates as RDATEs (a theatre's
+performances, 2026-10-19): each is an occurrence, like an RRULE's.
+
 Hermetic: under RAHAT_TEST_MODE=1 nothing touches the wire unless an
 `http` seam is passed.
 """
 from __future__ import annotations
 
+import functools
 import html as _html
 import json
 import logging
@@ -147,6 +161,57 @@ def is_noise(title: str, *labels: str) -> bool:
                 or _FILLER_RE.search(t) or "always on" in blob.lower())
 
 
+@functools.lru_cache(maxsize=128)
+def _skip_pattern(pattern: str) -> re.Pattern | None:
+    try:
+        return re.compile(pattern, re.I)
+    except re.error:
+        return None
+
+
+def skipped_by_source(source: dict, title: str) -> bool:
+    """The source's own `skip` pattern (registry) matches the title: a city
+    calendar's council meetings, a library's class visits and room holds."""
+    pattern = source.get("skip")
+    rx = _skip_pattern(str(pattern)) if pattern else None
+    return bool(rx and rx.search(title or ""))
+
+
+def failure_reason(err) -> str:
+    """A failed fetch in a few words, for the refresh log and the health
+    line: "HTTP 403", "no such host", "redirect loop", "timeout",
+    "connection failed". Takes the exception or its logged text.
+    2026-10-19: fifteen feeds were reported as "fetched nothing" with no
+    why, and the why was only in the ingest log (six sites refusing
+    readers, three addresses gone)."""
+    if isinstance(err, BaseException):
+        names = {c.__name__ for c in type(err).__mro__}
+        code = getattr(getattr(err, "response", None), "status_code", None)
+        if "HTTPError" in names and code:
+            return f"HTTP {code}"
+        if "ModelError" in names:
+            return "model error"
+        text = f"{type(err).__name__}: {err}"
+    else:
+        names, text = set(), str(err or "")
+    m = re.search(r"\b([45]\d\d) (?:Client|Server) Error", text)
+    if m:
+        return f"HTTP {m.group(1)}"
+    if "TooManyRedirects" in names or "TooManyRedirects" in text or "redirects" in text and "Exceeded" in text:
+        return "redirect loop"
+    if re.search(r"NameResolution|Name or service not known|nodename nor servname|getaddrinfo failed"
+                 r"|No address associated|Failed to resolve", text):
+        return "no such host"
+    if names & {"Timeout", "ReadTimeout", "ConnectTimeout"} or re.search(r"Timeout|timed out", text):
+        return "timeout"
+    if "ConnectionError" in names or re.search(r"ConnectionError|Connection (?:reset|refused|aborted)", text):
+        return "connection failed"
+    if text.startswith("ModelError"):
+        return "model error"
+    head = text.split(":", 1)[0].strip()
+    return head[:40] or "error"
+
+
 # ── the shell every reader shares ──────────────────────────────────────
 def _event(source: dict, *, title: str, start: datetime | None, end: datetime | None = None,
            venue: str = "", city: str = "", url: str = "", labels: tuple[str, ...] = (),
@@ -155,6 +220,9 @@ def _event(source: dict, *, title: str, start: datetime | None, end: datetime | 
     if not title or start is None:
         return None
     if is_noise(title, *labels):
+        return None
+    if skipped_by_source(source, title):
+        source["_skipped"] = int(source.get("_skipped") or 0) + 1
         return None
     cats = list(source.get("categories") or [])
     for c in extra_categories:
@@ -173,7 +241,11 @@ def _window(events: list[dict], today: datetime | None, horizon_days: int | None
     """Today onward, up to the horizon; one row per run (an exhibition that
     repeats daily is listed once, on its first day in the window), and one
     row a week for a daily offering (a museum's drop-in playscape listed
-    every day). A weekly storytime keeps every date."""
+    every day: five or more days in one week). A weekly storytime keeps
+    every date, and so does a play's run (2026-10-19: counted over the
+    whole window, a Friday-to-Sunday run of eight performances read as a
+    daily offering and kept only each week's Friday, so a weekend digest
+    never saw the matinees)."""
     lo = today.strftime("%Y-%m-%d") if today else None
     hi = (today + timedelta(days=horizon_days)).strftime("%Y-%m-%d") if today and horizon_days else None
     kept = [e for e in sorted(events, key=lambda x: x["start_ts"])
@@ -181,6 +253,14 @@ def _window(events: list[dict], today: datetime | None, horizon_days: int | None
     days_of: dict[tuple[str, str], set[str]] = {}
     for e in kept:
         days_of.setdefault(_key(e), set()).add(e["start_ts"][:10])
+    daily: set[tuple[str, str]] = set()
+    for key, days in days_of.items():
+        per_week: dict[str, int] = {}
+        for d in days:
+            w = datetime.strptime(d, "%Y-%m-%d").strftime("%G-%V")
+            per_week[w] = per_week.get(w, 0) + 1
+        if max(per_week.values()) >= 5:
+            daily.add(key)
     out: list[dict] = []
     seen_runs: set[tuple[str, str]] = set()
     seen_weeks: set[tuple[str, str, str]] = set()
@@ -192,7 +272,7 @@ def _window(events: list[dict], today: datetime | None, horizon_days: int | None
             if key in seen_runs:
                 continue
             seen_runs.add(key)
-        elif len(days_of[key]) >= 5:
+        elif key in daily:
             week = datetime.strptime(day, "%Y-%m-%d").strftime("%G-%V")
             if (key[0], key[1], week) in seen_weeks:
                 continue
@@ -625,7 +705,7 @@ def expand_rrule(start: datetime, rule: str, *, until_day: datetime, exdates: se
 
 
 def parse_ical(text: str, source: dict, *, today: datetime | None = None,
-               horizon_days: int | None = None) -> list[dict]:
+               horizon_days: int | None = None, report: dict | None = None) -> list[dict]:
     """VEVENT blocks → event dicts. UTC ("Z") and TZID times become the
     household's local time; all-day DATE values keep 00:00; a folded line
     is unfolded; "\\," is a comma. Past events are dropped before any cap
@@ -634,7 +714,11 @@ def parse_ical(text: str, source: dict, *, today: datetime | None = None,
     expanded on its dates inside it (2026-10-15: two public Google
     Calendars of recurring events parsed to nothing, listed once at a
     DTSTART months old); EXDATEs are skipped and a RECURRENCE-ID instance
-    replaces its occurrence. Without a window a master is listed once."""
+    replaces its occurrence. Without a window a master is listed once.
+    RDATEs (2026-10-19: a theatre lists each performance after the first
+    as an RDATE period) are occurrences too, with the same EXDATE and
+    RECURRENCE-ID rules. `report`, when given, gets the number of events
+    the feed held and the newest date among them, in the window or not."""
     text = re.sub(r"\r?\n[ \t]", "", text or "")
     default_zone = None
     m = re.search(r"^X-WR-TIMEZONE:(.+)$", text, re.M)
@@ -648,9 +732,13 @@ def parse_ical(text: str, source: dict, *, today: datetime | None = None,
         block = block.split("END:VEVENT")[0]
         props: dict[str, tuple[str, str]] = {}
         exdates: set[str] = set()
+        rdates: list[tuple[str, str]] = []
         for line in block.splitlines():
             pm = _ICS_PROP_RE.match(line.strip())
             if not pm:
+                continue
+            if pm.group(1) == "RDATE":
+                rdates.append((pm.group(2), pm.group(3)))
                 continue
             if pm.group(1) == "EXDATE":
                 for v in pm.group(3).split(","):
@@ -661,7 +749,7 @@ def parse_ical(text: str, source: dict, *, today: datetime | None = None,
             props.setdefault(pm.group(1), (pm.group(2), pm.group(3)))
         if "DTSTART" not in props:
             continue
-        blocks.append({"props": props, "exdates": exdates})
+        blocks.append({"props": props, "exdates": exdates, "rdates": rdates})
     # Instances with a RECURRENCE-ID replace their master's occurrence on that date.
     overridden: set[tuple[str, str]] = set()
     for b in blocks:
@@ -692,6 +780,19 @@ def parse_ical(text: str, source: dict, *, today: datetime | None = None,
                 if occ is not None:
                     starts = [d for d in occ if (uid, d.strftime("%Y%m%d")) not in overridden]
                     expanded += len(starts)
+        if b["rdates"] and "RECURRENCE-ID" not in props:
+            if "RRULE" not in props:
+                recurring += 1
+            have = {d.strftime("%Y%m%dT%H%M") for d in starts}
+            for d in _rdate_starts(b["rdates"], default_zone):
+                k = d.strftime("%Y%m%dT%H%M")
+                if (k in have or d.strftime("%Y%m%dT%H%M%S") in exdates
+                        or (uid, d.strftime("%Y%m%d")) in overridden):
+                    continue
+                have.add(k)
+                starts.append(d)
+                if window_end is None or (not_before is not None and not_before <= d <= window_end):
+                    expanded += 1
         duration = (end - start) if end else None
         for s in starts:
             ev = _event(source, title=title, start=s, end=(s + duration) if duration else None,
@@ -701,7 +802,27 @@ def parse_ical(text: str, source: dict, *, today: datetime | None = None,
     if today and recurring:
         logger.info("%s: %d of %d events are recurring; %d dates in the window", source.get("id"), recurring,
                     len(blocks), expanded)
+    if report is not None:
+        report["seen"] = len(events)
+        report["newest"] = max((e["start_ts"][:10] for e in events), default="")
     return _window(events, today, horizon_days) if today else events[:MAX_EVENTS]
+
+
+def _rdate_starts(rdates: list[tuple[str, str]], default_zone: str | None) -> list[datetime]:
+    """Every RDATE value's start: a DATE, a DATE-TIME, or a PERIOD
+    ("start/end" or "start/duration"), comma-separated, in the property's
+    TZID or the calendar's."""
+    out: list[datetime] = []
+    for params, value in rdates:
+        params = params.replace(";VALUE=PERIOD", "").replace("VALUE=PERIOD", "")
+        for part in value.split(","):
+            part = part.strip().split("/", 1)[0]
+            if not part:
+                continue
+            d = _ics_datetime(params, part, default_zone)
+            if d is not None:
+                out.append(d)
+    return out
 
 
 # ── fetch + dispatch ───────────────────────────────────────────────────
@@ -742,25 +863,29 @@ def _get(url: str, http: Callable[[str], str] | None) -> str | None:
 
 
 def fetch(source: dict, *, today: datetime | None = None, http: Callable[[str], str] | None = None,
-          horizon_days: int = CODE_HORIZON_DAYS) -> list[dict]:
+          horizon_days: int = CODE_HORIZON_DAYS, report: dict | None = None) -> list[dict]:
     """Every event of one source, today through the horizon, paging as the
     platform does. Raises on a transport failure (the caller logs it and
     counts the refresh as unproductive, like every other kind)."""
     today = today or datetime.now()
-    kind = source.get("kind") or ""
-    first = expand_url(source["url"], today, horizon_days)
+    src = dict(source)                  # the registry's dict stays as it is; counts go on the copy
+    horizon_days = int(src.get("horizon_days") or horizon_days)
+    kind = src.get("kind") or ""
+    first = expand_url(src["url"], today, horizon_days)
     if "{family}" in first:
         probe = _get(re.sub(r"limit=\d+", "limit=20", first.replace("{family}", "")), http)
         first = first.replace("{family}", bibliocommons_family_ids(probe) if probe else "")
     if kind == "ical":
         text = _get(first, http)
-        return parse_ical(text, source, today=today, horizon_days=horizon_days) if text else []
+        out = parse_ical(text, src, today=today, horizon_days=horizon_days, report=report) if text else []
+        if report is not None:
+            report["skipped"] = int(src.get("_skipped") or 0)
+        return out
     parser = _PARSERS.get(kind)
     if parser is None:
         raise ValueError(f"no reader for kind {kind!r}")
     events: list[dict] = []
     url, page = first, 1
-    src = dict(source)
     while url and page <= MAX_PAGES:
         src["_url"] = url
         text = _get(url, http)
@@ -777,10 +902,15 @@ def fetch(source: dict, *, today: datetime | None = None, http: Callable[[str], 
             url = _with_page(first, int(src.get("_next_page") or page))
         else:
             url = _with_page(first, page)
+    if report is not None:
+        report["seen"] = len(events)
+        report["newest"] = max((e["start_ts"][:10] for e in events), default="")
+        report["skipped"] = int(src.get("_skipped") or 0)
     return _window(events, today, horizon_days)
 
 
 __all__ = ["KINDS", "CODE_HORIZON_DAYS", "PACIFIC", "audience_tags", "is_noise", "expand_url", "fetch",
+           "failure_reason", "skipped_by_source",
            "bibliocommons_family_ids",
            "parse_bibliocommons", "parse_libcal", "parse_communico", "parse_tribe", "parse_localist",
            "parse_livewhale", "parse_spektrix", "parse_squarespace_rss", "parse_ical", "to_pacific"]

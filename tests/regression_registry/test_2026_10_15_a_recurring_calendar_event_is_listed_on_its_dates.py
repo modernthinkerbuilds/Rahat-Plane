@@ -61,7 +61,8 @@ def test_a_shows_run_thursday_to_sunday_lists_every_performance_in_the_window():
                         "RRULE:FREQ=WEEKLY;BYDAY=TH,FR,SA,SU;UNTIL=20261115T065959Z"))
     events = readers.parse_ical(text, SRC, today=TODAY, horizon_days=35)
     days = sorted(e["start_ts"][:10] for e in events)
-    # Four shows a week is "a daily offering" to the window rule: one row a week, on a show night.
+    # Four shows a week is a run, not a daily offering (five or more days in one week): every show is kept
+    # (2026-10-19; before, one row a week).
     assert days[0] == "2026-10-22"
     assert len({datetime.strptime(d, "%Y-%m-%d").strftime("%G-%V") for d in days}) >= 3
     assert all(d <= "2026-11-15" for d in days)

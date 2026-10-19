@@ -29,6 +29,16 @@ everywhere else):
 CLI:
     .venv/bin/python -m bridges.events            # refresh all sources
     .venv/bin/python -m bridges.events --stats    # yield per source
+    .venv/bin/python -m bridges.events --check [id ...]
+        # read each source once with this reader and say what came back
+        # ("ok … 82 events", "BAD … HTTP 403"), writing nothing and
+        # calling no model: the check for a feed added or fixed, run
+        # from the Mac, whose network is the one that counts
+
+Every refresh row records why a zero-yield refresh yielded nothing
+(2026-10-19, `events_refresh_log.outcome`): "HTTP 403", "no such host",
+"redirect loop", "nothing upcoming; newest 2025-06-14", "nothing listed;
+12 skipped". The daily health line groups the dead feeds by it.
 
 Cost note: one flash call per LLM-extracted source per refresh —
 grounded for search-kind, plain (cheaper) for page-kind — ~24 sources
@@ -101,23 +111,35 @@ PAGE TEXT:
 {page_text}"""
 
 
+class ModelError(RuntimeError):
+    """The page kind's extraction call failed (a spent cap, a timeout)."""
+
+
+PAGE_USER_AGENT = "Mozilla/5.0 (rahat-events-bridge)"
+
+
+def _page_get(url: str, http: Callable[[str], str] | None = None) -> str:
+    """One page, as the page kind reads it. Raises on an HTTP or network
+    failure; hermetic runs without a seam read nothing."""
+    if http is not None:
+        return http(url) or ""
+    if os.getenv("RAHAT_TEST_MODE") == "1":
+        return ""                # hermetic: no wire without a seam
+    import requests
+    resp = requests.get(url, timeout=30, headers={"User-Agent": PAGE_USER_AGENT})
+    resp.raise_for_status()
+    return resp.text
+
+
 def _fetch_page(source: dict, today: datetime,
                 llm: Callable[[str], str] | None,
                 http: Callable[[str], str] | None = None) -> list[dict]:
     """Fetch the source URL, extract events from its text. Both the
     HTTP fetch and the LLM call have test seams; hermetic runs without
     seams yield zero events (never the wire — same rule as search)."""
-    if http is not None:
-        html = http(source["url"]) or ""
-    else:
-        if os.getenv("RAHAT_TEST_MODE") == "1":
-            return []            # hermetic: no wire without a seam
-        import requests
-        resp = requests.get(
-            source["url"], timeout=30,
-            headers={"User-Agent": "Mozilla/5.0 (rahat-events-bridge)"})
-        resp.raise_for_status()
-        html = resp.text
+    html = _page_get(source["url"], http)
+    if not html:
+        return []
     page_text = _strip_html(html)
     if not page_text:
         return []
@@ -138,9 +160,9 @@ def _fetch_page(source: dict, today: datetime,
                               prompt=prompt, model=model,
                               thinking_budget=0)
         if usage.error:
-            logger.warning("ingest page-extract failed for %s: %s",
-                           source["id"], usage.error)
-            return []
+            # 2026-10-19: raised, so the refresh log says "model error"
+            # rather than "nothing listed" (refresh_source logs it).
+            raise ModelError(str(usage.error)[:160])
         raw = usage.text
     return _typed_events(raw, source)
 
@@ -154,6 +176,8 @@ def _typed_events(raw: str, source: dict) -> list[dict]:
     out = []
     for e in (obj.get("events") or [])[:_MAX_EVENTS_PER_SOURCE]:
         if isinstance(e, dict) and e.get("title") and e.get("start_ts"):
+            if readers.skipped_by_source(source, str(e.get("title"))):
+                continue                     # the source's own skip pattern (meetings, holds)
             e.setdefault("city", source.get("city", ""))
             e["categories"] = list(source.get("categories") or [])
             out.append(e)
@@ -299,12 +323,15 @@ def refresh_source(source: dict, *, today: datetime | None = None,
                    http: Callable[[str], str] | None = None,
                    resolver: Callable[[str], str] | None = None,
                    db_path: str | None = None) -> dict:
-    """Refresh one source. Never raises; failures yield zero events."""
+    """Refresh one source. Never raises; failures yield zero events, and
+    the refresh row says why (`outcome`)."""
     today = today or datetime.now()
     kind = source.get("kind") or "search"
+    report: dict = {}
+    outcome: str | None = None
     try:
         if kind in readers.KINDS:
-            events = readers.fetch(source, today=today, http=http)
+            events = readers.fetch(source, today=today, http=http, report=report)
         elif kind == "page":
             events = _fetch_page(source, today, llm, http)
         else:
@@ -314,11 +341,67 @@ def refresh_source(source: dict, *, today: datetime | None = None,
         logger.warning("refresh %s failed (%s: %s)", source.get("id"),
                        type(e).__name__, e)
         events = []
+        outcome = readers.failure_reason(e)
+    if outcome is None and not events:
+        outcome = empty_outcome(report, today)
     counts = upsert_events(events, source["id"], now=today, path=db_path,
-                           source_kind=kind)
+                           source_kind=kind, outcome=outcome)
     counts["source_id"] = source["id"]
     counts["fetched"] = len(events)
+    counts["outcome"] = outcome
     return counts
+
+
+def empty_outcome(report: dict, today: datetime) -> str:
+    """Why a refresh that answered brought nothing: the feed's events are
+    all past (an abandoned calendar), all skipped (only meetings), or it
+    listed nothing at all."""
+    newest = str(report.get("newest") or "")
+    if report.get("seen") and newest and newest < today.strftime("%Y-%m-%d"):
+        return f"nothing upcoming; newest {newest}"
+    if report.get("skipped"):
+        return f"nothing listed; {int(report['skipped'])} skipped"
+    if report.get("seen"):
+        return "nothing in the window"
+    return "nothing listed"
+
+
+_DATE_WORDS = re.compile(r"\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2}(?:st|nd|rd|th)?\b"
+                         r"|\b\d{1,2}/\d{1,2}/\d{2,4}\b|\b20\d\d-\d\d-\d\d\b")
+
+
+def check(ids: list[str] | None = None, *, today: datetime | None = None,
+          http: Callable[[str], str] | None = None, out: Callable[[str], None] = print) -> int:
+    """Read each source once (or those named) with the production client
+    and say what came back. Writes nothing and calls no model: a code
+    kind is parsed, a page is fetched and its text measured (the model
+    reads it on the next pass), a search source is only listed. Returns
+    1 when any source failed, so a shell can tell."""
+    today = today or datetime.now()
+    sources = [s for s in load_sources() if not ids or s.get("id") in ids]
+    bad = 0
+    for s in sources:
+        kind = s.get("kind") or "search"
+        try:
+            if kind in readers.KINDS:
+                report: dict = {}
+                events = readers.fetch(s, today=today, http=http, report=report)
+                ok = bool(events)
+                what = (f"{len(events)} events, {events[0]['start_ts'][:10]} to {events[-1]['start_ts'][:10]}"
+                        if events else empty_outcome(report, today))
+            elif kind == "page":
+                text = _strip_html(_page_get(s["url"], http))
+                ok = bool(text)
+                what = (f"answers: {len(text):,} characters of text, {len(_DATE_WORDS.findall(text))} dates "
+                        "(the model reads it on the next pass)" if text else "an empty page")
+            else:
+                ok, what = True, "read by the paid search (Wed and Sat); nothing to fetch"
+        except Exception as e:  # noqa: BLE001 — the point is to say what failed
+            ok, what = False, readers.failure_reason(e)
+        bad += 0 if ok else 1
+        out(f"{'ok ' if ok else 'BAD'}  {s.get('id', '?'):26s} {kind:15s} {what}")
+    out(f"{len(sources) - bad} of {len(sources)} sources answered")
+    return 1 if bad else 0
 
 
 # ─────────────── spend control (2026-09-19) ───────────────
@@ -419,6 +502,9 @@ def main() -> int:
     import sys
     logging.basicConfig(level="INFO",
                         format="%(asctime)s %(levelname)s :: %(message)s")
+    if "--check" in sys.argv:
+        ids = [a for a in sys.argv[sys.argv.index("--check") + 1:] if not a.startswith("--")]
+        return check(ids or None)
     if "--stats" in sys.argv:
         for source_id, active, latest in inventory_stats():
             print(f"{source_id:24s} {active or 0:4d} active   "

@@ -104,8 +104,11 @@ DEFAULT_SOURCES: list[dict] = [
      "query_hint": "the Upcoming Events block: downtown festivals, city "
                    "theatre shows, Christmas in the Park, VivaCalleSJ"},
     {"id": "pa-city", "name": "City of Palo Alto events directory",
-     "kind": "page",         # 2026-10-14: the directory's first page is
-                             # server-rendered (about five days)
+     "kind": "search",       # 2026-10-19: answers 403 since about Oct 10
+                             # (Akamai), and the city publishes no feed
+                             # (OpenCities): the paid search reads it.
+                             # The library's programs come from its
+                             # BiblioCommons source.
      "url": "https://www.paloalto.gov/Events-Directory",
      "city": "Palo Alto", "categories": ["city", "family", "theatre"],
      "query_hint": "city events, Junior Museum & Zoo events, children's "

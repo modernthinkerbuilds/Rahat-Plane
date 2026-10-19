@@ -328,7 +328,9 @@ def test_the_registry_carries_the_bay_areas_feeds_and_retired_the_dead_ones():
         assert retired not in by_id, retired
     for sid, kind in (("smcl", "bibliocommons"), ("oakland-library", "bibliocommons"), ("berkeley-library", "communico"),
                       ("cdm-sj", "tribe"), ("stanford-live", "spektrix"), ("cantor", "localist"), ("montereypl", "ical"),
-                      ("india-currents", "tribe"), ("downtown-losaltos", "tribe"), ("freight", "page"), ("hakone", "page")):
+                      ("india-currents", "tribe"), ("downtown-losaltos", "tribe"), ("hakone", "page"),
+                      # 2026-10-19: the site refuses this reader (403), so the paid search reads it
+                      ("freight", "search"), ("sunnyvale-library", "libcal")):
         assert by_id[sid]["kind"] == kind, sid
     assert "indian" in by_id["india-currents"]["categories"]
     assert all("kids" not in s["categories"] for s in by_id.values() if s.get("kind") in ("bibliocommons", "libcal", "communico"))
@@ -343,8 +345,12 @@ def test_the_feeds_the_owner_chose_to_read_despite_robots_are_marked():
     from bridges.events.registry import load_sources
     by_id = {s["id"]: s for s in load_sources()}
     chosen = [s for s in by_id.values() if str(s.get("note", "")).startswith("unverified")]
-    assert {"sanmateo-city", "campbell-city", "losgatos-town", "510families", "losaltos-stage-cal", "numu"} <= {s["id"] for s in chosen}
-    assert all(s["kind"] in ("page", "ical", "tribe") for s in chosen)
+    # 2026-10-19: the theatre's own export and the museum's real site were fetched with the reader, so they
+    # are no longer unverified; Foster City's new site is read through search.
+    assert {"sanmateo-city", "campbell-city", "losgatos-town", "510families", "saratoga-history-cal",
+            "visit-trivalley"} <= {s["id"] for s in chosen}
+    assert all(s["kind"] in ("page", "ical", "tribe", "search") for s in chosen)
     assert "RSSFeed.aspx?ModID=58&CID=All-calendar.xml" in by_id["campbell-city"]["url"]
-    assert by_id["losaltos-stage-cal"]["url"].startswith("https://calendar.google.com/calendar/ical/")
+    assert "iCalendar.aspx?catID=" in by_id["losgatos-town"]["url"]
+    assert by_id["saratoga-history-cal"]["url"].startswith("https://calendar.google.com/calendar/ical/")
     assert "owner chose to subscribe" in by_id["510families"]["note"]

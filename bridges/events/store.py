@@ -92,6 +92,14 @@ def _connect(path: str | None = None) -> sqlite3.Connection:
                     "ADD COLUMN fetched INTEGER")
     except sqlite3.OperationalError:
         pass                                 # column already exists
+    # 2026-10-19: why a zero-yield refresh yielded nothing ("HTTP 403",
+    # "no such host", "nothing upcoming; newest 2025-06-14"), for the
+    # health line. NULL on a productive refresh and on legacy rows.
+    try:
+        con.execute("ALTER TABLE events_refresh_log "
+                    "ADD COLUMN outcome TEXT")
+    except sqlite3.OperationalError:
+        pass                                 # column already exists
     # Curation (2026-09-03): one row per recurring series — how popular
     # / well-reviewed it is online, looked up ONCE and reused.
     con.execute("""CREATE TABLE IF NOT EXISTS events_popularity (
@@ -135,9 +143,11 @@ def event_key(title: str, start_ts: str, city: str) -> str:
 def upsert_events(events: list[dict], source_id: str, *,
                   now: datetime | None = None,
                   path: str | None = None,
-                  source_kind: str = "search") -> dict:
+                  source_kind: str = "search",
+                  outcome: str | None = None) -> dict:
     """Idempotent write of one source's refresh. Returns counts.
-    `source_kind` sets the suspect window (see _SUSPECT_MISSES)."""
+    `source_kind` sets the suspect window (see _SUSPECT_MISSES);
+    `outcome` is why a zero-yield refresh yielded nothing."""
     now_iso = (now or datetime.now()).strftime("%Y-%m-%d %H:%M:%S")
     con = _connect(path)
     added = updated = 0
@@ -181,8 +191,9 @@ def upsert_events(events: list[dict], source_id: str, *,
                      "active", now_iso, now_iso))
                 added += 1
         con.execute("INSERT INTO events_refresh_log (source_id, "
-                    "refreshed_at, fetched) VALUES (?, ?, ?)",
-                    (source_id, now_iso, len(events)))
+                    "refreshed_at, fetched, outcome) VALUES (?, ?, ?, ?)",
+                    (source_id, now_iso, len(events),
+                     (str(outcome)[:120] if outcome and not events else None)))
         # Silent-cancellation heuristic (reworked 2026-08-24, see module
         # docstring): a future event from THIS source unseen across its
         # last N PRODUCTIVE refreshes → suspect. Zero-yield refreshes
@@ -298,6 +309,18 @@ def set_url(event_id: str, url: str, path: str | None = None) -> None:
         con.execute("UPDATE events_inventory SET url = ? WHERE event_id = ?",
                     (str(url or "")[:300], event_id))
         con.commit()
+    finally:
+        con.close()
+
+
+def last_outcome(source_id: str, path: str | None = None) -> str | None:
+    """Why the source's latest refresh yielded nothing, or None (it
+    yielded, or the row predates 2026-10-19)."""
+    con = _connect(path)
+    try:
+        row = con.execute("SELECT outcome FROM events_refresh_log WHERE source_id = ? "
+                          "ORDER BY refreshed_at DESC LIMIT 1", (source_id,)).fetchone()
+        return row[0] if row and row[0] else None
     finally:
         con.close()
 

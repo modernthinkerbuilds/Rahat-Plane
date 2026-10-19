@@ -10,7 +10,10 @@ days (Sep 17 to 20). Each bot logged it; nobody was told.
 `findings(now)` runs cheap read-only checks over what the bots already
 record and returns one plain line per problem:
 
-  * a Genie feed still tried but fetching nothing for 3+ days;
+  * a Genie feed still tried but fetching nothing for 3+ days, grouped
+    by why (2026-10-19): refused by its site, its address gone, failing,
+    or answering with nothing listed; a feed marked `quiet` is named only
+    when its site fails;
   * a Genie feed whose newest event is already past (a stale page);
   * Genie's feeds as a whole not fed for over a day;
   * the Watch silent for over a day;
@@ -77,7 +80,12 @@ def _ts(s: str | None) -> datetime | None:
 
 # ── the checks ────────────────────────────────────────────────────────
 def genie_dead_feeds(now: datetime, *, path: str | None = None) -> list[str]:
-    """Feeds still being tried that fetched nothing for FEED_DEAD_DAYS."""
+    """Feeds still being tried that fetched nothing for FEED_DEAD_DAYS,
+    grouped by why. 2026-10-19: the line named fifteen feeds one per line,
+    "fetched nothing ever (5 tries)", and the why (six sites refusing the
+    reader, three addresses gone, calendars with nothing upcoming) was only
+    in the ingest log. Each refresh row now carries its outcome; one feed
+    in a group keeps its own line, two or more share one."""
     try:
         from bridges.events import store
         con = store._connect(path)
@@ -87,8 +95,9 @@ def genie_dead_feeds(now: datetime, *, path: str | None = None) -> list[str]:
                 "MAX(CASE WHEN fetched IS NULL OR fetched > 0 THEN refreshed_at END) "
                 "FROM events_refresh_log WHERE substr(source_id, 1, 1) != '_' "
                 "GROUP BY source_id").fetchall()
-            out = []
+            dead: list[tuple[str, str, datetime | None, int, str | None]] = []
             registered = _registered_feed_ids()
+            quiet = _quiet_feed_ids()
             for sid, last_try, last_good in rows:
                 tried, good = _ts(last_try), _ts(last_good)
                 if tried is None or now - tried > timedelta(days=2):
@@ -102,13 +111,108 @@ def genie_dead_feeds(now: datetime, *, path: str | None = None) -> list[str]:
                     (sid, last_good or "")).fetchone()[0]
                 if tries < FEED_MIN_TRIES:
                     continue
-                since = f"since {_day(good)}" if good else "ever"
-                out.append(f"Genie: the {_feed_name(sid)} feed has fetched nothing {since} ({tries} tries).")
-            return out
+                outcome = (con.execute(
+                    "SELECT outcome FROM events_refresh_log WHERE source_id = ? "
+                    "ORDER BY refreshed_at DESC LIMIT 1", (sid,)).fetchone() or [None])[0]
+                kind = _feed_class(outcome)
+                if sid in quiet and kind in ("empty", "unknown"):
+                    continue                        # a quiet calendar posts a few events a season
+                dead.append((kind, _feed_name(sid), good, tries, outcome))
         finally:
             con.close()
     except Exception:  # noqa: BLE001
         return []
+    return _dead_lines(dead)
+
+
+_FEED_GROUPS = ("refused", "gone", "failing", "empty", "unknown")
+
+
+def _feed_class(outcome: str | None) -> str:
+    """refused (401/403/429: the site turns the reader away), gone (404,
+    410, no such host, a redirect loop), empty (it answered with nothing
+    to list), failing (anything else), unknown (a row from before
+    outcomes were recorded)."""
+    o = (outcome or "").strip()
+    if not o:
+        return "unknown"
+    if re.fullmatch(r"HTTP (?:401|403|429)", o):
+        return "refused"
+    if re.fullmatch(r"HTTP (?:404|410)|no such host|redirect loop", o):
+        return "gone"
+    if o.startswith("nothing"):
+        return "empty"
+    return "failing"
+
+
+def _why(kind: str, outcome: str | None) -> str:
+    o = outcome or ""
+    if kind == "refused":
+        return f"the site refuses the reader ({o})"
+    if kind == "gone":
+        return "the address loops on redirects" if o == "redirect loop" else f"the address is gone ({o})"
+    if kind == "empty":
+        m = re.search(r"newest (\d{4}-\d{2}-\d{2})", o)
+        if m:
+            return f"it answers, but its newest event is dated {m.group(1)}"
+        m = re.search(r"(\d+) skipped", o)
+        if m:
+            return f"it answers, but everything it lists is skipped ({m.group(1)} items)"
+        return "it answers, but lists nothing"
+    if kind == "failing":
+        return o
+    return ""
+
+
+def _join(items: list[str]) -> str:
+    return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]
+
+
+def _dead_lines(dead: list[tuple[str, str, datetime | None, int, str | None]]) -> list[str]:
+    out: list[str] = []
+    for kind in _FEED_GROUPS:
+        group = sorted((d for d in dead if d[0] == kind), key=lambda d: d[1].casefold())
+        if not group:
+            continue
+        if kind == "unknown" or len(group) == 1:
+            for _, name, good, tries, outcome in group:
+                since = f"since {_day(good)}" if good else "ever"
+                why = _why(kind, outcome)
+                line = f"Genie: the {name} feed has fetched nothing {since} ({tries} tries)"
+                out.append(f"{line}: {why}." if why else f"{line}.")
+            continue
+        tags = []
+        for _, name, good, _, outcome in group:
+            bits = []
+            if kind in ("gone", "failing") and outcome:
+                bits.append(outcome)
+            m = re.search(r"newest (\d{4}-\d{2}-\d{2})", outcome or "")
+            if kind == "empty" and m:
+                bits.append(f"newest event {m.group(1)}")
+            if good:
+                bits.append(f"since {_day(good)}")
+            tags.append(f"{name} ({', '.join(bits)})" if bits else name)
+        n = len(group)
+        if kind == "refused":
+            codes = "/".join(sorted({str(d[4]).split()[-1] for d in group}))
+            out.append(f"Genie: {n} sites refuse the feed reader (HTTP {codes}): {_join(tags)}.")
+        elif kind == "gone":
+            out.append(f"Genie: {n} feed addresses are gone: {_join(tags)}.")
+        elif kind == "failing":
+            out.append(f"Genie: {n} feeds fail to answer: {_join(tags)}.")
+        else:
+            out.append(f"Genie: {n} feeds answer but list nothing: {_join(tags)}.")
+    return out
+
+
+def _quiet_feed_ids() -> set[str]:
+    """Feeds the registry marks `quiet`: a calendar that posts a few events
+    a season, so an empty window is normal (2026-10-19)."""
+    try:
+        from bridges.events.registry import load_sources
+        return {str(s.get("id")) for s in load_sources() if s.get("quiet")}
+    except Exception:  # noqa: BLE001
+        return set()
 
 
 def _registered_feed_ids() -> set[str] | None:
@@ -149,13 +253,20 @@ def genie_feeds_dated_past(now: datetime, *, path: str | None = None) -> list[st
     except Exception:  # noqa: BLE001
         return []
     today = now.strftime("%Y-%m-%d")
-    out = []
+    year_ago = (now - timedelta(days=365)).strftime("%Y-%m-%d")
+    quiet = _quiet_feed_ids()
+    past = []
     for sid, day in sorted(newest.items()):
         last_try = tried.get(sid)
         if last_try is None or now - last_try > timedelta(days=2) or not day or day >= today:
             continue
-        out.append(f"Genie: the {_feed_name(sid)} feed's newest event is dated {day}; it is serving a stale page.")
-    return out
+        if sid in quiet and day >= year_ago:
+            continue                                # a quiet calendar's last event can be months back
+        past.append((_feed_name(sid), day))
+    if len(past) <= 1:
+        return [f"Genie: the {name} feed's newest event is dated {day}; it is serving a stale page." for name, day in past]
+    return [f"Genie: {len(past)} feeds list only past events (a stale page, or a season over): "
+            + _join([f"{name} (newest {day})" for name, day in past]) + "."]
 
 
 def genie_feeds_stale(now: datetime, *, path: str | None = None) -> list[str]:
@@ -308,15 +419,26 @@ def food_feeds_silent(now: datetime, *, path: str | None = None) -> list[str]:
         fails = int(v.get("fails") or 0)
         if fails >= FOOD_FEED_FAILS:
             sid = k.split(":", 1)[1]
-            name = sid
             try:
                 from bridges.food.sources import by_id
-                name = (by_id(sid) or {}).get("name") or sid
+                src = by_id(sid)
             except Exception:  # noqa: BLE001
-                pass
+                src = {}
+            if src is None:
+                continue                            # retired (2026-10-19): its last row stays; it is not broken
+            name = (src or {}).get("name") or sid
             ok_at = ts(v.get("last_ok"))
             since = f"since {_day(ok_at)}" if ok_at else "ever"
-            out.append(f"Food: the {name} feed has fetched nothing {since} ({fails} nights).")
+            line = f"Food: the {name} feed has fetched nothing {since} ({fails} nights)"
+            why = ""
+            if v.get("error"):                      # 2026-10-19: the nightly job keeps the error; say it
+                try:
+                    from bridges.events.readers import failure_reason
+                    reason = failure_reason(str(v["error"]))
+                    why = _why(_feed_class(reason), reason) or reason
+                except Exception:  # noqa: BLE001
+                    why = ""
+            out.append(f"{line}: {why}." if why else f"{line}.")
     return out
 
 

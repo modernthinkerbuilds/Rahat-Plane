@@ -10,6 +10,20 @@ Kinds: the code kinds (bibliocommons, libcal, communico, tribe, localist,
 livewhale, spektrix, squarespace_rss, ical) are parsed in code and run
 every pass; "page" is a server-rendered page the model reads once a day.
 
+2026-10-19, the health line's fifteen dead feeds: the research read every
+URL with a research tool, not with this reader. Six sites answer this
+reader 403 (Akamai or Cloudflare, whatever the User-Agent) and moved to
+the paid search, which reads Google's copy; three addresses were wrong or
+gone. A feed added or fixed is now checked with the reader itself, from
+the Mac: `python -m bridges.events --check <id>`. REFUSING_HOSTS lists the
+sites that refuse it and RETIRED the ids taken out, each with why; a
+regression pin holds both.
+
+Per-source keys: `skip` (a title pattern for what is not an outing: a
+city calendar's meetings, a library's class visits and room holds) and
+`quiet` with `horizon_days` (a calendar that posts a few events a season:
+it reads further ahead, and an empty window is not a finding).
+
 The last section holds feeds whose robots.txt disallows automated
 readers. The owner chose to subscribe (2026-10-14): they are the
 calendars' own subscribe links, read a few times a day by a reader that
@@ -53,6 +67,31 @@ def _tribe(host: str) -> str:
     return _TRIBE.format(host=host)
 
 
+# A city calendar's civic business: not an outing (2026-10-19).
+_MEETINGS = (r"\b(?:city council|council|commission|committee|subcommittee|task force|public hearing|hearing"
+             r"|study session|closed session|board of|board meeting|meeting|agenda)\b")
+_CIVICPLUS_ICAL = "https://{host}/common/modules/iCalendar/iCalendar.aspx?catID={cat}&feed=calendar"
+
+# Hosts that answer this reader 403 whatever it sends (checked 2026-10-19
+# from the VM and the Mac). A source on one of them is read by the paid
+# search only; nothing here tries to get past them.
+REFUSING_HOSTS = {
+    "www.paloalto.gov": "Akamai, since about 2026-10-10",
+    "www.library.sunnyvale.ca.gov": "Akamai",
+    "www.menlopark.gov": "the city's web firewall",
+    "www.ssfca.gov": "the city's web firewall",
+    "parks.santaclaracounty.gov": "Cloudflare",
+    "thefreight.org": "Cloudflare",
+}
+
+# Ids taken out of the registry, with why. Retiring one is removing its
+# entry; the health line stops naming it two days after its last try.
+RETIRED = {
+    "lake-merritt-gardens": "2026-10-19: the page was one festival (Oct 15-17); the Gardens publish no events list",
+    "cinelux-losgatos": "2026-10-19: the chain's special screenings play at its other theatres; the page lists showtimes",
+}
+
+
 BAY_AREA_SOURCES: list[dict] = [
     # ══ Libraries: the backbone. Storytimes, baby and toddler times,
     # family concerts and crafts, Diwali and holiday programs. ══
@@ -64,10 +103,11 @@ BAY_AREA_SOURCES: list[dict] = [
     {"id": "burlingame-library", "name": "Burlingame Public Library", "kind": "libcal", "url": _libcal("burlingame"),
      "city": "Burlingame", "venue": "Burlingame Public Library", "categories": ["library"], "region": "peninsula"},
     # ── South Bay ──
-    {"id": "sunnyvale-library", "name": "Sunnyvale Public Library", "kind": "page",
-     "url": "https://www.library.sunnyvale.ca.gov/events/calendar-month-view",
+    # 2026-10-19: the library's site answers 403 (Akamai); its youth programs are on LibCal, calendar 13025
+    # ("Main Library YS Programming"; c=-1 lists nothing). Class visits and room holds are internal.
+    {"id": "sunnyvale-library", "name": "Sunnyvale Public Library", "kind": "libcal", "url": _libcal("sunnyvale", "13025"),
      "city": "Sunnyvale", "venue": "Sunnyvale Public Library", "categories": ["library"], "region": "south-bay",
-     "query_hint": "baby lapsit, toddler, preschool, family and sensory storytimes, kids programs"},
+     "skip": r"^class visit|\bhold\b|do not post"},
     {"id": "losgatos-library", "name": "Los Gatos Library", "kind": "libcal", "url": _libcal("losgatosca"),
      "city": "Los Gatos", "venue": "Los Gatos Library", "categories": ["library"], "region": "south-bay"},
     # ── East Bay ──
@@ -91,7 +131,8 @@ BAY_AREA_SOURCES: list[dict] = [
     # ══ Family venues and museums ══
     {"id": "cdm-sj", "name": "Children's Discovery Museum of San José", "kind": "tribe", "url": _tribe("www.cdm.org"),
      "city": "San Jose", "venue": "Children's Discovery Museum", "categories": ["museum", "kids"], "region": "south-bay"},
-    {"id": "sccounty-parks", "name": "Santa Clara County Parks events", "kind": "page",
+    # 2026-10-19: the parks site answers 403 (Cloudflare) and publishes no feed: the paid search reads it.
+    {"id": "sccounty-parks", "name": "Santa Clara County Parks events", "kind": "search",
      "url": "https://parks.santaclaracounty.gov/events", "city": "Santa Clara County",
      "categories": ["outdoor", "family"], "region": "south-bay",
      "query_hint": "park events: Day on the Bay, Raptor Fest, Fantasy of Lights, nature walks, family programs"},
@@ -131,11 +172,12 @@ BAY_AREA_SOURCES: list[dict] = [
      "note": "the coast's feed: Monterey, Pacific Grove, Carmel; a Big Sur trip is planned by the concierge's live search"},
 
     # ══ City and downtown pages ══
-    {"id": "menlopark-city", "name": "Menlo Park city & library events", "kind": "page",
+    # 2026-10-19: both sites answer 403, and neither city publishes a feed (OpenCities): the paid search reads them.
+    {"id": "menlopark-city", "name": "Menlo Park city & library events", "kind": "search",
      "url": "https://www.menlopark.gov/Government/Departments/Library-and-Community-Services/Events",
      "city": "Menlo Park", "categories": ["city", "library", "family"], "region": "peninsula",
      "query_hint": "library storytimes, community events, festivals; skip council and commission meetings"},
-    {"id": "ssf-city", "name": "South San Francisco city & library events", "kind": "page", "url": "https://www.ssfca.gov/Events",
+    {"id": "ssf-city", "name": "South San Francisco city & library events", "kind": "search", "url": "https://www.ssfca.gov/Events",
      "city": "South San Francisco", "categories": ["city", "library", "family"], "region": "peninsula",
      "query_hint": "baby, toddler and pajama storytimes, kids & family events, festivals"},
     {"id": "downtown-losaltos", "name": "Downtown Los Altos events", "kind": "tribe", "url": _tribe("downtownlosaltos.org"),
@@ -158,10 +200,7 @@ BAY_AREA_SOURCES: list[dict] = [
      "city": "Palo Alto", "venue": "Gamble Garden", "categories": ["garden", "outdoor", "family"], "region": "south-bay"},
     {"id": "uc-botanical", "name": "UC Botanical Garden at Berkeley", "kind": "tribe", "url": _tribe("botanicalgarden.berkeley.edu"),
      "city": "Berkeley", "venue": "UC Botanical Garden", "categories": ["garden", "outdoor", "family"], "region": "east-bay"},
-    {"id": "lake-merritt-gardens", "name": "Gardens at Lake Merritt", "kind": "page",
-     "url": "https://gardensatlakemerritt.org/autumn-lights-festival-2026/", "city": "Oakland",
-     "venue": "Gardens at Lake Merritt", "categories": ["garden", "festival", "family"], "region": "east-bay",
-     "query_hint": "the Autumn Lights Festival dates and hours"},
+    # lake-merritt-gardens: retired 2026-10-19 (see RETIRED). Add next year's festival page in the summer.
 
     # ══ Culture (owner, 2026-10-12): Berkeley, Oakland, Palo Alto,
     # Saratoga, Los Altos, Los Gatos. Music incl. Indian classical,
@@ -216,19 +255,19 @@ BAY_AREA_SOURCES: list[dict] = [
     {"id": "foothill-theatre", "name": "Foothill College Theatre Arts", "kind": "page",
      "url": "https://foothill.edu/theatre/shows/index.html", "city": "Los Altos Hills", "venue": "Lohman Theatre",
      "categories": ["theatre", "show", "culture"], "region": "south-bay", "query_hint": "productions and performance dates"},
-    {"id": "cinelux-losgatos", "name": "Los Gatos Theatre (CineLux)", "kind": "page",
-     "url": "https://www.cineluxtheatres.com/cinelux-los-gatos-theatre", "city": "Los Gatos",
-     "venue": "Los Gatos Theatre", "categories": ["film", "culture"], "region": "south-bay",
-     "query_hint": "special screenings: sensory-friendly, opera, Flashback Cinema (today's regular showtimes are not events)"},
+    # cinelux-losgatos: retired 2026-10-19 (see RETIRED).
     {"id": "testarossa", "name": "Testarossa Winery live music", "kind": "page",
      "url": "https://www.testarossa.com/bistro107/livemusic/", "city": "Los Gatos", "venue": "Testarossa Winery",
      "categories": ["music", "adults"], "region": "south-bay", "query_hint": "live music dates (Thursdays) and dinners"},
     # ── Berkeley ──
     {"id": "bampfa", "name": "BAMPFA", "kind": "ical", "url": "https://bampfa.org/events/upcoming.ics",
      "city": "Berkeley", "venue": "BAMPFA", "categories": ["film", "art", "culture"], "region": "east-bay"},
-    {"id": "freight", "name": "Freight & Salvage", "kind": "page", "url": "https://thefreight.org/",
+    # 2026-10-19: the site answers 403 (Cloudflare); its ticketing calendar is drawn by JavaScript and there is
+    # no feed: the paid search reads it.
+    {"id": "freight", "name": "Freight & Salvage", "kind": "search", "url": "https://thefreight.org/",
      "city": "Berkeley", "venue": "Freight & Salvage", "categories": ["music", "folk", "culture"], "region": "east-bay",
-     "query_hint": "upcoming shows with dates and times, genres (folk, roots, world, Indian classical); skip cancelled shows"},
+     "query_hint": "upcoming shows with dates and times (tickets at secure.thefreight.org), genres (folk, roots, "
+                   "world, Indian classical); skip cancelled shows"},
     {"id": "cal-performances", "name": "Cal Performances", "kind": "page", "url": "https://calperformances.org/calendar/",
      "city": "Berkeley", "venue": "Zellerbach Hall", "categories": ["music", "dance", "culture"], "region": "east-bay",
      "query_hint": "performances with dates and times"},
@@ -312,17 +351,46 @@ BAY_AREA_SOURCES: list[dict] = [
        "note": "unverified: robots.txt disallows readers; the owner chose to subscribe (2026-10-14)"}
       for sid, name, host, city, region in (
           ("sanmateo-city", "City of San Mateo events", "www.cityofsanmateo.org", "San Mateo", "peninsula"),
-          ("dalycity-city", "City of Daly City events", "www.dalycity.org", "Daly City", "peninsula"),
           ("sanbruno-city", "City of San Bruno events", "www.sanbruno.ca.gov", "San Bruno", "peninsula"),
-          ("halfmoonbay-city", "City of Half Moon Bay events", "www.half-moon-bay.ca.us", "Half Moon Bay", "peninsula"),
-          ("fostercity-city", "City of Foster City events", "www.fostercity.org", "Foster City", "peninsula"),
-          ("burlingame-city", "City of Burlingame events", "burlingame.org", "Burlingame", "peninsula"),
           ("campbell-city", "City of Campbell events", "www.campbellca.gov", "Campbell", "south-bay"),
-          ("losgatos-town", "Town of Los Gatos events", "www.losgatosca.gov", "Los Gatos", "south-bay"),
           ("losaltoshills-town", "Town of Los Altos Hills events", "www.losaltoshills.ca.gov", "Los Altos Hills", "south-bay"),
           ("richmond-city", "City of Richmond events", "www.ci.richmond.ca.us", "Richmond", "east-bay"),
           ("dublin-city", "City of Dublin events", "dublin.ca.gov", "Dublin", "east-bay"),
           ("elcerrito-city", "City of El Cerrito events", "www.el-cerrito.org", "El Cerrito", "east-bay"))],
+    # ── 2026-10-19: five cities' RSS was not their events. A CivicPlus RSS carries what the city pushes into
+    # it, dated by publishing day: Daly City's was press releases, Burlingame's one dinner, Half Moon Bay's
+    # and Los Gatos's nothing; Foster City left CivicPlus in mid-2026 (404). The iCal export of a category
+    # is the calendar itself (each event with its start); the category ids are from the cities' calendar
+    # pages as search engines list them, not read from here (robots.txt), so the health line is the check.
+    *[{"id": sid, "name": name, "kind": "ical", "url": _CIVICPLUS_ICAL.format(host=host, cat=cat),
+       "city": city, "categories": cats, "region": "peninsula" if city != "Los Gatos" else "south-bay",
+       "skip": _MEETINGS,
+       "note": "unverified: robots.txt disallows readers; the owner chose to subscribe (2026-10-14); iCal since 2026-10-19"}
+      for sid, name, host, cat, city, cats in (
+          ("dalycity-city", "City of Daly City recreation calendar", "www.dalycity.org", 27, "Daly City",
+           ["city", "family", "festival"]),
+          ("dalycity-library", "Daly City Public Library calendar", "www.dalycity.org", 22, "Daly City", ["library"]),
+          ("burlingame-city", "City of Burlingame parks & recreation calendar", "burlingame.org", 23, "Burlingame",
+           ["city", "family", "festival"]),
+          ("halfmoonbay-city", "City of Half Moon Bay calendar", "www.halfmoonbay.gov", 14, "Half Moon Bay",
+           ["city", "family", "festival"]),
+          ("losgatos-town", "Town of Los Gatos calendar", "www.losgatosca.gov", 16, "Los Gatos",
+           ["city", "family", "festival"]))],
+    # Foster City's new site (Drupal, mid-2026) publishes no feed found from here: the paid search reads it.
+    {"id": "fostercity-city", "name": "City of Foster City events", "kind": "search",
+     "url": "https://www.fostercity.org/parksrec/page/community-special-events", "city": "Foster City",
+     "categories": ["city", "family", "festival"], "region": "peninsula",
+     "query_hint": "city special events, festivals, parks and recreation programs; skip council and commission meetings",
+     "note": "unverified: robots.txt disallowed readers on the old site; read through search since 2026-10-19"},
+    # The coast's and downtown Burlingame's own event pages, for the festivals the city calendars miss
+    # (fetched with this reader, 2026-10-19).
+    {"id": "visit-halfmoonbay", "name": "Visit Half Moon Bay events", "kind": "page",
+     "url": "https://www.visithalfmoonbay.org/events/", "city": "Half Moon Bay", "categories": ["festival", "family"],
+     "region": "peninsula",
+     "query_hint": "coastside festivals, Movies in the Park, the Pumpkin Festival, markets and concerts with dates"},
+    {"id": "burlingame-downtown", "name": "Downtown Burlingame events", "kind": "page",
+     "url": "https://www.burlingamedowntown.org/events", "city": "Burlingame", "categories": ["festival", "family"],
+     "region": "peninsula", "query_hint": "Fall Fest, Winterfest, street fairs, concerts and markets with dates"},
     {"id": "millbrae-city", "name": "City of Millbrae events", "kind": "ical",
      "url": "https://www.ci.millbrae.ca.us/common/modules/iCalendar/iCalendar.aspx?catID=26&feed=calendar",
      "city": "Millbrae", "categories": ["city", "family", "festival"], "region": "peninsula",
@@ -334,29 +402,37 @@ BAY_AREA_SOURCES: list[dict] = [
      "url": "https://www.510families.com/events/list/?tribe-bar-date={start}&ical=1",
      "city": "East Bay", "categories": ["kids", "family", "festival"], "region": "east-bay",
      "note": "unverified: robots.txt disallows readers; the owner chose to subscribe (2026-10-14); iCal since 2026-10-15"},
-    {"id": "visit-trivalley", "name": "Visit Tri-Valley events", "kind": "page", "url": "https://www.visittrivalley.com/event/rss/",
+    # 2026-10-19: the old RSS redirects to a broken host name; the events calendar is now vibetrivalley.com,
+    # built on The Events Calendar (seen in search results, not read from here).
+    {"id": "visit-trivalley", "name": "Visit Tri-Valley events", "kind": "tribe", "url": _tribe("vibetrivalley.com"),
      "city": "Tri-Valley", "categories": ["family", "festival"], "region": "east-bay",
-     "query_hint": "Pleasanton, Livermore, Dublin, Danville and San Ramon events; the dates are in each item's text",
-     "note": "unverified: robots.txt disallows readers; the owner chose to subscribe (2026-10-14)"},
+     "note": "unverified: robots.txt disallows readers; the owner chose to subscribe (2026-10-14); moved 2026-10-19"},
     {"id": "ybg-festival", "name": "Yerba Buena Gardens Festival", "kind": "tribe", "url": _tribe("ybgfestival.org"),
      "city": "San Francisco", "venue": "Yerba Buena Gardens", "categories": ["music", "festival", "family", "free"], "region": "sf",
      "note": "unverified: robots.txt disallows readers; the owner chose to subscribe (2026-10-14)"},
-    # ── Two public Google Calendars ──
+    # ── 2026-10-19: the theatre's own calendar export. The Google Calendar its menu still links had nothing
+    # upcoming (68 events, none in 35 days); the site's export has every performance (RDATEs) through
+    # the 2027 season, fetched with this reader. ──
     {"id": "losaltos-stage-cal", "name": "Los Altos Stage Company calendar", "kind": "ical",
-     "url": "https://calendar.google.com/calendar/ical/c776afcc005eb01f0f5e4507c83697e20eeed9430b2101435f5a4b10a914cbee%40group.calendar.google.com/public/basic.ics",
-     "city": "Los Altos", "venue": "Bus Barn Theater", "categories": ["theatre", "show", "culture"], "region": "south-bay",
-     "note": "unverified from here (robots.txt); a public Google Calendar; the owner chose to subscribe (2026-10-14)"},
-    {"id": "saratoga-history-cal", "name": "Saratoga Historical Foundation calendar", "kind": "ical",
+     "url": "https://losaltosstage.org/?rhc_action=get_icalendar_events",
+     "city": "Los Altos", "venue": "Bus Barn Theater", "categories": ["theatre", "show", "culture"], "region": "south-bay"},
+    # ── A public Google Calendar ──
+    # 2026-10-19: still the calendar the foundation's home page links, for a few lectures and programs a
+    # season: it looks four months ahead, and an empty window is not a finding.
+    {"id": "saratoga-history-cal", "name": "Saratoga Historical Foundation calendar", "kind": "ical", "quiet": True,
+     "horizon_days": 120,
      "url": "https://calendar.google.com/calendar/ical/0e32a316dda2fe3a402d603cc0436b49dc2e5db919c60cc3d91dc451f8f3eab1%40group.calendar.google.com/public/basic.ics",
      "city": "Saratoga", "venue": "Saratoga History Museum", "categories": ["museum", "culture"], "region": "south-bay",
      "note": "unverified from here (robots.txt); a public Google Calendar; the owner chose to subscribe (2026-10-14)"},
-    # ── Two Los Gatos pages ──
-    {"id": "numu", "name": "New Museum Los Gatos (NUMU)", "kind": "page", "url": "https://numu.org/",
+    # ── Two Los Gatos pages. 2026-10-19: both addresses were wrong. numu.org is not the museum (its site is
+    # numulosgatos.org, whose robots.txt allows /events), and billyjonesrailroad.org does not resolve (the
+    # railroad is bjwrr.org). Both fetched with this reader. ──
+    {"id": "numu", "name": "New Museum Los Gatos (NUMU)", "kind": "page", "url": "https://www.numulosgatos.org/events/",
      "city": "Los Gatos", "venue": "NUMU", "categories": ["museum", "art", "culture", "family"], "region": "south-bay",
-     "query_hint": "exhibitions, family art days, talks with dates",
-     "note": "unverified: robots.txt disallows readers; the owner chose to subscribe (2026-10-14)"},
-    {"id": "billy-jones-railroad", "name": "Billy Jones Wildcat Railroad", "kind": "page", "url": "https://www.billyjonesrailroad.org/",
+     "query_hint": "exhibitions, workshops, family art days, free first Sundays and talks; each event's dates and "
+                   "times are on the list"},
+    {"id": "billy-jones-railroad", "name": "Billy Jones Wildcat Railroad", "kind": "page", "url": "https://www.bjwrr.org/calendar",
      "city": "Los Gatos", "venue": "Oak Meadow Park", "categories": ["kids", "family", "outdoor"], "region": "south-bay",
-     "query_hint": "special train days, holiday trains, operating hours changes with dates",
-     "note": "unverified: robots.txt disallows readers; the owner chose to subscribe (2026-10-14)"},
+     "query_hint": "special train days and the holiday train, with their dates; the page gives the month and day, "
+                   "so the year is the coming one"},
 ]
