@@ -78,6 +78,7 @@ _GENIE_SLASH_PREFIXES = tuple(
     _re.search(r"\(([a-z_|]+)\)\\b", _GENIE_SLASH_RE.pattern).group(1)
     .split("|"))
 assert "genie" in _GENIE_SLASH_PREFIXES and "why" in _GENIE_SLASH_PREFIXES
+_ADDRESS_WORDS = _re.compile(r"(?:kobe|fraser|huberman|miya)(?:@\w+)?\b")
 
 
 @_S
@@ -91,6 +92,10 @@ def test_slash_alpha_always_kobe(suffix):
     assume(suffix[0] in string.ascii_letters)
     low = suffix.lower()
     assume(not any(low.startswith(p) for p in _GENIE_SLASH_PREFIXES))
+    # 2026-10-16: /kobe, /fraser, /huberman and /miya are addresses (rung 1),
+    # in any case; a bare one goes to the orchestrator, a body to that agent.
+    # Hypothesis found "/HUBERMAN" on 2026-10-18.
+    assume(not _ADDRESS_WORDS.match(low))
     path, _ = classify_delegation("/" + suffix)
     assert path == "kobe_route"
 
