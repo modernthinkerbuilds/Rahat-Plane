@@ -19,7 +19,7 @@
 > 2. **Rules before models.** Sixteen ordered rules in code claim the messages they recognize; only what none of them claims reaches Miya's model. Inside Kobe, a single ordered dispatcher answers what it recognizes before the reasoner runs, so v2.0's "every inbound message goes to the reasoner first" no longer holds.
 > 3. **Checks in the path.** Every reply Miya sends, a specialist's included, goes through one sink: the validator, a never-empty guard and the Charter. Fraser's designs pass a ten-point contract. Bourdain's picks are verified in code.
 > 4. **The harness** ([ADR-018](./ADR-018-outcome-contracts-and-independent-evaluation.md)): since October 4 every Bourdain answer runs eight steps, with outcome contracts checked in code, a judge in shadow and golden sets that replay for $0.
-> 5. **A knowledge base with provenance** under Bourdain, an open-data gazetteer of 21,555 places, twelve food feeds read every night without a model, and Genie's events from 121 sources.
+> 5. **A knowledge base with provenance** under Bourdain, an open-data gazetteer of 21,555 places, twelve food feeds read every night without a model, and Genie's events from 122 sources.
 > 6. **The system reports its own breakage** (the 08:15 health line) **and prices every call that goes through the wire** (the cost ledger).
 > 7. **4,209 hermetic tests** (v2.0 had 475 eval cases), a regression pin for every fix, and gates on push, on merge and in CI.
 >
@@ -159,7 +159,7 @@ Each principle is paired with the alternative rejected and the cost accepted.
 └──────▲────────────────▲──────────────▲────────────────────▲─────────┘
    vitals.v2       sugar.bridge      events            food.nightly
    iPhone, Watch   the gym's app     3 runs a day      05:30, no model
-   always on       always on         121 sources       12 feeds
+   always on       always on         122 sources       12 feeds
 ```
 
 The interactive [Rahat Architecture](https://modernthinkerbuilds.github.io/Rahat-Plane/specs/RAHAT-ARCHITECTURE.html) page draws the same map with every box explained and eight moments animated.
@@ -340,8 +340,8 @@ Revisit when state must live on more than one machine (§15).
 |---|---|---|---|---|
 | Health bridge | On each phone export | Health Auto Export on the iPhone: 150+ metrics at minute resolution, sleep stages, typed workouts | `raw_vitals`, `sleep_sessions`, `workouts_hk` | None |
 | Gym bridge | When the week is sent | The gym's programming, from its app by a bookmarklet | The week's plan file | None |
-| Event runs | 07:00, 12:30, 18:00 | 43 sources read in plain code; 64 pages a model reads once a day | `events_inventory`, deduped on title, start and city and tagged by audience | For the 64 pages |
-| Event search | Wed and Sat 03:00, and Genie's `/refresh` | 14 grounded searches for what no feed covers | `events_inventory` | Yes |
+| Event runs | 07:00, 12:30, 18:00 | 50 sources read in plain code; 52 pages a model reads once a day | `events_inventory`, deduped on title, start and city and tagged by audience | For the 52 pages |
+| Event search | Wed and Sat 03:00, and Genie's `/refresh` | 20 grounded searches for what no feed covers, and for sites that refuse the reader | `events_inventory` | Yes |
 | Food run | 05:30 | 12 food feeds; places' own pages for missing or old hours | Mentions, acclaim, closures and hours in the knowledge base | None |
 | Miya's minute tick | 08:00 brief · 08:15 health line · walk nudges 10:00–20:00 on a day that's behind · 21:00 recovery nudge · 21:30–21:59 Huberman's cooldown · Sunday 23:55 weekly reset | The vault | Telegram, `nudge_log` | Huberman's coaching |
 | Genie's digest | 08:00 | The events inventory | Telegram | None |
@@ -381,6 +381,8 @@ A nudge another agent has vetoed is held back (§10.3). The jobs built but not s
 
 [`core/health.py`](../core/health.py): at 08:15 the minute tick checks for a feed fetching nothing, a page gone stale, food feeds silent for three nights, a quiet Watch, lost messages, an old gym plan and refused model calls. If something is broken, one line goes to the owner; otherwise nothing does.
 
+Since October 19 every refresh row records why a feed yielded nothing ("HTTP 403", "no such host", "redirect loop", "nothing upcoming; newest 2025-06-14"), and the line groups dead feeds by it: sites that refuse the reader, addresses gone, feeds that fail, feeds that answer with nothing. A calendar the registry marks `quiet` is named only when its site fails. `python -m bridges.events --check [id …]` reads sources once with the production client, writing nothing and calling no model.
+
 ### 10.6 Registry and manifests
 
 Miya's agents are registered in code ([`agent_boot.py`](../new_plane/miya_runner/agent_boot.py)). A harness tenant declares itself in a manifest ([`core/manifest.py`](../core/manifest.py); Bourdain's is [`manifest.json`](../agents/bourdain/manifest.json)): its grammar, prompts, frame schema, outcome library, judge checklist, allow-listed tools, state scopes, budgets, render templates, banned phrases and golden sets.
@@ -397,7 +399,7 @@ Miya's agents are registered in code ([`agent_boot.py`](../new_plane/miya_runner
 | The model provider refuses calls | The health line reports refused calls the next morning | |
 | Telegram refuses a reply | Sent again as plain text | |
 | A scheduled message doesn't land | Retried each minute for 30 minutes, then dropped and logged; the health line reports lost messages | |
-| A feed goes dark or stale | The digest says when feeds last refreshed; the health line names the feed | Automatic repair of a moved feed |
+| A feed goes dark or stale | The digest says when feeds last refreshed; the health line names the feed and why (refused, gone, nothing listed) | Automatic repair of a moved feed |
 | A regression returns | The pre-push gate and CI block it (§12) | |
 
 **Operations.** The owner alone pushes and flips live flags; services are restarted with `launchctl kickstart`. Logs live beside the vault. Two build lanes share `main` under a two-architect protocol: lanes by directory, and a commit that touches a shared file says so in a `COORDINATION:` line.
@@ -477,7 +479,7 @@ The rule from v2.0 still decides promotion: an item moves to Now when an agent i
 3. **Memory consolidation** has had no schedule since May; preferences and relationships barely run.
 4. **ADR-009's status line** still says Proposed while its dispatcher runs in production.
 5. **A single machine.** No replica and no scheduled off-machine backup.
-6. **Feeds that move.** A feed whose address changes is reported by the health line but not repaired.
+6. **Feeds that move.** A feed whose address changes is reported by the health line, with why, but not repaired; `python -m bridges.events --check` reads a fixed or new feed with the production reader.
 7. **The front door's judged criteria** are written and not yet running.
 
 ---
@@ -505,7 +507,7 @@ The rule from v2.0 still decides promotion: an item moves to Now when an agent i
 | Front doors | 3 | Oct 17 |
 | Agents | 7 | Oct 17 |
 | launchd services | 8 (5 always on) | Oct 17 |
-| Event sources | 121 (43 in code, 64 pages read by a model, 14 searches) | Oct 17 |
+| Event sources | 122 (50 in code, 52 pages read by a model, 20 searches) | Oct 19 |
 | Food feeds | 12 | Oct 17 |
 | Gazetteer places | 21,555 | Oct 17 |
 | Tests | 4,209 (1,877 in 219 regression pins) | Oct 17 |
