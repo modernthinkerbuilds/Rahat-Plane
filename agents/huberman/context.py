@@ -26,6 +26,131 @@ from agents.huberman import state
 
 _ASK_DIRECT_RE = re.compile(r"run|walk|hik|cycl|bike|swim", re.I)
 
+# ── Sessions the Watch's minute data shows before the workout export ──
+# LIVE 2026-10-18: a 75-minute run at midday; by 21:30 the typed session
+# was not in workouts_hk (the phone exports workouts on a morning
+# schedule), and the autorun called the day a rest day. The Watch only
+# writes the running-form series (speed, power, ground contact time,
+# vertical oscillation, stride length) inside a running workout, and
+# every typed run on file matches their minute window — so a cluster of
+# those minutes IS the run, hours before the export says so.
+CARDIO_KINDS: dict[str, dict] = {
+    "run": {"metrics": ("running_speed", "running_power", "running_ground_contact_time",
+                        "running_vertical_oscillation", "running_stride_length"),
+            "name": "Outdoor Run", "word": "run", "name_re": re.compile(r"\brun", re.I),
+            "areas": ("calves", "foot", "hamstrings", "hip"),
+            "why": "running loads the calves, the feet, the hamstrings and the hip flexors"},
+    "hike": {"metrics": (), "name": "Hiking", "word": "hike", "name_re": re.compile(r"hik", re.I),
+             "areas": ("calves", "foot", "hip"), "why": "a hike loads the calves, the feet and the hips"},
+    "cycle": {"metrics": (), "name": "Outdoor Cycling", "word": "ride", "name_re": re.compile(r"cycl|bike", re.I),
+              "areas": ("hip", "quads"), "why": "cycling shortens the hip flexors and loads the quads"},
+    "swim": {"metrics": (), "name": "Swim", "word": "swim", "name_re": re.compile(r"swim", re.I),
+             "areas": ("lats", "t_spine"), "why": "swimming works the lats and the mid-back"},
+}
+SESSION_GAP_MIN = 10          # a pause longer than this splits two sessions
+SESSION_MIN_MINUTES = 5       # fewer minutes of samples is not a session
+
+
+def cardio_kind(name: str | None) -> str | None:
+    """'run' | 'hike' | 'cycle' | 'swim' for a session that is cardio, else
+    None (walks are ask-direct but not training)."""
+    for kind, spec in CARDIO_KINDS.items():
+        if spec["name_re"].search(name or ""):
+            return kind
+    return None
+
+
+def _minute(ts: str) -> datetime:
+    return datetime.strptime(ts[:16], "%Y-%m-%d %H:%M")
+
+
+def sessions_from_vitals(now: datetime | None = None) -> list[dict]:
+    """Today's cardio sessions read from the Watch's minute series, for
+    the kinds whose series the Watch writes only inside a workout (today:
+    runs). Each is a dict shaped like workouts_today()'s, with
+    inferred=True and no kcal (the day's calories are one total, not a
+    series). Minutes are counted from the samples; distance is the sum of
+    the distance series inside the window; avg_hr the mean heart rate
+    there. Missing table or empty day → []."""
+    now = now or datetime.now()
+    day = now.strftime("%Y-%m-%d")
+    out: list[dict] = []
+    con = state.connect()
+    try:
+        for kind, spec in CARDIO_KINDS.items():
+            if not spec["metrics"]:
+                continue
+            marks = ",".join("?" for _ in spec["metrics"])
+            rows = _rows(con, f"SELECT DISTINCT substr(timestamp, 1, 16) FROM raw_vitals "
+                              f"WHERE metric_type IN ({marks}) AND timestamp LIKE ? ORDER BY 1",
+                         (*spec["metrics"], f"{day}%"))
+            minutes = []
+            for (m,) in rows:
+                try:
+                    minutes.append(_minute(m))
+                except ValueError:
+                    continue
+            clusters: list[list[datetime]] = []
+            for m in minutes:
+                if clusters and (m - clusters[-1][-1]) <= timedelta(minutes=SESSION_GAP_MIN):
+                    clusters[-1].append(m)
+                else:
+                    clusters.append([m])
+            for c in clusters:
+                if len(c) < SESSION_MIN_MINUTES:
+                    continue
+                start, end = c[0], c[-1] + timedelta(minutes=1)
+                s, e = start.strftime("%Y-%m-%d %H:%M:%S"), end.strftime("%Y-%m-%d %H:%M:%S")
+                dist = _rows(con, "SELECT SUM(value) FROM raw_vitals WHERE metric_type='distance_km' "
+                                  "AND timestamp >= ? AND timestamp < ?", (s, e))
+                hr = _rows(con, "SELECT AVG(value), MAX(value) FROM raw_vitals WHERE metric_type='heart_rate' "
+                                "AND timestamp >= ? AND timestamp < ?", (s, e))
+                d = dist[0][0] if dist and dist[0][0] else None
+                avg_hr = hr[0][0] if hr and hr[0][0] else None
+                max_hr = hr[0][1] if hr and hr[0][1] else None
+                out.append({"name": spec["name"], "start": s, "end": e,
+                            "minutes": int(round((end - start).total_seconds() / 60)),
+                            "kcal": None,
+                            "avg_hr": round(avg_hr) if avg_hr else None,
+                            "max_hr": round(max_hr) if max_hr else None,
+                            "distance_km": round(d, 2) if d else None,
+                            "ask_direct": True, "kind": kind, "inferred": True,
+                            "source": "the Watch's running metrics; the workout export hasn't run yet"})
+    finally:
+        con.close()
+    return out
+
+
+def _overlaps(a: dict, b: dict) -> bool:
+    return bool(a.get("start") and a.get("end") and b.get("start") and b.get("end")
+                and a["start"] < b["end"] and b["start"] < a["end"])
+
+
+def sessions_today(now: datetime | None = None) -> list[dict]:
+    """The typed workouts (the export) plus the sessions the minute data
+    shows that no typed workout already covers, in start order."""
+    typed = workouts_today(now)
+    for w in typed:
+        w.setdefault("kind", cardio_kind(w["name"]))
+        w.setdefault("inferred", False)
+    extra = [s for s in sessions_from_vitals(now) if not any(_overlaps(s, w) for w in typed)]
+    return sorted(typed + extra, key=lambda w: w.get("start") or "")
+
+
+def cardio_loads(sessions: list[dict]) -> list[tuple[str, tuple[str, ...], str]]:
+    """What today's cardio loaded, in the shape protocols.loaded_areas()
+    returns: one entry per kind, the session's name as the hit."""
+    out: list[tuple[str, tuple[str, ...], str]] = []
+    seen: set[str] = set()
+    for w in sessions:
+        kind = w.get("kind")
+        if not kind or kind in seen:
+            continue
+        seen.add(kind)
+        spec = CARDIO_KINDS[kind]
+        out.append((w["name"], tuple(spec["areas"]), spec["why"]))
+    return out
+
 
 def _rows(con: sqlite3.Connection, sql: str, args: tuple = ()) -> list:
     try:
@@ -105,7 +230,7 @@ def gather(now: datetime | None = None) -> dict:
     now = now or datetime.now()
     day = now.strftime("%Y-%m-%d")
     week_ago = (now - timedelta(days=7)).strftime("%Y-%m-%d")
-    workouts = workouts_today(now)
+    workouts = sessions_today(now)
 
     con = state.connect()
     try:
@@ -128,11 +253,14 @@ def gather(now: datetime | None = None) -> dict:
     wod = gym_wod_today(now)
     from agents.huberman.protocols import loaded_areas
     cf_synced = [w for w in workouts if not w["ask_direct"]]
+    cardio = [w for w in workouts if w.get("kind")]
     day_type = plan_day_type(now)
     # "Trained today" is TRUE when the Watch synced a CrossFit-family
     # session, or — the 09-02 gap — when the plan says CrossFit and a
     # WOD is programmed but the Watch export simply hasn't run yet.
-    assumed = (not workouts and day_type == "cf" and wod is not None)
+    # (2026-10-18: "no CrossFit synced", not "nothing synced" — a run read
+    # from the minute data must not hide a programmed WOD.)
+    assumed = (not cf_synced and day_type == "cf" and wod is not None)
     # QA-20 (2026-10-11): the plan says CrossFit and nothing has synced
     # from the Watch or the gym, so whether they trained can't be told.
     # The autorun says so instead of calling it a rest day.
@@ -143,7 +271,11 @@ def gather(now: datetime | None = None) -> dict:
         "crossfit_today": cf_synced,
         "gym_wod_today": wod,
         "plan_day_type": day_type,
-        "loaded": loaded_areas(wod),
+        # what the WOD loaded, then what the cardio loaded (a run's calves
+        # and feet), so the floor and the why lines see both
+        "loaded": loaded_areas(wod) + cardio_loads(cardio),
+        "cardio_today": cardio,
+        "inferred_sessions": [w for w in workouts if w.get("inferred")],
         "trained_today": bool(cf_synced) or assumed,
         "assumed_from_plan": assumed,
         "plan_unsynced": unsynced,

@@ -212,13 +212,17 @@ def maybe_autocool(now: datetime | None = None) -> str | None:
     ctx = hctx.gather(now)
     workouts = ctx["workouts"]
     cf = ctx["crossfit_today"]
+    cardio = ctx.get("cardio_today") or []
     # Spec change 2026-08-25 (owner: "I'd also want a cool down on days
     # that I don't workout"): rest days now FIRE — a maintenance
-    # mobility + down-regulation session biased to the hotspots. The
-    # only silent case left is a run/walk-ONLY day, where the owner
-    # works with Huberman directly (original 08-23 spec, unchanged).
-    if workouts and not cf:
-        return None                      # run/walk-only day → he asks
+    # mobility + down-regulation session biased to the hotspots.
+    # 2026-10-18 (owner): a run day gets the post-run cooldown — the
+    # Watch's minute data shows the run hours before the workout export
+    # (context.sessions_from_vitals), and that night's "rest day" was
+    # wrong. The only silent case left is a walk-only day, where the
+    # owner works with Huberman directly (original 08-23 spec).
+    if workouts and not cf and not cardio:
+        return None                      # walk-only day → he asks
     from agents.huberman import coach
     steering = None
     # 2026-09-03: "rest day" framing only when the day really looks
@@ -227,7 +231,16 @@ def maybe_autocool(now: datetime | None = None) -> str | None:
     # context carries trained_today/assumed_from_plan and the coach
     # frames it honestly as the programmed WOD.
     unsure = bool(ctx.get("plan_unsynced"))
-    if not workouts and not ctx.get("trained_today"):
+    if cardio and not cf and not ctx.get("trained_today"):
+        s = cardio[0]
+        word = coach.CARDIO_WORD.get(s.get("kind"), "session")
+        dist = f", {s['distance_km']} km" if s.get("distance_km") else ""
+        steering = (f"post-{word} — a {s['minutes']}-minute {word} today{dist} and no "
+                    f"CrossFit session: coach it as the post-{word} cooldown, what the "
+                    f"{word} loaded first (calves, feet, hamstrings, hip flexors), then "
+                    "the chronic hotspots, ending in down-regulation for sleep; do not "
+                    "call it a rest day")
+    elif not workouts and not ctx.get("trained_today"):
         steering = ("rest day — no training logged today, so skip the "
                     "post-workout framing: make this a maintenance "
                     "mobility session on the chronic hotspots, ending "
@@ -248,6 +261,8 @@ def maybe_autocool(now: datetime | None = None) -> str | None:
     state.mark_autocool(today)
     logger.info("[autocool] fired (%s)",
                 ", ".join(w["name"] for w in cf)
+                or ", ".join(f"{w['name']} {w['minutes']} min" + (" (inferred)" if w.get("inferred") else "")
+                             for w in cardio)
                 or ("programmed WOD, Watch unsynced"
                     if ctx.get("assumed_from_plan")
                     else "plan CrossFit, nothing synced — asked whether trained"

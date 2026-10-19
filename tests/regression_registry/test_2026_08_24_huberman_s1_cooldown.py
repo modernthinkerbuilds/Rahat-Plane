@@ -229,12 +229,23 @@ def test_autocool_fires_on_rest_days_too(env):
     assert handler.maybe_autocool(now=_at(21, 40)) is None    # marker dedup
 
 
-def test_autocool_is_silent_on_run_only_days(env):
-    """Unchanged from the 08-23 spec: on run days the owner works with
-    Huberman directly — a run/walk-ONLY day stays silent."""
+def test_autocool_is_silent_on_walk_only_days(env):
+    """From the 08-23 spec: on a walk-only day the owner works with
+    Huberman directly, so the autorun stays silent. A run-only day fired
+    nothing too until 2026-10-18, when the owner asked for the post-run
+    cooldown instead (test_2026_10_18_the_cooldown_sees_a_run_before_the_
+    workout_export.py pins that)."""
+    from agents.huberman import handler
+    _seed_workout("Outdoor Walk", _at(7, 0))
+    assert handler.maybe_autocool(now=_at(21, 35)) is None    # walk-only
+
+
+def test_autocool_fires_the_post_run_cooldown_on_run_days(env):
+    """Owner, 2026-10-18: a run day gets the post-run cooldown."""
     from agents.huberman import handler
     _seed_workout("Outdoor Run", _at(7, 0))
-    assert handler.maybe_autocool(now=_at(21, 35)) is None    # run-only
+    out = handler.maybe_autocool(now=_at(21, 35))
+    assert out and "Post-run" in out and "No workout logged" not in out
 
 
 def test_autocool_flag_defaults_on_and_zero_disables(env, monkeypatch):

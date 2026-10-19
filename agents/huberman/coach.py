@@ -16,6 +16,8 @@ relapse.
 """
 from __future__ import annotations
 
+import re
+
 import logging
 from datetime import datetime
 
@@ -115,15 +117,45 @@ def _profile_block(profile: dict) -> str:
     return "\n".join(lines)
 
 
+CARDIO_WORD = {"run": "run", "hike": "hike", "cycle": "ride", "swim": "swim"}
+
+
+def _cardio_line(ctx: dict) -> str | None:
+    """"Post-run — 74 min, 6.3 km" for a cardio day with no CrossFit
+    session (LIVE 2026-10-18: a midday run, called a rest day at 21:30
+    because the workout export runs in the morning)."""
+    cardio = ctx.get("cardio_today") or []
+    if not cardio or ctx.get("crossfit_today") or ctx.get("athlete_trained") \
+            or ctx.get("assumed_from_plan"):
+        return None
+    w = cardio[0]
+    word = CARDIO_WORD.get(w.get("kind"), "session")
+    bits = [f"{w['minutes']} min"]
+    if w.get("distance_km"):
+        bits.append(f"{w['distance_km']} km")
+    return f"Post-{word} — " + ", ".join(bits)
+
+
 def _context_block(ctx: dict) -> str:
     lines = ["TODAY:"]
     for w in ctx.get("workouts") or []:
-        bits = [w["name"], f"{w['minutes']} min", f"{w['kcal']} kcal"]
+        bits = [w["name"], f"{w['minutes']} min"]
+        if w.get("kcal") is not None:
+            bits.append(f"{w['kcal']} kcal")
         if w.get("avg_hr"):
             bits.append(f"avgHR {w['avg_hr']}")
         if w.get("distance_km"):
             bits.append(f"{w['distance_km']} km")
+        if w.get("inferred"):
+            bits.append(f"(from {w.get('source') or 'the Watch'})")
         lines.append("  Workout: " + ", ".join(str(b) for b in bits))
+    cardio = ctx.get("cardio_today") or []
+    if cardio and not (ctx.get("crossfit_today") or ctx.get("athlete_trained")
+                       or ctx.get("assumed_from_plan")):
+        word = cardio[0].get("word") or CARDIO_WORD.get(cardio[0].get("kind"), "session")
+        lines.append(f"  A {word} today and no CrossFit session: coach it as the "
+                     f"post-{word} cooldown — what the {word} loaded first, then "
+                     "the chronic hotspots. Do not call it a rest day.")
     if not (ctx.get("workouts") or []):
         if ctx.get("athlete_trained"):
             lines.append("  Nothing has synced, but the athlete says they "
@@ -207,10 +239,12 @@ _FOCUS_MAP = (
 
 
 def _focus_from(steering: str | None) -> list[str]:
+    """Whole words only (2026-10-18): "lat" used to match inside
+    "down-regulation", so every steer that ended in it pulled the lats in."""
     low = (steering or "").lower()
     out: list[str] = []
     for word, tag in _FOCUS_MAP:
-        if word in low and tag not in out:
+        if re.search(r"\b" + re.escape(word), low) and tag not in out:
             out.append(tag)
     return out
 
@@ -235,7 +269,11 @@ def fallback(profile: dict, minutes: float, recent: set[str],
         drills = [protocols.drill("breath_48")]
     hotspots = profile.get("hotspots") or []
     whys = {d.key: protocols.why_for(d, loads, hotspots) for d in drills}
-    if loads:
+    cardio_line = _cardio_line(ctx)
+    if cardio_line:
+        preface = f"_{cardio_line}" + (
+            " — what it loaded leads, then the hotspots._" if loads else "._")
+    elif loads:
         moves = ", ".join(hit.lower() for hit, _a, _w in loads[:4])
         preface = (f"_Today loaded: {moves}"
                    + (" (Watch not synced yet — coaching the programmed "
