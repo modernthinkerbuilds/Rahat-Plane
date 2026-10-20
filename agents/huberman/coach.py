@@ -120,6 +120,28 @@ def _profile_block(profile: dict) -> str:
 CARDIO_WORD = {"run": "run", "hike": "hike", "cycle": "ride", "swim": "swim"}
 
 
+def _clock(ts: str | None) -> str:
+    """'4:20 pm' for a stored timestamp."""
+    try:
+        h, m = int(ts[11:13]), int(ts[14:16])
+    except (TypeError, ValueError):
+        return ""
+    return f"{h % 12 or 12}:{m:02d} {'am' if h < 12 else 'pm'}"
+
+
+def traced_line(ctx: dict) -> str | None:
+    """"Post-session — the Watch shows a 67-minute workout at 4:20 pm (the
+    export hasn't named it); no movement detail, so the hotspots lead."
+    LIVE 2026-10-19: an hour at the box, read from the heart-rate trace
+    because the phone's workout export covers only the days before
+    today."""
+    w = ctx.get("traced_gym_session")
+    if not w or ctx.get("gym_wod_today"):
+        return None
+    return (f"Post-session — the Watch shows a {w['minutes']}-minute workout at {_clock(w.get('start'))} "
+            "(the export hasn't named it); no movement detail, so the hotspots lead.")
+
+
 def _cardio_line(ctx: dict) -> str | None:
     """"Post-run — 74 min, 6.3 km" for a cardio day with no CrossFit
     session (LIVE 2026-10-18: a midday run, called a rest day at 21:30
@@ -156,6 +178,13 @@ def _context_block(ctx: dict) -> str:
         lines.append(f"  A {word} today and no CrossFit session: coach it as the "
                      f"post-{word} cooldown — what the {word} loaded first, then "
                      "the chronic hotspots. Do not call it a rest day.")
+    traced = ctx.get("traced_gym_session")
+    if traced:
+        lines.append(f"  The Watch's heart-rate trace shows a {traced['minutes']}-minute workout at "
+                     f"{_clock(traced.get('start'))} that no workout export has named yet"
+                     + (": the plan says CrossFit, so coach it as the post-WOD cooldown"
+                        if ctx.get("plan_day_type") == "cf" else ": coach it as the post-workout cooldown")
+                     + ". Do not say nothing synced, and do not call it a rest day.")
     if not (ctx.get("workouts") or []):
         if ctx.get("athlete_trained"):
             lines.append("  Nothing has synced, but the athlete says they "
@@ -270,9 +299,12 @@ def fallback(profile: dict, minutes: float, recent: set[str],
     hotspots = profile.get("hotspots") or []
     whys = {d.key: protocols.why_for(d, loads, hotspots) for d in drills}
     cardio_line = _cardio_line(ctx)
+    traced = traced_line(ctx)
     if cardio_line:
         preface = f"_{cardio_line}" + (
             " — what it loaded leads, then the hotspots._" if loads else "._")
+    elif traced and not loads:
+        preface = f"_{traced}_"
     elif loads:
         moves = ", ".join(hit.lower() for hit, _a, _w in loads[:4])
         preface = (f"_Today loaded: {moves}"

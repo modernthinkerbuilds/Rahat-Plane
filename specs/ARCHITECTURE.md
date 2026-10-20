@@ -255,7 +255,7 @@ The plain-language intent layer ([ADR-017](./ADR-017_nl_intent_layer.md)) sits j
 | **Miya** | The Miya bot | The conversation | The ladder, then a specialist or Miya's synthesizer; one voice | Live |
 | **Kobe** | Behind Miya | The week's numbers, the plan, the gym's workout | Dispatcher and commands in code; delegation; a reasoner with tools | Live |
 | **Fraser** | Behind Miya | Workout design | Constraints read in code; the model writes; a ten-check contract, one repair pass; outcomes recorded | Live |
-| **Huberman** | Behind Miya, and the 9:30 pm tick | Cooldowns | A 25-drill library with rotation; the model coaches each drill; the library alone when the model can't answer. A run is read from the Watch's minute data hours before the workout export, and gets the post-run session | Live since Aug 24 |
+| **Huberman** | Behind Miya, and the 9:30 pm tick | Cooldowns | A 25-drill library with rotation; the model coaches each drill; the library alone when the model can't answer. A run is read from the Watch's running series and any other workout from its heart-rate trace, hours before the phone's workout export names them (it sends the days before today); a run gets the post-run session, a gym session the post-workout one | Live since Aug 24 |
 | **Genie** | Its own bot, and behind Miya | Weekends, the household calendar, the events digest | Intents in code; live discovery with search; the digest from the inventory | Live; behind Miya since Aug 6 |
 | **Bourdain** | Its own bot | Where to eat | The harness | Live since Sep 20; on the harness since Oct 4 |
 

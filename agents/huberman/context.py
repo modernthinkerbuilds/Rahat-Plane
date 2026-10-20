@@ -15,6 +15,12 @@ lands as "Cross Training" / "Traditional Strength Training" / "HIIT" /
 ask-directly family (run/walk/hike/cycle/swim) is an autocool trigger.
 Missing table or empty day → no trigger, silently (the no-data safety
 floor, same spirit as core.huberman_bridge's all-None contract).
+
+Since 2026-10-18/19 the typed table is not the only source: the Watch's
+own series on the Mac show a session hours before the phone's export
+names it (sessions_from_vitals: a run from the running-form series, any
+other workout from the dense heart-rate stretch), and sessions_today
+merges them, a typed session winning where it overlaps.
 """
 from __future__ import annotations
 
@@ -50,6 +56,30 @@ CARDIO_KINDS: dict[str, dict] = {
 SESSION_GAP_MIN = 10          # a pause longer than this splits two sessions
 SESSION_MIN_MINUTES = 5       # fewer minutes of samples is not a session
 
+# ── Any Watch workout, read from how often the heart rate was sampled ──
+# LIVE 2026-10-19: a CrossFit-plan day, an hour at the box from 16:20, and
+# the 21:30 autorun said "nothing has synced from the Watch or the gym".
+# The phone's workout export is set to the seven full days before today,
+# so a session arrives the next morning, every day; and a gym session
+# writes no running series. What every Watch workout does write is the
+# heart rate every few seconds, where the rest of the day has a reading
+# every few minutes: a stretch of minutes with DENSE_HR_PER_MIN or more
+# readings is a workout from its first minute to its last (the typed
+# sessions on file match within three minutes). Steps and heart rate
+# tell the kinds apart, checked on seven weeks of typed sessions: a walk
+# is 64-93 steps a minute at an easy heart rate (average 91-111), a box
+# session 22-53 steps with the heart rate up (average 106-130, and up
+# to 53 steps when the WOD has running in it), a cool-down a handful of
+# steps at an average under 100. A run has its own series above.
+DENSE_HR_PER_MIN = 4
+DENSE_MIN_MINUTES = 20        # a shorter dense stretch (a breathing session, a warm-up) is not a workout
+WALK_STEPS_PER_MIN = 55       # on the move at an easy heart rate: a walk
+WALK_MAX_AVG_HR = 115
+LIGHT_MAX_AVG_HR = 100        # barely up: a cool-down or a mobility session, not training
+GYM_SESSION_NAME = "Gym session"
+LIGHT_SESSION_NAME = "Light session"
+TRACE_SOURCE = "the Watch's heart-rate trace; the workout export hasn't run yet"
+
 
 def cardio_kind(name: str | None) -> str | None:
     """'run' | 'hike' | 'cycle' | 'swim' for a session that is cardio, else
@@ -64,14 +94,75 @@ def _minute(ts: str) -> datetime:
     return datetime.strptime(ts[:16], "%Y-%m-%d %H:%M")
 
 
+def _clusters(minutes: list[datetime], gap_min: int = SESSION_GAP_MIN) -> list[list[datetime]]:
+    out: list[list[datetime]] = []
+    for m in minutes:
+        if out and (m - out[-1][-1]) <= timedelta(minutes=gap_min):
+            out[-1].append(m)
+        else:
+            out.append([m])
+    return out
+
+
+def dense_hr_sessions(con: sqlite3.Connection, day: str) -> list[dict]:
+    """The day's stretches of dense heart-rate sampling (DENSE_HR_PER_MIN
+    readings a minute or more, pauses up to SESSION_GAP_MIN, at least
+    DENSE_MIN_MINUTES long): every workout the Watch recorded, whatever
+    its type, with the readings, the steps and the distance inside it."""
+    rows = _rows(con, "SELECT substr(timestamp, 1, 16), COUNT(*) FROM raw_vitals "
+                      "WHERE metric_type = 'heart_rate' AND timestamp LIKE ? "
+                      "GROUP BY 1 HAVING COUNT(*) >= ? ORDER BY 1", (f"{day}%", DENSE_HR_PER_MIN))
+    minutes: list[datetime] = []
+    for m, _n in rows:
+        try:
+            minutes.append(_minute(m))
+        except ValueError:
+            continue
+    out: list[dict] = []
+    for c in _clusters(minutes):
+        start, end = c[0], c[-1] + timedelta(minutes=1)
+        if (end - start) < timedelta(minutes=DENSE_MIN_MINUTES):
+            continue
+        s, e = start.strftime("%Y-%m-%d %H:%M:%S"), end.strftime("%Y-%m-%d %H:%M:%S")
+        hr = _rows(con, "SELECT AVG(value), MAX(value), COUNT(*) FROM raw_vitals WHERE metric_type = 'heart_rate' "
+                        "AND timestamp >= ? AND timestamp < ?", (s, e))
+        steps = _rows(con, "SELECT SUM(value) FROM raw_vitals WHERE metric_type = 'steps' "
+                           "AND timestamp >= ? AND timestamp < ?", (s, e))
+        dist = _rows(con, "SELECT SUM(value) FROM raw_vitals WHERE metric_type = 'distance_km' "
+                          "AND timestamp >= ? AND timestamp < ?", (s, e))
+        mins = int(round((end - start).total_seconds() / 60))
+        out.append({"start": s, "end": e, "minutes": mins,
+                    "avg_hr": round(hr[0][0]) if hr and hr[0][0] else None,
+                    "max_hr": round(hr[0][1]) if hr and hr[0][1] else None,
+                    "samples": int(hr[0][2]) if hr else 0,
+                    "steps": int(steps[0][0]) if steps and steps[0][0] else 0,
+                    "distance_km": round(dist[0][0], 2) if dist and dist[0][0] else None})
+    return out
+
+
+def session_name(d: dict) -> str:
+    """What a dense stretch was: "Outdoor Walk" (on the move at an easy
+    heart rate), "Light session" (the heart rate barely up: a cool-down,
+    a mobility class) or "Gym session" (training, with or without running
+    in it). A run is read from its own series before this is asked."""
+    spm = d["steps"] / max(d["minutes"], 1)
+    avg = d["avg_hr"] or 0
+    if spm >= WALK_STEPS_PER_MIN and avg < WALK_MAX_AVG_HR:
+        return "Outdoor Walk"
+    if avg < LIGHT_MAX_AVG_HR:
+        return LIGHT_SESSION_NAME
+    return GYM_SESSION_NAME
+
+
 def sessions_from_vitals(now: datetime | None = None) -> list[dict]:
-    """Today's cardio sessions read from the Watch's minute series, for
-    the kinds whose series the Watch writes only inside a workout (today:
-    runs). Each is a dict shaped like workouts_today()'s, with
+    """Today's sessions read from the Watch's own series, hours before the
+    phone's workout export names them: runs from the running-form series
+    the Watch writes only inside a running workout, then every other
+    workout from the dense heart-rate stretches (dense_hr_sessions) that
+    no run already covers, a walk when the steps say so and otherwise a
+    gym session. Each is a dict shaped like workouts_today()'s, with
     inferred=True and no kcal (the day's calories are one total, not a
-    series). Minutes are counted from the samples; distance is the sum of
-    the distance series inside the window; avg_hr the mean heart rate
-    there. Missing table or empty day → []."""
+    series). Missing table or empty day → []."""
     now = now or datetime.now()
     day = now.strftime("%Y-%m-%d")
     out: list[dict] = []
@@ -90,13 +181,7 @@ def sessions_from_vitals(now: datetime | None = None) -> list[dict]:
                     minutes.append(_minute(m))
                 except ValueError:
                     continue
-            clusters: list[list[datetime]] = []
-            for m in minutes:
-                if clusters and (m - clusters[-1][-1]) <= timedelta(minutes=SESSION_GAP_MIN):
-                    clusters[-1].append(m)
-                else:
-                    clusters.append([m])
-            for c in clusters:
+            for c in _clusters(minutes):
                 if len(c) < SESSION_MIN_MINUTES:
                     continue
                 start, end = c[0], c[-1] + timedelta(minutes=1)
@@ -116,9 +201,19 @@ def sessions_from_vitals(now: datetime | None = None) -> list[dict]:
                             "distance_km": round(d, 2) if d else None,
                             "ask_direct": True, "kind": kind, "inferred": True,
                             "source": "the Watch's running metrics; the workout export hasn't run yet"})
+        for d in dense_hr_sessions(con, day):
+            if any(_overlaps(d, r) for r in out):
+                continue                            # the run above, read from its own series
+            name = session_name(d)
+            training = name == GYM_SESSION_NAME
+            out.append({"name": name, "start": d["start"], "end": d["end"], "minutes": d["minutes"],
+                        "kcal": None, "avg_hr": d["avg_hr"], "max_hr": d["max_hr"],
+                        "distance_km": d["distance_km"] if name == "Outdoor Walk" else None,
+                        "ask_direct": not training, "kind": None, "inferred": True,
+                        "source": TRACE_SOURCE})
     finally:
         con.close()
-    return out
+    return sorted(out, key=lambda w: w["start"])
 
 
 def _overlaps(a: dict, b: dict) -> bool:
@@ -255,6 +350,10 @@ def gather(now: datetime | None = None) -> dict:
     cf_synced = [w for w in workouts if not w["ask_direct"]]
     cardio = [w for w in workouts if w.get("kind")]
     day_type = plan_day_type(now)
+    # 2026-10-19: a gym session the heart-rate trace shows, before the
+    # export names it. It counts as training like a typed one; the coach
+    # says where it was read from.
+    traced = [w for w in cf_synced if w.get("inferred")]
     # "Trained today" is TRUE when the Watch synced a CrossFit-family
     # session, or — the 09-02 gap — when the plan says CrossFit and a
     # WOD is programmed but the Watch export simply hasn't run yet.
@@ -276,6 +375,7 @@ def gather(now: datetime | None = None) -> dict:
         "loaded": loaded_areas(wod) + cardio_loads(cardio),
         "cardio_today": cardio,
         "inferred_sessions": [w for w in workouts if w.get("inferred")],
+        "traced_gym_session": traced[0] if traced else None,
         "trained_today": bool(cf_synced) or assumed,
         "assumed_from_plan": assumed,
         "plan_unsynced": unsynced,

@@ -221,6 +221,8 @@ def maybe_autocool(now: datetime | None = None) -> str | None:
     # (context.sessions_from_vitals), and that night's "rest day" was
     # wrong. The only silent case left is a walk-only day, where the
     # owner works with Huberman directly (original 08-23 spec).
+    # 2026-10-19: a gym session read from the heart-rate trace is in `cf`
+    # like a typed one (the export names today's sessions tomorrow).
     if workouts and not cf and not cardio:
         return None                      # walk-only day → he asks
     from agents.huberman import coach
@@ -260,7 +262,8 @@ def maybe_autocool(now: datetime | None = None) -> str | None:
         text = f"_{silent}._\n\n{text}"
     state.mark_autocool(today)
     logger.info("[autocool] fired (%s)",
-                ", ".join(w["name"] for w in cf)
+                ", ".join(w["name"] + (f" {w['minutes']} min (from the heart-rate trace)" if w.get("inferred") else "")
+                          for w in cf)
                 or ", ".join(f"{w['name']} {w['minutes']} min" + (" (inferred)" if w.get("inferred") else "")
                              for w in cardio)
                 or ("programmed WOD, Watch unsynced"
