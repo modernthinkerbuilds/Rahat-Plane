@@ -4,7 +4,7 @@
 
 ### The platform under Miya, my personal AI agent
 
-*Miya is the one I talk to. Rahat is everything underneath: specialist agents that prove themselves on their own front door before they join Miya, checks in the path, a harness every answer runs through, and a record of every decision. Built at human scale.*
+*Miya is the one I talk to. Rahat is everything underneath: specialist agents, checks in the path, a harness every answer runs through, and a record of every decision. Built at human scale.*
 
 <a href="https://modernthinkerbuilds.github.io/Rahat-Plane/specs/RAHAT-ARCHITECTURE.html"><img src="./specs/img/rahat-map.gif" width="100%" alt="Rahat end to end: a /week message travels from Telegram through Miya's runner and the routing ladder to Kobe, with the checks, the control plane and the vault around it"></a>
 
@@ -22,9 +22,9 @@ An agent can be fluent and wrong at the same time, and you can't tell from readi
 
 > **Miya is my personal AI agent. Rahat is the platform it runs on, built and run at home: specialists that share one memory, one rulebook and one record of every decision. It runs in my life every day.**
 
-`3` front doors · `6` agents · `8` services (5 always on) · `121` event sources · `1` SQLite file of record · `4,209` tests
+`3` front doors · `6` agents · `8` services (5 always on) · `122` event sources · `1` SQLite file of record · `4,209` tests
 
-<sub>Counts as of Oct 14–17, 2026.</sub>
+<sub>Counts as of Oct 14–19, 2026. By [Venkat Sadras](https://venkatsadras.com) · [LinkedIn](https://www.linkedin.com/in/venkatsadras/).</sub>
 
 ---
 
@@ -70,14 +70,14 @@ An agent can be fluent and wrong at the same time, and you can't tell from readi
 
 | Agent | Owns | Status |
 |---|---|---|
-| **Miya** (orchestrator) | My personal agent, the one I talk to. A 16-rung routing ladder in code, delegation, reconciliation, one voice out. [`core/miya.py`](./core/miya.py) | Live |
+| **Miya** (orchestrator) | My personal agent, the one I talk to. A 16-rung routing ladder in code, delegation, reconciliation, one voice out. [`new_plane/miya_runner/`](./new_plane/miya_runner/) | Live |
 | **Kobe** | The week's numbers, computed in code. [`agents/the_scientist/`](./agents/the_scientist/) | Live, behind Miya |
 | **Fraser** | Workout design, checked against a 10-point contract in code before it's sent. [`agents/fraser/`](./agents/fraser/) | Live, behind Miya |
 | **Huberman** | The 9:30 pm cooldown: reads the day's workout and recovery and picks from a 25-drill library, with rotation. [`agents/huberman/`](./agents/huberman/) | Live, behind Miya |
 | **Genie** | Weekends, a household calendar that schedules rather than lists, and a digest of local events. [`agents/genie/`](./agents/genie/) | Live, behind Miya, with its own bot for the household; my wife uses it too, from her own phone |
 | **Bourdain** | "Where do we eat?" Answers from what it already knows, your saved places first, and searches live when that comes up short; every answer runs the harness (below). [`agents/bourdain/`](./agents/bourdain/) | Live on its own bot since Sep 20; on the harness since Oct 4; joins Miya when it passes |
 
-**How an agent joins.** Each one starts on its own front door, with its own bot and its own tests, where its failures are easy to see and can't break anything else. When it passes, it's wired in behind Miya ([`agent_boot.py`](./new_plane/miya_runner/agent_boot.py)), and Miya stays the one place I ask. Genie came in that way, and it took a weekend. Bourdain is next.
+**How an agent joins.** Bourdain is the first agent to start on its own front door, with its own bot and its own tests, where its failures are easy to see and can't break anything else. When it passes, it's wired in behind Miya ([`agent_boot.py`](./new_plane/miya_runner/agent_boot.py)), and Miya stays the one place I ask. Genie went the other way round: behind Miya on Aug 6, then its own bot for the household on Aug 10. Bourdain's route is the route from here on.
 
 **Orchestration, honestly.** Today the routing ladder answers the asks it recognizes without a model, and anything it doesn't claim goes to Miya's model, which draws on the specialists and answers in one voice; when two specialists disagree it reconciles them, best-effort. Where it's going: each agent declares what it does in a manifest, and a model reads every ask and hands it to the right agent, with the code rules still in front. *Not built yet.*
 
@@ -89,7 +89,7 @@ An agent can be fluent and wrong at the same time, and you can't tell from readi
 
 <sub>An ask going through the harness. Click it for the live page.</sub>
 
-One loop an agent's answer runs through, owned by the platform, not by the agent. An agent joins with a manifest, an outcome library, a checklist and its tools ([`agents/bourdain/`](./agents/bourdain/): 51 outcomes, 3 of them mandatory).
+One loop an agent's answer runs through, owned by the platform, not by the agent. An agent joins with a manifest, an outcome library, a checklist and its tools ([`agents/bourdain/`](./agents/bourdain/): 52 outcomes, 3 of them mandatory).
 
 ```
  an ask
@@ -99,7 +99,7 @@ One loop an agent's answer runs through, owned by the platform, not by the agent
    │           where, when, what kind of answer; no regex on free text
    ▼
  2 CONTRACT    the outcomes this answer must meet: musts from the
-   │           outcome library (51 outcomes) and the party's own rules
+   │           outcome library (52 outcomes) and the party's own rules
    ▼
  3 EXECUTE     the model with allow-listed tools: Google Maps places,
    │           the knowledge base, fetch a page; a per-ask brake
@@ -146,7 +146,7 @@ One loop an agent's answer runs through, owned by the platform, not by the agent
 | **Cost ledger** | Prices all four token buckets per call. A budget gate on the newer paths, plus a per-ask brake in the harness | [`ledger.py`](./core/ledger.py) · [`budget.py`](./core/budget.py) |
 | **Routing ladder** | Sixteen rungs, first claim wins; deterministic routes never call the model | [`delegate_classifier.py`](./new_plane/miya_runner/delegate_classifier.py) |
 | **Health line** | One line at 08:15 when something is broken; silence otherwise | [`health.py`](./core/health.py) |
-| **Events** | 121 sources: 43 read in plain code with no model, 64 pages a model reads daily, 14 grounded searches twice a week. Deduped, tagged by audience | [`bridges/events/`](./bridges/events/readers.py) |
+| **Events** | 122 sources: 50 read in plain code with no model, 52 pages a model reads daily, 20 grounded searches. Deduped, tagged by audience | [`bridges/events/`](./bridges/events/readers.py) |
 | **Food feeds** | Twelve food feeds read nightly at 05:30 in code, no model; places they name become mentions, and closures become facts | [`bridges/food/`](./bridges/food/) |
 | **Gazetteer** | 21,555 Bay Area eating places from open data (© OpenStreetMap contributors), under the knowledge base; a row is promoted only when an ask or a mention touches it | [`gazetteer.py`](./core/kb/gazetteer.py) |
 | **Health ingestion** | 150+ metrics at minute resolution, sleep stages, typed workouts | [`bridges/healthkit/`](./bridges/healthkit/ingest.py) |
@@ -171,7 +171,7 @@ Replaying **126 real messages** from my own history: voice leaks **0%**, contrad
 
 Where the architecture points, labeled by how far each part has come.
 
-- **Outcomes, not answers.** *Measuring shipped for one agent; learning not built.* Bourdain's answers are checked against named outcomes and recorded, and the golden set replays for $0. A loop that changes behavior from outcomes, and proves a cheaper model kept the result, is not built.
+- **Outcomes, not answers.** *Measuring shipped for two agents; learning not built.* Bourdain's answers and Fraser's designs are checked against named outcomes and recorded, and Bourdain's golden set replays for $0. A loop that changes behavior from outcomes, and proves a cheaper model kept the result, is not built.
 - **Memory that keeps what *mattered*.** *Not built.* Shared typed memory is table stakes (Letta, Mem0). The bet is recall conditioned on what changed an outcome, not on what was recent.
 - **A receipt for every fact.** *Partial, one agent.* Bourdain's facts, including those from open data and the food feeds, carry their source and date. The profile, memory and the training numbers don't yet.
 

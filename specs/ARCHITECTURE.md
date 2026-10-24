@@ -505,7 +505,7 @@ The rule from v2.0 still decides promotion: an item moves to Now when an agent i
 | Count | Value | As of |
 |---|---|---|
 | Front doors | 3 | Oct 17 |
-| Agents | 7 | Oct 17 |
+| Agents | 6 in these docs (one more in a private build lane, see §6) | Oct 17 |
 | launchd services | 8 (5 always on) | Oct 17 |
 | Event sources | 122 (50 in code, 52 pages read by a model, 20 searches) | Oct 19 |
 | Food feeds | 12 | Oct 17 |

@@ -5,7 +5,15 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <!-- ADR-018 as an interactive page. Hosted copies: https://modernthinkerbuilds.github.io/Rahat-Plane/specs/ADR-018.html (GitHub Pages) and https://claude.ai/artifact/THBk4pzgJvtenkf4RZmdjK ; this file is their source and opens in any browser. The decision record itself is ADR-018-outcome-contracts-and-independent-evaluation.md, beside it. -->
 <style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
-<title>Rahat Harness Architecture</title>
+<title>Inside one agent · the Rahat harness</title>
+<meta name="description" content="Inside one Rahat agent: the eight-step harness an answer runs through, from understanding the ask to recording the run. One exact check, then the model reads, code checks, and a second model grades judgment, in shadow. Interactive.">
+<link rel="canonical" href="https://modernthinkerbuilds.github.io/Rahat-Plane/specs/ADR-018.html">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Inside one agent · the Rahat harness">
+<meta property="og:description" content="Inside one Rahat agent: the eight-step harness an answer runs through, from understanding the ask to recording the run. One exact check, then the model reads, code checks, and a second model grades judgment, in shadow. Interactive.">
+<meta property="og:url" content="https://modernthinkerbuilds.github.io/Rahat-Plane/specs/ADR-018.html">
+<meta property="og:image" content="https://modernthinkerbuilds.github.io/Rahat-Plane/specs/img/rahat-harness.gif">
+<meta name="twitter:card" content="summary_large_image">
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Source+Sans+3:ital,wght@0,400;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
@@ -14,13 +22,13 @@
    the control plane (crimson). Cyan is reserved for the message you are watching move. */
 :root {
   --bg: #eef1f7; --panel: #ffffff; --fg: #131925; --muted: #586377; --line: #c6cedb; --line-soft: #e1e6ee; --grid: #dfe4ec;
-  --model: #c0640a; --model-bg: #fff0dc;
+  --model: #a35100; --model-bg: #fff0dc;
   --code: #1d55b3; --code-bg: #e5edfc;
   --judge: #6a3ea6; --judge-bg: #f0e8fb;
   --store: #1b7856; --store-bg: #dff3ea;
   --plane: #a3243c; --plane-bg: #fbe6ea;
-  --pulse: #0092c4; --pulse-soft: rgba(0, 146, 196, 0.22);
-  --off: #8a93a3; --off-bg: #eceff4;
+  --pulse: #0092c4; --pulse-text: #00709a; --pulse-soft: rgba(0, 146, 196, 0.22); --line-strong: #7d8799;
+  --off: #5f6a7c; --off-bg: #eceff4;
   --shadow: rgba(16, 24, 40, 0.16);
   --display: "Archivo", "Helvetica Neue", Arial, sans-serif;
   --body: "Source Sans 3", "Segoe UI", system-ui, sans-serif;
@@ -34,8 +42,8 @@
     --judge: #bc99ee; --judge-bg: #251a37;
     --store: #5fca9e; --store-bg: #10281e;
     --plane: #f1879a; --plane-bg: #32181e;
-    --pulse: #50d4f6; --pulse-soft: rgba(80, 212, 246, 0.24);
-    --off: #6f7a8c; --off-bg: #19202b;
+    --pulse: #50d4f6; --pulse-text: #50d4f6; --pulse-soft: rgba(80, 212, 246, 0.24); --line-strong: #65748c;
+    --off: #97a3b5; --off-bg: #19202b;
     --shadow: rgba(0, 0, 0, 0.5);
     color-scheme: dark;
   }
@@ -47,8 +55,8 @@
   --judge: #bc99ee; --judge-bg: #251a37;
   --store: #5fca9e; --store-bg: #10281e;
   --plane: #f1879a; --plane-bg: #32181e;
-  --pulse: #50d4f6; --pulse-soft: rgba(80, 212, 246, 0.24);
-  --off: #6f7a8c; --off-bg: #19202b;
+  --pulse: #50d4f6; --pulse-text: #50d4f6; --pulse-soft: rgba(80, 212, 246, 0.24); --line-strong: #65748c;
+  --off: #97a3b5; --off-bg: #19202b;
   --shadow: rgba(0, 0, 0, 0.5);
   color-scheme: dark;
 }
@@ -74,7 +82,7 @@ code { font-family: var(--mono); font-size: 0.86em; background: var(--line-soft)
   padding: 6px 10px; border-radius: 999px; border: 1.5px solid currentColor; white-space: nowrap; background: var(--panel); }
 .chip::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
 .chip.ok { color: var(--store); } .chip.shadow { color: var(--judge); } .chip.warn { color: var(--model); }
-.chip.off { color: var(--off); } .chip.pulse { color: var(--pulse); } .chip.plane { color: var(--plane); } .chip.code { color: var(--code); }
+.chip.off { color: var(--off); } .chip.pulse { color: var(--pulse-text); } .chip.plane { color: var(--plane); } .chip.code { color: var(--code); }
 
 .legend { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 14.5px; color: var(--muted); margin: 6px 0 0; }
 .legend span { display: inline-flex; align-items: center; gap: 7px; }
@@ -133,7 +141,7 @@ svg .mk-store { fill: var(--store); } svg .mk-plane { fill: var(--plane); } svg 
 /* the player */
 .player { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 18px 0 12px; }
 .player .lab { font-family: var(--mono); font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin-right: 4px; }
-.play { font: 600 14.5px/1.1 var(--body); color: var(--fg); background: var(--panel); border: 1.5px solid var(--line); border-radius: 999px;
+.play { font: 600 14.5px/1.1 var(--body); color: var(--fg); background: var(--panel); border: 1.5px solid var(--line-strong); border-radius: 999px;
   padding: 8px 13px; cursor: pointer; transition: border-color 0.2s, box-shadow 0.2s; }
 .play:hover { border-color: var(--pulse); }
 .play[aria-pressed="true"] { border-color: var(--pulse); box-shadow: 0 0 0 3px var(--pulse-soft); }
@@ -206,8 +214,8 @@ svg .mk-store { fill: var(--store); } svg .mk-plane { fill: var(--plane); } svg 
 </head>
 <body>
 <div class="wrap">
-  <p class="eyebrow"><a href="RAHAT-ARCHITECTURE.html">Rahat, end to end ↗</a> · ADR-018 · outcome contracts and independent evaluation</p>
-  <h1>Rahat Harness Architecture</h1>
+  <p class="eyebrow"><a href="https://venkatsadras.com/rahat/">← venkatsadras.com</a> · <a href="RAHAT-ARCHITECTURE.html">Rahat, end to end ↗</a> · ADR-018 · outcome contracts and independent evaluation</p>
+  <h1>Inside one agent: the Rahat harness</h1>
   <p class="lede">How a Rahat agent answers a message: <b>one exact check, then the model reads, code checks, and a second model grades judgment.</b> Bourdain, the where-to-eat agent, has answered through this harness since October 4.</p>
   <div class="chips" aria-label="Status">
     <span class="chip ok">Accepted</span>

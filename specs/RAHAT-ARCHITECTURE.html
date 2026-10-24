@@ -6,6 +6,14 @@
 <!-- Rahat end to end as an interactive page. Hosted copies: https://modernthinkerbuilds.github.io/Rahat-Plane/specs/RAHAT-ARCHITECTURE.html (GitHub Pages) and https://claude.ai/artifact/5Lsi2YiDVQQXxcBorudNeq ; this file is their source and opens in any browser. The harness inside one agent has its own page, ADR-018.html, beside it. -->
 <style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
 <title>Rahat Architecture</title>
+<meta name="description" content="Rahat, end to end, as built: the doors a message comes in by, the rules in code that meet it, six agents, the checks between an answer and you, one SQLite file of record, and a record of every decision. Interactive: tap any box or watch a message travel.">
+<link rel="canonical" href="https://modernthinkerbuilds.github.io/Rahat-Plane/specs/RAHAT-ARCHITECTURE.html">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Rahat Architecture, end to end">
+<meta property="og:description" content="Rahat, end to end, as built: the doors a message comes in by, the rules in code that meet it, six agents, the checks between an answer and you, one SQLite file of record, and a record of every decision. Interactive: tap any box or watch a message travel.">
+<meta property="og:url" content="https://modernthinkerbuilds.github.io/Rahat-Plane/specs/RAHAT-ARCHITECTURE.html">
+<meta property="og:image" content="https://modernthinkerbuilds.github.io/Rahat-Plane/specs/img/rahat-map.png">
+<meta name="twitter:card" content="summary_large_image">
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Source+Sans+3:ital,wght@0,400;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
@@ -14,13 +22,13 @@
    a store in the vault (green), the control plane (crimson). Cyan is reserved for the thing you are watching move. */
 :root {
   --bg: #eef1f7; --panel: #ffffff; --fg: #131925; --muted: #586377; --line: #c6cedb; --line-soft: #e1e6ee; --grid: #dfe4ec;
-  --model: #c0640a; --model-bg: #fff0dc;
+  --model: #a35100; --model-bg: #fff0dc;
   --code: #1d55b3; --code-bg: #e5edfc;
   --judge: #6a3ea6; --judge-bg: #f0e8fb;
   --store: #1b7856; --store-bg: #dff3ea; --store-band: rgba(27, 120, 86, 0.06);
   --plane: #a3243c; --plane-bg: #fbe6ea; --plane-band: rgba(163, 36, 60, 0.05);
-  --pulse: #0092c4; --pulse-soft: rgba(0, 146, 196, 0.22);
-  --off: #8a93a3; --off-bg: #eceff4;
+  --pulse: #0092c4; --pulse-text: #00709a; --pulse-soft: rgba(0, 146, 196, 0.22); --line-strong: #7d8799;
+  --off: #5f6a7c; --off-bg: #eceff4;
   --shadow: rgba(16, 24, 40, 0.16);
   --display: "Archivo", "Helvetica Neue", Arial, sans-serif;
   --body: "Source Sans 3", "Segoe UI", system-ui, sans-serif;
@@ -34,8 +42,8 @@
     --judge: #bc99ee; --judge-bg: #251a37;
     --store: #5fca9e; --store-bg: #10281e; --store-band: rgba(95, 202, 158, 0.06);
     --plane: #f1879a; --plane-bg: #32181e; --plane-band: rgba(241, 135, 154, 0.06);
-    --pulse: #50d4f6; --pulse-soft: rgba(80, 212, 246, 0.24);
-    --off: #6f7a8c; --off-bg: #19202b;
+    --pulse: #50d4f6; --pulse-text: #50d4f6; --pulse-soft: rgba(80, 212, 246, 0.24); --line-strong: #65748c;
+    --off: #97a3b5; --off-bg: #19202b;
     --shadow: rgba(0, 0, 0, 0.5);
     color-scheme: dark;
   }
@@ -47,8 +55,8 @@
   --judge: #bc99ee; --judge-bg: #251a37;
   --store: #5fca9e; --store-bg: #10281e; --store-band: rgba(95, 202, 158, 0.06);
   --plane: #f1879a; --plane-bg: #32181e; --plane-band: rgba(241, 135, 154, 0.06);
-  --pulse: #50d4f6; --pulse-soft: rgba(80, 212, 246, 0.24);
-  --off: #6f7a8c; --off-bg: #19202b;
+  --pulse: #50d4f6; --pulse-text: #50d4f6; --pulse-soft: rgba(80, 212, 246, 0.24); --line-strong: #65748c;
+  --off: #97a3b5; --off-bg: #19202b;
   --shadow: rgba(0, 0, 0, 0.5);
   color-scheme: dark;
 }
@@ -79,7 +87,7 @@ code { font-family: var(--mono); font-size: 0.86em; background: var(--line-soft)
   padding: 6px 10px; border-radius: 999px; border: 1.5px solid currentColor; white-space: nowrap; background: var(--panel); }
 .chip::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
 .chip.ok { color: var(--store); } .chip.shadow { color: var(--judge); } .chip.warn { color: var(--model); }
-.chip.off { color: var(--off); } .chip.pulse { color: var(--pulse); } .chip.plane { color: var(--plane); } .chip.code { color: var(--code); }
+.chip.off { color: var(--off); } .chip.pulse { color: var(--pulse-text); } .chip.plane { color: var(--plane); } .chip.code { color: var(--code); }
 
 .legend { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 14.5px; color: var(--muted); margin: 6px 0 0; }
 .legend span { display: inline-flex; align-items: center; gap: 7px; }
@@ -134,7 +142,7 @@ svg .band-store { fill: var(--store-band); stroke: var(--store); stroke-width: 1
 /* the player */
 .player { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 18px 0 12px; }
 .player .lab { font-family: var(--mono); font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin-right: 4px; }
-.play { font: 600 14.5px/1.1 var(--body); color: var(--fg); background: var(--panel); border: 1.5px solid var(--line); border-radius: 999px;
+.play { font: 600 14.5px/1.1 var(--body); color: var(--fg); background: var(--panel); border: 1.5px solid var(--line-strong); border-radius: 999px;
   padding: 8px 13px; cursor: pointer; transition: border-color 0.2s, box-shadow 0.2s; }
 .play:hover { border-color: var(--pulse); }
 .play[aria-pressed="true"] { border-color: var(--pulse); box-shadow: 0 0 0 3px var(--pulse-soft); }
@@ -175,7 +183,7 @@ svg .band-store { fill: var(--store-band); stroke: var(--store); stroke-width: 1
 .ladder li.checking { background: var(--line-soft); }
 .ladder li.passed .what { color: var(--muted); }
 .ladder li.claims { background: var(--code-bg); box-shadow: inset 4px 0 0 var(--pulse); }
-.ladder li.claims .rn { color: var(--pulse); font-weight: 500; }
+.ladder li.claims .rn { color: var(--pulse-text); font-weight: 500; }
 .ladder li.last { background: var(--model-bg); }
 .ladder li.last.claims { box-shadow: inset 4px 0 0 var(--pulse); }
 .lad-key { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 10px 0 0; font-size: 13.5px; color: var(--muted); }
@@ -271,14 +279,14 @@ svg .now-t { font-family: var(--mono); font-size: 10.5px; fill: var(--plane); }
 </head>
 <body>
 <div class="wrap">
-  <p class="eyebrow">Rahat · end to end · as built on October 17, 2026</p>
+  <p class="eyebrow"><a href="https://venkatsadras.com/rahat/">← venkatsadras.com</a> · Rahat · end to end · as built on October 17, 2026</p>
   <h1>Rahat Architecture</h1>
   <p class="lede"><b>Miya is the agent you talk to. Rahat is everything underneath it:</b> the doors messages come in by, the rules in code that meet them, the specialists, the checks between an answer and you, the memory they share, and the jobs that keep it fed while nobody is typing. It runs on one Mac mini at home.</p>
-  <div class="counts" aria-label="Counts as of October 17">
+  <div class="counts" aria-label="Counts as of October 17 to 19">
     <span class="count"><b>3</b><span class="d">front doors</span></span>
     <span class="count"><b>6</b><span class="d">agents</span></span>
     <span class="count"><b>8</b><span class="d">services · 5 always on</span></span>
-    <span class="count"><b>121</b><span class="d">event sources</span></span>
+    <span class="count"><b>122</b><span class="d">event sources</span></span>
     <span class="count"><b>1</b><span class="d">SQLite file of record</span></span>
     <span class="count"><b>4,209</b><span class="d">tests</span></span>
   </div>
@@ -332,7 +340,7 @@ svg .now-t { font-family: var(--mono); font-size: 10.5px; fill: var(--plane); }
         <text x="1060" y="26" class="tag">GOES OUT</text>
 
         <rect x="20" y="300" width="1200" height="88" rx="10" class="band-plane"/>
-        <text x="1210" y="315" text-anchor="end" class="tag">CONTROL PLANE · EVERY AGENT, EVERY CALL</text>
+        <text x="1210" y="315" text-anchor="end" class="tag">CONTROL PLANE · A BUDGET GATE ON THE NEWER PATHS</text>
         <rect x="360" y="406" width="860" height="290" rx="10" class="band-store"/>
         <text x="372" y="424" class="tag">THE VAULT · vault/rahat.db, ONE SQLITE FILE ON THE MAC MINI · JSON BESIDE IT · NEVER IN GIT</text>
 
@@ -408,7 +416,7 @@ svg .now-t { font-family: var(--mono); font-size: 10.5px; fill: var(--plane); }
         <g class="node n-neutral" id="n-gym" data-tip="gym" tabindex="0"><rect x="30" y="496" width="140" height="46" rx="6"/><text x="100" y="516" text-anchor="middle" class="t">The gym</text><text x="100" y="532" text-anchor="middle" class="s">SugarWOD</text></g>
         <g class="node n-run" id="n-sugar" data-tip="sugar" tabindex="0"><rect x="196" y="496" width="150" height="46" rx="6"/><text x="271" y="516" text-anchor="middle" class="t">sugar.bridge</text><text x="271" y="532" text-anchor="middle" class="s">the week's programming</text></g>
         <g class="node n-store" id="n-gymweek" data-tip="gymweek" tabindex="0"><rect x="372" y="496" width="160" height="46" rx="6"/><text x="452" y="516" text-anchor="middle" class="t">The gym's week</text><text x="452" y="532" text-anchor="middle" class="s">the week's plan file</text></g>
-        <g class="node n-ext" id="n-web" data-tip="web" tabindex="0"><rect x="30" y="554" width="140" height="104" rx="6"/><text x="100" y="592" text-anchor="middle" class="t">The web</text><text x="100" y="610" text-anchor="middle" class="s">121 event sources</text><text x="100" y="625" text-anchor="middle" class="s">12 food feeds</text><text x="100" y="640" text-anchor="middle" class="s">open data</text></g>
+        <g class="node n-ext" id="n-web" data-tip="web" tabindex="0"><rect x="30" y="554" width="140" height="104" rx="6"/><text x="100" y="592" text-anchor="middle" class="t">The web</text><text x="100" y="610" text-anchor="middle" class="s">122 event sources</text><text x="100" y="625" text-anchor="middle" class="s">12 food feeds</text><text x="100" y="640" text-anchor="middle" class="s">open data</text></g>
         <g class="node n-run" id="n-events" data-tip="events" tabindex="0"><rect x="196" y="554" width="150" height="46" rx="6"/><text x="271" y="574" text-anchor="middle" class="t">events ⏱</text><text x="271" y="590" text-anchor="middle" class="s">07:00 · 12:30 · 18:00</text></g>
         <g class="node n-store" id="n-inventory" data-tip="inventory" tabindex="0"><rect x="372" y="554" width="160" height="46" rx="6"/><text x="452" y="574" text-anchor="middle" class="t">Events inventory</text><text x="452" y="590" text-anchor="middle" class="s">deduped · tagged</text></g>
         <g class="node n-run" id="n-food" data-tip="food" tabindex="0"><rect x="196" y="612" width="150" height="46" rx="6"/><text x="271" y="632" text-anchor="middle" class="t">food.nightly ⏱</text><text x="271" y="648" text-anchor="middle" class="s">05:30 · no model</text></g>
@@ -535,7 +543,7 @@ svg .now-t { font-family: var(--mono); font-size: 10.5px; fill: var(--plane); }
     <div class="agent" style="--c: var(--store)">
       <div class="h"><h3>Genie · the household</h3><span class="chip ok">Live, own bot and behind Miya</span></div>
       <dl><dt>Owns</dt><dd>Weekends, the household calendar, and an 08:00 digest of the weekend's events.</dd>
-      <dt>Reads</dt><dd>The events inventory, fed by 121 sources.</dd>
+      <dt>Reads</dt><dd>The events inventory, fed by 122 sources.</dd>
       <dt>Rules</dt><dd>Never two things in one slot; on a Sunday, the plan is today alone; stale feeds and a down search are said.</dd></dl>
     </div>
     <div class="agent" style="--c: var(--judge)">
@@ -663,7 +671,7 @@ svg .now-t { font-family: var(--mono); font-size: 10.5px; fill: var(--plane); }
     vitals: ["vitals.v2 · the health bridge", "Live", "Always on, on port 5000, behind a key. It writes the phone's exports into the vault and accepts a location push for Bourdain.", "bridges/healthkit/server.py"],
     gym: ["The gym", "Live", "The gym's programming, from SugarWOD, sent over by a bookmarklet.", "bridges/sugarwod/"],
     sugar: ["sugar.bridge · the gym bridge", "Live", "Always on. Writes the week's programming where Kobe, Fraser and Huberman read it.", "bridges/sugarwod/server.py"],
-    web: ["The web", "Live", "121 event sources (43 read in plain code, 64 pages a model reads daily, 14 grounded searches twice a week), 12 food feeds read in code, and open data from OpenStreetMap.", "bridges/events/ · bridges/food/"],
+    web: ["The web", "Live", "122 event sources (50 read in plain code, 52 pages a model reads daily, 20 grounded searches), 12 food feeds read in code, and open data from OpenStreetMap.", "bridges/events/ · bridges/food/"],
     events: ["events · three times a day", "Live", "At 07:00, 12:30 and 18:00 it reads the event sources, dedupes them and tags them by audience. The paid search pass runs Wednesday and Saturday at 03:00.", "bridges/events/"],
     food: ["food.nightly · 05:30", "Live", "Reads twelve food feeds in code, with no model: openings, closings and praise become mentions on places, and each place's own page is re-read for hours.", "bridges/food/nightly.py"],
     healthdata: ["Health data", "Live", "The Watch's minute series, sleep stages and workouts. Kobe, Huberman and the health line read it.", "vault/rahat.db"],
@@ -787,7 +795,7 @@ svg .now-t { font-family: var(--mono); font-size: 10.5px; fill: var(--plane); }
     ],
     events: [
       ["n-events", null, "07:00: the events run wakes. It runs again at 12:30 and 18:00."],
-      ["n-web", ">n-events", "121 sources: 43 read in plain code with no model, 64 pages a model reads once a day."],
+      ["n-web", ">n-events", "122 sources: 50 read in plain code with no model, 52 pages a model reads once a day."],
       ["n-events", ">n-web", "Back on the Mac mini, every event is deduped on title, start and city, and tagged by audience."],
       ["n-inventory", "e-events-inv", "Into the events inventory."],
       ["n-genierun", null, "08:00: Genie's runner wakes for the digest."],
