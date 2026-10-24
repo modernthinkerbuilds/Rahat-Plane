@@ -1,6 +1,6 @@
 # Venkat Sadras
 
-> **Bay Area PM at a large tech company. Miya is my personal AI agent. Rahat is the platform underneath it: checks in the path, a harness every answer runs through, and a record of every decision. It runs in my life every day.**
+> **Product lead for how a major cloud's AI platform runs in regulated and sovereign environments. Miya is my personal AI agent. Rahat is the platform underneath it: checks in the path, a harness every answer runs through, and a record of every decision. It runs in my life every day.**
 
 <a href="https://modernthinkerbuilds.github.io/Rahat-Plane/specs/RAHAT-ARCHITECTURE.html"><img src="https://raw.githubusercontent.com/modernthinkerbuilds/Rahat-Plane/main/specs/img/rahat-map.gif" width="100%" alt="Rahat end to end: a /week message travels from Telegram through Miya's runner and the routing ladder to Kobe, with the checks, the control plane and the vault around it"></a>
 
@@ -90,7 +90,7 @@ Rahat is personal-scale, not enterprise software. My data lives on a Mac mini at
 
 ## About me
 
-A Bay Area PM at a large tech company, hands-on with multi-agent systems. I care about building the kind of agents I'd actually point at my own life: ones that remember, coordinate, check themselves, and know when *not* to act.
+By day I'm the product lead for how a major cloud's AI platform runs in the hardest environments: defense, banks, hospitals, sovereign governments. I define what the platform has to be before they can run it, from the frontier models it serves, its own and other labs', to the agents built on them. At home, hands-on with multi-agent systems. I care about building the kind of agents I'd actually point at my own life: ones that remember, coordinate, check themselves, and know when *not* to act.
 
 **The architecture, the decision records and the tests are public: [github.com/modernthinkerbuilds/Rahat-Plane](https://github.com/modernthinkerbuilds/Rahat-Plane).** Happy to walk through any of it.
 
