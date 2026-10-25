@@ -187,24 +187,38 @@ def analyze(run: RunData, *, zones: dict, slope: cmodel.Slope | None = None, con
                                           block_hr=block_hr, zones=zones, moving_s=moving,
                                           strides=len(st), gain_per_km=gain_per_km, labeled=labeled, indoor=run.indoor)
     excluded_share = (seg.paused_seconds(ps, block.start, block.end) / block.seconds) if block.seconds > 0 else 0.0
-    protocol_held = None
     cap = zones.get("cap")
+    mg = cgrade.margins(first_half_hr=h1.hr_avg, block_hr=block_hr,
+                        avg_hr=hr_moving if hr_moving is not None else run.avg_hr, zones=zones)
+    # the start line (cap + a bpm of noise) on the first half's average decides D: a run that started over the cap is
+    # a Zone 3 run from the gun, not a Zone 2 measurement; one that started in the band and drifted over is a noisy
+    # Zone 2 run, and the drift is what we measure (S0 review, fix 3)
+    started_over = mg["start"]["over"] if mg.get("start") else None
+    # the protocol: the block's average at or under the cap, a bpm of sensor noise allowed; hovering at the cap is the
+    # protocol, riding over it is not
+    protocol_held = (not mg["protocol"]["over"]) if mg.get("protocol") else None
     if cap and block_hr is not None:
-        # held: the block's average is at or under the cap (a bpm of sensor noise allowed) and no more than 15% of
-        # its moving time sits 3+ bpm over it. Hovering at the cap is the protocol; riding over it is not.
         over = [s for s in cm._moving_only(run.hr, ps) if block.start <= s.t <= block.end and s.v >= cap + 3]
         inside = [s for s in cm._moving_only(run.hr, ps) if block.start <= s.t <= block.end]
         share_over = (len(over) / len(inside)) if inside else 0.0
-        protocol_held = block_hr <= cap + 1.0 and share_over <= 0.15
         put("main_block.over_cap_pct", _r(share_over * 100.0, 0), "%", source=f"share of the block 3+ bpm over the cap ({cap:.0f})")
     g, greasons, counts = cgrade.measurement_grade(
         stype=stype, indoor=run.indoor,
         benchmark_route=(bool((route_match or {}).get("benchmark")) if (route_match or run.has_route()) else None),
         flat=(route_match or {}).get("flat") if route_match else (None if elev is None else gain_per_km is not None and gain_per_km < cgrade.HILLY_GAIN_PER_KM),
         apparent_f=apparent, dew_f=dew, night_h=night, two_night_h=two, longest_stop_s=longest_stop,
-        excluded_share=excluded_share, protocol_held=protocol_held)
+        excluded_share=excluded_share, protocol_held=protocol_held, started_over_cap=started_over,
+        start_margin_bpm=mg["start"]["margin_bpm"] if mg.get("start") else None)
+    borderline = [b for b in mg["borderline"] if b in ("start", "protocol") or (b == "tempo" and stype in ("tempo", "z2_steady", "long"))]
     put("session_type", stype, "name", source="; ".join(treasons))
     put("grade", g, "grade", source="; ".join(greasons))
+    put("grade.borderline", bool(borderline), "flag",
+        source=("within a bpm of the " + " and ".join(f"{b} line ({mg[b]['value']:.1f} vs {mg[b]['line']:.0f})" for b in borderline)
+                + ": the verdict is a coin at the edge; say so") if borderline else "no verdict within a bpm of its line")
+    for name in ("start", "protocol", "tempo"):
+        if mg.get(name):
+            put(f"grade.margin.{name}_bpm", mg[name]["margin_bpm"], "bpm",
+                source=f"{name} line {mg[name]['line']:.0f}: {'over' if mg[name]['over'] else 'under'} by {abs(mg[name]['margin_bpm']):.1f}")
     put("fitness_data_point", counts, "flag", source="A–C runs count toward the trend; D does not")
     if route_match and route_match.get("name"):
         put("route", route_match["name"], "name", source="the route library, matched on the trace")
@@ -246,7 +260,7 @@ def analyze(run: RunData, *, zones: dict, slope: cmodel.Slope | None = None, con
     return {
         "workout_id": run.workout_id, "engine_version": ENGINE_VERSION, "provisional": run.provisional,
         "name": run.name, "start_local": run.start_local.strftime("%Y-%m-%d %H:%M:%S"), "day": run.day,
-        "session_type": stype, "grade": g, "fitness_data_point": counts,
+        "session_type": stype, "grade": g, "fitness_data_point": counts, "borderline": borderline, "margins": mg,
         "reasons": {"type": treasons, "grade": greasons},
         "segments": {"pauses": [asdict(p) | {"seconds": round(p.seconds, 1)} for p in ps], "moving_s": round(moving, 1),
                      "elapsed_s": round(run.elapsed_s, 1), "watch_paused_s": round(run.watch_paused_s, 1),

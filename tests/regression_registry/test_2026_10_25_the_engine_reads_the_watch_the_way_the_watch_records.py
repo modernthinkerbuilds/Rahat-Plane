@@ -28,6 +28,12 @@ THE PINS (agents/kipchoge/ingest.py, segments.py, grade.py, analyze.py):
     counts once; the night before that starts 20–44 h before.
   * The whole run's moving average types a run; tempo starts 3 bpm over
     LT1's ceiling (5 over the band when LT1 is not on file).
+  * The start line (S0 review, fix 3): a run whose first half averages
+    over the cap + 1 started over the cap and is D, a Zone 3 run from the
+    gun; one that started in the band and drifted over it is C, the
+    drift being the measurement. The protocol is the block's average at
+    or under that line. A verdict within a bpm of its line is borderline
+    and says so; the margins travel with the analysis.
   * A run's elapsed span (end − start) and its active duration travel
     separately; a split run sums the parts' active durations.
 
@@ -41,6 +47,8 @@ from __future__ import annotations
 from tests.kipchoge.test_engine_synthetic import (  # noqa: F401
     con,
     test_a_block_that_drifts_over_the_cap_is_a_weak_zone2_run_not_a_tempo,
+    test_a_run_that_started_over_the_cap_is_d_and_one_that_drifted_over_is_c,
+    test_a_verdict_within_a_bpm_of_its_line_is_borderline,
     test_a_split_workout_is_read_as_one_session,
     test_heart_rate_gaps_are_reported_not_subtracted,
     test_the_night_before_comes_from_the_stages_and_may_end_after_the_run,

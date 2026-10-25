@@ -106,8 +106,15 @@ def checks_for(gold: dict, run: ingest.RunData, a: dict) -> list[dict]:
         ok = h1["hr_avg"] is not None and h2["hr_avg"] is not None and abs(h1["hr_avg"] - t1) <= tol and abs(h2["hr_avg"] - t2) <= tol
         row("halves", "halves (bpm)", f"{t1} → {t2}", f"{h1['hr_avg']} → {h2['hr_avg']}", ok)
     if "grade" in gold:
+        mg = a.get("margins") or {}
+        parts = []
+        for name in ("start", "protocol"):
+            m = mg.get(name)
+            if m:
+                parts.append(f"{name} {m['value']:.1f} vs {m['line']:.0f} ({m['margin_bpm']:+.1f}"
+                             + (", borderline" if name in a.get("borderline", []) else "") + ")")
         row("grade", "grade", gold["grade"] + (f" ({gold['grade_why']})" if gold.get("grade_why") else ""),
-            f"{a['grade']} ({'; '.join(a['reasons']['grade'])})", a["grade"] == gold["grade"])
+            f"{a['grade']} ({'; '.join(a['reasons']['grade'])}) — margins: " + "; ".join(parts), a["grade"] == gold["grade"])
     if "session_type" in gold:
         row("session_type", "type", gold["session_type"], f"{a['session_type']} ({'; '.join(a['reasons']['type'])})",
             a["session_type"] == gold["session_type"])

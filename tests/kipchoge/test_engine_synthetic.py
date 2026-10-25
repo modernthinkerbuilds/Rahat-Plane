@@ -386,3 +386,30 @@ def test_the_reference_heart_rate_and_the_slope_prior_come_only_from_the_athlete
     assert state.slope_prior(state.default_athlete()) is None, "the default athlete carries no slope"
     assert state.slope_prior({"model": {"slope_s_per_mi_per_bpm": 5.5, "slope_sd": 1.5}}) == (5.5, 1.5)
     assert model.SLOPE_PRIOR_SD >= 2.5, "the code's own prior is wide: it is nobody's slope"
+
+
+# ── the start line (S0 review, fix 3) ─────────────────────────────────
+def test_a_run_that_started_over_the_cap_is_d_and_one_that_drifted_over_is_c(con):
+    # from the gun: the first half averages over cap + 1 (145 + 1 for the invented athlete)
+    _, gun = _analyze(con, synthetic_run("SYN-GUN", DAY, 60, km=8.2, hr_first=152.0, hr_second=153.0, ramp_min=1.0))
+    assert gun["grade"] == "D" and not gun["fitness_data_point"]
+    assert "started over the cap" in " ".join(gun["reasons"]["grade"]) and gun["margins"]["start"]["over"]
+    assert gun["session_type"] == "z2_steady", "the type is the shape; the grade is the measurement"
+    # in the band, then over it: the drift is the measurement, grade C
+    _, drift = _analyze(con, synthetic_run("SYN-DRIFT", DAY.replace(day=19), 60, km=8.2, hr_first=142.0, hr_second=152.0))
+    assert drift["grade"] == "C" and drift["fitness_data_point"]
+    assert not drift["margins"]["start"]["over"] and drift["margins"]["protocol"]["over"]
+    assert "protocol" in " ".join(drift["reasons"]["grade"])
+    # the margins and the lines travel with the analysis, in bpm from the athlete's lines
+    assert drift["margins"]["lines"] == {"start": 146.0, "protocol": 146.0, "tempo": 155.0}
+    assert _rec(drift, "grade.margin.protocol_bpm")["value"] == pytest.approx(drift["margins"]["protocol"]["margin_bpm"])
+
+
+def test_a_verdict_within_a_bpm_of_its_line_is_borderline(con):
+    # a block that sits a hair under the protocol line: B, borderline, and the record says which line
+    _, edge = _analyze(con, synthetic_run("SYN-EDGE", DAY, 60, km=8.2, hr_first=145.3, hr_second=145.3))
+    assert edge["grade"] in ("B", "C") and "protocol" in edge["borderline"]
+    assert _rec(edge, "grade.borderline")["value"] is True and "protocol line" in _rec(edge, "grade.borderline")["source"]
+    assert abs(edge["margins"]["protocol"]["margin_bpm"]) <= 1.0
+    _, clear = _analyze(con, synthetic_run("SYN-CLEAR", DAY.replace(day=19), 60, km=8.2, hr_first=141.0, hr_second=142.0))
+    assert clear["borderline"] == [] and _rec(clear, "grade.borderline")["value"] is False
