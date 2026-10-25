@@ -165,9 +165,9 @@ def analyze(run: RunData, *, zones: dict, slope: cmodel.Slope | None = None, con
     # ── sleep and conditions ──
     night, two = run.sleep.get("night_before_h"), run.sleep.get("two_night_avg_h")
     put("sleep.night_before_h", night, "h",
-        source=f"{run.sleep.get('method') or 'the sleep sessions'}: the longest session starting within 20 h before the run"
+        source=f"{run.sleep.get('method') or 'the sleep sessions'}: the longest session starting within 24 h before the run"
                + (f", ending {run.sleep['night_end']}" if run.sleep.get("night_end") else ""))
-    put("sleep.two_night_avg_h", two, "h", source="with the night before that (starting 20–44 h before)")
+    put("sleep.two_night_avg_h", two, "h", source="with the night before that (starting 24–48 h before)")
     cond_json = None
     apparent = dew = temp = None
     sun = None
@@ -236,7 +236,8 @@ def analyze(run: RunData, *, zones: dict, slope: cmodel.Slope | None = None, con
         put("norm.ref_hr", ref, "bpm", source="the athlete file's reference heart rate")
         for a in full.adjustments:
             put(f"norm.adjust.{a.name}_bpm", a.bpm, "bpm", lo=a.lo, hi=a.hi, source=a.why)
-        norm_json = {"full": asdict(full), "hr_only": asdict(hr_only)}
+        norm_json = {"full": asdict(full), "hr_only": asdict(hr_only),
+                     "basis": {"hr": round(base_hr, 2), "pace_s_per_mi": round(base_pace, 1), "what": base_what}}
     elif not counts:
         notes.append(f"grade {g}: not a fitness data point, no normalization")
     else:

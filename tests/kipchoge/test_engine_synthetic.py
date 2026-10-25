@@ -246,6 +246,16 @@ def test_the_night_before_comes_from_the_stages_and_may_end_after_the_run(con):
     assert run.sleep["night_before_h"] == pytest.approx(5.5, abs=0.01)
     assert run.sleep["two_night_avg_h"] == pytest.approx((5.5 + 7.5) / 2, abs=0.01)
     assert run.sleep["sessions"] == 2, "the shifted copy of the earlier night counts once"
+    # an evening run: its night started 20 h earlier and is still the night before
+    fx2 = synthetic_run("SYN-SL2", datetime(2026, 10, 9, 19, 10), 33, km=4.1, hr_first=132.0, hr_second=136.0, sleep_h=None)
+    fx2["tables"]["sleep_sessions"] = [
+        {"sleep_start": "2026-10-08 23:05:00", "sleep_end": "2026-10-09 05:20:00", "asleep_s": 0.0, "in_bed_s": 0.0,
+         "core_s": 14400.0, "deep_s": 1800.0, "rem_s": 5400.0, "awake_s": 1200.0, "source": "Watch"},
+        {"sleep_start": "2026-10-07 23:30:00", "sleep_end": "2026-10-08 06:10:00", "asleep_s": 0.0, "in_bed_s": 0.0,
+         "core_s": 12600.0, "deep_s": 1800.0, "rem_s": 4500.0, "awake_s": 900.0, "source": "Watch"},
+    ]
+    run2, _ = _analyze(con, fx2)
+    assert run2.sleep["night_before_h"] == pytest.approx(6.0, abs=0.01) and run2.sleep["two_night_avg_h"] is not None
     assert run.sleep["method"] == "the Watch's sleep stages"
     assert "stages" in _rec(a, "sleep.night_before_h")["source"]
 
@@ -319,6 +329,11 @@ def test_the_slope_is_the_prior_on_thin_data_and_fits_with_many_runs():
     assert 6.0 <= s.s_per_mi_per_bpm <= 7.0 and s.n_runs == 6 and "shrunk" in s.source
     same_hr = model.fit_slope([(144, 700), (144, 710), (144, 705)])
     assert same_hr.s_per_mi_per_bpm == model.SLOPE_PRIOR and "one heart rate" in same_hr.source
+    two = model.fit_slope([(140, 760), (150, 700)])
+    assert two.s_per_mi_per_bpm == model.SLOPE_PRIOR and "fewer than three" in two.source
+    # noisy runs at nearly one heart rate cannot pull the slope far: the fit's weight is its precision
+    noisy = model.fit_slope([(146, 700), (149, 735), (148, 690), (147, 740), (150, 705)])
+    assert abs(noisy.s_per_mi_per_bpm - model.SLOPE_PRIOR) < 2.5 and noisy.sd <= model.SLOPE_PRIOR_SD
 
 
 def test_normalization_moves_pace_along_the_line_and_widens_far_from_the_reference():

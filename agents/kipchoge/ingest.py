@@ -36,8 +36,8 @@ HOME_ZONE = "America/Los_Angeles"
 FORM_METRICS = ("running_speed", "running_power", "running_ground_contact_time", "running_vertical_oscillation",
                 "running_stride_length")
 RECOVERY_MIN = 3             # minutes of the day series after the end that stand in for the recovery series
-NIGHT_START_WINDOW_H = 20    # the night before: the longest sleep session starting within this many hours before the run
-PRIOR_NIGHT_WINDOW_H = 44    # the night before that: starting between 20 and 44 h before
+NIGHT_START_WINDOW_H = 24    # the night before: the longest sleep session starting within this many hours before the run
+PRIOR_NIGHT_WINDOW_H = 48    # the night before that: starting between 24 and 48 h before
 
 
 @dataclass
@@ -175,11 +175,12 @@ def sleep_before(con: sqlite3.Connection, start_local: datetime) -> dict:
     The Watch's sessions keep the time asleep in the stages (core + deep
     + rem; `asleep_s` holds unstaged sleep, a nap), so a session's hours
     are its stage sum when it has one, else `asleep_s`. The night before
-    is the longest session starting within 20 h before the run and before
-    it; one that ends after the start (the Watch joined the night to an
-    afternoon nap) still counts, its stages are the night's. The night
-    before that is the longest starting 20–44 h before. A session the
-    bridge stored twice (the same stages at a shifted clock) counts once.
+    is the longest session starting within 24 h before the run and before
+    it (an evening run's night started 20 h earlier); one that ends after
+    the start (the Watch joined the night to an afternoon nap) still
+    counts, its stages are the night's. The night before that is the
+    longest starting 24–48 h before. A session the bridge stored twice
+    (the same stages at a shifted clock) counts once.
     """
     lo = (start_local - timedelta(hours=PRIOR_NIGHT_WINDOW_H)).strftime("%Y-%m-%d %H:%M:%S")
     hi = start_local.strftime("%Y-%m-%d %H:%M:%S")

@@ -30,7 +30,8 @@ from typing import Sequence
 MODEL_VERSION = "hrpace-v1"
 SLOPE_PRIOR = 6.0            # s/mi per bpm: a wide physiology prior; the athlete file's prior replaces it
 SLOPE_PRIOR_SD = 2.5
-SLOPE_PRIOR_N = 4            # the prior weighs like four runs
+SLOPE_PRIOR_N = 4            # kept for callers; the shrinkage is by precision (see fit_slope)
+SLOPE_SE_FLOOR = 1.0         # s/mi per bpm: no fit claims to be sharper than this
 REF_DEW_F = 50.0
 REF_APPARENT_F = 60.0
 HEAT_MAX_BPM = 8.0
@@ -79,14 +80,17 @@ class Normalized:
 # ── the slope ─────────────────────────────────────────────────────────
 def fit_slope(points: Sequence[tuple[float, float]], *, prior: float = SLOPE_PRIOR, prior_sd: float = SLOPE_PRIOR_SD,
               prior_n: int = SLOPE_PRIOR_N) -> Slope:
-    """Points are (heart rate, pace s/mi) from steady blocks of A–C runs.
-    Pace falls as heart rate rises, so the fitted slope is −d(pace)/d(HR),
-    shrunk toward the prior as if the prior were prior_n runs. With one
-    run or none, the prior stands."""
+    """Points are (heart rate, pace s/mi) from the steady blocks of A and
+    B runs (a C run's pace carries heat, hills, a stop or short sleep,
+    which the slope must not learn). Pace falls as heart rate rises, so
+    the fitted slope is −d(pace)/d(HR), shrunk toward the prior by
+    precision: the fit's weight is 1/se² (se floored at SLOPE_SE_FLOOR,
+    so two lucky runs cannot outvote the prior), the prior's 1/prior_sd².
+    Under three runs, or runs all at one heart rate, the prior stands."""
     pts = [(float(h), float(p)) for h, p in points if h and p]
     n = len(pts)
-    if n < 2:
-        return Slope(prior, prior_sd, n, "the prior (fewer than two runs)")
+    if n < 3:
+        return Slope(prior, prior_sd, n, "the prior (fewer than three steady runs)")
     mh = sum(h for h, _ in pts) / n
     mp = sum(p for _, p in pts) / n
     sxx = sum((h - mh) ** 2 for h, _ in pts)
@@ -95,13 +99,14 @@ def fit_slope(points: Sequence[tuple[float, float]], *, prior: float = SLOPE_PRI
     sxy = sum((h - mh) * (p - mp) for h, p in pts)
     fitted = -sxy / sxx
     resid = [p - (mp - fitted * (h - mh)) for h, p in pts]
-    se = math.sqrt(sum(r * r for r in resid) / max(1, n - 2) / sxx) if n > 2 else prior_sd
-    w_fit = n
-    w_prior = prior_n
+    se = max(SLOPE_SE_FLOOR, math.sqrt(sum(r * r for r in resid) / max(1, n - 2) / sxx))
+    w_fit = 1.0 / se ** 2
+    w_prior = 1.0 / prior_sd ** 2
     shrunk = (fitted * w_fit + prior * w_prior) / (w_fit + w_prior)
-    sd = math.sqrt((se ** 2 * w_fit + prior_sd ** 2 * w_prior) / (w_fit + w_prior)) / math.sqrt(1 + n / prior_n)
-    shrunk = max(2.0, min(14.0, shrunk))
-    return Slope(round(shrunk, 2), round(max(0.5, sd), 2), n, f"fitted on {n} runs, shrunk toward the prior")
+    sd = math.sqrt(1.0 / (w_fit + w_prior))
+    shrunk = max(3.0, min(12.0, shrunk))
+    return Slope(round(shrunk, 2), round(max(0.5, sd), 2), n,
+                 f"fitted on {n} steady runs ({fitted:.1f} ± {se:.1f}), shrunk toward the prior")
 
 
 # ── the adjustments ───────────────────────────────────────────────────
