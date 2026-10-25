@@ -70,3 +70,17 @@ def test_the_manifest_accepts_the_coach_s_scopes_and_budgets():
     assert m.capabilities.numbers_from_records
     with pytest.raises(ValueError):
         cmanifest.Manifest(name="x", state_scopes=["turn", "decade"])
+
+
+def test_the_state_store_knows_the_coach_s_scopes(tmp_path, monkeypatch):
+    from datetime import datetime
+    from core import state_scopes as ss
+    monkeypatch.setenv("RAHAT_TEST_MODE", "1")
+    now = datetime(2026, 10, 21, 9, 0)                                   # a Wednesday
+    assert ss.expiry_for("week", now) == "2026-10-25 23:59:59"
+    assert ss.expiry_for("block", now) == "2026-12-02 09:00:00"
+    assert ss.expiry_for("block", now, trip_end=datetime(2026, 11, 22, 23, 59, 59)) == "2026-11-22 23:59:59"
+    assert ss.expiry_for("season", now, trip_end=datetime(2026, 12, 15)) == "2026-12-15 00:00:00"
+    ss.put("kipchoge", "chat", "moved", {"from": "wed", "to": "thu"}, scope="week", now=now, db_path=str(tmp_path / "s.db"))
+    assert ss.get("kipchoge", "chat", "moved", now=now, db_path=str(tmp_path / "s.db")) == {"from": "wed", "to": "thu"}
+    assert ss.get("kipchoge", "chat", "moved", now=datetime(2026, 10, 26, 0, 1), db_path=str(tmp_path / "s.db")) is None

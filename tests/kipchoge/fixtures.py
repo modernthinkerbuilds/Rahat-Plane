@@ -137,3 +137,64 @@ ZONES = {"max": 190.0, "resting": 58.0, "lt1_lo": 150.0, "lt1_hi": 152.0, "zone2
          "sweet_lo": 142.0, "sweet_hi": 145.0, "cap": 145.0, "reference": 144.0}
 """An invented athlete for the public tests (a Zone 2 band of 140–145,
 cap 145, reference 144): the shape of a zones dict, nobody's zones."""
+
+
+# ── the private files' synthetic twins (public tests) ────────────────
+def synthetic_athlete() -> dict:
+    """The invented athlete as the athlete file holds one: every field with provenance; nobody's numbers."""
+    return {
+        "version": 1, "units": {"pace": "min/mi", "distance": "km+mi", "provenance": "test"},
+        "body": {"age": {"value": 41, "provenance": "test"}, "sex": {"value": "male", "provenance": "test"},
+                 "mass_kg": {"value": 80.0, "at": "2026-09-01", "provenance": "test"}},
+        "hr": {"max": ZONES["max"], "resting": ZONES["resting"], "lt1_lo": ZONES["lt1_lo"], "lt1_hi": ZONES["lt1_hi"],
+               "zone2_lo": ZONES["zone2_lo"], "zone2_hi": ZONES["zone2_hi"], "sweet_lo": ZONES["sweet_lo"], "sweet_hi": ZONES["sweet_hi"],
+               "cap": ZONES["cap"], "reference": ZONES["reference"],
+               "provenance": {"max": "test", "resting": "test", "lt1": "test", "zone2": "test", "cap": "test", "reference": "test"}},
+        "model": {"slope_s_per_mi_per_bpm": 6.5, "slope_sd": 2.0, "provenance": "test prior"},
+        "training": {"long_min": {"value": 85, "provenance": "test"}},
+    }
+
+
+def synthetic_plan(start: str = "2026-10-19", weeks: int = 5) -> dict:
+    """A five-week plan: Wednesday easy + strides (optional), Sunday steady + strides; the last Sunday a benchmark."""
+    from datetime import date as _date, timedelta as _td
+    d0 = _date.fromisoformat(start)
+    out = {"id": start, "name": "the test plan", "source": "test", "weeks": []}
+    for n in range(1, weeks + 1):
+        ws = d0 + _td(days=7 * (n - 1))
+        we = ws + _td(days=6)
+        wed, sun = ws + _td(days=2), ws + _td(days=6)
+        last = n == weeks
+        out["weeks"].append({"n": n, "start": ws.isoformat(), "end": we.isoformat(), "sessions": [
+            {"id": f"w{n}-wed", "date": wed.isoformat(), "type": "easy_strides", "minutes": 35, "minutes_lo": 30, "minutes_hi": 40,
+             "hr_lo": ZONES["zone2_lo"] - 4, "hr_hi": ZONES["zone2_lo"] + 1, "cap": ZONES["zone2_lo"] + 1, "strides": 6, "optional": True, "time": "18:45"},
+            {"id": f"w{n}-sun", "date": sun.isoformat(), "type": "benchmark" if last else "z2_strides", "minutes": 75, "minutes_lo": 75, "minutes_hi": 80,
+             "hr_lo": ZONES["sweet_lo"], "hr_hi": ZONES["sweet_hi"], "cap": ZONES["cap"], "strides": 0 if last else 6, "route": "creek", "time": "07:30",
+             "note": "the measurement" if last else ""},
+        ]})
+    return out
+
+
+def synthetic_goals() -> dict:
+    return {"primary": {"label": "a steady pace in the band by the test date", "pace_s_per_mi": 690, "hr_lo": ZONES["sweet_lo"], "hr_hi": ZONES["sweet_hi"],
+                        "date": "2026-12-20", "test_date": "2026-12-13", "test_route": "creek", "provenance": "test"}}
+
+
+def synthetic_routes() -> dict:
+    return {"routes": {"creek": {"name": "Creek Trail", "aliases": ["the creek", "creek trail"], "flat": True, "benchmark": True, "exposed": False,
+                                 "shade": "mostly shaded", "surface": "paved", "stops": "one crossing", "point": [36.66, -120.64]},
+                       "river": {"name": "River Trail", "aliases": ["the river"], "flat": True, "benchmark": False, "exposed": True,
+                                 "shade": "none", "surface": "paved", "point": None}}}
+
+
+def write_private_twins(vault_dir) -> None:
+    """The athlete, plan, goals, routes and rules files into a sandbox vault/kipchoge/."""
+    import json as _json
+    from pathlib import Path as _P
+    d = _P(vault_dir) / "kipchoge"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "athlete.json").write_text(_json.dumps(synthetic_athlete()))
+    (d / "plan.json").write_text(_json.dumps(synthetic_plan()))
+    (d / "goals.json").write_text(_json.dumps(synthetic_goals()))
+    (d / "routes.json").write_text(_json.dumps(synthetic_routes()))
+    (d / "rules.json").write_text(_json.dumps({"rules": ["Give watch-ready numbers in minutes per mile.", "Bottom line first for prescriptions."]}))

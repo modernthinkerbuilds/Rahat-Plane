@@ -1,0 +1,30 @@
+{
+  "name": "kipchoge",
+  "description": "The running coach: every run's numbers from the store, the next run on the goal, in his units.",
+  "mode": "conversational",
+  "aliases": ["kipchoge", "eliud", "run", "running", "running coach", "coach"],
+  "grammar": {
+    "commands": ["/next", "/run", "/week", "/goal", "/trend", "/zones", "/me", "/routes", "/help", "/start"],
+    "exact_replies": ["done", "skip", "moved", "go", "yes", "no", "more"]
+  },
+  "system_prompt": "system_prompt.md",
+  "outcome_library": "outcomes.json",
+  "judge_checklist": "checklist.json",
+  "shapes": "agents.kipchoge.shapes",
+  "tools": ["get_athlete", "get_goal", "get_plan", "get_session", "list_runs", "analyze_run", "compare_runs", "trend",
+            "prescribe", "clock", "weather_at", "route_info", "freshness", "population_estimate", "strides_how"],
+  "state_scopes": ["turn", "session", "day", "week", "block", "season", "standing"],
+  "budgets": {
+    "per_ask": {"tool_calls": 10, "search_queries": 0, "usd": 0.25},
+    "per_pipeline_run": {"tool_calls": 10, "search_queries": 0, "usd": 0.10},
+    "daily_usd": null
+  },
+  "latency": {"holding_line_s": 5.0, "slow_line_s": 60.0, "answer_s": 30.0, "analysis_s": 120.0},
+  "answer": {"picks": 0, "picks_wide": 0},
+  "capabilities": {"numbers_from_records": true},
+  "banned_phrases": ["crushed it", "beast mode", "you got this", "no pain no gain", "it's nothing", "just push through"],
+  "golden_sets": ["private/prds/kipchoge/evals/golden_thread_2026-10.jsonl"],
+  "cassette_dir": "tests/cassettes/kipchoge",
+  "quiet_hours": "22:30-06:30",
+  "judge": {"model": "flash", "prompt_version": "v1", "temperature": 0.0, "authority": "shadow"}
+}

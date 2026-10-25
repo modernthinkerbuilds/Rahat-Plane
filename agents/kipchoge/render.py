@@ -1,0 +1,290 @@
+"""agents.kipchoge.render — the coach's words on the page (PRD v0.3
+§10.2–10.3, §12.5).
+
+`render` prints the model's answer: every `{{r:<id>}}` becomes the
+record's value in his units (core.harness.numbers), banned phrases are
+struck, the sections keep their fixed order, a sources line closes.
+The floor templates (`card_floor`, `analysis_floor`, `review_floor`)
+build the same shapes from records alone, with no model: the next-run
+card, the run analysis (sections 1, 2, 6, 7 and 8) and the weekly
+review. Nothing here invents a number: a value with no record prints as
+"[no record]" and the problems list names it.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any
+
+from agents.kipchoge.records import RecordSet, rid
+from core.harness import numbers as cnum
+from core.harness.render import Rendered
+
+MAX_CHARS = 3600
+ONE_RULE = "The one rule: if HR passes {{r:%s}}, ease off until it's back in band. Never chase pace."
+
+
+def _units(ctx: dict) -> dict:
+    a = (ctx or {}).get("athlete") or {}
+    u = a.get("units") or {}
+    return {"pace": u.get("pace", "min/mi"), "distance": u.get("distance", "km+mi")}
+
+
+def _banned(text: str, banned: list[str]) -> list[str]:
+    low = (text or "").lower()
+    return [b for b in banned if b and b.lower() in low]
+
+
+def _strike(text: str, banned: list[str]) -> str:
+    for b in banned:
+        if b and b.lower() in text.lower():
+            import re
+            text = re.sub(re.escape(b), "", text, flags=re.I)
+    return text
+
+
+def fill(text: str, evidence: Any, units: dict) -> tuple[str, list[str]]:
+    return cnum.substitute(text, evidence, units=units)
+
+
+def render(frame: Any, answer: Any, evidence: Any, ctx: dict, disclosures: list[str], *, banned: list[str] | None = None,
+           max_chars: int = MAX_CHARS) -> Rendered:
+    units = _units(ctx)
+    banned = banned or []
+    problems: list[str] = []
+    absent: list[str] = []
+    lines: list[str] = []
+
+    def put(text: str, prefix: str = "") -> None:
+        if not text:
+            return
+        t, miss = fill(text, evidence, units)
+        absent.extend(miss)
+        t = _strike(t, banned)
+        lines.append(prefix + t)
+
+    kind = getattr(answer, "kind", "answer")
+    put(answer.headline)
+    for l in answer.bottom_line:
+        put(l)
+    for s in answer.sections:
+        title = (s.title or "").strip()
+        if kind == "card":
+            if title.lower().startswith(("why", "readiness", "conditions", "plan b")):
+                for i, l in enumerate(s.lines):
+                    put(l, (title.rstrip(":") + ": ") if i == 0 else "")
+            else:
+                for l in s.lines:
+                    put(l)
+        else:
+            if title:
+                lines.append("")
+                put(title.rstrip(":") + ":")
+            for l in s.lines:
+                put(l, "• " if kind == "analysis" and not l.startswith("•") else "")
+    if answer.hypotheses:
+        lines.append("")
+        put("Your observations, checked:")
+        verdict_words = {"supported": "supported", "partly": "partly", "not_supported": "not supported", "cannot_tell": "can't tell from the data"}
+        for h in answer.hypotheses:
+            put(f"• {h.claim.strip()} — {verdict_words.get(h.verdict, h.verdict)}" + (f": {h.size}" if h.size else ""))
+    if answer.next:
+        lines.append("")
+        put(answer.next, "Next: ")
+    if answer.data_notes:
+        lines.append("")
+        put("Data notes: " + " ".join(answer.data_notes))
+    if answer.question:
+        lines.append("")
+        put(answer.question)
+    for d in disclosures:
+        lines.append("")
+        lines.append(d)
+    body = "\n".join(lines).strip()
+    if absent:
+        problems.append("placeholders with no record: " + ", ".join(sorted(set(absent))[:6]))
+    hits = _banned(body, banned)
+    if hits:
+        problems.append("banned phrases struck: " + ", ".join(hits))
+    n_records = len(set(answer.evidence_ids())) if hasattr(answer, "evidence_ids") else 0
+    sources = [f"engine {getattr(evidence, 'version', '') or ''}".strip(), f"{n_records} records"]
+    trimmed = False
+    if len(body) > max_chars:
+        body = body[:max_chars - 1].rstrip() + "…"
+        trimmed = True
+    empty = not body.strip()
+    tail = "\nSources: " + " · ".join(s for s in sources if s and s != "engine") if body and n_records else ""
+    text = body + tail
+    return Rendered(text=text, sources=sources, problems=problems, empty=empty, disclosures=list(disclosures), chars=len(text), trimmed=trimmed)
+
+
+# ── the floor: templates from records, no model ───────────────────────
+def _has(ev: Any, *ids: str) -> bool:
+    return all(ev.get(i) is not None for i in ids)
+
+
+def card_floor(ev: Any, *, date_label: str, units: dict | None = None) -> str:
+    """The next-run card from the plan's, the model's and the clock's
+    records (`plan:<date>:*`, `rx:<date>:*`, `clock:*`, `wx:*`,
+    `route:*`, `lib:*`, `sleep:*`). `date_label` is the session's date."""
+    units = units or {"pace": "min/mi", "distance": "km+mi"}
+    p = rid("plan", date_label)
+    x = rid("rx", date_label)
+    parts: list[str] = []
+    head = [f"{{{{r:{p}:weekday}}}}"]
+    if ev.get(f"{p}:time") is not None:
+        head.append(f"{{{{r:{p}:time}}}}")
+    if ev.get(f"{p}:route") is not None:
+        head.append(f"{{{{r:{p}:route}}}}")
+    head.append(f"{{{{r:{p}:label}}}}")
+    if ev.get(f"{p}:week_of_block") is not None:
+        head.append(f"({{{{r:{p}:week_of_block}}}})")
+    parts.append(" · ".join(head[:-1]) + " " + head[-1] if ev.get(f"{p}:week_of_block") is not None else " · ".join(head))
+    line2 = f"Run {{{{r:{p}:minutes|int}}}}."
+    if ev.get(f"{x}:distance_km") is not None:
+        line2 += f" Expect {{{{r:{x}:distance_km|range}}}}."
+    parts.append(line2)
+    if _has(ev, f"{p}:hr_lo", f"{p}:hr_hi"):
+        ramp = f"{{{{r:{x}:ramp_min|bare}}}}" if ev.get(f"{x}:ramp_min") is not None else "{{r:lib:z2_steady:ramp_min|bare}}"
+        cap = f"{{{{r:{p}:cap}}}}" if ev.get(f"{p}:cap") is not None else f"{{{{r:{p}:hr_hi}}}}"
+        parts.append(f"HR: ramp to {{{{r:{p}:hr_lo|bare}}}}–{{{{r:{p}:hr_hi}}}} by minute {ramp}, hold it, cap {cap}.")
+    if ev.get(f"{x}:pace_s_per_mi") is not None:
+        parts.append(f"Pace will be ~{{{{r:{x}:pace_s_per_mi|range}}}}; don't chase it.")
+    elif ev.get(f"{x}:basis") is not None:
+        parts.append(f"Pace: {{{{r:{x}:basis}}}}.")
+    stype = ev.get(f"{p}:type")
+    if stype is not None and ev.get(rid("lib", str(stype.value), "ramp")) is not None:
+        parts.append("Ramp: " + f"{{{{r:lib:{stype.value}:ramp}}}}.")
+    strides = ev.get(f"{p}:strides")
+    if strides is not None and strides.value and stype is not None and ev.get(rid("lib", str(stype.value), "stride_s")) is not None:
+        walk = f"{{{{r:lib:{stype.value}:walk_min_after|bare}}}}" if ev.get(rid("lib", str(stype.value), "walk_min_after")) is not None else "a couple of"
+        parts.append(f"After: walk {walk} min, then {{{{r:{p}:strides|bare}}}} × {{{{r:lib:{stype.value}:stride_s}}}} strides, full recovery.")
+    if ev.get(f"{p}:cap") is not None:
+        parts.append(ONE_RULE % f"{p}:cap")
+    why = []
+    if stype is not None and ev.get(rid("lib", str(stype.value), "purpose")) is not None:
+        why.append(f"{{{{r:lib:{stype.value}:purpose}}}}")
+    if ev.get(f"{p}:note") is not None:
+        why.append(f"{{{{r:{p}:note}}}}")
+    ready = []
+    if ev.get("sleep:night_before_h") is not None:
+        ready.append("slept {{r:sleep:night_before_h}}")
+    if ev.get("vitals:resting_hr") is not None:
+        ready.append("resting HR {{r:vitals:resting_hr}}")
+    if ready:
+        why.append("Readiness: " + ", ".join(ready) + ".")
+    if why:
+        parts.append("")
+        parts.append("Why: " + "; ".join(why))
+    wx = [k for k in ev.ids() if k.startswith("wx:") and k.endswith(":temperature_f")] if hasattr(ev, "ids") else []
+    if wx:
+        base = wx[0].rsplit(":", 1)[0]
+        bits = [f"{{{{r:{base}:temperature_f}}}} at start"]
+        if ev.get(f"{base}:dew_point_f") is not None:
+            bits.append(f"dew point {{{{r:{base}:dew_point_f|bare}}}}")
+        if ev.get(f"{base}:cloud_pct") is not None:
+            bits.append(f"cloud {{{{r:{base}:cloud_pct}}}}")
+        parts.append("Conditions: " + ", ".join(bits) + ".")
+    else:
+        parts.append("Conditions: no route point on file yet, so no forecast; the first run with the route data on teaches it.")
+    text, absent = cnum.substitute("\n".join(parts), ev, units=units)
+    return text
+
+
+def analysis_floor(ev: Any, wid: str, *, units: dict | None = None, zones: dict | None = None) -> str:
+    """Sections 1, 2, 6, 7 and 8 of the analysis from the run's records."""
+    units = units or {"pace": "min/mi", "distance": "km+mi"}
+    r = lambda path: f"{{{{r:run:{wid}:{path}}}}}"  # noqa: E731
+    has = lambda path: ev.get(rid("run", wid, path)) is not None and ev.get(rid("run", wid, path)).value is not None  # noqa: E731
+    grade = ev.get(rid("run", wid, "grade"))
+    stype = ev.get(rid("run", wid, "session_type"))
+    head = []
+    if stype is not None and grade is not None:
+        head.append(f"{r('start_local')}: {r('session_type')}, grade {r('grade')}" + (" (borderline)" if (ev.get(rid('run', wid, 'grade.borderline')) or type('x', (), {'value': False})).value else "") + ".")
+    nums = []
+    if has("distance_km"):
+        nums.append(r("distance_km"))
+    if has("moving_min"):
+        nums.append(f"{r('moving_min|int')} moving")
+    if has("hr_avg_moving"):
+        nums.append(f"avg {r('hr_avg_moving')}")
+    if has("hr_max"):
+        nums.append(f"max {r('hr_max')}")
+    if has("pace_s_per_mi"):
+        nums.append(f"{r('pace_s_per_mi')}")
+    if has("norm.pace_at_ref"):
+        nums.append(f"normalized {r('norm.pace_at_ref')} ({r('norm.pace_at_ref|range')}) at {r('norm.ref_hr')}")
+    if nums:
+        head.append(", ".join(nums) + ".")
+    parts = [" ".join(head)]
+    shows = []
+    if has("run_halves.first.hr_avg") and has("run_halves.second.hr_avg"):
+        shows.append(f"• Halves: {r('run_halves.first.hr_avg')} → {r('run_halves.second.hr_avg')}" + (f" ({r('run_halves.first.pace_s_per_mi')} → {r('run_halves.second.pace_s_per_mi')})" if has("run_halves.first.pace_s_per_mi") else "") + ".")
+    if has("ramp_min") and ev.get(rid("run", wid, "ramp_min")).value is not None:
+        shows.append(f"• Ramp: {r('ramp_min')} to the band.")
+    if has("time_in_zone.in_band_pct"):
+        shows.append(f"• Time in band: {r('time_in_zone.in_band_pct')}; over the cap {r('time_in_zone.over_cap_min|int')}.")
+    if has("decoupling_pct") and ev.get(rid("run", wid, "decoupling_pct")).value is not None:
+        shows.append(f"• Decoupling: {r('decoupling_pct')}; drift {r('drift_bpm|signed')}.")
+    if has("artifacts") and (ev.get(rid("run", wid, "artifacts")).value or 0) > 0:
+        shows.append(f"• Artifacts: {r('artifacts')} readings excluded (post-stop or the first minutes).")
+    if has("hr_gaps") and (ev.get(rid("run", wid, "hr_gaps")).value or 0) > 0:
+        shows.append(f"• Heart-rate gaps: {r('hr_gaps')}, longest {r('hr_gaps.longest_s')}; reported, not subtracted from the moving time.")
+    if has("wx.temperature_f"):
+        shows.append(f"• Conditions: {r('wx.temperature_f')}, dew point {r('wx.dew_point_f')}, apparent {r('wx.apparent_f')}.")
+    if has("sleep.night_before_h") and ev.get(rid("run", wid, "sleep.night_before_h")).value is not None:
+        shows.append(f"• Sleep: {r('sleep.night_before_h')} the night before" + (f", two-night average {r('sleep.two_night_avg_h')}" if has("sleep.two_night_avg_h") and ev.get(rid('run', wid, 'sleep.two_night_avg_h')).value is not None else "") + ".")
+    if shows:
+        parts.append("")
+        parts.append("What the data shows:")
+        parts.extend(shows)
+    trend_ids = [k for k in ev.ids() if k.startswith("trend:") and k.endswith(":pace_s_per_mi")] if hasattr(ev, "ids") else []
+    if trend_ids:
+        t = trend_ids[-1]
+        parts.append("")
+        parts.append(f"The trend: {{{{r:{t}}}}} ({{{{r:{t}|range}}}}) at the reference heart rate over {{{{r:{t.rsplit(':', 1)[0]}:n_runs}}}} runs.")
+    fc = [k for k in ev.ids() if k.startswith("forecast:") and k.endswith(":pace_s_per_mi")] if hasattr(ev, "ids") else []
+    if fc:
+        parts.append(f"The goal forecast: {{{{r:{fc[-1]}}}}} ({{{{r:{fc[-1]}|range}}}}), an early estimate.")
+    nxt = [k for k in ev.ids() if k.startswith("plan:") and k.endswith(":type") and not k.startswith("plan:next")] if hasattr(ev, "ids") else []
+    parts.append("")
+    if nxt:
+        base = nxt[0].rsplit(":", 1)[0]
+        parts.append(f"Next: {{{{r:{base}:weekday}}}} {{{{r:{base}:label}}}}, {{{{r:{base}:minutes|int}}}}, band {{{{r:{base}:hr_lo|bare}}}}–{{{{r:{base}:hr_hi}}}}, cap {{{{r:{base}:cap}}}}.")
+    else:
+        parts.append("Next: the plan has no session on file; say when you'll run and I'll set the card.")
+    notes = []
+    if has("notes"):
+        notes.append(r("notes"))
+    if has("fitness_data_point") and ev.get(rid("run", wid, "fitness_data_point")).value is False:
+        notes.append("Grade D: this run does not count as a fitness data point.")
+    if notes:
+        parts.append("")
+        parts.append("Data notes: " + " ".join(notes))
+    text, _ = cnum.substitute("\n".join(parts), ev, units=units)
+    return text
+
+
+def review_floor(ev: Any, week_label: str, *, units: dict | None = None) -> str:
+    """The weekly review from records: done vs planned per session, the trend, the forecast."""
+    units = units or {"pace": "min/mi", "distance": "km+mi"}
+    parts = [f"Week review: {{{{r:review:{week_label}:label}}}}."]
+    bases = {k.rsplit(":", 1)[0] for k in ev.ids() if k.startswith(f"review:{week_label}:session:") and k.endswith(":status")}
+    sessions = sorted(bases, key=lambda b: (ev.get(f"{b}:order").value if ev.get(f"{b}:order") is not None else 0, b))
+    for base in sessions:
+        parts.append(f"• {{{{r:{base}:weekday}}}} {{{{r:{base}:label}}}}: {{{{r:{base}:status}}}}" +
+                     (f" — {{{{r:{base}:grade}}}}, {{{{r:{base}:pace_s_per_mi}}}}" if ev.get(f"{base}:grade") is not None else "") + ".")
+    if ev.get(f"review:{week_label}:done") is not None:
+        parts.append(f"Done {{{{r:review:{week_label}:done|bare}}}} of {{{{r:review:{week_label}:planned|bare}}}} planned.")
+    trend_ids = [k for k in ev.ids() if k.startswith("trend:") and k.endswith(":pace_s_per_mi")]
+    if trend_ids:
+        t = trend_ids[-1]
+        parts.append(f"The trend: {{{{r:{t}}}}} ({{{{r:{t}|range}}}}) over {{{{r:{t.rsplit(':', 1)[0]}:n_runs}}}} runs.")
+    fc = [k for k in ev.ids() if k.startswith("forecast:") and k.endswith(":pace_s_per_mi")]
+    if fc:
+        parts.append(f"The goal forecast: {{{{r:{fc[-1]}}}}} ({{{{r:{fc[-1]}|range}}}}), an early estimate.")
+    nxt = [k for k in ev.ids() if k.startswith("plan:next:")]
+    if nxt and ev.get("plan:next:date") is not None:
+        d = ev.get("plan:next:date").value
+        parts.append(f"Next week's first session: {{{{r:plan:{d}:weekday}}}} {{{{r:plan:{d}:label}}}}, {{{{r:plan:{d}:minutes|int}}}}.")
+    text, _ = cnum.substitute("\n".join(parts), ev, units=units)
+    return text

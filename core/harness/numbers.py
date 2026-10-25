@@ -141,6 +141,9 @@ def substitute(text: str, records: Any, *, units: dict | None = None, missing: s
             lo, hi = field(rec, "lo"), field(rec, "hi")
             if lo is None or hi is None:
                 return format_value(field(rec, "value"), unit, "", units=units)
+            if unit == "km" and (units or {}).get("distance") == "km+mi":
+                return (f"{_num(float(lo), 1)}–{_num(float(hi), 1)} km "
+                        f"({_num(float(lo) / 1.609344, 1)}–{_num(float(hi) / 1.609344, 1)} mi)")
             return f"{format_value(lo, unit, 'bare', units=units)}–{format_value(hi, unit, '', units=units)}"
         if fmt == "signed":
             return format_value(field(rec, "value"), unit, "signed", units=units)

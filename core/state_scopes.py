@@ -29,7 +29,7 @@ from typing import Any
 
 from core import io as cio
 
-SCOPES = ("turn", "session", "day", "trip", "standing")
+SCOPES = ("turn", "session", "day", "trip", "standing", "week", "block", "season")   # week/block/season: A6, a coach plans in them
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS state_scoped (
@@ -71,6 +71,13 @@ def expiry_for(scope: str, now: datetime, *, session_hours: float = 12.0,
         return _fmt(now.replace(hour=23, minute=59, second=59, microsecond=0))
     if scope == "trip":
         return _fmt(trip_end) if trip_end else None
+    if scope == "week":                       # the end of this week (Sunday)
+        end = now + timedelta(days=6 - now.weekday())
+        return _fmt(end.replace(hour=23, minute=59, second=59, microsecond=0))
+    if scope == "block":                      # a training block: its stated end, else six weeks
+        return _fmt(trip_end) if trip_end else _fmt(now + timedelta(days=42))
+    if scope == "season":                     # a goal's horizon: its stated end, else half a year
+        return _fmt(trip_end) if trip_end else _fmt(now + timedelta(days=182))
     return None
 
 
