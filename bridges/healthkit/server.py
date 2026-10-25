@@ -106,7 +106,8 @@ async def hae(request: Request,
     """Health Auto Export REST-API automation target."""
     _check_key(x_api_key)
     try:
-        payload = await request.json()
+        body = await request.body()
+        payload = json.loads(body)
     except Exception:  # noqa: BLE001
         raise HTTPException(status_code=400, detail="invalid JSON")
     con = sqlite3.connect(_db_path())
@@ -122,7 +123,8 @@ async def hae(request: Request,
                 summary["workouts"], summary["skipped"],
                 ",".join(summary["metrics_seen"])[:200],
                 (f" route {summary['route_points']} pts, series {summary['series_rows']} rows, "
-                 f"files {summary['files']}, links {summary['links']}") if summary["workouts"] else "")
+                 f"files {summary['files']}, links {summary['links']}, body {len(body) / 1_048_576:.1f} MB")
+                if summary["workouts"] else "")
     return {"status": "success", **{k: v for k, v in summary.items()
                                     if k != "metrics_seen"}}
 
