@@ -95,6 +95,15 @@ step "regression registry" \
 step "silent-failure guard" \
     "$PY" -m pytest tests/silent_failure -q --no-header -x
 
+# 3b. The running coach's engine (2026-10-25): the synthetic cases always,
+#     the private numeric goldens when vault/kipchoge/ is on this machine
+#     (the module skips cleanly without it, so a clone with no vault is
+#     never blocked).
+if [[ -d tests/kipchoge ]]; then
+    step "kipchoge engine" \
+        "$PY" -m pytest tests/kipchoge -q --no-header -x
+fi
+
 # 4. Unit + contract layers via the existing run_all harness.
 #    --layer flags route to the right subset.
 if [[ -f tests/run_all.py ]]; then
