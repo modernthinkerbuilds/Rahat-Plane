@@ -298,6 +298,17 @@ def runs_in(con: sqlite3.Connection, since: str, until: str | None = None, *, na
 
 
 # ── provisional ───────────────────────────────────────────────────────
+def provisional_id(session: dict, *, offset_min: int | None = None) -> str | None:
+    """A provisional run's id, `prov:<start utc>`, from the detector's
+    session dict alone (the pipeline's sent-once key is built on it)."""
+    start = _dt(session.get("start"))
+    if start is None:
+        return None
+    if offset_min is None:
+        offset_min = home_offset_min(start)
+    return "prov:" + (start - timedelta(minutes=offset_min)).strftime("%Y-%m-%d %H:%M:%S")
+
+
 def provisional_run(con: sqlite3.Connection, session: dict, *, offset_min: int | None = None) -> RunData | None:
     """A run the minute data shows before the file lands (Huberman's
     `sessions_from_vitals` dict: name, start, end, minutes, kind,
@@ -308,8 +319,7 @@ def provisional_run(con: sqlite3.Connection, session: dict, *, offset_min: int |
         return None
     if offset_min is None:
         offset_min = home_offset_min(start)
-    start_utc = (start - timedelta(minutes=offset_min)).strftime("%Y-%m-%d %H:%M:%S")
-    run = RunData(workout_id=f"prov:{start_utc}", name=session.get("name") or "Outdoor Run", start_local=start,
+    run = RunData(workout_id=provisional_id(session, offset_min=offset_min), name=session.get("name") or "Outdoor Run", start_local=start,
                   duration_s=(end - start).total_seconds(), elapsed_s=(end - start).total_seconds(), offset_min=offset_min,
                   provisional=True)
     for ts, v in _vitals(con, "heart_rate", start, end):

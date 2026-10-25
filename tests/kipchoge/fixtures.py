@@ -176,7 +176,7 @@ def synthetic_plan(start: str = "2026-10-19", weeks: int = 5) -> dict:
 
 
 def synthetic_goals() -> dict:
-    return {"primary": {"label": "a steady pace in the band by the test date", "pace_s_per_mi": 690, "hr_lo": ZONES["sweet_lo"], "hr_hi": ZONES["sweet_hi"],
+    return {"primary": {"label": "a steady pace in the band by the test date", "pace_s_per_mi": 720, "hr_lo": ZONES["sweet_lo"], "hr_hi": ZONES["sweet_hi"],
                         "date": "2026-12-20", "test_date": "2026-12-13", "test_route": "creek", "provenance": "test"}}
 
 

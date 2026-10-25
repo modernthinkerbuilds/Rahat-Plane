@@ -81,7 +81,20 @@ BOURDAIN: list[tuple[str, str]] = [
     ("help", "How to talk to me"),
 ]
 
-MENUS: dict[str, list[tuple[str, str]]] = {"miya": MIYA, "genie": GENIE, "bourdain": BOURDAIN}
+# ── Kipchoge: the running coach, its own bot (PRD v0.3 §15e); every number from the store ──
+KIPCHOGE: list[tuple[str, str]] = [
+    ("next", "The next planned run: minutes, heart-rate band, cap, expected pace"),
+    ("run", "The last run's analysis · /run list · /run yesterday · /run 2026-10-18"),
+    ("week", "This week's sessions against the plan"),
+    ("trend", "The rolling pace at the reference heart rate, and the goal forecast"),
+    ("goal", "The goal in force"),
+    ("zones", "Your heart-rate bands"),
+    ("me", "The athlete file"),
+    ("routes", "The routes on file"),
+    ("help", "How to talk to me"),
+]
+
+MENUS: dict[str, list[tuple[str, str]]] = {"miya": MIYA, "genie": GENIE, "bourdain": BOURDAIN, "kipchoge": KIPCHOGE}
 
 
 def as_commands(menu: list[tuple[str, str]]) -> list[dict[str, str]]:

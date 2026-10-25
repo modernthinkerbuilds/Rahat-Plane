@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+    Launchd manifest TEMPLATE for the standalone Kipchoge Telegram bot
+    (the running coach; PRD v0.3 §15e, 2026-10-25), built like Bourdain.
+    A SEPARATE SERVICE from com.rahat.miya.v2 and com.rahat.bourdain —
+    separate bot token (KIPCHOGE_BOT_TOKEN), separate log
+    (vault/kipchoge_bot.log), same repo + venv. The runner refuses to
+    boot if the token matches any other bot's token (single-poller
+    resource).
+
+    Install with scripts/install_kipchoge_bot.sh (renders + loads), or by
+    hand:
+        sed -e "s|{{RAHAT_HOME}}|$HOME/developer/agency/rahat|g" \
+            -e "s|{{PYTHON_BIN}}|$HOME/developer/agency/rahat/.venv/bin/python|g" \
+            scripts/com.rahat.kipchoge.plist.template \
+            > ~/Library/LaunchAgents/com.rahat.kipchoge.plist
+        launchctl load ~/Library/LaunchAgents/com.rahat.kipchoge.plist
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.rahat.kipchoge</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/caffeinate</string>
+        <string>-imd</string>
+        <string>{{PYTHON_BIN}}</string>
+        <string>-u</string>
+        <string>-m</string>
+        <string>new_plane.kipchoge_runner</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>{{RAHAT_HOME}}</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>StandardOutPath</key>
+    <string>{{RAHAT_HOME}}/vault/kipchoge_bot.log</string>
+    <key>StandardErrorPath</key>
+    <string>{{RAHAT_HOME}}/vault/kipchoge_bot.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <!-- Secrets & config live in .env (gitignored) — the runner loads
+             dotenv itself. NEVER put a literal $VAR here: launchd does
+             not shell-expand (the 2026-08-01 literal-$HOME incident). -->
+    </dict>
+</dict>
+</plist>

@@ -288,3 +288,172 @@ def review_floor(ev: Any, week_label: str, *, units: dict | None = None) -> str:
         parts.append(f"Next week's first session: {{{{r:plan:{d}:weekday}}}} {{{{r:plan:{d}:label}}}}, {{{{r:plan:{d}:minutes|int}}}}.")
     text, _ = cnum.substitute("\n".join(parts), ev, units=units)
     return text
+
+
+# ── the bot's lookups: templates from records, no model (PRD v0.3 §15e) ──
+def athlete_floor(ev: Any, *, units: dict | None = None) -> str:
+    """`/me`: the athlete file as records (`athlete:*`), nothing else."""
+    units = units or {"pace": "min/mi", "distance": "km+mi"}
+    a = "athlete"
+    parts = ["From the athlete file:"]
+    hr = []
+    if ev.get(f"{a}:hr:max") is not None:
+        hr.append(f"HRmax {{{{r:{a}:hr:max}}}}")
+    if ev.get(f"{a}:hr:resting") is not None:
+        hr.append(f"resting {{{{r:{a}:hr:resting}}}}")
+    if hr:
+        parts.append("• " + ", ".join(hr) + ".")
+    parts += _zone_lines(ev)
+    body = []
+    if ev.get(f"{a}:body:mass_kg") is not None:
+        body.append(f"mass {{{{r:{a}:body:mass_kg}}}}")
+    if ev.get(f"{a}:body:age") is not None:
+        body.append(f"age {{{{r:{a}:body:age}}}}")
+    if body:
+        parts.append("• " + ", ".join(body) + ".")
+    if ev.get(f"{a}:training:long_min") is not None:
+        parts.append(f"• A long run starts at {{{{r:{a}:training:long_min}}}}.")
+    if ev.get(f"{a}:model:slope_s_per_mi_per_bpm") is not None:
+        parts.append(f"• The model's prior: {{{{r:{a}:model:slope_s_per_mi_per_bpm|bare}}}} s/mi per bpm.")
+    if _has(ev, f"{a}:units:pace", f"{a}:units:distance"):
+        parts.append(f"• Units: pace in {{{{r:{a}:units:pace}}}}, distance in {{{{r:{a}:units:distance}}}}.")
+    text, _ = cnum.substitute("\n".join(parts), ev, units=units)
+    return text
+
+
+def _zone_lines(ev: Any) -> list[str]:
+    a = "athlete"
+    out = []
+    if _has(ev, f"{a}:hr:zone2_lo", f"{a}:hr:zone2_hi"):
+        out.append(f"• Zone 2: {{{{r:{a}:hr:zone2_lo|bare}}}}–{{{{r:{a}:hr:zone2_hi}}}}.")
+    if _has(ev, f"{a}:hr:sweet_lo", f"{a}:hr:sweet_hi"):
+        out.append(f"• The steady band: {{{{r:{a}:hr:sweet_lo|bare}}}}–{{{{r:{a}:hr:sweet_hi}}}}.")
+    if _has(ev, f"{a}:hr:lt1_lo", f"{a}:hr:lt1_hi"):
+        out.append(f"• LT1: {{{{r:{a}:hr:lt1_lo|bare}}}}–{{{{r:{a}:hr:lt1_hi}}}}.")
+    if ev.get(f"{a}:hr:cap") is not None:
+        out.append(f"• Cap: {{{{r:{a}:hr:cap}}}}.")
+    if ev.get(f"{a}:hr:reference") is not None:
+        out.append(f"• Reference HR for normalized pace: {{{{r:{a}:hr:reference}}}}.")
+    return out
+
+
+def zones_floor(ev: Any, *, units: dict | None = None) -> str:
+    """`/zones`: the bands from the athlete file, and the one rule."""
+    units = units or {"pace": "min/mi", "distance": "km+mi"}
+    parts = ["Your heart-rate bands:"] + _zone_lines(ev)
+    if ev.get("athlete:hr:cap") is not None:
+        parts.append(ONE_RULE % "athlete:hr:cap")
+    if len(parts) == 1:
+        parts.append("• No bands on file yet.")
+    text, _ = cnum.substitute("\n".join(parts), ev, units=units)
+    return text
+
+
+def goal_floor(ev: Any, *, units: dict | None = None) -> str:
+    """`/goal`: the goal file as records, and the forecast when the trend ran."""
+    units = units or {"pace": "min/mi", "distance": "km+mi"}
+    g = "goal:primary"
+    if ev.get(f"{g}:set") is not None and not ev.get(f"{g}:set").value:
+        return "No goal on file yet."
+    parts = []
+    head = "The goal"
+    if ev.get(f"{g}:label") is not None:
+        head += f": {{{{r:{g}:label}}}}"
+    parts.append(head + ".")
+    line = []
+    if ev.get(f"{g}:pace_s_per_mi") is not None:
+        line.append(f"{{{{r:{g}:pace_s_per_mi}}}}")
+    if _has(ev, f"{g}:hr_lo", f"{g}:hr_hi"):
+        line.append(f"at {{{{r:{g}:hr_lo|bare}}}}–{{{{r:{g}:hr_hi}}}}")
+    if ev.get(f"{g}:date") is not None:
+        line.append(f"by {{{{r:{g}:date}}}}")
+    if line:
+        parts.append("• " + " ".join(line) + ".")
+    test = []
+    if ev.get(f"{g}:test_date") is not None:
+        test.append(f"the test on {{{{r:{g}:test_date}}}}")
+    if ev.get(f"{g}:test_route") is not None:
+        test.append(f"on {{{{r:{g}:test_route}}}}")
+    if test:
+        parts.append("• " + " ".join(test) + ".")
+    parts += _forecast_lines(ev)
+    text, _ = cnum.substitute("\n".join(parts), ev, units=units)
+    return text
+
+
+def _forecast_lines(ev: Any) -> list[str]:
+    out = []
+    fc = [k for k in ev.ids() if k.startswith("forecast:") and k.endswith(":pace_s_per_mi")]
+    if fc:
+        base = fc[-1].rsplit(":", 1)[0]
+        line = f"• The line carried to the goal date: {{{{r:{fc[-1]}}}}} ({{{{r:{fc[-1]}|range}}}})"
+        if ev.get(f"{base}:weeks") is not None:
+            line += f", {{{{r:{base}:weeks|bare}}}} weeks out"
+        if ev.get(f"{base}:p_target") is not None:
+            line += f"; chance of the target {{{{r:{base}:p_target}}}}"
+        out.append(line + " — an early estimate.")
+    return out
+
+
+def trend_floor(ev: Any, *, units: dict | None = None) -> str:
+    """`/trend`: the rolling estimate, its slope and the forecast, from the trend tool's records."""
+    units = units or {"pace": "min/mi", "distance": "km+mi"}
+    trend_ids = [k for k in ev.ids() if k.startswith("trend:") and k.endswith(":pace_s_per_mi")]
+    if not trend_ids:
+        return "No runs in the store yet, so no trend."
+    t = trend_ids[-1]
+    base = t.rsplit(":", 1)[0]
+    parts = [f"The trend: {{{{r:{t}}}}} ({{{{r:{t}|range}}}}) at the reference heart rate, over {{{{r:{base}:n_runs}}}} runs."]
+    if ev.get(f"{base}:slope_s_per_mi_per_week") is not None:
+        parts.append(f"• The line's slope: {{{{r:{base}:slope_s_per_mi_per_week|signed}}}} per week (negative is faster).")
+    if ev.get(f"{base}:method") is not None:
+        parts.append(f"• Method: {{{{r:{base}:method}}}}.")
+    parts += _forecast_lines(ev)
+    text, _ = cnum.substitute("\n".join(parts), ev, units=units)
+    return text
+
+
+def routes_floor(ev: Any, *, units: dict | None = None) -> str:
+    """`/routes`: each route in the library from its records."""
+    units = units or {"pace": "min/mi", "distance": "km+mi"}
+    keys = sorted({k.rsplit(":", 1)[0] for k in ev.ids() if k.startswith("route:") and k.endswith(":name")})
+    if not keys:
+        return "No routes on file yet; the first run with the route data on teaches one."
+    parts = ["Routes on file:"]
+    for base in keys:
+        bits = [f"{{{{r:{base}:name}}}}"]
+        for k, label in (("flat", "flat"), ("benchmark", "benchmark"), ("exposed", "exposed")):
+            r = ev.get(f"{base}:{k}")
+            if r is not None and r.value:
+                bits.append(label)
+        for k in ("shade", "surface", "stops"):
+            if ev.get(f"{base}:{k}") is not None:
+                bits.append(f"{{{{r:{base}:{k}}}}}")
+        hp = ev.get(f"{base}:has_point")
+        bits.append("weather point on file" if (hp is not None and hp.value) else "no weather point yet")
+        parts.append("• " + ", ".join(bits) + ".")
+    text, _ = cnum.substitute("\n".join(parts), ev, units=units)
+    return text
+
+
+def runs_floor(ev: Any, *, units: dict | None = None) -> str:
+    """`/run list`: the recent runs from `list_runs`'s records, newest first."""
+    units = units or {"pace": "min/mi", "distance": "km+mi"}
+    bases = []
+    for k in ev.ids():
+        if k.startswith("run:") and k.endswith(":start_local"):
+            bases.append(k.rsplit(":", 1)[0])
+    if not bases:
+        return "No runs in the store yet."
+    rows = sorted(bases, key=lambda b: str(ev.get(f"{b}:start_local").value), reverse=True)
+    parts = ["Recent runs:"]
+    for b in rows:
+        bits = [f"{{{{r:{b}:start_local}}}}"]
+        for k in ("session_type", "grade", "pace_s_per_mi", "hr_avg_moving", "distance_km", "moving_min"):
+            if ev.get(f"{b}:{k}") is not None:
+                bits.append(f"{{{{r:{b}:{k}}}}}")
+        parts.append("• " + " · ".join(bits))
+    if ev.get("runs:count") is not None:
+        parts.append("{{r:runs:count}} primary runs in the store.")
+    text, _ = cnum.substitute("\n".join(parts), ev, units=units)
+    return text
