@@ -165,7 +165,7 @@ class TestRoutingFidelity:
 # until the RNG finds it. When a new agent gets a route, add it HERE in
 # the same commit.
 _VALID_PATHS = {"kobe_route", "fraser_route", "huberman_route",
-                "genie_route", "orchestrate"}
+                "genie_route", "kipchoge_route", "orchestrate"}
 
 
 class TestClassifierProperties:

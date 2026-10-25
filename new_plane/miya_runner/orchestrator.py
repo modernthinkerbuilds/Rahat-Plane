@@ -602,16 +602,21 @@ def _finalize_delegated(*, raw_text: str, path: str, turn: "Turn",
     # would only let the synth paraphrase an exact family plan — the
     # same class as the /profile case above. Scrub/validate/never-empty/
     # charter below still run on it like every other path.
-    deterministic = (path == "genie_route")
+    # kipchoge_route (2026-10-25): the coach's text is already checked
+    # against the store's records (E1); a paraphrase would put unchecked
+    # numbers back. Same treatment as Genie: no revoice, every other
+    # stage of the sink runs. COORDINATION: shared file — one tuple.
+    _NO_REVOICE = ("genie_route", "kipchoge_route")
+    deterministic = (path in _NO_REVOICE)
     try:
         from core import dispatcher as _disp
         _route = _disp.match_route(stripped_msg)
         deterministic = deterministic or _route is not None
         if (deterministic and _disp.cooldown_llm_enabled()
                 and _route in ("post_recovery", "pre_fuel")):
-            deterministic = (path == "genie_route")
+            deterministic = (path in _NO_REVOICE)
     except Exception:
-        deterministic = (path == "genie_route")
+        deterministic = (path in _NO_REVOICE)
     if _revoice_enabled() and not deterministic:
         text, revoice_meta = _revoice_through_synth(
             raw_text=text, user_message=turn.user_message,
@@ -811,6 +816,26 @@ def handle(turn: Turn) -> Response:
         )
         return _finalize_delegated(
             raw_text=text, path="genie_route", turn=turn,
+            stripped_msg=stripped_msg, trace_id=trace_id,
+            used=used, transport_errors=transport_errors)
+
+    # Agent #6 (2026-10-25): the running coach, behind RAHAT_KIPCHOGE_ROUTE
+    # (the classifier emits the path only with the flag on). Through the
+    # SAME finalize sink as every other delegation path (06-23 contract);
+    # no revoice, the text is the coach's own, checked against records.
+    # COORDINATION: shared file — one additive branch.
+    if delegation_path == "kipchoge_route":
+        r = adapter.kipchoge_route(stripped_msg,
+                                   chat_id=turn.chat_id or None,
+                                   trace_id=trace_id)
+        used.append("kipchoge_route")
+        if r.transport_error:
+            transport_errors.append(f"kipchoge_route: {r.transport_error}")
+        text = (r.result or {}).get("text", "") if r.ok else (
+            r.error or r.transport_error or "(no response)"
+        )
+        return _finalize_delegated(
+            raw_text=text, path="kipchoge_route", turn=turn,
             stripped_msg=stripped_msg, trace_id=trace_id,
             used=used, transport_errors=transport_errors)
 

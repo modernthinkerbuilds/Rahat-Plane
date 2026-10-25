@@ -89,16 +89,19 @@ def home_now(now_utc: datetime | None = None) -> datetime:
 
 # ── one turn ──────────────────────────────────────────────────────────
 def process_message(chat_id: str | int, text: str, now: datetime | None = None, *,
-                    send: Callable[[str], None] | None = None, db_path: str | None = None) -> str:
+                    send: Callable[[str], None] | None = None, db_path: str | None = None,
+                    trusted: bool = False) -> str:
     """One inbound message → one reply. Never raises, never empty.
-    `send` lets the harness post its holding line while it works."""
+    `send` lets the harness post its holding line while it works.
+    `trusted` is Miya's route: the sender was gated there, so the
+    coach's own chat allow-list is not consulted."""
     from core import decisions
     cid = str(chat_id)
     text = (text or "").strip()
     tid = decisions.new_trace()
     try:
         with decisions.span("kipchoge_bot.turn", trace_id=tid, actor="kipchoge", input=text[:200]) as s:
-            reply = _process(cid, text, now or home_now(), send=send, db_path=db_path)
+            reply = _process(cid, text, now or home_now(), send=send, db_path=db_path, trusted=trusted)
             s.output = (reply or "")[:200]
     except Exception as e:  # noqa: BLE001 — the poll loop must survive
         logger.exception("kipchoge_bot turn failed: %s", e)
@@ -109,10 +112,11 @@ def process_message(chat_id: str | int, text: str, now: datetime | None = None, 
     return reply
 
 
-def _process(cid: str, text: str, now: datetime, send: Callable[[str], None] | None, db_path: str | None) -> str:
+def _process(cid: str, text: str, now: datetime, send: Callable[[str], None] | None, db_path: str | None,
+             trusted: bool = False) -> str:
     from agents.kipchoge import harness_bridge as hb
     from core import inbound
-    if not is_allowed(cid):
+    if not trusted and not is_allowed(cid):
         logger.warning("message from an unpaired chat %s", cid)
         return _NOT_YOURS
     if not text:

@@ -49,6 +49,34 @@ _ADDRESS_RE = re.compile(
 )
 
 
+# ─── Kipchoge, the running coach (agent #6; PRD v0.3 §11, 2026-10-25) ──
+# Behind RAHAT_KIPCHOGE_ROUTE (default OFF → routing is byte-identical to
+# before). On: "@kipchoge …" / "/kipchoge …" and running asks go to
+# kipchoge_route (native_client.kipchoge_route → the coach's own bot core:
+# the lookups from records, free text through its harness). The running
+# words are specific on purpose: "pace" alone is Kobe's (/pace, the
+# day's burn), "tempo" alone is a lifting tempo, "run out of" is not a
+# run. A cooldown ask after a run stays Huberman's (rung 4a½ precedes).
+# COORDINATION: shared file — one flag-gated address check and one
+# flag-gated rung; tests/quality_gate _VALID_PATHS in the same commit.
+_KIPCHOGE_ADDRESS_RE = re.compile(r"^\s*(?:@kipchoge|/kipchoge)(?:@\w+)?\b\s*(.*)$", re.I | re.DOTALL)
+_KIPCHOGE_NL_RE = re.compile(
+    r"\b(?:my (?:last |next |long |easy |tempo |sunday |wednesday )?runs?|(?:next|last|long|easy|tempo|recovery|zone ?2|z2) runs?"
+    r"|running (?:pace|form|cadence|shoes?|zones?|heart[- ]rate|plan|goal)|strides|jog(?:ging)?"
+    r"|(?:5|10) ?k(?: race| time| pace)?|half[- ]marathon|marathon"
+    r"|(?:mile|/mi|per[- ]mile) pace|min(?:utes)?(?: per |/)mi(?:le)?|heart[- ]rate (?:zones?|band|cap)|\bhrmax\b|\blt1\b)\b",
+    re.I)
+_KIPCHOGE_NOT_RE = re.compile(
+    r"\b(?:wod|metcon|crossfit|squat\w*|deadlift\w*|bench|snatch\w*|clean\w*|jerk\w*|amrap|emom|burpee\w*"
+    r"|run(?:ning)? (?:late|out|low|behind|through|into|by|it|that|this|errands?))\b", re.I)
+
+
+def kipchoge_route_enabled() -> bool:
+    """RAHAT_KIPCHOGE_ROUTE=1 (the owner flips it; default off)."""
+    import os
+    return (os.getenv("RAHAT_KIPCHOGE_ROUTE") or "").strip().lower() in ("1", "true", "on", "yes")
+
+
 # ─── Genie-owned surface (agent #4, 2026-08-06) ───────────────────────
 # Genie's slash commands are carved out BEFORE the generic slash→Kobe
 # rule — otherwise "/genie" would go full-route to Kobe, whose slash
@@ -346,7 +374,7 @@ def classify_delegation(msg: str) -> tuple[str, str]:
 
     Returns (path, stripped_msg) where:
       - path is "kobe_route", "fraser_route", "huberman_route",
-        "genie_route", or "orchestrate"
+        "genie_route", "kipchoge_route" (flag-gated, default off), or "orchestrate"
       - stripped_msg has any @-address prefix removed (otherwise == msg)
 
     The orchestrator should:
@@ -369,6 +397,13 @@ def classify_delegation(msg: str) -> tuple[str, str]:
         return ("orchestrate", msg)
 
     text = msg.strip()
+
+    # 0. Kipchoge's address (flag-gated, default off; agent #6, 2026-10-25).
+    if kipchoge_route_enabled():
+        kaddr = _KIPCHOGE_ADDRESS_RE.match(text)
+        if kaddr:
+            kbody = (kaddr.group(1) or "").strip()
+            return ("kipchoge_route", kbody) if kbody else ("orchestrate", text)
 
     # 1. Explicit @-address overrides everything else.
     addr_match = _ADDRESS_RE.match(text)
@@ -453,6 +488,14 @@ def classify_delegation(msg: str) -> tuple[str, str]:
     #     COORDINATION: shared file — one additive rung.
     if _COOLDOWN_REQUEST_RE.search(text):
         return ("huberman_route", text)
+
+    # 4a¾. Running asks → Kipchoge (agent #6, 2026-10-25), flag-gated and
+    #     default off. After the cooldown request (Huberman keeps the
+    #     post-run stretch), before the design guard and the status reads
+    #     ("how was my run" is the coach's, not Kobe's status).
+    #     COORDINATION: shared file — one flag-gated rung.
+    if kipchoge_route_enabled() and _KIPCHOGE_NL_RE.search(text) and not _KIPCHOGE_NOT_RE.search(text):
+        return ("kipchoge_route", text)
 
     if _WOD_DESIGN_GUARD_RE.search(text) and _WORKOUT_NOUN_RE.search(text):
         return ("orchestrate", text)

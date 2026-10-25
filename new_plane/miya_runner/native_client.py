@@ -338,6 +338,25 @@ def huberman_route(message: str, chat_id: str | None = None,
         return _err(tid, e, where="huberman_route")
 
 
+def kipchoge_route(message: str, chat_id: str | None = None,
+                   trace_id: str | None = None) -> AdapterResult:
+    """@kipchoge + running-NL path (agent #6, PRD v0.3 §11; 2026-10-25),
+    behind RAHAT_KIPCHOGE_ROUTE. The running coach answers through its
+    own bot core (new_plane.kipchoge_runner.bot): the lookups by code
+    from records, free text through its harness when
+    RAHAT_KIPCHOGE_HARNESS=serve and the floors otherwise. Miya already
+    gated the sender, so the coach's own chat allow-list is bypassed.
+    Never empty; never raises past the adapter.
+    COORDINATION: shared file — one additive function."""
+    tid = _trace(trace_id)
+    try:
+        from new_plane.kipchoge_runner import bot as kbot
+        text = kbot.process_message(chat_id or "miya", message, trusted=True)
+        return _ok(tid, {"text": text, "path": "kipchoge_route"})
+    except Exception as e:
+        return _err(tid, e, where="kipchoge_route")
+
+
 def signals_publish(agent: str, type_: str, payload: dict,
                     trace_id: str) -> AdapterResult:
     tid = _trace(trace_id)
