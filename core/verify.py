@@ -9,13 +9,16 @@ shown with a warning) or soft (the renderer discloses it in one line:
 "hours unconfirmed — call first").
 
 Checks are registered per outcome id. The shared registry holds the
-checks every tenant needs (provenance, serving at arrival, status,
+first tenant's checks (provenance, serving at arrival, status,
 distance, rating policy, links, one recommendation, exclusions,
-continuity, state writes, negative claims, exceptions, plans). A tenant
-adds its own under `agents/<name>/checks.py` (`register(registry)`),
-and may override a shared one. Outcomes marked "J" only are never run
-here; "M+J" outcomes run their mechanical part here and the rest at
-the judge.
+continuity, state writes, negative claims, exceptions, plans), which
+read that tenant's frame and answer. A tenant that brings its own
+shapes (ADR-018 A6) starts from the `neutral` registry instead — the
+checks that read no tenant field — and adds its own under
+`agents/<name>/checks.py` (`register(registry)`); a tenant on the
+first tenant's shapes may override a shared one. Outcomes marked "J"
+only are never run here; "M+J" outcomes run their mechanical part here
+and the rest at the judge.
 
 The gate order (ADR-018 §2.11) puts the verifier after the post-tool
 hooks and before the judge; `tests/test_gate_order.py` pins it.
@@ -74,6 +77,9 @@ class VerifyContext:
     rendered: str | None = None                  # for the render checks
     banned_phrases: list[str] = field(default_factory=list)
     leg: dict = field(default_factory=dict)
+    records: Any = None                          # A6: a tenant's evidence records (answers .get(id)); None for the first tenant
+    capabilities: dict = field(default_factory=dict)   # A6: the manifest's capabilities, read by the neutral checks
+    allowed_tokens: list[str] = field(default_factory=list)   # A6: digit tokens the numbers check lets through
     _arrivals: dict[str, tuple[datetime, str]] = field(default_factory=dict)
 
     def params(self, outcome_id: str) -> dict:
@@ -140,24 +146,66 @@ class Registry:
         return out
 
 
-shared = Registry()
+neutral = Registry()            # checks that read no tenant field (A6): a tenant with its own shapes starts here
+shared = Registry(parent=neutral)   # the first tenant's checks, the default for a tenant on its shapes
 _AGENT_REGISTRIES: dict[str, Registry] = {}
 
 
-def for_agent(agent: str) -> Registry:
-    """The shared checks plus the tenant's (`agents/<agent>/checks.py`)."""
-    if agent in _AGENT_REGISTRIES:
-        return _AGENT_REGISTRIES[agent]
-    reg = Registry(parent=shared)
+def for_agent(agent: str, *, neutral_only: bool = False) -> Registry:
+    """The shared checks plus the tenant's (`agents/<agent>/checks.py`);
+    with `neutral_only` (a tenant with its own frame or answer), the
+    neutral checks plus the tenant's."""
+    key = f"{agent}:{'neutral' if neutral_only else 'shared'}"
+    if key in _AGENT_REGISTRIES:
+        return _AGENT_REGISTRIES[key]
+    reg = Registry(parent=neutral if neutral_only else shared)
     try:
         mod = importlib.import_module(f"agents.{agent}.checks")
         if hasattr(mod, "register"):
             mod.register(reg)
     except ModuleNotFoundError as e:
-        if f"agents.{agent}.checks" not in str(e):
+        if f"agents.{agent}" not in str(e):
             raise
-    _AGENT_REGISTRIES[agent] = reg
+    _AGENT_REGISTRIES[key] = reg
     return reg
+
+
+# ── the neutral checks (A6): they read no tenant field ───────────────
+@neutral.register("numbers_from_records")
+def check_numbers_from_records(ctx: VerifyContext, o: ContractOutcome) -> list[Failure]:
+    """Every number the reader will see comes from a record: the answer's
+    texts carry `{{r:<id>}}` placeholders and no stray digit, and every
+    placeholder names a record that exists. Runs only when the tenant's
+    manifest turns the capability on (the first tenant's prices, hours
+    and minutes are its own records, printed by its renderer)."""
+    if not (ctx.capabilities or {}).get("numbers_from_records"):
+        return []
+    from core.harness import numbers as cnum
+    texts = ctx.answer.texts() if hasattr(ctx.answer, "texts") else []
+    allow = list(cnum.DEFAULT_ALLOW) + list(ctx.allowed_tokens or [])
+    out: list[Failure] = []
+    stray: list[str] = []
+    absent: list[str] = []
+    for t in texts:
+        r = cnum.check_text(t or "", ctx.records, allow=allow)
+        stray += r["stray"]
+        absent += r["absent"]
+    if stray:
+        out.append(Failure(o.id, f"digits written by the model, not from a record: {sorted(set(stray))[:8]}",
+                           "write every number as {{r:<record id>}}; the renderer prints it"))
+    if absent:
+        out.append(Failure(o.id, f"placeholders with no record: {sorted(set(absent))[:8]}",
+                           "cite only record ids from the evidence; drop the sentence if there is none"))
+    return out
+
+
+@neutral.register("says_something")
+def check_says_something(ctx: VerifyContext, o: ContractOutcome) -> list[Failure]:
+    """An answer that says nothing is never sent (LIVE 2026-10-17)."""
+    fn = getattr(ctx.answer, "says_something", None)
+    if callable(fn) and not fn():
+        return [Failure(o.id, "the answer says nothing", "write the answer, or the one line that says why there is none")]
+    return []
 
 
 @dataclass
@@ -207,9 +255,9 @@ def _materialized(outcome: ContractOutcome, ctx: VerifyContext) -> bool:
         return True
     cond = outcome.reason.split(":", 1)[-1]
     if cond == "multi_pick":
-        return len(ctx.answer.picks) >= 2
+        return len(getattr(ctx.answer, "picks", []) or []) >= 2
     if cond == "negative_claim":
-        return ctx.answer.is_negative()
+        return ctx.answer.is_negative() if hasattr(ctx.answer, "is_negative") else False
     return True   # when_relevant: the check decides
 
 

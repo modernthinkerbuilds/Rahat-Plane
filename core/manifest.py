@@ -17,7 +17,7 @@ import json
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -53,6 +53,7 @@ class PerAsk(BaseModel):
 class Budgets(BaseModel):
     per_ask: PerAsk = Field(default_factory=PerAsk)
     per_ask_wide: PerAsk | None = None   # a wide ask (a long drive, a whole region, "options"): a spread, not one answer
+    per_pipeline_run: PerAsk | None = None   # A6: the brake for a run no message started (analysis on landing, a card)
     daily_usd: float | None = None   # None = no daily cap (the default since 2026-10-03)
 
 
@@ -61,6 +62,17 @@ class Latency(BaseModel):
     slow_line_s: float = 75.0        # "Still checking…" once an ask has run this long (2026-10-09)
     answer_s_trip: float = 60.0
     answer_s_home: float = 30.0
+    answer_s: float | None = None    # A6: one budget for a tenant without trip and home modes
+    analysis_s: float | None = None  # A6: a pipeline run's budget (default 120 s when the tenant sets none)
+
+
+class AnswerConfig(BaseModel):
+    picks: int = 3                   # A6: at most this many picks and one recommendation (0: the answer is not a list)
+    picks_wide: int = 5              # a wide ask
+
+
+class Capabilities(BaseModel):
+    numbers_from_records: bool = False   # A6: every number the reader sees comes from a record ({{r:<id>}}); off by default
 
 
 class JudgeConfig(BaseModel):
@@ -84,6 +96,9 @@ class Manifest(BaseModel):
     state_scopes: list[str] = Field(default_factory=lambda: ["turn", "session", "day", "trip", "standing"])
     budgets: Budgets = Field(default_factory=Budgets)
     latency: Latency = Field(default_factory=Latency)
+    answer: AnswerConfig = Field(default_factory=AnswerConfig)
+    capabilities: Capabilities = Field(default_factory=Capabilities)
+    shapes: str | None = None                 # A6: the module the tenant's shapes load from, inside agents/<name>/
     render_templates: str | None = None
     banned_phrases: list[str] = Field(default_factory=list)
     golden_sets: list[str] = Field(default_factory=list)
@@ -94,10 +109,16 @@ class Manifest(BaseModel):
     @field_validator("state_scopes")
     @classmethod
     def _scopes(cls, v: list[str]) -> list[str]:
-        bad = set(v) - {"turn", "session", "day", "trip", "standing"}
+        bad = set(v) - SCOPES
         if bad:
             raise ValueError(f"unknown state scopes {sorted(bad)}")
         return v
+
+    @model_validator(mode="after")
+    def _shapes_in_own_package(self) -> "Manifest":
+        if self.shapes is not None and not self.shapes.startswith(f"agents.{self.name}."):
+            raise ValueError(f"shapes must load from the tenant's own package: agents.{self.name}.<module>, not {self.shapes!r}")
+        return self
 
     @property
     def agent_dir(self) -> Path:
@@ -105,6 +126,25 @@ class Manifest(BaseModel):
 
     def resolve(self, rel: str | None) -> Path | None:
         return (self.agent_dir / rel) if rel else None
+
+
+SCOPES = {"turn", "session", "day", "trip", "standing", "week", "block", "season"}   # week/block/season: A6, a coach plans in them
+
+
+def load_shapes(m: "Manifest"):
+    """The tenant's shapes module (`manifest.shapes`), imported from its own
+    package; None when the manifest names none (the first tenant's shapes
+    apply). Raises ManifestError when the module does not conform."""
+    if not m.shapes:
+        return None
+    import importlib
+    from core.harness import shapes as cshapes
+    mod = importlib.import_module(m.shapes)
+    resolved = cshapes.resolve(mod)
+    problems = cshapes.conforms(resolved)
+    if problems:
+        raise ManifestError(f"{m.name}: shapes module {m.shapes} does not conform: " + "; ".join(problems))
+    return mod
 
 
 class ManifestError(ValueError):

@@ -86,10 +86,21 @@ def _stop_rule(max_picks: int) -> str:
             f"for every diner), stop calling tools and reply with the single word {READY}.")
 
 
+BOURDAIN_HOW = ("How to work: use the tools to find and verify candidates (the knowledge base first, saves first; the web "
+                "only through the tools). Every fact must come from a tool result; you pick places, you never supply a "
+                "fact. {stop_rule}")
+
+
 def build_prompt(*, ask: str, frame: Frame, contract: Contract, library_texts: dict[str, str],
-                 moment: dict[str, Any], rules_text: str, hints: list[str] | None = None, max_picks: int = 3) -> str:
+                 moment: dict[str, Any], rules_text: str, hints: list[str] | None = None, max_picks: int = 3,
+                 how_text: str | None = None) -> str:
     """The Execute step's opening user turn: the ask, the frame, the
-    contract, the moment and the rules for the people at the table."""
+    contract, the moment and the rules for the people at the table.
+    `how_text` is the tenant's "How to work" paragraph (A6); the first
+    tenant's when None; `{stop_rule}` in it takes the stop rule for
+    max_picks."""
+    how = (how_text if how_text is not None else BOURDAIN_HOW)
+    how = how.replace("{stop_rule}", _stop_rule(max_picks)) if "{stop_rule}" in how else how
     parts = [
         f"Ask: {ask}",
         "Frame (your reading of the ask; fix it with the tools if it is wrong):",
@@ -100,9 +111,7 @@ def build_prompt(*, ask: str, frame: Frame, contract: Contract, library_texts: d
         rules_text,
         "Contract — what this answer must satisfy (code checks the M ones; a fresh judge checks the J ones):",
         _contract_text(contract, library_texts),
-        "How to work: use the tools to find and verify candidates (the knowledge base first, saves first; the web "
-        "only through the tools). Every fact must come from a tool result; you pick places, you never supply a "
-        "fact. " + _stop_rule(max_picks),
+        how,
     ]
     if hints:
         parts.append("Repair hints from the verifier (fix every one; call tools where needed):\n- " + "\n- ".join(hints))
@@ -138,6 +147,8 @@ def execute(agent: str, *, system: str, prompt: str, registry: ToolRegistry, ctx
             now: datetime, prior: ExecResult | None = None, hints: list[str] | None = None,
             max_rounds: int = MAX_ROUNDS, holding_line: Callable[[str], None] | None = None,
             holding_line_s: float = 5.0, holding_text: str = "Checking hours and menus — a minute.",
+            answer_model: type = Answer, parse: Callable[[Any], Any] = parse_answer,
+            answer_instruction: str = ANSWER_INSTRUCTION,
             trace_id: str | None = None, db_path: str | None = None, cassette_dir: str | None = None,
             mode: str = "", model: str | None = None, thinking_budget: int | None = None,
             started_at: float | None = None, slow_line_s: float = 75.0,
@@ -210,10 +221,10 @@ def execute(agent: str, *, system: str, prompt: str, registry: ToolRegistry, ctx
             res.slow_line_sent = True
 
     # The answer: a schema-bound call over the same history, one validation retry.
-    final_history = history + [llm_chat.user_text(ANSWER_INSTRUCTION)]
+    final_history = history + [llm_chat.user_text(answer_instruction)]
     problems: list[str] = []
     for attempt in range(2):
-        out = llm_chat.chat(agent, f"{agent}.answer", system=system, messages=final_history, response_schema=Answer, **kw)
+        out = llm_chat.chat(agent, f"{agent}.answer", system=system, messages=final_history, response_schema=answer_model, **kw)
         res.cost_usd += out.cost_usd
         res.tokens += out.tokens_in + out.tokens_out + out.tokens_thought + out.tokens_tool_prompt
         if not out.ok:
@@ -221,7 +232,7 @@ def execute(agent: str, *, system: str, prompt: str, registry: ToolRegistry, ctx
             break
         raw = out.parsed if out.parsed is not None else out.text
         try:
-            res.answer = parse_answer(raw)
+            res.answer = parse(raw)
             res.raw_answer = res.answer.model_dump(mode="json")
             problems = []
             break

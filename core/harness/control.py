@@ -82,6 +82,18 @@ def _apply_drops(answer: Answer, drop_ids: list[str]) -> Answer:
 _GENERIC = {"the", "a", "an", "cafe", "café", "coffee", "bar", "restaurant", "kitchen", "house", "shop", "and", "of", "at"}
 
 
+def _bourdain_disclosure(f: cverify.Failure) -> str | None:
+    """The first tenant's lines for an answer-level failure."""
+    if f.outcome in ("S1", "S2", "S3", "S4"):
+        return "I couldn't store that " + {"S1": "save", "S2": "verdict", "S3": "diet change", "S4": "plan change"}[f.outcome] \
+            + " — say it again and I'll record it."
+    if f.outcome in ("E6", "N1"):
+        return "I couldn't show what that none rests on; treat it as unconfirmed."
+    if f.outcome == "A3":
+        return None   # fixed by _apply_drops when picks remain
+    return f"Unresolved: {f.message}."
+
+
 def _norm(text: str) -> str:
     return " ".join(re.sub(r"[^0-9a-zà-ÿ]+", " ", (text or "").lower()).split())
 
@@ -141,7 +153,10 @@ def control(agent: str, *, first: ExecResult, verify_for: Callable[[Answer], cve
             render_for: Callable[[Answer, list[str]], Rendered], judge_for: Callable[[Answer], cjudge.JudgeReport] | None,
             floor: Callable[[], str] | None, evidence_name: Callable[[str], str], started_at: float,
             time_budget_s: float, max_repairs: int = MAX_REPAIRS, judge_before_repair: bool = False,
-            gap_reason: Callable[[cverify.Failure], str] | None = None) -> ControlResult:
+            gap_reason: Callable[[cverify.Failure], str] | None = None,
+            disclosure: Callable[[cverify.Failure], str | None] | None = None) -> ControlResult:
+    """`disclosure` turns an answer-level failure into the one line the
+    reader sees (A6: the tenant's; the first tenant's when None)."""
     out = ControlResult(execs=[first])
     exec_res = first
 
@@ -212,7 +227,7 @@ def control(agent: str, *, first: ExecResult, verify_for: Callable[[Answer], cve
     disclosures: list[str] = []
     if not report.ok:
         drops = report.drop_ids()
-        if drops:
+        if drops and hasattr(answer, "picks"):
             out.dropped = drops
             dropped_picks = [p for p in answer.picks if p.place_id in drops]
             answer = _apply_drops(answer, drops)
@@ -222,15 +237,11 @@ def control(agent: str, *, first: ExecResult, verify_for: Callable[[Answer], cve
                 out.gap_stated = True
             report = cverify.run(verify_for(answer), registry)
             out.verify = report
+        say = disclosure if disclosure is not None else _bourdain_disclosure
         for f in report.answer_level():
-            if f.outcome in ("S1", "S2", "S3", "S4"):
-                disclosures.append("I couldn't store that " + {"S1": "save", "S2": "verdict", "S3": "diet change", "S4": "plan change"}[f.outcome] + " — say it again and I'll record it.")
-            elif f.outcome in ("E6", "N1"):
-                disclosures.append("I couldn't show what that none rests on; treat it as unconfirmed.")
-            elif f.outcome == "A3":
-                pass   # fixed by _apply_drops when picks remain
-            else:
-                disclosures.append(f"Unresolved: {f.message}.")
+            line = say(f)
+            if line:
+                disclosures.append(line)
             out.gap_stated = True
 
     if judge_for is not None and (out.judge is None or out.judge.verdicts == [] or out.dropped):

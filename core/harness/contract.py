@@ -111,13 +111,22 @@ APPLIES: dict[str, Callable[[Frame], bool | None]] = {
 }
 
 
-def load_library(path: str | Path) -> OutcomeLibrary:
+BOURDAIN_TRIGGERS: dict[str, Callable[[Frame], bool]] = {
+    "names_places": _names_places,
+    "day_plan": lambda f: bool(APPLIES["plan"](f)),
+    "follow_up": lambda f: bool(APPLIES["follow_up"](f)),
+}
+
+
+def load_library(path: str | Path, *, applies: dict | None = None) -> OutcomeLibrary:
+    """`applies` is the tenant's predicate table (A6); the first tenant's
+    when None."""
     data = json.loads(Path(path).read_text(encoding="utf-8"))
     try:
         lib = OutcomeLibrary.model_validate(data)
     except ValidationError as e:
         raise ValueError(f"outcome library {path} is invalid: {e}") from e
-    unknown = sorted({o.applies for o in lib.outcomes} - set(APPLIES))
+    unknown = sorted({o.applies for o in lib.outcomes} - set(applies if applies is not None else APPLIES))
     if unknown:
         raise ValueError(f"outcome library {path} uses unknown applies predicates: {unknown}")
     ids = lib.by_id()
@@ -143,14 +152,20 @@ def _params(o: Outcome, f: Frame) -> dict:
 
 
 def assemble(frame: Frame, library: OutcomeLibrary, *,
-             household_rules: list[str] | None = None) -> Contract:
+             household_rules: list[str] | None = None, applies: dict | None = None,
+             mandatory_triggers: dict | None = None) -> Contract:
     """Frame + library → contract. Deterministic; no model.
 
     Order: outcomes whose predicate holds; then the mandatory sets the
-    frame triggers (names_places, day_plan, follow_up); then household
-    rules learned from verdicts, given as outcome ids. Duplicates keep
-    the first reason. A must never downgrades to a should.
+    frame triggers (the first tenant's names_places, day_plan and
+    follow_up; a tenant's own table otherwise, each set named by the
+    predicate that triggers it); then household rules learned from
+    verdicts, given as outcome ids. Duplicates keep the first reason. A
+    must never downgrades to a should.
     """
+    table = applies if applies is not None else APPLIES
+    if mandatory_triggers is None:
+        mandatory_triggers = BOURDAIN_TRIGGERS if applies is None else {g: table[g] for g in library.mandatory if g in table}
     ids = library.by_id()
     chosen: dict[str, ContractOutcome] = {}
 
@@ -163,20 +178,15 @@ def assemble(frame: Frame, library: OutcomeLibrary, *,
                                       reason=reason)
 
     for o in library.outcomes:
-        verdict = APPLIES[o.applies](frame)
+        verdict = table[o.applies](frame)
         if verdict is True:
             add(o.id, f"applies:{o.applies}")
         elif verdict is None:
             add(o.id, f"conditional:{o.applies}", conditional=True)
-    if _names_places(frame):
-        for oid in library.mandatory.get("names_places", []):
-            add(oid, "mandatory:names_places")
-    if APPLIES["plan"](frame):
-        for oid in library.mandatory.get("day_plan", []):
-            add(oid, "mandatory:day_plan")
-    if APPLIES["follow_up"](frame):
-        for oid in library.mandatory.get("follow_up", []):
-            add(oid, "mandatory:follow_up")
+    for group, trigger in mandatory_triggers.items():
+        if group in library.mandatory and trigger(frame):
+            for oid in library.mandatory[group]:
+                add(oid, f"mandatory:{group}")
     for oid in household_rules or []:
         if oid in ids:
             add(oid, "rule:household")
@@ -186,7 +196,8 @@ def assemble(frame: Frame, library: OutcomeLibrary, *,
                     outcomes=ordered)
 
 
-def complete_for_answer(contract: Contract, library: OutcomeLibrary, frame: Frame, answer) -> Contract:
+def complete_for_answer(contract: Contract, library: OutcomeLibrary, frame: Frame, answer, *,
+                        applies: dict | None = None) -> Contract:
     """The mandatory sets follow what the answer does, not only how the
     frame read the message (ADR-018 §2.2: mandatory sets can't be
     deselected). An answer that names places — picks, plan slots with a
@@ -210,8 +221,9 @@ def complete_for_answer(contract: Contract, library: OutcomeLibrary, frame: Fram
         if oid in have or oid not in ids:
             continue
         o = ids[oid]
+        table = applies if applies is not None else APPLIES
         added.append(ContractOutcome(id=oid, check=o.check, priority=o.priority, params=_params(o, frame),
-                                     conditional=APPLIES[o.applies](frame) is None, reason=reason))
+                                     conditional=table[o.applies](frame) is None, reason=reason))
         have.add(oid)
     if not added:
         return contract

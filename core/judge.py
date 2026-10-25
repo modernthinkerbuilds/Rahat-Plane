@@ -85,7 +85,7 @@ class JudgeVerdict(BaseModel):
     outcome: str
     verdict: Literal["pass", "fail", "unsure"]
     line: str = ""
-    evidence_ids: list[int] = Field(default_factory=list)
+    evidence_ids: list[int | str] = Field(default_factory=list)
     hint: str | None = None
 
 
@@ -98,7 +98,7 @@ class Verdict:
     outcome: str
     verdict: str
     line: str = ""
-    evidence_ids: list[int] = field(default_factory=list)
+    evidence_ids: list[int | str] = field(default_factory=list)
     hint: str | None = None
     valid: bool = True
     problem: str | None = None
@@ -230,6 +230,12 @@ def _cache_key(agent: str, prompt_version: str, model: str, answer_json: dict, e
     return hashlib.sha1(raw.encode()).hexdigest()
 
 
+def _eid(x) -> int | str:
+    """An evidence id: the first tenant's are ints; a tenant's records are strings (`run:<uuid>:<path>`)."""
+    s = str(x)
+    return int(s) if s.isdigit() else s
+
+
 def _judged_outcomes(contract: Contract, answer: Answer) -> list[str]:
     out = []
     for o in contract.outcomes:
@@ -237,9 +243,9 @@ def _judged_outcomes(contract: Contract, answer: Answer) -> list[str]:
             continue
         if o.conditional:
             cond = o.reason.split(":", 1)[-1]
-            if cond == "multi_pick" and len(answer.picks) < 2:
+            if cond == "multi_pick" and len(getattr(answer, "picks", []) or []) < 2:
                 continue
-            if cond == "negative_claim" and not answer.is_negative():
+            if cond == "negative_claim" and not (answer.is_negative() if hasattr(answer, "is_negative") else False):
                 continue
         out.append(o.id)
     return out
@@ -262,8 +268,10 @@ def judge(agent: str, *, ask: str, frame: Frame, contract: Contract, answer: Ans
     model = llm_chat._pick_model(None, cheap=(getattr(config, "model", "flash") == "flash"))
     report.model = model
     answer_json = answer.model_dump(mode="json", exclude_none=True)
-    evidence_ids = sorted({int(f["fact_id"]) for e in evidence for f in (e.get("facts") or {}).values()}
-                          | {int(i) for i in answer.evidence_ids()})
+    id_set = ({_eid(f["fact_id"]) for e in evidence for f in (e.get("facts") or {}).values() if "fact_id" in f}
+              | {_eid(e["id"]) for e in evidence if "id" in e and "facts" not in e}
+              | {_eid(i) for i in (answer.evidence_ids() if hasattr(answer, "evidence_ids") else [])})
+    evidence_ids = sorted(id_set) if all(isinstance(i, int) for i in id_set) else sorted(id_set, key=str)
     key = _cache_key(agent, report.prompt_version, model, answer_json, evidence_ids, judged)
 
     con = _connect(db_path)
@@ -314,8 +322,9 @@ def judge(agent: str, *, ask: str, frame: Frame, contract: Contract, answer: Ans
     for v in out.verdicts:
         if v.outcome not in judged or v.outcome in seen:
             continue
-        bad = [i for i in v.evidence_ids if i not in allowed]
-        vd = Verdict(outcome=v.outcome, verdict=v.verdict, line=v.line.strip()[:300], evidence_ids=list(v.evidence_ids), hint=v.hint)
+        ids = [_eid(i) for i in v.evidence_ids]
+        bad = [i for i in ids if i not in allowed]
+        vd = Verdict(outcome=v.outcome, verdict=v.verdict, line=v.line.strip()[:300], evidence_ids=ids, hint=v.hint)
         if bad:
             vd.valid, vd.problem = False, f"cited records not in evidence: {bad}"
         seen[v.outcome] = vd

@@ -7,6 +7,13 @@ checklist, the tools, the profile, the render settings and how the
 session is read and written. One `trace_id` per inbound message with a
 `core.decisions` span per step.
 
+A tenant may bring its own shapes (ADR-018 A6, `core/harness/shapes.py`):
+its frame model, its answer model, its evidence, its `applies` table and
+the executor's words; the first tenant's are the defaults. A pipeline
+run (`run_pipeline`) is the same loop on a frame built in code, with
+the pipeline's own brake and latency budget and the event recorded in
+place of the message.
+
 `run()` never raises and never returns an empty reply. On a model error
 the controller takes the floor path; on an unreadable message it asks
 the one question the tenant allows.
@@ -29,16 +36,17 @@ from core import verify as cverify
 from core.harness import control as ccontrol
 from core.harness import execute as cexecute
 from core.harness import record as crecord
-from core.harness.answer import Answer, sanitize_citations
+from core.harness.answer import Answer
 from core.harness.contract import Contract, OutcomeLibrary, assemble, complete_for_answer
 from core.harness.evidence import Evidence
-from core.harness.frame import Frame, FrameError, parse_frame
+from core.harness.frame import Frame, FrameError
 from core.harness.render import Rendered
+from core.harness import shapes as cshapes
 from core.tools import Brake, ToolRegistry
 
 ENV_SANITY = "RAHAT_HARNESS_SANITY"       # "0" turns the cheap frame sanity check off
-PICKS = 3                                 # at most three picks and one clear recommendation
-WIDE_PICKS = 5                            # a wide ask: up to five, spread across the area
+PICKS = 3                                 # the first tenant's: at most three picks and one clear recommendation
+WIDE_PICKS = 5                            # a wide ask: up to five, spread across the area (a tenant sets its own: shapes)
 NO_RESEARCH_ROUNDS = 2                    # a message with nothing to find: two rounds, no network tools
 NO_RESEARCH_TOOL_CALLS = 4
 
@@ -114,23 +122,24 @@ def _library_texts(lib: OutcomeLibrary) -> dict[str, str]:
 
 
 def understand(tenant: Tenant, text: str, ctx: dict, *, now: datetime, trace_id: str, db_path: str | None,
-               cassette_dir: str | None, retries: int = 1, problems: list[str] | None = None
-               ) -> tuple[Frame | None, list[str], float, str | None]:
+               cassette_dir: str | None, retries: int = 1, problems: list[str] | None = None,
+               shapes: cshapes.TenantShapes | None = None) -> tuple[Frame | None, list[str], float, str | None]:
     """Step 1: the typed frame with bounded retries; a distinct failure
     result (None, problems, cost, error) rather than a silent fallback.
     `problems` seeds the prompt with what an earlier reading got wrong."""
     problems = list(problems or [])
     cost = 0.0
+    shapes = shapes or cshapes.resolve(tenant)
     prompt = tenant.understand_prompt(text, ctx, problems=problems or None)
     for attempt in range(retries + 1):
         res = llm_chat.structured(tenant.name, f"{tenant.name}.understand", system=tenant.system_prompt, prompt=prompt,
-                                  schema=Frame, retries=0, cheap=True, thinking_budget=0, step="understand",
+                                  schema=shapes.frame_model, retries=0, cheap=True, thinking_budget=0, step="understand",
                                   mode=ctx.get("mode", ""), trace_id=trace_id, db_path=db_path, cassette_dir=cassette_dir)
         cost += res.cost_usd
         if not res.ok:
             return None, problems, cost, res.error
         try:
-            frame = parse_frame(res.parsed if res.parsed is not None else res.text)
+            frame = shapes.parse_frame(res.parsed if res.parsed is not None else res.text)
             return frame, [], cost, None
         except FrameError as e:
             problems = list(e.problems)
@@ -139,11 +148,10 @@ def understand(tenant: Tenant, text: str, ctx: dict, *, now: datetime, trace_id:
 
 
 def sanity(tenant: Tenant, text: str, frame: Frame, ctx: dict, *, trace_id: str, db_path: str | None,
-           cassette_dir: str | None) -> tuple[bool, str | None, float]:
+           cassette_dir: str | None, question: str = cshapes.BOURDAIN_SANITY) -> tuple[bool, str | None, float]:
     """The cheap check that the frame says what the message says."""
     prompt = ("Message: " + text + "\nReading: " + json.dumps(frame.model_dump(exclude_none=True, exclude_defaults=True), ensure_ascii=False)
-              + "\nDoes the reading say what the message says — the meal, who eats, where, when, what is excluded, "
-                "what changed? Answer JSON {\"faithful\": bool, \"problem\": one line or null}.")
+              + "\n" + question + " Answer JSON {\"faithful\": bool, \"problem\": one line or null}.")
     res = llm_chat.structured(tenant.name, f"{tenant.name}.sanity", system="You check a reading against a message. Be strict about who, where and when.",
                               prompt=prompt, schema=SanityOut, retries=0, cheap=True, thinking_budget=0, step="understand",
                               mode=ctx.get("mode", ""), trace_id=trace_id, db_path=db_path, cassette_dir=cassette_dir)
@@ -155,15 +163,20 @@ def sanity(tenant: Tenant, text: str, frame: Frame, ctx: dict, *, trace_id: str,
 def run(tenant: Tenant, text: str, *, chat_id: str, now: datetime, serve_mode: str = "shadow",
         holding_line: Callable[[str], None] | None = None, db_path: str | None = None, cassette_dir: str | None = None,
         frame_override: Frame | None = None, trace_id: str | None = None, previous_trace: str | None = None,
-        judge_enabled: bool = True, time_budget_s: float | None = None) -> RunResult:
+        judge_enabled: bool = True, time_budget_s: float | None = None, budgets_override: Any | None = None,
+        pipeline: bool = False) -> RunResult:
     """`time_budget_s` overrides the manifest's latency budget for repairs;
     an eval passes infinity so a recorded trajectory does not depend on
-    the wall clock."""
+    the wall clock. `budgets_override` is a pipeline run's brake; with
+    `pipeline` the run is one no message started (see `run_pipeline`)."""
     t0 = time.monotonic()
     tid = trace_id or decisions.new_trace()
     result = RunResult(trace_id=tid)
+    shapes = cshapes.resolve(tenant)
     ctx = tenant.build_ctx(str(chat_id), now, text, db_path=db_path, cassette_dir=cassette_dir, trace_id=tid)
     result.ctx = ctx
+    if pipeline:
+        ctx["pipeline"] = True
     mode = ctx.get("mode", "")
     texts = _library_texts(tenant.library)
 
@@ -175,14 +188,17 @@ def run(tenant: Tenant, text: str, *, chat_id: str, now: datetime, serve_mode: s
         if frame_override is not None:
             frame, problems, cost, err = frame_override, [], 0.0, None
         else:
-            frame, problems, cost, err = understand(tenant, text, ctx, now=now, trace_id=tid, db_path=db_path, cassette_dir=cassette_dir)
+            frame, problems, cost, err = understand(tenant, text, ctx, now=now, trace_id=tid, db_path=db_path, cassette_dir=cassette_dir,
+                                                    shapes=shapes)
             if frame is not None and os.getenv(ENV_SANITY, "1") != "0" and frame_override is None:
-                ok, problem, c2 = sanity(tenant, text, frame, ctx, trace_id=tid, db_path=db_path, cassette_dir=cassette_dir)
+                ok, problem, c2 = sanity(tenant, text, frame, ctx, trace_id=tid, db_path=db_path, cassette_dir=cassette_dir,
+                                         question=shapes.sanity_question)
                 cost += c2
                 if not ok and problem:
                     frame2, p2, c3, e3 = understand(tenant, text, ctx, now=now, trace_id=tid, db_path=db_path,
                                                     cassette_dir=cassette_dir, retries=0,
-                                                    problems=[f"a second reader found the reading unfaithful: {problem}"])
+                                                    problems=[f"a second reader found the reading unfaithful: {problem}"],
+                                                    shapes=shapes)
                     cost += c3
                     if frame2 is not None:
                         frame = frame2
@@ -218,7 +234,8 @@ def run(tenant: Tenant, text: str, *, chat_id: str, now: datetime, serve_mode: s
 
     # 2. Contract
     with step("contract", frame.header()) as s:
-        contract = assemble(frame, tenant.library, household_rules=tenant.household_rule_outcomes(ctx))
+        contract = assemble(frame, tenant.library, household_rules=tenant.household_rule_outcomes(ctx),
+                            applies=shapes.applies, mandatory_triggers=shapes.mandatory_triggers)
         result.contract = contract
         s.output = contract.ids()
     result.steps.append({"step": "contract", "outcomes": len(contract.outcomes)})
@@ -236,7 +253,9 @@ def run(tenant: Tenant, text: str, *, chat_id: str, now: datetime, serve_mode: s
     wide = research and bool(hasattr(tenant, "is_wide") and tenant.is_wide(frame, text, ctx))
     wide_budget = getattr(tenant.budgets, "per_ask_wide", None)
     budgets = wide_budget if (wide and wide_budget is not None) else tenant.budgets.per_ask
-    max_picks = WIDE_PICKS if wide else PICKS
+    if budgets_override is not None:
+        budgets = budgets_override
+    max_picks = shapes.picks_wide if wide else shapes.picks
     ctx["wide"], ctx["max_picks"], ctx["budget"] = wide, max_picks, budgets
     if wide:
         result.steps.append({"step": "breadth", "wide": True, "max_picks": max_picks, "tool_calls": budgets.tool_calls})
@@ -246,9 +265,11 @@ def run(tenant: Tenant, text: str, *, chat_id: str, now: datetime, serve_mode: s
              if research else Brake(max_tool_calls=NO_RESEARCH_TOOL_CALLS, max_search_queries=0, max_usd=budgets.usd))
     prompt = cexecute.build_prompt(ask=text, frame=frame, contract=contract, library_texts=texts,
                                    moment=tenant.moment(ctx, frame), rules_text=tenant.rules_text(ctx, frame),
-                                   max_picks=max_picks)
+                                   max_picks=max_picks, how_text=shapes.how_text)
     latency = tenant.latency
-    time_budget = float(getattr(latency, "answer_s_trip" if mode == "trip" else "answer_s_home", 60.0)) \
+    one_budget = getattr(latency, "answer_s", None)          # a tenant without trip and home modes has one budget
+    time_budget = (float(one_budget) if one_budget is not None
+                   else float(getattr(latency, "answer_s_trip" if mode == "trip" else "answer_s_home", 60.0))) \
         if time_budget_s is None else float(time_budget_s)
     holding_s = float(getattr(latency, "holding_line_s", 5.0))
     slow_s = float(getattr(latency, "slow_line_s", 75.0))
@@ -266,7 +287,9 @@ def run(tenant: Tenant, text: str, *, chat_id: str, now: datetime, serve_mode: s
                                    brake=brake, now=now, prior=prior, hints=hints, holding_line=holding_line,
                                    holding_line_s=holding_s, started_at=t0, slow_line_s=slow_s,
                                    max_rounds=cexecute.MAX_ROUNDS if research else NO_RESEARCH_ROUNDS,
-                                   trace_id=tid, db_path=db_path, cassette_dir=cassette_dir, mode=mode)
+                                   trace_id=tid, db_path=db_path, cassette_dir=cassette_dir, mode=mode,
+                                   answer_model=shapes.answer_model, parse=shapes.parse_answer,
+                                   answer_instruction=shapes.answer_instruction, holding_text=shapes.holding_text)
             s.output = {"rounds": res.rounds, "tool_calls": res.tool_calls, "ok": res.ok, "error": res.error,
                         "problems": res.problems[:3]}
             s.cost_usd = res.cost_usd
@@ -279,19 +302,20 @@ def run(tenant: Tenant, text: str, *, chat_id: str, now: datetime, serve_mode: s
             _ev["e"].refresh()           # what this round recorded is what the sanitizer and the checks read
         if res.answer is not None:
             # Citation slips are fixed, not punished: a wrong fact id costs the citation, never the place.
-            res.answer, notes = sanitize_citations(res.answer, evidence_now())
+            res.answer, notes = shapes.sanitize(res.answer, evidence_now())
             if notes:
                 result.steps.append({"step": "sanitize", "notes": notes[:8]})
         return res
 
     first = run_exec(None, [])
     evidence = evidence_now()
-    vreg = cverify.for_agent(tenant.name)
+    vreg = cverify.for_agent(tenant.name, neutral_only=shapes.custom)
 
     def full_contract(answer: Answer) -> Contract:
         # An answer that names places is held to the names_places set whatever the frame said.
         # Sets only accumulate: a repaired or dropped pick never shrinks what the ask was checked against.
-        result.contract = complete_for_answer(result.contract or contract, tenant.library, frame, answer)
+        result.contract = complete_for_answer(result.contract or contract, tenant.library, frame, answer,
+                                              applies=shapes.applies)
         return result.contract
 
     def verify_for(answer: Answer) -> cverify.VerifyContext:
@@ -299,8 +323,10 @@ def run(tenant: Tenant, text: str, *, chat_id: str, now: datetime, serve_mode: s
 
     def judge_for(answer: Answer) -> cjudge.JudgeReport:
         with step("judge", None) as s:
+            judge_ev = (shapes.judge_evidence(answer, evidence) if shapes.judge_evidence is not None
+                        else evidence.for_judge(answer.pick_ids()[:4]))
             rep = cjudge.judge(tenant.name, ask=text, frame=frame, contract=full_contract(answer), answer=answer,
-                               evidence=evidence.for_judge(answer.pick_ids()[:4]), checklist=tenant.checklist,
+                               evidence=judge_ev, checklist=tenant.checklist,
                                library_texts=texts, config=tenant.judge_config, now=now, trace_id=tid, db_path=db_path,
                                cassette_dir=cassette_dir, mode=mode)
             s.output = {"judged": rep.judged, "fails": [v.outcome for v in rep.fails()], "authority": rep.authority,
@@ -321,8 +347,10 @@ def run(tenant: Tenant, text: str, *, chat_id: str, now: datetime, serve_mode: s
         ctl = ccontrol.control(
             tenant.name, first=first, verify_for=verify_for, registry=vreg, run_exec=run_exec, render_for=render_for,
             judge_for=judge_for if judge_enabled else None, floor=lambda: tenant.floor(text, ctx),
-            evidence_name=lambda pid: evidence.place(pid).name, started_at=t0, time_budget_s=time_budget,
-            gap_reason=getattr(tenant, "gap_reason", None))
+            evidence_name=((lambda pid: shapes.evidence_name(evidence, pid)) if shapes.evidence_name is not None
+                           else (lambda pid: evidence.place(pid).name)),
+            started_at=t0, time_budget_s=time_budget,
+            gap_reason=getattr(tenant, "gap_reason", None), disclosure=shapes.disclosure or cshapes.bourdain_disclosure)
         s.output = {"repairs": ctl.repairs, "dropped": ctl.dropped, "floor": ctl.floor_used, "gap": ctl.gap_stated,
                     "verify_ok": ctl.verify.ok if ctl.verify else None}
     result.control = ctl
@@ -341,6 +369,24 @@ def run(tenant: Tenant, text: str, *, chat_id: str, now: datetime, serve_mode: s
     return result
 
 
+def run_pipeline(tenant: Tenant, event: str, *, frame: Any, chat_id: str, now: datetime, serve_mode: str = "shadow",
+                 db_path: str | None = None, cassette_dir: str | None = None, trace_id: str | None = None,
+                 judge_enabled: bool = True, time_budget_s: float | None = None) -> RunResult:
+    """A run no message started (ADR-018 A6, addition 3): the same eight
+    steps on a frame the tenant built in code, Understand skipped, the
+    event recorded in place of the message, the pipeline's own brake
+    (`budgets.per_pipeline_run`, else the per-ask one) and latency budget
+    (`latency.analysis_s`), the ledger, Record and the shadow judge as in
+    conversation mode. Sending at most one message per run per stage is
+    the tenant's bookkeeping, keyed on the thing the event is about."""
+    budgets = getattr(tenant.budgets, "per_pipeline_run", None)
+    analysis_s = getattr(tenant.latency, "analysis_s", None)
+    return run(tenant, event, chat_id=chat_id, now=now, serve_mode=serve_mode, db_path=db_path, cassette_dir=cassette_dir,
+               frame_override=frame, trace_id=trace_id, judge_enabled=judge_enabled,
+               time_budget_s=time_budget_s if time_budget_s is not None else (float(analysis_s) if analysis_s else None),
+               budgets_override=budgets, pipeline=True)
+
+
 def _record(tenant: Tenant, result: RunResult, ctx: dict, text: str, serve_mode: str, now: datetime,
             db_path: str | None, previous_trace: str | None = None) -> None:
     with decisions.span("harness.record", trace_id=result.trace_id, actor=tenant.name, db_path=db_path) as s:
@@ -350,7 +396,8 @@ def _record(tenant: Tenant, result: RunResult, ctx: dict, text: str, serve_mode:
         crecord.record_run(
             trace_id=result.trace_id, agent=tenant.name, chat_id=str(ctx.get("chat_id") or ""), mode=ctx.get("mode", ""),
             serve_mode=serve_mode, ask=text, header=result.frame.header() if result.frame else "",
-            kind=result.answer.kind if result.answer else None, picks=result.answer.pick_ids() if result.answer else [],
+            kind=getattr(result.answer, "kind", None) if result.answer else None,
+            picks=(result.answer.pick_ids() if hasattr(result.answer, "pick_ids") else []) if result.answer else [],
             musts_total=len(musts), musts_failed=len(verify.failed_ids()) if verify else 0,
             repairs=ctl.repairs if ctl else 0, dropped=len(ctl.dropped) if ctl else 0, tool_calls=result.tool_calls,
             search_queries=result.search_queries, cost_usd=result.cost_usd, latency_ms=result.latency_ms,
@@ -372,7 +419,7 @@ def _record(tenant: Tenant, result: RunResult, ctx: dict, text: str, serve_mode:
                             chat_id=str(ctx.get("chat_id") or ""),
                             payload={"outcomes": result.outcome_results(), "cost_usd": round(result.cost_usd, 5),
                                      "search_queries": result.search_queries, "floor_used": result.floor_used,
-                                     "serve_mode": serve_mode, "kind": result.answer.kind if result.answer else None})
+                                     "serve_mode": serve_mode, "kind": getattr(result.answer, "kind", None) if result.answer else None})
         except Exception:  # noqa: BLE001
             pass
         s.output = {"outcomes": len(result.outcome_results()), "cost_usd": round(result.cost_usd, 5)}
