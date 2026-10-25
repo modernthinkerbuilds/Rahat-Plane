@@ -30,14 +30,15 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
 
+from bridges.healthkit import sleep as hk_sleep
 from bridges.healthkit import workouts as hkw
 
 HOME_ZONE = "America/Los_Angeles"
 FORM_METRICS = ("running_speed", "running_power", "running_ground_contact_time", "running_vertical_oscillation",
                 "running_stride_length")
 RECOVERY_MIN = 3             # minutes of the day series after the end that stand in for the recovery series
-NIGHT_START_WINDOW_H = 24    # the night before: the longest sleep session starting within this many hours before the run
-PRIOR_NIGHT_WINDOW_H = 48    # the night before that: starting between 24 and 48 h before
+NIGHT_START_WINDOW_H = hk_sleep.NIGHT_START_WINDOW_H    # the shared reader's windows (bridges.healthkit.sleep)
+PRIOR_NIGHT_WINDOW_H = hk_sleep.PRIOR_NIGHT_WINDOW_H
 
 
 @dataclass
@@ -170,50 +171,13 @@ def _vitals(con: sqlite3.Connection, metric: str, start: datetime, end: datetime
 
 
 def sleep_before(con: sqlite3.Connection, start_local: datetime) -> dict:
-    """The night before and the two-night average (PRD §6.6), in hours.
-
-    The Watch's sessions keep the time asleep in the stages (core + deep
-    + rem; `asleep_s` holds unstaged sleep, a nap), so a session's hours
-    are its stage sum when it has one, else `asleep_s`. The night before
-    is the longest session starting within 24 h before the run and before
-    it (an evening run's night started 20 h earlier); one that ends after
-    the start (the Watch joined the night to an afternoon nap) still
-    counts, its stages are the night's. The night before that is the
-    longest starting 24–48 h before. A session the bridge stored twice
-    (the same stages at a shifted clock) counts once.
-    """
-    lo = (start_local - timedelta(hours=PRIOR_NIGHT_WINDOW_H)).strftime("%Y-%m-%d %H:%M:%S")
-    hi = start_local.strftime("%Y-%m-%d %H:%M:%S")
-    rows = _rows(con, "SELECT sleep_start, sleep_end, asleep_s, core_s, deep_s, rem_s FROM sleep_sessions "
-                      "WHERE sleep_start >= ? AND sleep_start < ? ORDER BY sleep_start", (lo, hi))
-    seen: set[tuple] = set()
-    night: dict | None = None
-    prior: dict | None = None
-    for s, e, asleep, core, deep, rem in rows:
-        st, en = _dt(s), _dt(e)
-        if st is None or en is None:
-            continue
-        stages = sum(float(x or 0.0) for x in (core, deep, rem))
-        hours = (stages if stages > 0 else float(asleep or 0.0)) / 3600.0
-        if hours <= 0:
-            continue
-        key = (round((en - st).total_seconds()), round(stages), round(float(asleep or 0.0)))
-        if key in seen:
-            continue
-        seen.add(key)
-        ses = {"hours": hours, "end": en.strftime("%Y-%m-%d %H:%M"), "staged": stages > 0}
-        before_h = (start_local - st).total_seconds() / 3600.0
-        if before_h <= NIGHT_START_WINDOW_H:
-            if night is None or hours > night["hours"]:
-                night = ses
-        elif prior is None or hours > prior["hours"]:
-            prior = ses
-    two = (night["hours"] + prior["hours"]) / 2.0 if night and prior else None
-    return {"night_before_h": round(night["hours"], 2) if night else None,
-            "two_night_avg_h": round(two, 2) if two is not None else None,
-            "night_end": night["end"] if night else None,
-            "method": ("the Watch's sleep stages" if night["staged"] else "time asleep") if night else "",
-            "sessions": len(seen)}
+    """The night before the run and the two-night average (PRD §6.6), in
+    hours, from the shared reader `bridges.healthkit.sleep.night_before`
+    (the stages when the session has them; the longest session starting
+    within 24 h before the run; a shifted duplicate counted once)."""
+    n = hk_sleep.night_before(con, start_local)
+    return {"night_before_h": n["hours"], "two_night_avg_h": n["two_night_avg_h"], "night_end": n["end"],
+            "method": n["method"], "sessions": n["sessions"]}
 
 
 def load_run(con: sqlite3.Connection, workout_id: str, *, include_merged: bool = True) -> RunData | None:

@@ -257,16 +257,21 @@ def ingest_payload(payload: dict, con: sqlite3.Connection, *, files_dir: str | P
                 if not start:
                     summary["skipped"] += 1
                     continue
+                core, deep, rem = (_sleep_seconds(rec, "core"), _sleep_seconds(rec, "deep"), _sleep_seconds(rec, "rem"))
+                asleep = _sleep_seconds(rec, "asleep", "totalSleep")
+                stages = sum(x for x in (core, deep, rem) if x)
+                if not asleep and stages > 0:
+                    # 2026-10-25: the Watch's staged nights arrive with asleep 0 and the time in the stages
+                    # (50 of 59 nights since September); the row carries the number both ways from now on
+                    asleep = stages
                 cur.execute(
                     "INSERT OR REPLACE INTO sleep_sessions (sleep_start, "
                     "sleep_end, asleep_s, in_bed_s, core_s, deep_s, rem_s, "
                     "awake_s, source, raw_json) VALUES (?,?,?,?,?,?,?,?,?,?)",
                     (start, end,
-                     _sleep_seconds(rec, "asleep", "totalSleep"),
+                     asleep,
                      _sleep_seconds(rec, "inBed"),
-                     _sleep_seconds(rec, "core"),
-                     _sleep_seconds(rec, "deep"),
-                     _sleep_seconds(rec, "rem"),
+                     core, deep, rem,
                      _sleep_seconds(rec, "awake"),
                      str(rec.get("source", ""))[:60],
                      json.dumps(rec)[:4000]))

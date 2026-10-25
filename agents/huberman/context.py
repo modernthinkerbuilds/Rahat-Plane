@@ -29,6 +29,7 @@ import sqlite3
 from datetime import datetime, timedelta
 
 from agents.huberman import state
+from bridges.healthkit import sleep as hk_sleep
 
 _ASK_DIRECT_RE = re.compile(r"run|walk|hik|cycl|bike|swim", re.I)
 
@@ -336,15 +337,13 @@ def gather(now: datetime | None = None) -> dict:
                        if kcal_rows and kcal_rows[0][0] else None)
         hrv = _latest_metric(con, "hrv", week_ago)
         rhr = _latest_metric(con, "resting_heart_rate", week_ago)
-        sleep_rows = _rows(con, "SELECT sleep_end, asleep_s FROM "
-                                "sleep_sessions WHERE sleep_end LIKE ? "
-                                "ORDER BY sleep_end DESC LIMIT 1",
-                           (f"{day}%",))
+        # 2026-10-25: the night before, through the shared reader (the Watch's staged nights carry their
+        # time in core + deep + rem with asleep_s 0; this line was empty on 50 of 59 nights since September)
+        night = hk_sleep.night_before(con, now)
     finally:
         con.close()
 
-    sleep_hours = (round(sleep_rows[0][1] / 3600, 1)
-                   if sleep_rows and sleep_rows[0][1] else None)
+    sleep_hours = round(night["hours"], 1) if night.get("hours") else None
     wod = gym_wod_today(now)
     from agents.huberman.protocols import loaded_areas
     cf_synced = [w for w in workouts if not w["ask_direct"]]
