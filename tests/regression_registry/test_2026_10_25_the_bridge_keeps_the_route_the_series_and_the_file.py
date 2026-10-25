@@ -147,8 +147,8 @@ def test_replays_converge_and_two_runs_on_one_day_never_collide(con, tmp_path):
 def test_v1_route_names_and_miles_are_read(con, tmp_path):
     w = _run("UUID-V1", datetime(2026, 9, 6, 8, 0), 20, km=3.0, with_route=False)
     w["distance"] = {"qty": 1.864, "units": "mi"}
-    w["route"] = [{"lat": 37.25, "lon": -121.95, "altitude": 31.0, "timestamp": "2026-09-06 08:00:00 -0700"},
-                  {"lat": 37.2501, "lon": -121.9501, "altitude": 32.0, "timestamp": "2026-09-06 08:00:05 -0700"}]
+    w["route"] = [{"lat": 36.65, "lon": -120.65, "altitude": 31.0, "timestamp": "2026-09-06 08:00:00 -0700"},
+                  {"lat": 36.6501, "lon": -120.6501, "altitude": 32.0, "timestamp": "2026-09-06 08:00:05 -0700"}]
     ingest_payload(_payload(w), con, files_dir=tmp_path, now=NOW)
     assert _count(con, "workout_route", "UUID-V1") == 2
     assert abs(con.execute("SELECT distance_km FROM workouts_hk WHERE workout_id='UUID-V1'").fetchone()[0] - 3.0) < 0.01
@@ -182,8 +182,8 @@ def test_a_second_sources_copy_is_a_duplicate_of_the_richer_record(con, tmp_path
 
 def test_a_run_split_by_a_stop_is_merged_into_its_first_part(con, tmp_path):
     first = _run("UUID-P1", datetime(2026, 10, 18, 11, 0), 30, km=4.2)
-    end_lat = 37.25 + 0.00002 * (30 * 12 - 1)
-    end_lon = -121.95 + 0.00001 * (30 * 12 - 1)
+    end_lat = 36.65 + 0.00002 * (30 * 12 - 1)
+    end_lon = -120.65 + 0.00001 * (30 * 12 - 1)
     second = _run("UUID-P2", datetime(2026, 10, 18, 11, 42), 40, km=5.6, lat0=end_lat + 0.0005, lon0=end_lon)
     s = ingest_payload(_payload(first, second), con, files_dir=tmp_path, now=NOW)
     assert s["links"] == 1
@@ -197,7 +197,7 @@ def test_a_run_split_by_a_stop_is_merged_into_its_first_part(con, tmp_path):
 
 def test_a_walk_after_a_run_and_a_run_from_elsewhere_are_not_merged(con, tmp_path):
     run = _run("UUID-R", datetime(2026, 10, 18, 11, 0), 30)
-    walk = _run("UUID-K", datetime(2026, 10, 18, 11, 35), 20, name="Outdoor Walk", lat0=37.25 + 0.00002 * 359)
+    walk = _run("UUID-K", datetime(2026, 10, 18, 11, 35), 20, name="Outdoor Walk", lat0=36.65 + 0.00002 * 359)
     elsewhere = _run("UUID-E", datetime(2026, 10, 18, 11, 40), 20, lat0=37.40)        # 16 km away
     ingest_payload(_payload(run, walk, elsewhere), con, files_dir=tmp_path, now=NOW)
     assert con.execute("SELECT COUNT(*) FROM workout_link").fetchone()[0] == 0
