@@ -10,9 +10,11 @@ THE PINS.
   * Idempotency — automations re-send overlapping windows ("Since Last
     Sync" + full-previous-day). Replaying the same payload converges;
     it never duplicates.
-  * Legacy semantics preserved EXACTLY (Kobe's burn math depends on
-    them): weight keeps one record ever; active_calories overrides
-    per-day.
+  * Legacy semantics preserved for active_calories (overrides per-day;
+    Kobe's burn math depends on it). Weight kept one record ever until
+    2026-10-25: the Kipchoge PRD v0.3 (§6.1, decision D5 and the
+    readback's change 6) makes it a dated series, every reading kept,
+    so a weight trend exists; its readers take the newest row.
   * Heart-rate Min/Avg/Max points fan out to heart_rate /
     heart_rate_min / heart_rate_max series.
   * Sleep sessions are per-SESSION rows — two on one calendar day means
@@ -111,13 +113,21 @@ def test_replay_is_idempotent(con):
     assert con.execute("SELECT COUNT(*) FROM workouts_hk").fetchone()[0] == 1
 
 
-def test_legacy_weight_single_record(con):
+def test_weight_is_a_dated_series_and_the_newest_row_is_the_reading(con):
+    """2026-10-25 (Kipchoge PRD v0.3): every reading stays; a re-send of
+    the same timestamp replaces its row; the newest row is what the
+    readers (`latest_weight`, `handle_current_weight`) already take."""
     ingest_payload(_payload(), con)
     later = {"data": {"metrics": [{"name": "weight", "units": "lb", "data": [
+        {"date": "2026-08-09 07:00:00 +0000", "qty": 194.6},
         {"date": "2026-08-09 07:00:00 +0000", "qty": 194.6}]}]}}
     ingest_payload(later, con)
+    ingest_payload(later, con)
     rows = _rows(con, "weight")
-    assert rows == [("2026-08-09 07:00:00", 194.6)]  # ONE record, newest
+    assert rows == [("2026-08-08 07:00:00", 195.2), ("2026-08-09 07:00:00", 194.6)]
+    newest = con.execute("SELECT value FROM raw_vitals WHERE metric_type='weight' "
+                         "ORDER BY substr(timestamp,1,10) DESC, timestamp DESC, rowid DESC LIMIT 1").fetchone()[0]
+    assert newest == 194.6
 
 
 def test_legacy_active_calories_day_override(con):

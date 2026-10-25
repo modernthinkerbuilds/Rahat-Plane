@@ -14,9 +14,10 @@ Design rules:
     natural key, so replays converge instead of duplicating.
   * NEVER raises on a bad record — skip and count. One malformed point
     must not reject a 10MB batch.
-  * Legacy semantics preserved exactly: `weight` keeps a single record
-    (global override); `active_calories` overrides per-day. Kobe's burn
-    math depends on both.
+  * Legacy semantics preserved: `active_calories` overrides per-day
+    (Kobe's burn math depends on it). `weight` was a single record until
+    2026-10-25 (Kipchoge PRD v0.3, S0): it is a dated series now, every
+    reading kept, replaced by timestamp; its readers take the newest row.
   * A workout lands twice: the summary row (`workouts_hk`, with its
     4,000-character `raw_json` for the readers that exist), and the
     detail the running coach needs (`bridges.healthkit.workouts`: the
@@ -74,7 +75,8 @@ METRIC_MAP = {
 }
 
 # Legacy write semantics (must match the old vitals_listener exactly).
-SINGLE_RECORD = {"weight"}          # keep ONE row ever
+# `weight` left this set on 2026-10-25 (PRD v0.3 §6.1: a dated series).
+SINGLE_RECORD: set[str] = set()
 
 # ── Daily metrics: exactly ONE row per day holding the day's TOTAL (or
 # reading). Kobe's kcal model runs SUM(value) over a day, so a day must
