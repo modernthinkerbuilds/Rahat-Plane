@@ -139,6 +139,18 @@ def zones(athlete_file: dict | None = None) -> dict:
     return out
 
 
+def slope_prior(athlete_file: dict | None = None) -> tuple[float, float] | None:
+    """The athlete file's HR–pace slope prior (s/mi per bpm, its sd), or
+    None when the file has none; the model's wide prior then stands."""
+    a = athlete_file or athlete()
+    m = a.get("model") or {}
+    v = m.get("slope_s_per_mi_per_bpm")
+    if v is None:
+        return None
+    sd = m.get("slope_sd")
+    return float(v), (float(sd) if sd is not None else 2.0)
+
+
 # ── analyses ──────────────────────────────────────────────────────────
 def input_hash(*parts: Any) -> str:
     h = hashlib.sha256()

@@ -31,7 +31,7 @@ import pytest
 os.environ.setdefault("RAHAT_TEST_MODE", "1")
 
 from agents.kipchoge import analyze as ca  # noqa: E402
-from agents.kipchoge import ingest, segments as seg  # noqa: E402
+from agents.kipchoge import ingest, model as cmodel, segments as seg  # noqa: E402
 from agents.kipchoge import state  # noqa: E402
 from tests.kipchoge.fixtures import load_fixture_file, sandbox_db  # noqa: E402
 
@@ -46,7 +46,10 @@ if not (GOLDENS.exists() and ATHLETE.exists() and FIXTURES.is_dir()):
 
 _GOLD = json.loads(GOLDENS.read_text(encoding="utf-8"))
 _TOL = _GOLD.get("tolerances", {})
-_ZONES = state.zones(json.loads(ATHLETE.read_text(encoding="utf-8")))
+_ATHLETE = json.loads(ATHLETE.read_text(encoding="utf-8"))
+_ZONES = state.zones(_ATHLETE)
+_PRIOR = state.slope_prior(_ATHLETE)
+_SLOPE = cmodel.Slope(_PRIOR[0], _PRIOR[1], 0, "the athlete file's prior") if _PRIOR else None
 _RUNS = [g for g in _GOLD.get("runs", []) if (FIXTURES / f"{g['workout_id']}.json").exists()]
 _TABLE: list[dict] = []
 
@@ -78,7 +81,7 @@ def analyze_golden(gold: dict, tmp_path: Path) -> tuple[ingest.RunData, dict]:
     wid = load_fixture_file(con, FIXTURES / f"{gold['workout_id']}.json")
     run = ingest.load_run(con, wid)
     assert run is not None, "the fixture's summary row did not load"
-    return run, ca.analyze(run, zones=_ZONES, now=NOW)
+    return run, ca.analyze(run, zones=_ZONES, slope=_SLOPE, now=NOW)
 
 
 def checks_for(gold: dict, run: ingest.RunData, a: dict) -> list[dict]:

@@ -372,3 +372,17 @@ def test_a_provisional_run_is_heart_rate_and_time_only(con):
     assert ids and all(i.startswith("prov:2026-10-18 14:30:00:") for i in ids)
     assert a["halves"]["run"][0]["hr_avg"] and a["halves"]["run"][0]["pace_s_per_mi"] is None
     assert "no block pace" in " ".join(a["notes"])
+
+
+# ── no personal defaults in code ─────────────────────────────────────
+def test_the_reference_heart_rate_and_the_slope_prior_come_only_from_the_athlete_file(con):
+    from agents.kipchoge import state
+    fx = synthetic_run("SYN-REF", DAY, 60, km=8.0, hr_first=142.0, hr_second=144.0)
+    run, a = _analyze(con, fx)
+    assert _rec(a, "norm.pace_at_ref")["value"]
+    without = ca.analyze(run, zones={k: v for k, v in ZONES.items() if k != "reference"}, now=NOW)
+    assert all(not r["id"].endswith(":norm.pace_at_ref") for r in without["records"])
+    assert "no reference heart rate" in " ".join(without["notes"])
+    assert state.slope_prior(state.default_athlete()) is None, "the default athlete carries no slope"
+    assert state.slope_prior({"model": {"slope_s_per_mi_per_bpm": 5.5, "slope_sd": 1.5}}) == (5.5, 1.5)
+    assert model.SLOPE_PRIOR_SD >= 2.5, "the code's own prior is wide: it is nobody's slope"

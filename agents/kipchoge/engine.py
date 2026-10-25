@@ -35,7 +35,8 @@ from agents.kipchoge.conditions import Conditions, conditions_for_run
 from agents.kipchoge.records import ENGINE_VERSION
 
 
-def slope_from_store(con: sqlite3.Connection, *, exclude: str | None = None) -> cmodel.Slope:
+def slope_from_store(con: sqlite3.Connection, *, exclude: str | None = None,
+                     prior: tuple[float, float] | None = None) -> cmodel.Slope:
     """The HR–pace slope fitted on the saved A and B analyses whose
     normalization basis is a steady block (a distance series or a route
     behind it; a whole-run basis carries the ramp and the cooldown and
@@ -49,7 +50,9 @@ def slope_from_store(con: sqlite3.Connection, *, exclude: str | None = None) -> 
         if basis.get("hr") and basis.get("pace_s_per_mi") and "block" in str(basis.get("what", "")) \
                 and not str(basis.get("what", "")).startswith("whole-run"):
             points.append((basis["hr"], basis["pace_s_per_mi"]))
-    return cmodel.fit_slope(points)
+    if prior is None:
+        return cmodel.fit_slope(points)
+    return cmodel.fit_slope(points, prior=prior[0], prior_sd=prior[1])
 
 
 def match_route(run: ingest.RunData, library: dict | None) -> dict | None:
@@ -74,18 +77,23 @@ def input_hash_for(run: ingest.RunData, zones: dict, conditions: Conditions | No
 
 
 def analyze_workout(con: sqlite3.Connection, workout_id: str, *, now: datetime, http=None, zones: dict | None = None,
-                    library: dict | None = None, save: bool = True, labeled: str | None = None) -> dict | None:
+                    prior: tuple[float, float] | None = None, library: dict | None = None, save: bool = True,
+                    labeled: str | None = None) -> dict | None:
     """One stored run → its analysis dict (with `saved`: True when a new
     row was written; False when the same input was already analyzed).
-    None when the run is not in the store."""
+    None when the run is not in the store. Zones and the slope prior
+    come from the athlete file unless the caller passes them (tests)."""
     run = ingest.load_run(con, workout_id)
     if run is None:
         return None
-    zones = zones or state.zones()
+    athlete_file = None if zones else state.athlete()
+    zones = zones or state.zones(athlete_file)
+    if prior is None and athlete_file is not None:
+        prior = state.slope_prior(athlete_file)
     point = ct.start_point_rounded(run.route) if run.has_route() else None
     conditions = conditions_for_run(start_local=run.start_local, point=point, meta=run.meta, now=now, http=http) \
         if (point is not None or run.meta) else None
-    slope = slope_from_store(con, exclude=workout_id)
+    slope = slope_from_store(con, exclude=workout_id, prior=prior)
     result = ca.analyze(run, zones=zones, slope=slope, conditions=conditions, route_match=match_route(run, library),
                         labeled=labeled, now=now)
     sha = input_hash_for(run, zones, conditions)
@@ -95,12 +103,13 @@ def analyze_workout(con: sqlite3.Connection, workout_id: str, *, now: datetime, 
 
 
 def analyze_since(con: sqlite3.Connection, since: str, *, now: datetime, until: str | None = None, http=None,
-                  zones: dict | None = None, library: dict | None = None, save: bool = True) -> list[dict]:
+                  zones: dict | None = None, prior: tuple[float, float] | None = None, library: dict | None = None,
+                  save: bool = True) -> list[dict]:
     """Every primary run from `since` (local date), oldest first, so the
     slope each run sees is fitted on the runs before it."""
     out = []
     for wid in ingest.runs_in(con, since, until):
-        r = analyze_workout(con, wid, now=now, http=http, zones=zones, library=library, save=save)
+        r = analyze_workout(con, wid, now=now, http=http, zones=zones, prior=prior, library=library, save=save)
         if r is not None:
             out.append(r)
     return out

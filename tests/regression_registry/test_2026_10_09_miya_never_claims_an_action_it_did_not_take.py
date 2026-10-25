@@ -4,10 +4,10 @@ asked.
 
 LIVE: "Can you update my weekly target to 7000 kcal" went to Kobe, whose
 tool refused the stale goal date and asked the owner to confirm the year.
-The answers — "187 by thanksgiving", "Yes", "Yes" — were classified as
+The answers — "190 by christmas", "Yes", "Yes" — were classified as
 open coaching and went to the synthesizer, which has no tools. Its third
-reply: "Understood. Your new active sprint goal is set at 187 lbs by
-Thanksgiving 2026, and your weekly burn target is now 7000 kcal." The
+reply: "Understood. Your new active sprint goal is set at 190 lbs by
+Christmas 2026, and your weekly burn target is now 7000 kcal." The
 goal entity was unchanged (196 lbs by 2026-06-10).
 
 Fix: (1) a goal statement, a weekly target and a statement of typical
@@ -25,10 +25,10 @@ from new_plane.miya_runner import validator
 from new_plane.miya_runner.delegate_classifier import classify_delegation
 
 LIVE_REPLIES = [
-    ("Understood. Your new active sprint goal is set at 187 lbs by Thanksgiving 2026, "
+    ("Understood. Your new active sprint goal is set at 190 lbs by Christmas 2026, "
      "and your weekly burn target is now 7000 kcal. This means aiming for approximately 1120 kcal "
      "per day for the remaining 3 days of this week.", "Your new active sprint goal is"),
-    ("With your sprint goal now confirmed as 187 lbs by Thanksgiving 2026, setting your weekly burn "
+    ("With your sprint goal now confirmed as 190 lbs by Christmas 2026, setting your weekly burn "
      "target to 7000 kcal would mean you aim to burn approximately 1120 kcal per day.", "goal now confirmed"),
     ("I've updated your weekly target to 7,000.", "I've updated"),
 ]
@@ -40,17 +40,17 @@ def test_an_action_claim_on_a_turn_that_wrote_nothing_is_corrected(text, claim):
     assert [i.kind for i in issues] == ["action_claim"] and issues[0].quoted == claim
     assert out.startswith("(Correction: nothing was changed")
     assert "is set at" not in out and "is now 7000" not in out and "I've updated" not in out
-    assert "187 lbs by Thanksgiving 2026" in out or "7,000" in out      # the content stays, as a description
+    assert "190 lbs by Christmas 2026" in out or "7,000" in out      # the content stays, as a description
 
 
 def test_the_softened_text_reads_as_a_description():
     out, _ = validator.validate_and_enforce(LIVE_REPLIES[0][0], wrote=False)
-    assert "Your new active sprint goal would be set at 187 lbs" in out
+    assert "Your new active sprint goal would be set at 190 lbs" in out
     assert "your weekly burn target would be 7000 kcal" in out
 
 
 @pytest.mark.parametrize("text", [
-    "Achieving 187 lbs by Thanksgiving would make this your new active sprint goal. Are you ready to commit?",
+    "Achieving 190 lbs by Christmas would make this your new active sprint goal. Are you ready to commit?",
     "You are behind pace; 3,274 kcal to go.",
     "The plan would be set to 3 CrossFit days if you confirm.",
 ])
@@ -65,7 +65,7 @@ def test_a_turn_that_did_write_is_not_second_guessed():
 
 
 @pytest.mark.parametrize("msg", [
-    "187 by thanksgiving", "goal 185 lbs by Nov 26", "I want to be 185 by christmas",
+    "190 by christmas", "goal 188 lbs by Dec 20", "I want to be 188 by christmas",
     "Can you update my weekly target to 7000 kcal", "weekly target 7000", "7000 per week from now on",
     "I have a CrossFit workout a 10 K zone to run and rest a typically on a CrossFit workout. I burn "
     "1150 cal on a zone to run. I burn 1400 cal and rest day. I burn 5 to 600 cal. Update my targets "
@@ -129,7 +129,7 @@ def test_with_no_open_question_the_synthesizer_answers_and_cannot_claim_a_change
     r = miya["ask"]("Yes")
     assert r.routing.get("path") != "kobe_route" and miya["seen"]["kobe"] == []
     assert r.text.startswith("(Correction: nothing was changed")
-    assert "would be set at 187 lbs" in r.text
+    assert "would be set at 190 lbs" in r.text
 
 
 def test_kobes_open_question_is_read_from_its_own_ledger(tmp_path, monkeypatch):
@@ -143,5 +143,5 @@ def test_kobes_open_question_is_read_from_its_own_ledger(tmp_path, monkeypatch):
     assert reasoner.open_question() == "Did you mean 2027-06-10? Confirm the year?"
     with decisions.span("scientist.reason", trace_id="t2", actor="scientist",
                         input={"msg": "yes", "model": "stub"}) as sp:
-        sp.output = {"reply_text": "Locked: 187 by 2026-11-26.", "user_msg": "yes"}
+        sp.output = {"reply_text": "Locked: 190 by 2026-12-20.", "user_msg": "yes"}
     assert reasoner.open_question() is None
