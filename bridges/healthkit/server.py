@@ -79,6 +79,12 @@ def _db_path() -> str:
         os.path.expanduser("~/developer/agency/rahat/vault/rahat.db"))
 
 
+def _files_dir() -> Path:
+    """Where each workout's whole object is kept (2026-10-25): beside the
+    store, `vault/hk_workouts/`."""
+    return Path(os.getenv("RAHAT_HK_WORKOUT_DIR") or (Path(_db_path()).parent / "hk_workouts"))
+
+
 def _check_key(x_api_key: str | None) -> None:
     expected = (os.getenv("HAE_API_KEY") or "").strip()
     if not expected:
@@ -105,16 +111,18 @@ async def hae(request: Request,
         raise HTTPException(status_code=400, detail="invalid JSON")
     con = sqlite3.connect(_db_path())
     try:
-        summary = ingest_payload(payload, con)
+        summary = ingest_payload(payload, con, files_dir=_files_dir())
     except Exception as e:  # noqa: BLE001
         logger.exception("hae ingest failed")
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         con.close()
-    logger.info("hae: %s points, %s sleep, %s workouts (skipped %s) [%s]",
+    logger.info("hae: %s points, %s sleep, %s workouts (skipped %s) [%s]%s",
                 summary["points"], summary["sleep_sessions"],
                 summary["workouts"], summary["skipped"],
-                ",".join(summary["metrics_seen"])[:200])
+                ",".join(summary["metrics_seen"])[:200],
+                (f" route {summary['route_points']} pts, series {summary['series_rows']} rows, "
+                 f"files {summary['files']}, links {summary['links']}") if summary["workouts"] else "")
     return {"status": "success", **{k: v for k, v in summary.items()
                                     if k != "metrics_seen"}}
 

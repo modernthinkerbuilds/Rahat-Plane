@@ -17,6 +17,11 @@ Design rules:
   * Legacy semantics preserved exactly: `weight` keeps a single record
     (global override); `active_calories` overrides per-day. Kobe's burn
     math depends on both.
+  * A workout lands twice: the summary row (`workouts_hk`, with its
+    4,000-character `raw_json` for the readers that exist), and the
+    detail the running coach needs (`bridges.healthkit.workouts`: the
+    whole object gzipped, the route, the series, the scalars, and the
+    duplicate / split links), keyed on the HealthKit UUID.
   * Sleep sessions (incl. NAPS — each session is its own row, which the
     2026-08-03 "I napped 2h both days" correction showed matters) land
     in their own table, phases in seconds.
@@ -27,7 +32,11 @@ import json
 import logging
 import re
 import sqlite3
+from datetime import datetime
+from pathlib import Path
 from typing import Any
+
+from bridges.healthkit import workouts as hkw
 
 logger = logging.getLogger(__name__)
 
@@ -211,13 +220,17 @@ def _sleep_seconds(rec: dict, *keys: str) -> float | None:
     return None
 
 
-def ingest_payload(payload: dict, con: sqlite3.Connection) -> dict:
+def ingest_payload(payload: dict, con: sqlite3.Connection, *, files_dir: str | Path | None = None,
+                   now: datetime | None = None) -> dict:
     """Ingest one HAE payload. Returns a summary dict (counts + skips).
-    Commits on success; never raises on bad records."""
+    Commits on success; never raises on bad records. `files_dir` is where
+    each workout's whole object is kept (`vault/hk_workouts`); None keeps
+    no files (the in-memory tests). `now` stamps the file index."""
     cur = con.cursor()
     _ensure_schema(cur)
+    hkw.ensure_schema(cur)
     summary = {"points": 0, "sleep_sessions": 0, "workouts": 0,
-               "skipped": 0, "metrics_seen": []}
+               "skipped": 0, "metrics_seen": [], "route_points": 0, "series_rows": 0, "links": 0, "files": 0}
 
     data = payload.get("data") if isinstance(payload, dict) else None
     if not isinstance(data, dict):
@@ -314,16 +327,25 @@ def ingest_payload(payload: dict, con: sqlite3.Connection) -> dict:
                 return _num(v.get("qty"))
             return _num(v)
 
+        dist_qty, dist_units = hkw._qty(w.get("distance"))
         cur.execute(
             "INSERT OR REPLACE INTO workouts_hk (workout_id, name, start, "
             "end, duration_s, active_kcal, avg_hr, max_hr, distance_km, "
             "raw_json) VALUES (?,?,?,?,?,?,?,?,?,?)",
             (wid, str(w.get("name", ""))[:60], start, _ts(w.get("end")),
              _num(w.get("duration")), _qty("activeEnergyBurned"),
-             _qty("avgHeartRate"), _qty("maxHeartRate"), _qty("distance"),
+             _qty("avgHeartRate"), _qty("maxHeartRate"), hkw.to_km(dist_qty, dist_units),
              json.dumps({k: v for k, v in w.items()
                          if k not in ("route", "heartRateData")})[:4000]))
         summary["workouts"] += 1
+        # 2026-10-25: the detail (the whole object, the route, the series, the scalars) and the links
+        detail = hkw.store_workout_detail(cur, dict(w, id=wid), files_dir=Path(files_dir) if files_dir else None,
+                                          now=now)
+        summary["route_points"] += detail["route_points"]
+        summary["series_rows"] += sum(detail["series"].values())
+        summary["files"] += 1 if detail["file"] else 0
+        summary["skipped"] += detail["skipped"]
+        summary["links"] += len(hkw.detect_links(cur, wid, now=now))
 
     con.commit()
     return summary
