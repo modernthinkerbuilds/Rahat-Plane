@@ -84,3 +84,44 @@ def test_the_cli_refuses_the_live_store_under_test_mode(tmp_path, monkeypatch, c
     assert "read-only" in capsys.readouterr().err
     assert bf.main(["--dir", str(tmp_path), "--dry-run"]) == 0
     assert bf.main(["--dir", str(tmp_path / "empty"), "--db", str(tmp_path / "sandbox.db")]) == 1
+
+
+def test_a_workout_already_on_file_takes_its_route_and_series_from_the_export_and_is_re_analyzed(tmp_path, monkeypatch):
+    """S0 review, fix 5: the seven pending checks are on runs the store
+    already holds as summaries. The export's copy of such a run (same
+    UUID) must fill the route and the series, never be linked as a
+    duplicate of itself, and its analysis must run again because the
+    input changed."""
+    monkeypatch.setenv("RAHAT_TEST_MODE", "1")
+    monkeypatch.setenv("RAHAT_TEST_VAULT_DIR", str(tmp_path / "vault"))
+    (tmp_path / "vault").mkdir()
+    from agents.kipchoge import engine, state
+    from bridges.healthkit.ingest import ingest_payload
+    from tests.kipchoge.fixtures import ZONES
+    db = tmp_path / "vault" / "health.db"
+    files_dir = tmp_path / "hk_workouts"
+    full = _hae_workout("BF-R", datetime(2026, 8, 16, 9, 14), 70, route=True)
+    summary_only = {k: v for k, v in full.items() if k not in ("route", "heartRateData", "walkingAndRunningDistance")}
+    con = sqlite3.connect(db)
+    ingest_payload({"data": {"metrics": [], "workouts": [summary_only]}}, con, files_dir=files_dir, now=NOW)
+    state.ensure_schema(con)
+    first = engine.analyze_workout(con, "BF-R", now=NOW, zones=ZONES)
+    assert first["saved"] and first["halves"]["run"][0]["pace_s_per_mi"] is None, "a summary-only run has no pace"
+    assert con.execute("SELECT COUNT(*) FROM workout_route WHERE workout_id='BF-R'").fetchone()[0] == 0
+    con.close()
+
+    exports = tmp_path / "backfill"
+    exports.mkdir()
+    (exports / "HealthAutoExport-2026-08-01-2026-08-31.json").write_text(json.dumps(_payload([full], 0)), encoding="utf-8")
+    res = bf.run(sorted(exports.glob("*.json")), str(db), files_dir=files_dir, now=NOW + timedelta(days=1), log=lambda *_: None)
+    assert res["delta"]["workouts_hk"] == 0, "the same UUID is one row"
+    assert res["delta"]["workout_route"] == 840 and res["delta"]["workout_series"] > 0
+
+    con = sqlite3.connect(db)
+    assert con.execute("SELECT COUNT(*) FROM workout_link WHERE workout_id='BF-R' OR other_id='BF-R'").fetchone()[0] == 0, \
+        "a run is never a duplicate of itself"
+    second = engine.analyze_workout(con, "BF-R", now=NOW + timedelta(days=1), zones=ZONES)
+    assert second["saved"], "the input changed, so the analysis ran again"
+    assert second["halves"]["run"][0]["pace_s_per_mi"] and second["elevation"] is not None
+    assert second["input_sha256"] != first["input_sha256"]
+    con.close()
