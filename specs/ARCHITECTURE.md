@@ -258,8 +258,9 @@ The plain-language intent layer ([ADR-017](./ADR-017_nl_intent_layer.md)) sits j
 | **Huberman** | Behind Miya, and the 9:30 pm tick | Cooldowns | A 25-drill library with rotation; the model coaches each drill; the library alone when the model can't answer. A run is read from the Watch's running series and any other workout from its heart-rate trace, hours before the phone's workout export names them (it sends the days before today); a run gets the post-run session, a gym session the post-workout one | Live since Aug 24 |
 | **Genie** | Its own bot, and behind Miya | Weekends, the household calendar, the events digest | Intents in code; live discovery with search; the digest from the inventory | Live; behind Miya since Aug 6 |
 | **Bourdain** | Its own bot | Where to eat | The harness | Live since Sep 20; on the harness since Oct 4 |
+| **Kipchoge** | Its own bot (to come) | The running coach: every run's numbers, the next run | A deterministic engine ([`agents/kipchoge/`](../agents/kipchoge/)) turns each run in the store into evidence records with ranges (segments, halves, decoupling, grade-adjusted pace, a normalized pace at a reference heart rate, a grade); the model, as the harness's second tenant, may only cite those records | Building on `feat/kipchoge` since Oct 25: the data slice (S0) is done; the tenancy waits on ADR-018 A6 |
 
-Code: [`agents/the_scientist/`](../agents/the_scientist/) (Kobe), [`agents/fraser/`](../agents/fraser/), [`agents/huberman/`](../agents/huberman/), [`agents/genie/`](../agents/genie/) and [`agents/bourdain/`](../agents/bourdain/). One more agent lives in a private build lane and is deliberately outside these public docs; it runs on the same substrate documented here.
+Code: [`agents/the_scientist/`](../agents/the_scientist/) (Kobe), [`agents/fraser/`](../agents/fraser/), [`agents/huberman/`](../agents/huberman/), [`agents/genie/`](../agents/genie/), [`agents/bourdain/`](../agents/bourdain/) and [`agents/kipchoge/`](../agents/kipchoge/). One more agent lives in a private build lane and is deliberately outside these public docs; it runs on the same substrate documented here.
 
 **How an agent joins.** It starts on its own front door, with its own bot and tests, where its failures are easy to see and can't break anything else. When it passes, it is registered behind Miya in [`agent_boot.py`](../new_plane/miya_runner/agent_boot.py). An agent registered since June 17 must emit numeric facts as typed fields (`emits_structured_facts`); the contract test refuses one that doesn't. The front door's own judged criteria are written ([`core/checklists/front_door.json`](../core/checklists/front_door.json)) and not yet running.
 
@@ -283,7 +284,7 @@ A strict command check runs first ([`core/inbound.py`](../core/inbound.py)); the
 | 8. Record | Code | The run, each outcome's result, and the cost |
 
 - **Evals that replay for $0.** Every model and tool call under test is recorded against its whole request ([`core/cassette.py`](../core/cassette.py), [`core/httpcache.py`](../core/httpcache.py)), so a golden-set run replays without a network or a bill; production never reads a recording. [`core/eval_outcomes.py`](../core/eval_outcomes.py) scores a case by its outcomes, not by substrings. The golden sets (72 real Bourdain asks, 14 Genie asks) stay private; public tests use synthetic twins.
-- **Status.** One tenant, Bourdain, served since October 4. Fraser borrows the contract pattern and records its outcomes in the same table, but isn't a tenant. A second tenant is parked (October 11). The judge has no authority yet. A memo cache for repeated asks is not built. Five dated amendments (A1–A5) are in [ADR-018 §7](./ADR-018-outcome-contracts-and-independent-evaluation.md).
+- **Status.** One tenant, Bourdain, served since October 4. Fraser borrows the contract pattern and records its outcomes in the same table, but isn't a tenant. The second tenant, the running coach, began on October 25 with its data slice; its tenancy is amendment A6, proposed and awaiting the owner. The judge has no authority yet. A memo cache for repeated asks is not built. Five dated amendments (A1–A5) and one proposed (A6) are in [ADR-018 §7](./ADR-018-outcome-contracts-and-independent-evaluation.md).
 
 ---
 
@@ -299,7 +300,7 @@ With `RAHAT_TEST_MODE=1`, every connection is redirected to a per-process sandbo
 
 | Domain | Tables | Written by |
 |---|---|---|
-| **Observations** | `raw_vitals`, `sleep_sessions`, `workouts_hk`, `hrv_log`, `weighin_log`, `workout_log` | The health bridge; Kobe's logs |
+| **Observations** | `raw_vitals`, `sleep_sessions`, `workouts_hk`, `workout_route`, `workout_series`, `workout_meta`, `workout_link`, `hk_workout_file`, `run_analysis`, `session_log`, `hrv_log`, `weighin_log`, `workout_log` | The health bridge (since Oct 25 each workout's route, series, scalars and links, with the whole object gzipped in `vault/hk_workouts/`); the coach's engine (`run_analysis`, `session_log`); Kobe's logs |
 | **Plans and intents** | `intents`, `weekly_plan`, `week_preferences`, `weekly_campaigns` | Kobe |
 | **The world** | `events_inventory`, `events_refresh_log`, `events_popularity` | The event runs |
 | **The knowledge base** | `kb_place`, `kb_location`, `kb_fact`, `kb_hours`, `kb_menu_item`, `kb_mention`, `kb_acclaim`, `kb_gazetteer`, `kb_save`, `kb_verdict`, `kb_visit`, `kb_list`, `kb_leg`, `kb_meta` and helpers | The harness, the food run, the gazetteer loader, the household's saves and verdicts |
@@ -338,7 +339,7 @@ Revisit when state must live on more than one machine (§15).
 
 | What | When | Reads | Writes | Model |
 |---|---|---|---|---|
-| Health bridge | On each phone export | Health Auto Export on the iPhone: 150+ metrics at minute resolution, sleep stages, typed workouts | `raw_vitals`, `sleep_sessions`, `workouts_hk` | None |
+| Health bridge | On each phone export | Health Auto Export on the iPhone: 150+ metrics at minute resolution, sleep stages, typed workouts with their routes and series | `raw_vitals`, `sleep_sessions`, `workouts_hk`, `workout_route`, `workout_series`, `workout_meta`, `hk_workout_file` | None |
 | Gym bridge | When the week is sent | The gym's programming, from its app by a bookmarklet | The week's plan file | None |
 | Event runs | 07:00, 12:30, 18:00 | 50 sources read in plain code; 52 pages a model reads once a day | `events_inventory`, deduped on title, start and city and tagged by audience | For the 52 pages |
 | Event search | Wed and Sat 03:00, and Genie's `/refresh` | 20 grounded searches for what no feed covers, and for sites that refuse the reader | `events_inventory` | Yes |
