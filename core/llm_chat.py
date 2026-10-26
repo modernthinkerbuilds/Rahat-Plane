@@ -102,14 +102,20 @@ def schema_for(model_cls: type[BaseModel]) -> dict:
     raw = model_cls.model_json_schema()
     defs = raw.pop("$defs", {}) or {}
 
-    def inline(node: Any, depth: int = 0) -> Any:
+    def inline(node: Any, depth: int = 0, names: bool = False) -> Any:
+        # `names` is true for a `properties` map, whose keys are field
+        # names and must survive: a field called "title" is a field, not
+        # the schema's own title (2026-10-25: the coach's Section.title was
+        # dropped while `required` still named it, and Gemini refused the
+        # whole answer schema with "property is not defined").
         if depth > 12:
             return node
         if isinstance(node, dict):
             if "$ref" in node:
                 ref = node["$ref"].split("/")[-1]
                 return inline(dict(defs.get(ref, {})), depth + 1)
-            return {k: inline(v, depth + 1) for k, v in node.items() if k not in ("title",)}
+            return {k: inline(v, depth + 1, names=(k == "properties" and not names))
+                    for k, v in node.items() if names or k != "title"}
         if isinstance(node, list):
             return [inline(v, depth + 1) for v in node]
         return node
