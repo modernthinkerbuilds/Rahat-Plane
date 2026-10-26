@@ -120,8 +120,19 @@ def card_text(ctx: dict, *, now: datetime, model: bool = False, tenant: Any = No
     from core.harness import run as hrun
     frame = shapes.Frame(intent="next_run", date_ref=nxt.date, session_ref=nxt.type, route_ref=nxt.route)
     res = hrun.run_pipeline(tenant, f"the next-run card for {nxt.date} ({nxt.type})", frame=frame, chat_id="pipeline", now=now,
-                            db_path=db_path, serve_mode="shadow")
+                            db_path=db_path, serve_mode="shadow", prefetch=card_prefetch(nxt))
     return res.text
+
+
+def card_prefetch(nxt: cplan.Session) -> list[tuple[str, dict]]:
+    """The tool calls a card needs, read before the model's first turn (the same ones `card_records` makes)."""
+    calls: list[tuple[str, dict]] = [("get_plan", {"date_ref": nxt.date}), ("clock", {"date_ref": nxt.date}),
+                                     ("get_session", {"type": nxt.type}), ("get_athlete", {})]
+    if nxt.route:
+        hour = int((nxt.time or "07:30").split(":")[0])
+        calls += [("route_info", {"name": nxt.route}), ("weather_at", {"date": nxt.date, "hour": hour, "route": nxt.route})]
+    calls.append(("prescribe", {"date": nxt.date, "with_conditions": True}))
+    return calls
 
 
 def analysis_records(ctx: dict, wid: str, now: datetime) -> Evidence:
@@ -145,8 +156,19 @@ def analysis_text(ctx: dict, wid: str, *, now: datetime, model: bool = False, te
     from core.harness import run as hrun
     frame = shapes.Frame(intent="analyze", run_ref=shapes.RunRef(which="uuid", value=wid), wants_thorough=True)
     event = f"the {'provisional ' if provisional else ''}analysis of run {wid}"
-    res = hrun.run_pipeline(tenant, event, frame=frame, chat_id="pipeline", now=now, db_path=db_path, serve_mode="shadow")
+    res = hrun.run_pipeline(tenant, event, frame=frame, chat_id="pipeline", now=now, db_path=db_path, serve_mode="shadow",
+                            prefetch=analysis_prefetch(ctx, wid, now))
     return res.text
+
+
+def analysis_prefetch(ctx: dict, wid: str, now: datetime) -> list[tuple[str, dict]]:
+    """The tool calls an analysis needs, read before the model's first turn (the same ones `analysis_records` makes)."""
+    calls: list[tuple[str, dict]] = [("analyze_run", {"which": "uuid", "value": wid}), ("compare_runs", {"which": "uuid", "value": wid, "n": 5}),
+                                     ("trend", {}), ("get_athlete", {})]
+    nxt = cplan.next_session(ctx.get("plan") or {}, now)
+    if nxt:
+        calls.append(("get_plan", {"date_ref": nxt.date}))
+    return calls
 
 
 def last_analysis_text(ctx: dict, *, now: datetime, model: bool = False, tenant: Any = None, db_path: str | None = None) -> str | None:
@@ -242,7 +264,8 @@ def on_provisional_run(tenant: Any, session: dict, *, now: datetime, send: Calla
             from core.harness import run as hrun
             frame = shapes.Frame(intent="analyze", run_ref=shapes.RunRef(which="uuid", value=run.workout_id))
             text = hrun.run_pipeline(tenant, f"the provisional analysis of {run.workout_id}", frame=frame, chat_id=chat_id, now=now,
-                                     db_path=db_path, serve_mode="shadow").text
+                                     db_path=db_path, serve_mode="shadow",
+                                     prefetch=[("analyze_run", {"which": "uuid", "value": run.workout_id}), ("get_athlete", {})]).text
         text = "Provisional (the Watch's minute data; the workout file hasn't landed):\n" + (text or "")
         if in_quiet_hours(now):
             return {"sent": False, "stage": "provisional", "why": "quiet hours", "text": text, "held": True}
@@ -387,7 +410,7 @@ def review_text(ctx: dict, *, now: datetime, model: bool = False, tenant: Any = 
         return krender.review_floor(ev, label, units=krender._units(ctx))
     from core.harness import run as hrun
     frame = shapes.Frame(intent="trend", date_ref=now.strftime("%Y-%m-%d"))
-    ctx["weekly_review"] = True
     res = hrun.run_pipeline(tenant, f"the weekly review for {label}", frame=frame, chat_id="pipeline", now=now, db_path=db_path,
-                            serve_mode="shadow")
+                            serve_mode="shadow", prefetch=[("week_review", {}), ("get_athlete", {}), ("get_goal", {})],
+                            ctx_extra={"weekly_review": True})
     return res.text

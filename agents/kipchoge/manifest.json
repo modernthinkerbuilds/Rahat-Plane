@@ -12,7 +12,7 @@
   "judge_checklist": "checklist.json",
   "shapes": "agents.kipchoge.shapes",
   "tools": ["get_athlete", "get_goal", "get_plan", "get_session", "list_runs", "analyze_run", "compare_runs", "trend",
-            "prescribe", "clock", "weather_at", "route_info", "freshness", "population_estimate", "strides_how"],
+            "prescribe", "clock", "weather_at", "route_info", "freshness", "population_estimate", "strides_how", "week_review"],
   "state_scopes": ["turn", "session", "day", "week", "block", "season", "standing"],
   "budgets": {
     "per_ask": {"tool_calls": 10, "search_queries": 0, "usd": 0.25},

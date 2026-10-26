@@ -152,7 +152,7 @@ def execute(agent: str, *, system: str, prompt: str, registry: ToolRegistry, ctx
             trace_id: str | None = None, db_path: str | None = None, cassette_dir: str | None = None,
             mode: str = "", model: str | None = None, thinking_budget: int | None = None,
             started_at: float | None = None, slow_line_s: float = 75.0,
-            slow_text: str = SLOW_TEXT) -> ExecResult:
+            slow_text: str = SLOW_TEXT, seed: list[tuple[str, dict, dict]] | None = None) -> ExecResult:
     """Run the tool loop and the final schema-bound call. With `prior`,
     continue that history (a repair round) with `hints` appended.
     `started_at` is the ask's own clock (time.monotonic at the start of
@@ -170,6 +170,11 @@ def execute(agent: str, *, system: str, prompt: str, registry: ToolRegistry, ctx
             f"{READY}:\n- " + "\n- ".join(hints or ["(none listed)"])))
     else:
         history = [llm_chat.user_text(prompt)]
+        if seed:
+            # Tool results already in hand (a pipeline run pre-reads its records, A6 addition 3): the conversation
+            # opens as if the model had called them, so it reads before it reasons and rarely needs a round of its own.
+            history.append(llm_chat.model_turn([{"function_call": {"name": name, "args": args}} for name, args, _ in seed]))
+            history.append(_tool_turn([(name, payload) for name, _, payload in seed]))
     kw = dict(step="execute", mode=mode, trace_id=trace_id, db_path=db_path, cassette_dir=cassette_dir, model=model,
               thinking_budget=thinking_budget)
     declarations = registry.declarations()

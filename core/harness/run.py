@@ -164,11 +164,15 @@ def run(tenant: Tenant, text: str, *, chat_id: str, now: datetime, serve_mode: s
         holding_line: Callable[[str], None] | None = None, db_path: str | None = None, cassette_dir: str | None = None,
         frame_override: Frame | None = None, trace_id: str | None = None, previous_trace: str | None = None,
         judge_enabled: bool = True, time_budget_s: float | None = None, budgets_override: Any | None = None,
-        pipeline: bool = False) -> RunResult:
+        pipeline: bool = False, prefetch: list[tuple[str, dict]] | None = None,
+        ctx_extra: dict | None = None) -> RunResult:
     """`time_budget_s` overrides the manifest's latency budget for repairs;
     an eval passes infinity so a recorded trajectory does not depend on
     the wall clock. `budgets_override` is a pipeline run's brake; with
-    `pipeline` the run is one no message started (see `run_pipeline`)."""
+    `pipeline` the run is one no message started (see `run_pipeline`).
+    `prefetch` is the tool calls a pipeline run knows it needs, as
+    (name, args): executed here before the model's first turn, their
+    records in the evidence and their results in the conversation."""
     t0 = time.monotonic()
     tid = trace_id or decisions.new_trace()
     result = RunResult(trace_id=tid)
@@ -177,6 +181,8 @@ def run(tenant: Tenant, text: str, *, chat_id: str, now: datetime, serve_mode: s
     result.ctx = ctx
     if pipeline:
         ctx["pipeline"] = True
+    if ctx_extra:
+        ctx.update(ctx_extra)          # what the pipeline knows about this run (the weekly review flag, say)
     mode = ctx.get("mode", "")
     texts = _library_texts(tenant.library)
 
@@ -274,6 +280,17 @@ def run(tenant: Tenant, text: str, *, chat_id: str, now: datetime, serve_mode: s
     holding_s = float(getattr(latency, "holding_line_s", 5.0))
     slow_s = float(getattr(latency, "slow_line_s", 75.0))
 
+    seed: list[tuple[str, dict, dict]] = []
+    if prefetch:
+        with step("prefetch", {"tools": [n for n, _ in prefetch]}) as s:
+            for name, args in prefetch:
+                tr = registry.execute(name, args, ctx, brake=brake, cassette_dir=cassette_dir)
+                result.tool_calls += 1
+                result.cost_usd += tr.cost_usd
+                seed.append((name, args, tr.payload()))
+            s.output = {"tool_calls": len(seed)}
+        result.steps.append({"step": "prefetch", "tool_calls": len(seed)})
+
     _ev: dict[str, Evidence] = {}
 
     def evidence_now() -> Evidence:
@@ -289,7 +306,8 @@ def run(tenant: Tenant, text: str, *, chat_id: str, now: datetime, serve_mode: s
                                    max_rounds=cexecute.MAX_ROUNDS if research else NO_RESEARCH_ROUNDS,
                                    trace_id=tid, db_path=db_path, cassette_dir=cassette_dir, mode=mode,
                                    answer_model=shapes.answer_model, parse=shapes.parse_answer,
-                                   answer_instruction=shapes.answer_instruction, holding_text=shapes.holding_text)
+                                   answer_instruction=shapes.answer_instruction, holding_text=shapes.holding_text,
+                                   seed=seed if prior is None else None)
             s.output = {"rounds": res.rounds, "tool_calls": res.tool_calls, "ok": res.ok, "error": res.error,
                         "problems": res.problems[:3]}
             s.cost_usd = res.cost_usd
@@ -371,7 +389,8 @@ def run(tenant: Tenant, text: str, *, chat_id: str, now: datetime, serve_mode: s
 
 def run_pipeline(tenant: Tenant, event: str, *, frame: Any, chat_id: str, now: datetime, serve_mode: str = "shadow",
                  db_path: str | None = None, cassette_dir: str | None = None, trace_id: str | None = None,
-                 judge_enabled: bool = True, time_budget_s: float | None = None) -> RunResult:
+                 judge_enabled: bool = True, time_budget_s: float | None = None,
+                 prefetch: list[tuple[str, dict]] | None = None, ctx_extra: dict | None = None) -> RunResult:
     """A run no message started (ADR-018 A6, addition 3): the same eight
     steps on a frame the tenant built in code, Understand skipped, the
     event recorded in place of the message, the pipeline's own brake
@@ -384,7 +403,7 @@ def run_pipeline(tenant: Tenant, event: str, *, frame: Any, chat_id: str, now: d
     return run(tenant, event, chat_id=chat_id, now=now, serve_mode=serve_mode, db_path=db_path, cassette_dir=cassette_dir,
                frame_override=frame, trace_id=trace_id, judge_enabled=judge_enabled,
                time_budget_s=time_budget_s if time_budget_s is not None else (float(analysis_s) if analysis_s else None),
-               budgets_override=budgets, pipeline=True)
+               budgets_override=budgets, pipeline=True, prefetch=prefetch, ctx_extra=ctx_extra)
 
 
 def _record(tenant: Tenant, result: RunResult, ctx: dict, text: str, serve_mode: str, now: datetime,

@@ -462,6 +462,14 @@ def build_registry(ctx: dict, *, allow: list[str] | None = None) -> ToolRegistry
         recs.append(Record(f"{p}:has_point", bool(e.get("point")), "flag", source="whether a weather point is on file"))
         return _add(c, recs)
 
+    @reg.tool("week_review", "This week's planned sessions against the store (done, modified, missed, pending), each with its grade and pace; the trend; the goal forecast; next week's first session.", args=NoArgs)
+    def week_review(a: NoArgs, c):
+        from agents.kipchoge import pipeline
+        before = set(c["evidence"].ids())
+        ev, label = pipeline.review_records(c, c["now"])
+        recs = [ev.get(i) for i in ev.ids() if i not in before]
+        return {"records": [r.as_json() for r in recs if r is not None], "week": label or "no plan covers this week"}
+
     @reg.tool("freshness", "When the store last heard from the Watch (vitals), the phone's workout export and the sleep export.", args=NoArgs)
     def freshness(a: NoArgs, c):
         con = _con(c)
