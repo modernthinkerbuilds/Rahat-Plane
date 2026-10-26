@@ -12,6 +12,8 @@ review. Nothing here invents a number: a value with no record prints as
 """
 from __future__ import annotations
 
+import re
+
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -46,6 +48,30 @@ def fill(text: str, evidence: Any, units: dict) -> tuple[str, list[str]]:
     return cnum.substitute(text, evidence, units=units)
 
 
+# What a session type is called in a message (the engine's and the plan's ids → words).
+TYPE_WORDS = {"z2_steady": "Zone 2 steady", "z2_strides": "Zone 2 + strides", "easy_strides": "easy run + strides",
+              "drift_test": "drift test", "tempo": "tempo", "hills": "hill run", "long": "long run", "recovery": "recovery jog"}
+_TYPE_RE = re.compile(r"\b(" + "|".join(sorted((k for k in TYPE_WORDS if "_" in k), key=len, reverse=True)) + r")\b")
+_RANGE_UNIT_RE = re.compile(r"(\d+(?:[.:]\d+)?) (bpm|km|mi|min|%|°F)\s*[–-]\s*(\d+(?:[.:]\d+)?) \2(?![\w/])")
+_RANGE_PACE_RE = re.compile(r"(\d+:\d{2})/(mi|km)\s*[–-]\s*(\d+:\d{2})/\2\b")
+_DOUBLE_UNIT_RE = re.compile(r"\b(bpm|min|km|mi)(?:\s+\1\b)+")
+_NESTED_MI_RE = re.compile(r"\d+(?:\.\d+)? mi \((\d+(?:\.\d+)? km \(\d+(?:\.\d+)?(?:–\d+(?:\.\d+)?)? mi\))\)")
+_SKIP_SECTIONS = ("next", "data notes", "data note")
+
+
+def tidy(text: str) -> str:
+    """What a sentence with records substituted reads like to a person:
+    "140 bpm–145 bpm" → "140–145 bpm", "11:05/mi–12:20/mi" → "11:05–12:20/mi",
+    "bpm bpm" → "bpm", "5.3 mi (8.4 km (5.2 mi))" → "8.4 km (5.2 mi)", a
+    type id ("z2_steady") → its words. Live 2026-10-26, the first analysis."""
+    text = _RANGE_PACE_RE.sub(lambda m: f"{m.group(1)}–{m.group(3)}/{m.group(2)}", text)
+    text = _RANGE_UNIT_RE.sub(lambda m: f"{m.group(1)}–{m.group(3)} {m.group(2)}", text)
+    text = _DOUBLE_UNIT_RE.sub(lambda m: m.group(1), text)
+    text = _NESTED_MI_RE.sub(lambda m: m.group(1), text)
+    text = _TYPE_RE.sub(lambda m: TYPE_WORDS[m.group(1)], text)
+    return text
+
+
 def render(frame: Any, answer: Any, evidence: Any, ctx: dict, disclosures: list[str], *, banned: list[str] | None = None,
            max_chars: int = MAX_CHARS) -> Rendered:
     units = _units(ctx)
@@ -68,6 +94,9 @@ def render(frame: Any, answer: Any, evidence: Any, ctx: dict, disclosures: list[
         put(l)
     for s in answer.sections:
         title = (s.title or "").strip()
+        low = title.lower().rstrip(":").strip()
+        if (low in _SKIP_SECTIONS and (answer.next or answer.data_notes)) or "observations" in low:
+            continue          # Next and Data notes have their own fields; his observations are the hypotheses block
         if kind == "card":
             if title.lower().startswith(("why", "readiness", "conditions", "plan b")):
                 for i, l in enumerate(s.lines):
@@ -99,7 +128,7 @@ def render(frame: Any, answer: Any, evidence: Any, ctx: dict, disclosures: list[
     for d in disclosures:
         lines.append("")
         lines.append(d)
-    body = "\n".join(lines).strip()
+    body = tidy("\n".join(lines).strip())
     if absent:
         problems.append("placeholders with no record: " + ", ".join(sorted(set(absent))[:6]))
     hits = _banned(body, banned)
@@ -405,7 +434,7 @@ def trend_floor(ev: Any, *, units: dict | None = None) -> str:
     base = t.rsplit(":", 1)[0]
     parts = [f"The trend: {{{{r:{t}}}}} ({{{{r:{t}|range}}}}) at the reference heart rate, over {{{{r:{base}:n_runs}}}} runs."]
     if ev.get(f"{base}:slope_s_per_mi_per_week") is not None:
-        parts.append(f"• The line's slope: {{{{r:{base}:slope_s_per_mi_per_week|signed}}}} per week (negative is faster).")
+        parts.append(f"• The line's slope: {{{{r:{base}:slope_s_per_mi_per_week|signed}}}} (negative is faster).")
     if ev.get(f"{base}:method") is not None:
         parts.append(f"• Method: {{{{r:{base}:method}}}}.")
     parts += _forecast_lines(ev)

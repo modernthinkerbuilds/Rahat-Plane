@@ -42,6 +42,7 @@ def test_a_pipeline_run_opens_with_its_records_in_hand(world, monkeypatch):  # n
                             serve_mode="shadow", prefetch=pre)
     assert res.error is None and not res.floor_used, (res.error, res.text)
     assert [s["step"] for s in res.steps if s["step"] == "prefetch"] == ["prefetch"]
+    assert {"step": "breadth", "research": False, "rounds_max": hrun.NO_RESEARCH_ROUNDS} in res.steps   # no research loop
     assert res.tool_calls == len(pre) and res.exec.rounds == 1                  # one round: READY, no calls of its own
     assert "Grade C" in res.text and "[no record]" not in res.text
     first = seen[0]["messages"]
@@ -65,5 +66,16 @@ def test_the_week_review_tool_is_the_review_records(world):  # noqa: F811
         ids = {r["id"] for r in out.payload()["result"]["records"]}
         assert any(i.startswith("review:w1:session:") for i in ids) and "review:w1:done" in ids
         assert ctx["evidence"].get("review:w1:planned") is not None
+    finally:
+        ctx["con"].close()
+
+
+def test_a_conversation_ask_keeps_the_full_loop(world):  # noqa: F811
+    tenant = world["tenant"]
+    ctx = tenant.build_ctx("c", NOW, "how was my run", db_path=world["db"], cassette_dir=None, trace_id="t")
+    try:
+        assert tenant.research_needed(None, ctx) is True
+        ctx["prefetched"] = ["analyze_run"]
+        assert tenant.research_needed(None, ctx) is False
     finally:
         ctx["con"].close()

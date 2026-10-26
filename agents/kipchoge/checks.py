@@ -28,6 +28,14 @@ from core.harness import numbers as cnum
 from core.harness.contract import ContractOutcome
 from core.verify import Failure, VerifyContext
 
+# A2: an in-band claim the records contradict (live 2026-10-26).
+IN_BAND_CLAIM = re.compile(
+    r"\b(?:squarely (?:inside|in|within)|stayed (?:inside|in|within|under)|(?:inside|within) (?:your|the) (?:target )?(?:aerobic )?(?:zone|band)"
+    r"|without (?:surging|drifting|going over)|never (?:left|went over|drifted|crossed)|disciplined|in band (?:the )?(?:whole|entire|throughout)"
+    r"|held (?:the|your) (?:band|zone)(?: throughout| the whole)?|under the cap (?:the )?(?:whole|throughout))\b", re.I)
+OVER_CAP_MIN_FOR_CLAIM = 5.0
+IN_BAND_PCT_FOR_CLAIM = 60.0
+
 RANGE_FMT = "|range"
 CARD_FIELDS = ("minutes", "hr_lo", "hr_hi", "cap", "pace_s_per_mi", "distance_km")
 NEVER_SAY = ("it's nothing", "it is nothing", "nothing to worry about", "definitely nothing")
@@ -176,6 +184,28 @@ def register(reg: cverify.Registry) -> None:
             out.append(Failure(o.id, f"{lines_before_why} lines before why; the card allows nine", "tighten the card: headline, bottom line, then the sections"))
         return out
 
+    def _in_band_claims(ctx: VerifyContext, o: ContractOutcome) -> list[Failure]:
+        """A run that spent minutes over the cap, or under 60% of its moving
+        time in band, is not called in band (live 2026-10-26: "squarely
+        inside your target Zone 2 ... without surging" for a run that spent
+        many minutes over the cap, and every check passed)."""
+        texts = " ".join(_texts(ctx))
+        if not IN_BAND_CLAIM.search(texts):
+            return []
+        runs = {i.split(":")[1] for i in _ids(ctx) if i.startswith("run:") and i.count(":") >= 2}
+        out = []
+        for w in sorted(runs):
+            over = _rec(ctx, f"run:{w}:time_in_zone.over_cap_min")
+            pct = _rec(ctx, f"run:{w}:time_in_zone.in_band_pct")
+            over_v = float(over.value) if over is not None and over.value is not None else 0.0
+            pct_v = float(pct.value) if pct is not None and pct.value is not None else 100.0
+            if over_v >= OVER_CAP_MIN_FOR_CLAIM or pct_v < IN_BAND_PCT_FOR_CLAIM:
+                out.append(Failure(o.id, f"the answer calls the run in band, but it spent {over_v:.0f} min over the cap and {pct_v:.0f}% of its moving time in band",
+                                   f"say it with the records run:{w}:time_in_zone.over_cap_min and run:{w}:time_in_zone.in_band_pct; "
+                                   "don't call it in band, disciplined or steady"))
+                break
+        return out
+
     @reg.register("A2")
     def a2_analysis_sections(ctx: VerifyContext, o: ContractOutcome) -> list[Failure]:
         if ctx.frame.intent not in ("analyze",) or getattr(ctx.answer, "kind", "") != "analysis":
@@ -192,6 +222,7 @@ def register(reg: cverify.Registry) -> None:
         excluded = any(i.endswith((":artifacts", ":hr_gaps", ":pauses")) and (_rec(ctx, i) is not None and (_rec(ctx, i).value or 0) > 0) for i in set(_ids(ctx)))
         if excluded and not ctx.answer.data_notes:
             out.append(Failure(o.id, "something was excluded and the data notes are empty", "say what was excluded and why in data_notes"))
+        out += _in_band_claims(ctx, o)
         return out
 
     @reg.register("A4")

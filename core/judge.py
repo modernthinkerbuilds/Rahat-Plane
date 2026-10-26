@@ -224,9 +224,12 @@ SYSTEM = (
 )
 
 
-def _cache_key(agent: str, prompt_version: str, model: str, answer_json: dict, evidence_ids: list[int], judged: list[str]) -> str:
+def _cache_key(agent: str, prompt_version: str, model: str, answer_json: dict, evidence_ids: list[int | str], judged: list[str]) -> str:
+    # Ints alone sort as before (the first tenant's keys are unchanged); a mix of ints (numbered records) and
+    # strings (cited record ids) sorts by text (2026-10-26: the mix raised TypeError and the run fell to the floor).
+    ordered = sorted(evidence_ids) if all(isinstance(i, int) for i in evidence_ids) else sorted(evidence_ids, key=str)
     raw = json.dumps({"a": agent, "v": prompt_version, "m": model, "answer": answer_json,
-                      "evidence": sorted(evidence_ids), "judged": sorted(judged)}, sort_keys=True, default=str)
+                      "evidence": ordered, "judged": sorted(judged)}, sort_keys=True, default=str)
     return hashlib.sha1(raw.encode()).hexdigest()
 
 

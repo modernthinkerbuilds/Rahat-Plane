@@ -187,7 +187,12 @@ class KipchogeTenant:
         return []
 
     def research_needed(self, frame: Any, ctx: dict) -> bool:
-        return True                   # the tools are local reads; the loop always runs with them
+        """The tools are local reads, so a conversation runs the full loop.
+        A pipeline run that pre-read its records (`prefetched`) runs as a
+        no-research run, two rounds at most (live 2026-10-26: with the
+        records in hand the model still spent all eight rounds re-reading
+        them, $0.24 for one analysis)."""
+        return not ctx.get("prefetched")
 
     def is_wide(self, frame: Any, text: str, ctx: dict) -> bool:
         return False

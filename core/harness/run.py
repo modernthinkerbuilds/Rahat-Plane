@@ -183,6 +183,8 @@ def run(tenant: Tenant, text: str, *, chat_id: str, now: datetime, serve_mode: s
         ctx["pipeline"] = True
     if ctx_extra:
         ctx.update(ctx_extra)          # what the pipeline knows about this run (the weekly review flag, say)
+    if prefetch:
+        ctx["prefetched"] = [n for n, _ in prefetch]     # read before the loop: the tenant may skip the research loop
     mode = ctx.get("mode", "")
     texts = _library_texts(tenant.library)
 

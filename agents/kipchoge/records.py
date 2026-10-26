@@ -27,7 +27,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Iterator
 
-ENGINE_VERSION = "1.0.0"
+ENGINE_VERSION = "1.0.1"          # 1.0.1: distance_mi kept to 3 decimals (one rounding, at display)
 
 
 @dataclass(frozen=True)

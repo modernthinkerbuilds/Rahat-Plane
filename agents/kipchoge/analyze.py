@@ -69,7 +69,7 @@ def analyze(run: RunData, *, zones: dict, slope: cmodel.Slope | None = None, con
     put("hr_gaps.total_s", _r(sum(g.seconds for g in gaps), 0), "s", source="all heart-rate gaps together")
     if run.distance_km:
         put("distance_km", _r(run.distance_km, 2), "km", source="the workout file")
-        put("distance_mi", _r(run.distance_km / 1.609344, 2), "mi", source="the workout file")
+        put("distance_mi", _r(run.distance_km / 1.609344, 3), "mi", source="the workout file")
         pace_all = seg.pace_s_per_mi(run.distance_km, moving)
         put("pace_s_per_mi", _r(pace_all), "s/mi", source="distance over moving time" if has_speed
             else "distance over the Watch's active duration")

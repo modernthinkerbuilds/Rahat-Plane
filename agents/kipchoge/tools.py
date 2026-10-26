@@ -374,8 +374,8 @@ def build_registry(ctx: dict, *, allow: list[str] | None = None) -> ToolRegistry
                 Record(rid("trend", est.as_of, "n_runs"), est.n_runs, "count", source=src),
                 Record(rid("trend", est.as_of, "method"), est.method, "text", source="the model")]
         if est.slope_per_week is not None:
-            recs.append(Record(rid("trend", est.as_of, "slope_s_per_mi_per_week"), est.slope_per_week, "s/mi", lo=est.slope_lo, hi=est.slope_hi,
-                               source="the line's slope (negative = faster)"))
+            recs.append(Record(rid("trend", est.as_of, "slope_s_per_mi_per_week"), est.slope_per_week, "s/mi/wk", lo=est.slope_lo, hi=est.slope_hi,
+                               source="the line's slope in seconds per mile per week (negative = faster)"))
         goal = (c.get("goals") or {}).get("primary") or {}
         if goal.get("date") and est.pace_s_per_mi:
             target = datetime.strptime(goal["date"], "%Y-%m-%d")

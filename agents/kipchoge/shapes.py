@@ -198,15 +198,21 @@ HOW_TEXT = ("How to work: call the tools for the athlete file (his zones, cap an
             "ids you relied on in records_used. A number he stated goes in a hypothesis's claim, not in your prose. "
             "Bottom line first for a prescription. Credit before fixes; an athlete returning to form, no beginner "
             "framing, no hype. A symptom gets the clinician line and never 'it's nothing'. Say what the data does "
-            "not hold instead of guessing.")
+            "not hold instead of guessing. Name a session in words (its label), never its type id. A planned "
+            "session's week of the block is its plan record (plan:<date>:week_of_block); the clock's block week is "
+            "this week. Cite distances in km (distance_km); the reader's units add the miles, so never write both. "
+            "When a run spent minutes over the cap or under 60% of its moving time in band, say so with those "
+            "records (time_in_zone.over_cap_min, time_in_zone.in_band_pct); never call such a run in band, "
+            "disciplined or steady.")
 
 ANSWER_INSTRUCTION = (
     "Now write the answer as JSON matching the schema. kind: card for a next run, analysis for a run, checklist "
     "for a confirmation, answer otherwise, question only when you must ask one. headline: one sentence. "
     "bottom_line: the prescription or verdict in at most three lines, first. sections: the fixed sections for the "
     "kind (a card: the run, the heart rate, the pace, the ramp, after, the one rule, why, readiness, conditions; "
-    "an analysis: What the data shows, What went well, What to fix, His observations checked, The trend, Next, "
-    "Data notes). hypotheses: one per claim he made, with verdict and a sized line. Every number as "
+    "an analysis: What the data shows, What went well, What to fix, The trend; next and data_notes are their own "
+    "fields, never sections). hypotheses: one per claim he made, with verdict and a sized line (his observations, "
+    "checked; none when he made no claim). Every number as "
     "{{r:<record id>}} (add |range for the 80% range, |dec for a decimal, |signed for a change); no digit anywhere "
     "else, not even a year or 'Zone 2 … 60 minutes' — Zone 2 and Zone 3 themselves are fine. records_used: the ids "
     "you relied on. red_flag_line true when you gave the clinician line."
@@ -238,14 +244,39 @@ def sanitize(answer: Answer, evidence: Any) -> tuple[Answer, list[str]]:
     return answer, notes
 
 
+# The records that say whether a run held its band, whatever the answer cites (the judge must see them to
+# grade a verdict: live 2026-10-26, it passed "squarely inside Zone 2" for a run well over the cap).
+JUDGE_CORE = (":grade", ":session_type", ":time_in_zone.in_band_pct", ":time_in_zone.over_cap_min", ":main_block.over_cap_pct",
+              ":run_halves.first.hr_avg", ":run_halves.second.hr_avg", ":drift_bpm", ":decoupling_pct", ":grade.borderline",
+              ":grade.margin.start_bpm", ":grade.margin.protocol_bpm", ":hr_avg_moving", ":pace_s_per_mi", ":norm.pace_at_ref")
+JUDGE_MAX = 70
+
+
 def judge_evidence(answer: Answer, evidence: Any) -> list[dict]:
-    """What the judge sees: the records the answer cites, then the rest of
-    the evidence up to a budget, each as a plain dict."""
-    cited = set(answer.evidence_ids())
-    rows = [r.as_json() if hasattr(r, "as_json") else dict(r) for r in evidence.records()] if hasattr(evidence, "records") else []
-    first = [r for r in rows if r.get("id") in cited]
-    rest = [r for r in rows if r.get("id") not in cited]
-    return (first + rest)[:120]
+    """What the judge sees, compact and numbered: the records the answer
+    cites, then the core of each run it names (grade, type, time in band
+    and over the cap, halves, drift, margins), then the rest, up to
+    JUDGE_MAX. The judge cites the numbers (`id`); `record` is the
+    record's own id. (Live 2026-10-26: given the records' string ids,
+    the judge cited list positions, and every verdict was invalid.)"""
+    rows: dict[str, dict] = {}
+    for r in (evidence.records() if hasattr(evidence, "records") else []):
+        j = r.as_json() if hasattr(r, "as_json") else dict(r)
+        if j.get("id"):
+            rows[str(j["id"])] = j
+    cited = [i for i in dict.fromkeys(answer.evidence_ids()) if i in rows]
+    runs = {i.split(":")[1] for i in cited if i.startswith("run:") and i.count(":") >= 2}
+    core = [i for i in rows if i.startswith("run:") and i.split(":")[1] in runs and i.endswith(JUDGE_CORE)]
+    order = list(dict.fromkeys(cited + core + list(rows)))[:JUDGE_MAX]
+    out: list[dict] = []
+    for n, rid_ in enumerate(order, 1):
+        j = rows[rid_]
+        d = {"id": n, "record": rid_, "value": j.get("value"), "unit": j.get("unit")}
+        for k in ("lo", "hi"):
+            if j.get(k) is not None:
+                d[k] = j[k]
+        out.append(d)
+    return out
 
 
 def evidence_name(evidence: Any, rid: str) -> str:
