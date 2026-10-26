@@ -52,7 +52,9 @@ def test_the_cap_keeps_every_feed_in_a_small_window(db):
 
 def test_the_digest_and_whatson_use_the_cap(db, monkeypatch):
     from bridges.events import digest
-    out = digest.build_digest(NOW, path=db)
+    # 2026-10-26: a storytime is a regular program, left out unless the household keeps it; kept here, so the
+    # library feed still fills the day and the spread is what's tested.
+    out = digest.build_digest(NOW, path=db, keep_regular=["storytime"])
     assert "Animal Day" in out and "Family Concert" in out and out.count("Storytime") == 4    # six lines a day
     seen: dict = {}
     from bridges.events import store

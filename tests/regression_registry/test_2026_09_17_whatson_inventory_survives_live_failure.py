@@ -59,7 +59,9 @@ def _seed(events, when=_WED):
 
 
 def _weekend():
-    _seed([{"title": "Baby Lapsit Storytime", "start_ts": "2026-09-19 10:00:00",
+    # 2026-10-26: the infant sample is a one-off; a storytime is now a regular program and is left out of
+    # the lists unless the household keeps it (test_2026_10_26_genie_suggests_something_special...).
+    _seed([{"title": "Baby Sensory Play Morning", "start_ts": "2026-09-19 10:00:00",
             "venue": "Linden Tree", "city": "Los Altos",
             "categories": ["library", "kids"], "url": "https://lt.org/a"},
            {"title": "Family Fun Day", "start_ts": "2026-09-20 11:00:00",
@@ -82,7 +84,7 @@ def test_live_failure_returns_the_verified_inventory(env):
     assert "Couldn't reach live listings" not in out
     assert "From your event feeds" not in out       # offline shape
     assert "weekend of 2026-09-19" in out
-    assert "Baby Lapsit Storytime" in out and "Craft Beer Crawl" in out
+    assert "Baby Sensory Play Morning" in out and "Craft Beer Crawl" in out
     assert "Live search is unavailable right now" in out
 
 
@@ -112,7 +114,7 @@ def test_split_by_audience_uses_title_categories_and_reviews(env):
                          70, "popular", "adults", now=_WED)
     rows = store.query_window("2026-09-19", "2026-09-20")
     hit, rest = handler.split_by_audience(rows, ["infant"])
-    assert [r["title"] for r in hit] == ["Baby Lapsit Storytime",
+    assert [r["title"] for r in hit] == ["Baby Sensory Play Morning",
                                           "Family Fun Day"]
     assert [r["title"] for r in rest] == ["Craft Beer Crawl"]
     hit, _ = handler.split_by_audience(rows, ["adults"])
@@ -124,7 +126,7 @@ def test_infant_ask_is_filtered_and_labelled(env):
     _weekend()
     out = handler.handle_whats_on(now=_WED, llm=_dead_llm,
                                   audience_text=_LIVE)
-    assert "Baby Lapsit Storytime" in out and "Family Fun Day" in out
+    assert "Baby Sensory Play Morning" in out and "Family Fun Day" in out
     assert "Craft Beer Crawl" not in out
     assert "Filtered for infants / babies: 2 of 3 verified events" in out
     assert "`/whatson` shows everything" in out
@@ -149,7 +151,7 @@ def test_route_passes_the_live_phrasing_through(env, monkeypatch):
     monkeypatch.setattr(live_plan, "discover_options",
                         lambda **kw: None)              # the 429, in effect
     out = handler.route(_LIVE)
-    assert "Baby Lapsit Storytime" in out
+    assert "Baby Sensory Play Morning" in out
     assert "Craft Beer Crawl" not in out
     assert "Filtered for infants / babies" in out
     assert "Couldn't reach live listings" not in out

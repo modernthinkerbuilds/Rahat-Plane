@@ -130,6 +130,12 @@ def _inventory_context(now: datetime) -> str:
                             limit=14, per_source_cap=2)
     except Exception:  # noqa: BLE001 — inventory is optional context
         return ""
+    try:
+        from bridges.events import standing
+        from agents.genie.state import keep_regular_words
+        rows, _ = standing.split(rows, keep=keep_regular_words())     # something special, not just open (2026-10-26)
+    except Exception:  # noqa: BLE001
+        pass
     if not rows:
         return ""
     lines = [f"{r['start_ts'][:16]} — {r['title']}"

@@ -146,7 +146,9 @@ def _pick_line(row: dict) -> str:
 def build_digest(now: datetime | None = None, *,
                  path: str | None = None,
                  commitments: list[dict] | None = None,
-                 interests: list[str] | None = None) -> str | None:
+                 interests: list[str] | None = None,
+                 keep_regular: list[str] | None = None,
+                 show_all: bool = False) -> str | None:
     """The daily weekend digest, or None when there is nothing to say.
 
     `commitments` (optional): household-calendar entries for the window
@@ -166,6 +168,17 @@ def build_digest(now: datetime | None = None, *,
         rows = query_window(start, end, limit=60, per_source_cap=3, path=path)
     except Exception:  # noqa: BLE001 — no inventory, no digest
         rows = []
+    # Something special, or just open (owner 2026-10-26): admission notices
+    # and regular programs are left out unless the household keeps them.
+    from bridges.events import standing
+    recurrence = None
+    if path is not None:
+        try:
+            from bridges.events.store import recurrence_counts
+            recurrence = recurrence_counts(path)
+        except Exception:  # noqa: BLE001
+            recurrence = {}
+    rows, hidden = standing.split(rows, recurrence=recurrence, keep=keep_regular or (), show_all=show_all)
     commitments = [c for c in (commitments or [])
                    if start <= str(c.get("date", "")) <= end]
     if not rows and not commitments:
@@ -244,6 +257,9 @@ def build_digest(now: datetime | None = None, *,
             lines.append(f"  _…plus {extra} more — say "
                          f"\"{day.strftime('%A')}\" or `/whatson` for "
                          f"everything._")
+    note = standing.hidden_note(hidden)
+    if note:
+        lines += ["", note]
     fed = f"last refreshed {stale}" if stale else "refreshed through the day"
     lines += ["", f"_From your verified event feeds ({fed}). Want a plan "
                   "around any of these? Just tell me — e.g. \"plan Saturday "

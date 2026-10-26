@@ -127,13 +127,14 @@ _SATURDAY_BY_ENERGY: dict[str, list[str]] = {
     "medium": ["Morning park trip before the midday nap",
                "Easy lunch out", "Backyard / indoor play in the afternoon"],
     "high": ["Morning hike or farmers' market",
-             "Lunch at a new spot", "Afternoon activity outing"],
+             "Lunch at a new spot", "A special event from /whatson, if one fits"],
 }
 _SUNDAY_BY_ENERGY: dict[str, list[str]] = {
     "low": ["Rest-and-reset day", "Grocery delivery, batch-cook"],
     "medium": ["Family brunch at home", "Light errands + nap window",
                "Wind-down evening"],
-    "high": ["Brunch out", "Museum / activity", "Meal-prep for the week"],
+    "high": ["Brunch out", "A special event from /whatson, if one fits",   # not a museum just for being open (2026-10-26)
+             "Meal-prep for the week"],
 }
 
 
@@ -771,7 +772,7 @@ def parse_explicit_date(token: str, now: datetime) -> datetime | None:
 
 
 def handle_day_events(day_token: str, *,
-                      now: datetime | None = None) -> str:
+                      now: datetime | None = None, show_all: bool = False) -> str:
     """The day shortcut (owner, 2026-08-30): "Saturday" → EVERY
     inventory event for that day, each line ending in the one-tap
     [here] link — no per-day cap, unlike the digest's 6. Commitments
@@ -803,6 +804,9 @@ def handle_day_events(day_token: str, *,
         rows = query_window(day_iso, day_iso, limit=60, per_source_cap=4)
     except Exception:  # noqa: BLE001
         pass
+    from bridges.events import standing
+    from agents.genie.state import keep_regular_words
+    rows, hidden = standing.split(rows, keep=keep_regular_words(), show_all=show_all)
     from bridges.events.digest import _fmt_row
     seen: set[str] = set()
     count = 0
@@ -814,11 +818,18 @@ def handle_day_events(day_token: str, *,
         lines.append(_fmt_row(r))
         count += 1
 
+    note = standing.hidden_note(hidden)
     if not count and not commits:
+        if hidden:
+            return (f"Nothing special in the verified feeds for {label}: only "
+                    f"regular listings (free-admission days, weekly programs). "
+                    f"`/whatson all` shows them.")
         return (f"Nothing in the verified feeds for {label} yet — the "
                 f"inventory refreshes at 7:00, 12:30 and 18:00, so ask "
                 f"again after the next pass, or `/whatson` for the "
                 f"whole weekend.")
+    if note:
+        lines += ["", note]
     lines += ["", "_Tap a *here* link to open the event. Want a plan "
                   "built around one of these? Just say which._"]
     return "\n".join(lines)
@@ -897,7 +908,7 @@ def split_by_audience(rows: list[dict], tags: list[str]
 
 
 def handle_whats_on(*, now: datetime | None = None, llm=None,
-                    audience_text: str | None = None) -> str:
+                    audience_text: str | None = None, show_all: bool = False) -> str:
     """J5 — "just give me the raw list": the discovery inventory exposed
     directly. A clean, de-duplicated flat list of what's actually on
     next weekend near the household — NOT a plan (no sequencing, no
@@ -941,11 +952,17 @@ def handle_whats_on(*, now: datetime | None = None, llm=None,
     inventory_lines: list[str] = []
     seen_inv: set[str] = set()
     aud_note = ""
+    hidden_line = ""
     aud_tags = audience_terms(audience_text)
     try:
         from bridges.events.store import query_window
         rows = query_window(saturday.strftime("%Y-%m-%d"),
                             sunday.strftime("%Y-%m-%d"), limit=40, per_source_cap=3)
+        # Something special, or just open (owner 2026-10-26).
+        from bridges.events import standing
+        from agents.genie.state import keep_regular_words
+        rows, hidden_rows = standing.split(rows, keep=keep_regular_words(), show_all=show_all)
+        hidden_line = standing.hidden_note(hidden_rows) or ""
         if aud_tags:
             hit, rest = split_by_audience(rows, aud_tags)
             rows = hit if hit else rows
@@ -990,6 +1007,8 @@ def handle_whats_on(*, now: datetime | None = None, llm=None,
             head += ([""] if commitment_lines else []) + inventory_lines
         if aud_note:
             head += ["", aud_note]
+        if hidden_line:
+            head += ["", hidden_line]
         return "\n".join(head + ["", note])
 
     if not (_live_plan_enabled() and location
@@ -1008,6 +1027,7 @@ def handle_whats_on(*, now: datetime | None = None, llm=None,
                 "then ask me again. `/weekend_plan` works offline.")
 
     from agents.genie import live_plan as lp
+    from bridges.events import standing
     subjects = load_family_subjects()
     disc = lp.discover_options(
         location=location,
@@ -1053,6 +1073,8 @@ def handle_whats_on(*, now: datetime | None = None, llm=None,
             key = o.activity.casefold()
             if key in seen:
                 continue                     # de-dup across days/sources
+            if not show_all and standing.is_generic_visit(o.activity):
+                continue                     # "Visit the garden": no occasion, no line (2026-10-26)
             seen.add(key)
             day_lines.append(f"  • {o.render()}")
         if day_lines:
@@ -1063,6 +1085,8 @@ def handle_whats_on(*, now: datetime | None = None, llm=None,
                 "or `/weekend_plan` for the offline plan.")
     if aud_note:
         lines += ["", aud_note]
+    if hidden_line:
+        lines += ["", hidden_line]
     near = re.sub(r"[_*`\[\]]", "", location)     # inside an italic: no escaping in legacy Markdown
     lines += ["", f"_Scope: {window}, family-friendly, near "
                   f"{near}._ Say `/weekend_plan` for a sequenced plan."]
@@ -1103,8 +1127,9 @@ def handle_digest(now: datetime | None = None) -> str:
     try:
         from bridges.events.digest import build_digest, weekend_window
         from agents.genie.state import calendar_entries
+        from agents.genie.state import keep_regular_words
         start, end, _ = weekend_window(now)
-        text = build_digest(now, commitments=calendar_entries(start, end))
+        text = build_digest(now, commitments=calendar_entries(start, end), keep_regular=keep_regular_words())
     except Exception:  # noqa: BLE001 — surface degrades, never crashes
         text = None
     if text:
@@ -1507,10 +1532,13 @@ def _try_slash_command(msg: str,
     if _WHATS_ON_RE.match(norm):
         arg = re.sub(r"^\s*/\s*what[\s_-]*s?[\s_-]*on\b", "", norm,
                      flags=re.I).strip()
+        # "/whatson all": the regular listings too (2026-10-26).
+        show_all = bool(re.search(r"\ball\b", arg, re.I))
+        arg = re.sub(r"\ball\b", "", arg, flags=re.I).strip()
         if arg and (arg.lower() in _DAY_TOKENS
                     or parse_explicit_date(arg, datetime.now())):
-            return handle_day_events(arg)
-        return handle_whats_on()
+            return handle_day_events(arg, show_all=show_all)
+        return handle_whats_on(show_all=show_all)
 
     # /swap <name> — iterate the saved plan.
     m = _SWAP_RE.match(norm)

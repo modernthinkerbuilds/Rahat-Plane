@@ -173,7 +173,13 @@ def test_digest_shows_ranked_picks_then_new_within_the_cap(env):
     from bridges.events import popularity
     popularity.score_upcoming(_WED, llm=_reviewer)
     from bridges.events.digest import build_digest
-    out = build_digest(_WED, interests=["toddler loves storytime"])
+    # 2026-10-26 (owner): a series on four or more dates is a regular program and is left out unless the
+    # household keeps it ("something special, or just open"). Kept here, the ranking contract stands as before.
+    hidden = build_digest(_WED, interests=["toddler loves storytime"])
+    assert "Family Storytime" not in hidden and "Music on Castro" not in hidden and "Castro Carnival" in hidden
+    assert "Left out 3 regular listings" in hidden and "/whatson all" in hidden
+    out = build_digest(_WED, interests=["toddler loves storytime"],
+                       keep_regular=["Family Storytime", "Music on Castro", "Silent Disco"])
     assert "Top picks — recurring, well-regarded" in out
     assert "★88" in out and "parents rave" in out
     assert "New this weekend — your call" in out

@@ -123,13 +123,16 @@ def _discovery_prompt(*, location: str, sat_iso: str, sun_iso: str,
    evening events. This is a couple's night out (no kids attending).
    Prefer "evening" time slots. ORDER each day's list best-fit first."""
     else:
-        ask = f"""2. Up to {_MAX_CANDIDATES} real family-appropriate options PER DAY near the
-   location — actual events (farmers' markets, library story times,
-   festivals, park programs) and evergreen spots (trails, playgrounds),
-   suited to the energy budget and constraints. Prefer free/cheap,
-   stroller-friendly options when a toddler or newborn is listed.
-   ORDER each day's list best-fit first — the first item is the one
-   that gets planned."""
+        ask = f"""2. Up to {_MAX_CANDIDATES} real family-appropriate EVENTS PER DAY near the
+   location: something special happening on that date (a festival, a
+   seasonal celebration, a performance, a one-day workshop or market, an
+   exhibition opening), suited to the energy budget and constraints.
+   NOT a place that is simply open (no "visit the garden", "explore the
+   museum", free-admission days, trails or playgrounds): a museum, garden
+   or park only when a special event happens there that day, named in
+   "activity". Prefer free/cheap, stroller-friendly events when a toddler
+   or newborn is listed. ORDER each day's list best-fit first — the
+   first item is the one that gets planned."""
     if sat_iso == sun_iso:
         # One day (a Sunday ask: Saturday is gone). LIVE BUG 2026-10-04: the
         # prompt said "Saturday 2026-10-04 and Sunday 2026-10-04", a date that
@@ -353,10 +356,13 @@ def _discovery_from_text(text: str, *, sat_iso: str, sun_iso: str) -> tuple[Live
             weather[day] = v
 
     def _day(key: str) -> list[LiveOption]:
+        from bridges.events.standing import is_generic_visit
         out = []
         for r in by_day[key][:_MAX_CANDIDATES]:
             o = _coerce_option(r)
-            if o is not None:
+            # A place that is just open ("Visit the garden") is no suggestion (owner 2026-10-26); the
+            # couple-evening mode's dinner spots never start with a visit verb, so the check is safe for both.
+            if o is not None and not is_generic_visit(o.activity):
                 out.append(o)
         return out
 

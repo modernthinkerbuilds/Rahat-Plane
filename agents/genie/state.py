@@ -137,6 +137,27 @@ def family_profile_path() -> Path:
     return _vault_dir() / "family_profile.json"
 
 
+def keep_regular_words() -> list[str]:
+    """Words of the regular programs the household still wants listed
+    (2026-10-26: Genie hides standing listings unless something special
+    is on; e.g. ["storytime"] keeps the weekly storytimes). From the
+    RAHAT_GENIE_KEEP_REGULAR env (comma-separated) or the
+    "events_keep_regular" list in vault/family_profile.json. Empty by
+    default; never raises."""
+    env = (os.getenv("RAHAT_GENIE_KEEP_REGULAR") or "").strip()
+    if env:
+        return [w.strip() for w in env.split(",") if w.strip()]
+    path = family_profile_path()
+    try:
+        if path.exists():
+            with path.open() as f:
+                words = json.load(f).get("events_keep_regular") or []
+            return [str(w).strip() for w in words if str(w).strip()]
+    except Exception:  # noqa: BLE001 - a bad file keeps nothing
+        return []
+    return []
+
+
 def household_store_path() -> Path:
     """Path to the gitignored household store (family log + plans)."""
     override = os.getenv("RAHAT_GENIE_STORE_JSON")
