@@ -24,7 +24,7 @@ import json
 import os
 import sqlite3
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from agents.kipchoge import analyze as ca
 from agents.kipchoge import ingest
@@ -36,15 +36,19 @@ from agents.kipchoge.records import ENGINE_VERSION
 
 
 def slope_from_store(con: sqlite3.Connection, *, exclude: str | None = None,
-                     prior: tuple[float, float] | None = None) -> cmodel.Slope:
+                     prior: tuple[float, float] | None = None, before: str | None = None) -> cmodel.Slope:
     """The HR–pace slope fitted on the saved A and B analyses whose
     normalization basis is a steady block (a distance series or a route
     behind it; a whole-run basis carries the ramp and the cooldown and
     is left out), shrunk toward the prior; the prior alone until three
-    such runs exist."""
+    such runs exist. With `before` (a local day), only the runs before
+    it: a run's analysis is then a function of its own history, not of
+    what happened to be saved when it was analyzed (2026-10-26)."""
     points: list[tuple[float, float]] = []
     for a in state.analyses(con, ENGINE_VERSION):
         if a.get("workout_id") == exclude or not a.get("fitness_data_point") or a.get("grade") not in ("A", "B"):
+            continue
+        if before is not None and str(a.get("day") or "") >= before:
             continue
         basis = (a.get("normalized") or {}).get("basis") or {}
         if basis.get("hr") and basis.get("pace_s_per_mi") and "block" in str(basis.get("what", "")) \
@@ -93,13 +97,33 @@ def analyze_workout(con: sqlite3.Connection, workout_id: str, *, now: datetime, 
     point = ct.start_point_rounded(run.route) if run.has_route() else None
     conditions = conditions_for_run(start_local=run.start_local, point=point, meta=run.meta, now=now, http=http) \
         if (point is not None or run.meta) else None
-    slope = slope_from_store(con, exclude=workout_id, prior=prior)
+    slope = slope_from_store(con, exclude=workout_id, prior=prior, before=run.day)
     result = ca.analyze(run, zones=zones, slope=slope, conditions=conditions, route_match=match_route(run, library),
                         labeled=labeled, now=now)
     sha = input_hash_for(run, zones, conditions)
     result["input_sha256"] = sha
     result["saved"] = state.save_analysis(con, workout_id, ENGINE_VERSION, result, input_sha256=sha, now=now) if save else False
     return result
+
+
+def ensure_analyzed(con: sqlite3.Connection, *, now: datetime, window_days: int = 120, http=None, zones: dict | None = None,
+                    prior: tuple[float, float] | None = None, library: dict | None = None) -> int:
+    """Every primary run in the window gets an analysis under this engine
+    version, oldest first, so each run's slope is fitted on the runs
+    before it. A new run is analyzed once; an engine release re-analyzes
+    the window. Returns how many were analyzed.
+    Live 2026-10-26: the trend tool filled the store only when it held no
+    analyses at all, so after a release the trend counted whichever runs
+    a message's tools had analyzed first (6 of 7)."""
+    since = (now - timedelta(days=window_days)).strftime("%Y-%m-%d")
+    have = {a.get("workout_id") for a in state.analyses(con, ENGINE_VERSION)}
+    n = 0
+    for wid in ingest.runs_in(con, since, now.strftime("%Y-%m-%d")):
+        if wid in have:
+            continue
+        if analyze_workout(con, wid, now=now, http=http, zones=zones, prior=prior, library=library, save=True) is not None:
+            n += 1
+    return n
 
 
 def analyze_since(con: sqlite3.Connection, since: str, *, now: datetime, until: str | None = None, http=None,

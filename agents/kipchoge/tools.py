@@ -174,6 +174,9 @@ def _analysis_for(c: dict, wid: str) -> dict | None:
     con = _con(c)
     a = state.load_analysis(con, wid, ENGINE_VERSION)
     if a is None:
+        _ensure_analyses(c)                   # the runs before it first: its slope is fitted on them
+        a = state.load_analysis(con, wid, ENGINE_VERSION)
+    if a is None:                             # outside the window: on its own
         a = cengine.analyze_workout(con, wid, now=c["now"], http=c.get("http"), zones=c.get("zones"), prior=c.get("slope_prior"),
                                     library=c.get("routes"), save=True)
     return a
@@ -184,14 +187,14 @@ def _run_records(a: dict) -> list[Record]:
 
 
 def _ensure_analyses(c: dict, *, days: int = 120) -> None:
-    """The trend and a prescription read saved analyses; a store that has
-    runs but no analyses yet gets them (deterministic, cheap)."""
-    con = _con(c)
-    now: datetime = c["now"]
-    if state.analyses(con, ENGINE_VERSION):
+    """The trend, a prescription and every run's analysis read saved
+    analyses: each primary run in the window has one under this engine
+    version, analyzed oldest first (engine.ensure_analyzed)."""
+    if c.get("_analyses_ensured"):
         return
-    cengine.analyze_since(con, (now - timedelta(days=days)).strftime("%Y-%m-%d"), now=now, http=c.get("http"), zones=c.get("zones"),
-                          prior=c.get("slope_prior"), library=c.get("routes"), save=True)
+    cengine.ensure_analyzed(_con(c), now=c["now"], window_days=days, http=c.get("http"), zones=c.get("zones"),
+                            prior=c.get("slope_prior"), library=c.get("routes"))
+    c["_analyses_ensured"] = True
 
 
 def _clock_records(c: dict, date_ref: str | None) -> list[Record]:

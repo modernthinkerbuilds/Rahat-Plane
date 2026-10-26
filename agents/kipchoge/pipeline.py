@@ -219,8 +219,11 @@ def on_workout_landed(tenant: Any, workout_id: str, *, now: datetime, send: Call
         prior = already_sent(con, key)
         if prior:
             return {"sent": False, "stage": "final", "why": "already sent", "text": None, "trace_id": prior["trace_id"]}
-        analysis = cengine.analyze_workout(con, workout_id, now=now, http=ctx.get("http"), zones=ctx.get("zones"),
-                                           prior=ctx.get("slope_prior"), library=ctx.get("routes"), save=True)
+        cengine.ensure_analyzed(con, now=now, http=ctx.get("http"), zones=ctx.get("zones"), prior=ctx.get("slope_prior"),
+                                library=ctx.get("routes"))
+        analysis = state.load_analysis(con, workout_id, ENGINE_VERSION) or cengine.analyze_workout(
+            con, workout_id, now=now, http=ctx.get("http"), zones=ctx.get("zones"), prior=ctx.get("slope_prior"),
+            library=ctx.get("routes"), save=True)
         if analysis is None:
             return {"sent": False, "stage": "final", "why": "no such run", "text": None}
         prov = already_sent(con, f"{workout_id}:provisional")
@@ -326,11 +329,15 @@ def tick(tenant: Any, *, now: datetime, send: Callable[[str], Any] | None, db_pa
 
 
 # ── the weekly review ─────────────────────────────────────────────────
-def grade_week(con: sqlite3.Connection, plan: dict, week_n: int, *, now: datetime, tolerance_days: int = 1) -> list[dict]:
+def grade_week(con: sqlite3.Connection, plan: dict, week_n: int, *, now: datetime, tolerance_days: int = 1,
+               zones: dict | None = None, prior: tuple[float, float] | None = None, library: dict | None = None,
+               http=None) -> list[dict]:
     """Each planned session of a week against the store: done (a primary
     run within a day of it), modified (a run of another type or length),
-    missed; written to session_log. The run's grade travels with it."""
+    missed; written to session_log. The run's grade travels with it,
+    from the same analyses every other path reads (ensure_analyzed)."""
     state.ensure_schema(con)
+    cengine.ensure_analyzed(con, now=now, http=http, zones=zones, prior=prior, library=library)
     out: list[dict] = []
     weeks = {w.get("n"): w for w in plan.get("weeks") or []}
     w = weeks.get(week_n)
@@ -354,7 +361,8 @@ def grade_week(con: sqlite3.Connection, plan: dict, week_n: int, *, now: datetim
         else:
             wid, row = match
             used.add(wid)
-            an = state.load_analysis(con, wid, ENGINE_VERSION) or cengine.analyze_workout(con, wid, now=now, save=True) or {}
+            an = state.load_analysis(con, wid, ENGINE_VERSION) or cengine.analyze_workout(
+                con, wid, now=now, zones=zones, prior=prior, library=library, http=http, save=True) or {}
             grade = an.get("grade")
             mins = float(row.get("duration_s") or 0) / 60.0
             modified = abs(mins - s.minutes) > max(10.0, 0.2 * s.minutes) or (an.get("session_type") in ("tempo", "hills") and s.type.startswith("z2"))
@@ -373,7 +381,8 @@ def review_records(ctx: dict, now: datetime) -> tuple[Evidence, str | None]:
     if week_n is None:
         return ctx["evidence"], None
     label = f"w{week_n}"
-    rows = grade_week(ctx["con"], plan, week_n, now=now)
+    rows = grade_week(ctx["con"], plan, week_n, now=now, zones=ctx.get("zones"), prior=ctx.get("slope_prior"),
+                      library=ctx.get("routes"), http=ctx.get("http"))
     ev = ctx["evidence"]
     src = "the plan against the store (session_log)"
     ev.add([Record(rid("review", label, "label"), f"week {week_n} of {total}", "text", source=src),

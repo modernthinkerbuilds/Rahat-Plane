@@ -69,6 +69,7 @@ def tidy(text: str) -> str:
     text = _DOUBLE_UNIT_RE.sub(lambda m: m.group(1), text)
     text = _NESTED_MI_RE.sub(lambda m: m.group(1), text)
     text = _TYPE_RE.sub(lambda m: TYPE_WORDS[m.group(1)], text)
+    text = text.replace("s/mi/wk per week", "s/mi per week")
     return text
 
 
