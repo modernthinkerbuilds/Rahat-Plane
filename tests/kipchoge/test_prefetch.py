@@ -1,7 +1,7 @@
 """A pipeline run reads its records before the model's first turn (A6
 addition 3, 2026-10-25): the tool calls it knows it needs run in the
 run's own context, their records are the evidence and their results
-open the conversation as if the model had called them. A conversation
+open the conversation as text (no call the model didn't make). A conversation
 run without `prefetch` is unchanged (the Bourdain gate)."""
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from datetime import datetime
 os.environ.setdefault("RAHAT_TEST_MODE", "1")
 
 from core import llm_chat  # noqa: E402
+from core.harness import execute as cexecute  # noqa: E402
 from core.harness import run as hrun  # noqa: E402
 from agents.kipchoge import pipeline, shapes  # noqa: E402
 from tests.kipchoge.test_tenant import Wire, world  # noqa: E402, F401
@@ -29,7 +30,7 @@ def test_a_pipeline_run_opens_with_its_records_in_hand(world, monkeypatch):  # n
 
     def spy(req):
         if req.get("tools"):
-            seen.append(req)
+            seen.append(json.loads(json.dumps(req, default=str)))        # the history as sent (the list grows after)
         return orig(req)
     monkeypatch.setattr(llm_chat, "_call_wire", spy)
     tenant = world["tenant"]
@@ -44,11 +45,13 @@ def test_a_pipeline_run_opens_with_its_records_in_hand(world, monkeypatch):  # n
     assert res.tool_calls == len(pre) and res.exec.rounds == 1                  # one round: READY, no calls of its own
     assert "Grade C" in res.text and "[no record]" not in res.text
     first = seen[0]["messages"]
-    assert first[0]["role"] == "user" and first[1]["role"] == "model" and first[2]["role"] == "user"
-    names = [p["function_call"]["name"] for p in first[1]["parts"]]
-    assert names == [n for n, _ in pre]
-    responses = [p["function_response"]["name"] for p in first[2]["parts"]]
-    assert responses == names and all(p["function_response"]["response"].get("ok", True) for p in first[2]["parts"])
+    assert len(first) == 1 and first[0]["role"] == "user" and len(first[0]["parts"]) == 2
+    seed = first[0]["parts"][1]["text"]
+    assert seed.startswith(cexecute.SEED_HEAD)
+    for name, _ in pre:
+        assert f"### {name}(" in seed
+    assert "run:R-C:grade" in seed                                   # the records themselves, citable by id
+    assert not any("function_call" in p for m in first for p in m["parts"])   # no call the model didn't make
     assert res.outcome_results().get("E1") == "pass"
 
 

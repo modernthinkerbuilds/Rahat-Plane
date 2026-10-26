@@ -133,6 +133,21 @@ ANSWER_INSTRUCTION = (
 SLOW_TEXT = "Still checking — the connection is slow tonight. The answer comes as soon as the checks finish."
 
 
+SEED_HEAD = ("Already read for you, before this turn: the results of these tool calls. Their records are in the evidence "
+             "and citable by id. Read them first; call a tool only for what is still missing.")
+
+
+def seed_text(seed: list[tuple[str, dict, dict]]) -> str:
+    """The prefetched tool results as one text block, each bounded like a tool turn."""
+    blocks = [SEED_HEAD]
+    for name, args, payload in seed:
+        text = json.dumps(payload, ensure_ascii=False, default=str)
+        if len(text) > TOOL_PAYLOAD_LIMIT:
+            text = payload_text(payload.get("result", payload) if isinstance(payload, dict) else payload, TOOL_PAYLOAD_LIMIT)
+        blocks.append(f"### {name}({json.dumps(args, ensure_ascii=False, sort_keys=True)})\n{text}")
+    return "\n\n".join(blocks)
+
+
 def _tool_turn(results: list[tuple[str, dict]]) -> dict:
     bounded = []
     for name, payload in results:
@@ -169,12 +184,14 @@ def execute(agent: str, *, system: str, prompt: str, registry: ToolRegistry, ctx
             "The verifier found problems with that answer. Fix every one (call tools where needed), then reply "
             f"{READY}:\n- " + "\n- ".join(hints or ["(none listed)"])))
     else:
-        history = [llm_chat.user_text(prompt)]
+        parts = [{"text": prompt}]
         if seed:
-            # Tool results already in hand (a pipeline run pre-reads its records, A6 addition 3): the conversation
-            # opens as if the model had called them, so it reads before it reasons and rarely needs a round of its own.
-            history.append(llm_chat.model_turn([{"function_call": {"name": name, "args": args}} for name, args, _ in seed]))
-            history.append(_tool_turn([(name, payload) for name, _, payload in seed]))
+            # Tool results already in hand (a pipeline run pre-reads its records, A6 addition 3), as text in the
+            # first turn: the model reads before it reasons and rarely needs a round of its own. Text, not a
+            # synthesized function call: Gemini 3 refuses a function call the model didn't make (no thought
+            # signature), and text works on every model.
+            parts.append({"text": seed_text(seed)})
+        history = [{"role": "user", "parts": parts}]
     kw = dict(step="execute", mode=mode, trace_id=trace_id, db_path=db_path, cassette_dir=cassette_dir, model=model,
               thinking_budget=thinking_budget)
     declarations = registry.declarations()
