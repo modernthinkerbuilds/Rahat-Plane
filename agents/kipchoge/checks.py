@@ -33,6 +33,9 @@ IN_BAND_CLAIM = re.compile(
     r"\b(?:squarely (?:inside|in|within)|stayed (?:inside|in|within|under)|(?:inside|within) (?:your|the) (?:target )?(?:aerobic )?(?:zone|band)"
     r"|without (?:surging|drifting|going over)|never (?:left|went over|drifted|crossed)|disciplined|in band (?:the )?(?:whole|entire|throughout)"
     r"|held (?:the|your) (?:band|zone)(?: throughout| the whole)?|under the cap (?:the )?(?:whole|throughout))\b", re.I)
+# A sentence that states the shortfall is not a claim of adherence ("only 17% … inside your Zone 2 band",
+# "the run was not in band"): a negation, a limiter, or the time-in-zone records themselves (live 2026-10-26).
+NOT_A_CLAIM = re.compile(r"\b(?:not|never in|only|over the cap|above the cap|past (?:your|the) cap|outside)\b|time_in_zone\.", re.I)
 OVER_CAP_MIN_FOR_CLAIM = 5.0
 IN_BAND_PCT_FOR_CLAIM = 60.0
 
@@ -189,8 +192,9 @@ def register(reg: cverify.Registry) -> None:
         time in band, is not called in band (live 2026-10-26: "squarely
         inside your target Zone 2 ... without surging" for a run that spent
         many minutes over the cap, and every check passed)."""
-        texts = " ".join(_texts(ctx))
-        if not IN_BAND_CLAIM.search(texts):
+        claims = [sent for t in _texts(ctx) for sent in re.split(r"(?<=[.;!?])\s+", t)
+                  if IN_BAND_CLAIM.search(sent) and not NOT_A_CLAIM.search(sent)]
+        if not claims:
             return []
         runs = {i.split(":")[1] for i in _ids(ctx) if i.startswith("run:") and i.count(":") >= 2}
         out = []

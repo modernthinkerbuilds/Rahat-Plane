@@ -21,10 +21,10 @@ from agents.kipchoge.records import Record, RecordSet  # noqa: E402
 
 def test_tidy_reads_like_a_person_wrote_it():
     t = krender.tidy
-    assert t("at 140 bpm–145 bpm bpm.") == "at 140–145 bpm."
+    assert t("at 140 bpm–145 bpm bpm.") == "At 140–145 bpm."
     assert t("Pace range: 11:05/mi–12:20/mi, covering 4.1 km–4.6 km") == "Pace range: 11:05–12:20/mi, covering 4.1–4.6 km"
-    assert t("over 5.3 mi (8.4 km (5.2 mi)) today") == "over 8.4 km (5.2 mi) today"
-    assert t("graded B for z2_steady; next: easy_strides") == "graded B for Zone 2 steady; next: easy run + strides"
+    assert t("over 5.3 mi (8.4 km (5.2 mi)) today") == "Over 8.4 km (5.2 mi) today"
+    assert t("graded B for z2_steady; next: easy_strides") == "Graded B for Zone 2 steady; next: easy run + strides"
     assert t("Zone 2 steady at 150–155 bpm") == "Zone 2 steady at 150–155 bpm"          # already tidy: unchanged
     assert t("11:05/km–12:20/mi") == "11:05/km–12:20/mi"                               # different units: left alone
 
@@ -112,3 +112,22 @@ def test_the_judges_cache_key_takes_mixed_ids_and_keeps_int_keys_as_they_were():
     ints = [10, 2, 1]
     raw = json.dumps({"a": "bourdain", "v": "v1", "m": "m", "answer": {}, "evidence": sorted(ints), "judged": ["X"]}, sort_keys=True, default=str)
     assert cjudge._cache_key("bourdain", "v1", "m", {}, ints, ["X"]) == hashlib.sha1(raw.encode()).hexdigest()
+
+
+def test_tidy_drops_a_unit_word_the_placeholder_already_printed():
+    t = krender.tidy
+    assert t("for 35 min minutes on Wednesday") == "For 35 min on Wednesday"
+    assert t("logged 8.4 km (5.2 mi) km over 70 min") == "Logged 8.4 km (5.2 mi) over 70 min"
+    assert t("only 21% percent in band; 6 × 20 ss at 90%% with 60 s seconds") == "Only 21% in band; 6 × 20 s at 90% with 60 s"
+    assert t("cadence 160 steps/min spm, slept 6h10m hours") == "Cadence 160 steps/min, slept 6h10m"
+
+
+def test_a2_does_not_flag_a_sentence_that_states_the_shortfall():
+    over = [Record("run:W:grade", "C", "grade", source="t"), Record("run:W:session_type", "z2_steady", "name", source="t"),
+            Record("run:W:time_in_zone.over_cap_min", 40.0, "min", source="t"), Record("run:W:time_in_zone.in_band_pct", 21.0, "%", source="t")]
+    for line in ("The run was not in band or steady: it averaged over the cap.",
+                 "You spent {{r:run:W:time_in_zone.over_cap_min}} over the cap, with only {{r:run:W:time_in_zone.in_band_pct}} inside your Zone 2 band."):
+        a = shapes.Answer(kind="analysis", headline="Grade {{r:run:W:grade}}.", bottom_line=["{{r:run:W:session_type}}"],
+                          sections=[shapes.Section(title="What to fix", lines=[line]), shapes.Section(title="The trend", lines=["x"])], next="n")
+        ctx, o = _ctx_for(over, a)
+        assert not any("calls the run in band" in f.message for f in _a2(ctx, o)), line

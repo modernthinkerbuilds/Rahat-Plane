@@ -57,6 +57,13 @@ _RANGE_PACE_RE = re.compile(r"(\d+:\d{2})/(mi|km)\s*[–-]\s*(\d+:\d{2})/\2\b")
 _DOUBLE_UNIT_RE = re.compile(r"\b(bpm|min|km|mi)(?:\s+\1\b)+")
 _NESTED_MI_RE = re.compile(r"\d+(?:\.\d+)? mi \((\d+(?:\.\d+)? km \(\d+(?:\.\d+)?(?:–\d+(?:\.\d+)?)? mi\))\)")
 _SKIP_SECTIONS = ("next", "data notes", "data note")
+# A unit word written after a placeholder that already printed its unit (live 2026-10-26: "35 min minutes",
+# "10.2 km (6.3 mi) km", "17% percent", "20 s seconds", "160 steps/min spm", "5h40m hours", "20 ss", "90%%").
+_UNIT_ECHO = [(re.compile(r"(\d) min minutes?\b"), r"\1 min"), (re.compile(r"(\d mi\)) km\b"), r"\1"),
+              (re.compile(r"(\d) km kilometers?\b"), r"\1 km"), (re.compile(r"(\d)% percent\b"), r"\1%"),
+              (re.compile(r"(\d) s seconds?\b"), r"\1 s"), (re.compile(r"(\d) steps/min (?:spm|steps per minute)\b"), r"\1 steps/min"),
+              (re.compile(r"(\d+h\d{2}m) hours?\b"), r"\1"), (re.compile(r"(\d) ss\b"), r"\1 s"), (re.compile(r"%%"), "%"),
+              (re.compile(r"(\d) bpm beats per minute\b"), r"\1 bpm")]
 
 
 def tidy(text: str) -> str:
@@ -70,6 +77,9 @@ def tidy(text: str) -> str:
     text = _NESTED_MI_RE.sub(lambda m: m.group(1), text)
     text = _TYPE_RE.sub(lambda m: TYPE_WORDS[m.group(1)], text)
     text = text.replace("s/mi/wk per week", "s/mi per week")
+    for rx, rep in _UNIT_ECHO:
+        text = rx.sub(rep, text)
+    text = "\n".join((ln[:1].upper() + ln[1:]) if ln[:1].islower() else ln for ln in text.split("\n"))
     return text
 
 
