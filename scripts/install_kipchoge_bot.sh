@@ -7,7 +7,8 @@
 #   2. In .env (gitignored):
 #        KIPCHOGE_BOT_TOKEN=<the token>
 #        KIPCHOGE_PRIMARY_CHAT=<your chat id>      # the only chat it talks to; where the card and the analyses go
-#        RAHAT_KIPCHOGE_HARNESS=shadow             # off | shadow | serve (the owner flips it to serve)
+#        RAHAT_KIPCHOGE_HARNESS=serve              # serve: the coach's own answers when you ask; off: templates only
+#        (KIPCHOGE_PROACTIVE=1 adds the evening card, the Sunday review and the landing analysis, templates only)
 #        RAHAT_TOKEN_BUDGET_DAILY_USD_KIPCHOGE=0.50
 #   3. The private files in vault/kipchoge/: athlete.json, plan.json, goals.json, routes.json, rules.json.
 #   4. Run this script. It renders the plist and LOADS the service.
@@ -30,7 +31,7 @@ fi
 grep -q '^KIPCHOGE_PRIMARY_CHAT=..*' "$REPO/.env" 2>/dev/null \
     || echo "⚠ KIPCHOGE_PRIMARY_CHAT not set — the bot will answer nobody and the pipelines will drop their messages."
 grep -q '^RAHAT_KIPCHOGE_HARNESS=' "$REPO/.env" 2>/dev/null \
-    || echo "⚠ RAHAT_KIPCHOGE_HARNESS not set — shadow applies (code answers; the harness logs what it would say)."
+    || echo "⚠ RAHAT_KIPCHOGE_HARNESS not set — off applies (templates only, no model calls)."
 grep -q '^RAHAT_TOKEN_BUDGET_DAILY_USD_KIPCHOGE=' "$REPO/.env" 2>/dev/null \
     || echo "⚠ RAHAT_TOKEN_BUDGET_DAILY_USD_KIPCHOGE not set — the global cap applies."
 

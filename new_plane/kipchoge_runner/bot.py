@@ -17,11 +17,17 @@ Every turn: a decisions span (actor="kipchoge", op="kipchoge_bot.turn")
 and the never-empty guard. The clock handed to the handler is the
 athlete's home time (E5: America/Los_Angeles), not the Mac's.
 
-The minute tick (`tick_once`) is the pipelines' doorbell: the card the
-evening before a session and the Sunday review (`pipeline.tick`), the
-final analysis of a run that landed (`landed`), the provisional one
-from the Watch's minute data (`provisional`). Each sends at most once
-per run per stage (the `kipchoge_sent` table).
+On demand (owner, 2026-10-26: "it should have zero model calls every
+day"): the coach calls the model only when the athlete asks. /run,
+/next and /week in serve mode take the pipeline path (the records read
+first, two rounds at most); nothing runs on a clock by default.
+
+The minute tick (`tick_once`) is opt-in (KIPCHOGE_PROACTIVE=1) and never
+calls the model: the card the evening before a session and the Sunday
+review (`pipeline.tick`), the final analysis of a run that landed
+(`landed`), the provisional one from the Watch's minute data
+(`provisional`), all from the templates. Each sends at most once per
+run per stage (the `kipchoge_sent` table).
 """
 from __future__ import annotations
 
@@ -54,6 +60,7 @@ HELP = (
     "/routes — the routes on file\n"
     "After a card: done · skip · moved. Or just ask."
 )
+HOLDING = "Reading the run — a minute."
 _ACKS = {"done": "Noted: done.", "skip": "Noted: skipped.", "moved": "Noted: moved.", "go": "Go.",
          "yes": "Noted.", "no": "Noted.", "more": "That's all I have from the store for now."}
 _NEXT_WORDS = ("next run", "tomorrow", "target for my next", "what should i run")
@@ -138,17 +145,13 @@ def _process(cid: str, text: str, now: datetime, send: Callable[[str], None] | N
         if cmd == "/routes":
             return _lookup(cid, now, db_path, routes_text)
         if cmd == "/week":
-            return _lookup(cid, now, db_path, week_text)
+            return _on_demand(cid, now, db_path, mode, send, lambda ctx, m: week_text(ctx, model=m, db_path=db_path))
         if cmd == "/next":
-            floor = lambda: _lookup(cid, now, db_path, next_text)  # noqa: E731
-            if mode == "serve":
-                return hb.answer(f"my next run {args}".strip(), chat_id=cid, now=now, holding_line=send, db_path=db_path, fallback=floor)
-            return floor()
+            return _on_demand(cid, now, db_path, mode, send, lambda ctx, m: next_text(ctx, model=m, db_path=db_path))
         if cmd == "/run":
-            floor = lambda: _lookup(cid, now, db_path, lambda ctx: run_text(ctx, args))  # noqa: E731
-            if mode == "serve" and args.strip().lower() != "list":
-                return hb.answer(f"analyze my {args.strip() or 'last'} run", chat_id=cid, now=now, holding_line=send, db_path=db_path, fallback=floor)
-            return floor()
+            model_ok = args.strip().lower() != "list"
+            return _on_demand(cid, now, db_path, mode if model_ok else "off", send,
+                              lambda ctx, m: run_text(ctx, args, model=m, db_path=db_path))
         return HELP
     if hit and hit.kind == "exact_reply":
         if mode == "serve":
@@ -163,6 +166,26 @@ def _process(cid: str, text: str, now: datetime, send: Callable[[str], None] | N
     if mode == "shadow":
         hb.shadow(text, chat_id=cid, now=now, code_reply=reply, db_path=db_path)
     return reply
+
+
+def _on_demand(cid: str, now: datetime, db_path: str | None, mode: str, send: Callable[[str], None] | None,
+               fn: Callable[[dict, bool], str | None]) -> str:
+    """A command the athlete asked for: the model's version through the
+    pipeline path in serve mode (the records read first; the holding line
+    while it works), the template otherwise or when the model fails."""
+    if mode == "serve":
+        try:
+            if send is not None:
+                try:
+                    send(HOLDING)
+                except Exception:  # noqa: BLE001 - a failed holding line never fails the ask
+                    pass
+            text = _lookup(cid, now, db_path, lambda ctx: fn(ctx, True))
+            if text and text.strip():
+                return text
+        except Exception as e:  # noqa: BLE001 - the template answers
+            logger.exception("on-demand model path failed: %s", e)
+    return _lookup(cid, now, db_path, lambda ctx: fn(ctx, False))
 
 
 def _offline_text(cid: str, text: str, now: datetime, db_path: str | None) -> str:
@@ -234,17 +257,22 @@ def routes_text(ctx: dict) -> str:
     return krender.routes_floor(ctx["evidence"], units=krender._units(ctx))
 
 
-def week_text(ctx: dict) -> str | None:
+def _tenant():
+    from agents.kipchoge import tenant as kt
+    return kt.tenant()
+
+
+def week_text(ctx: dict, *, model: bool = False, db_path: str | None = None) -> str | None:
     from agents.kipchoge import pipeline
-    return pipeline.review_text(ctx, now=ctx["now"], model=False) or "No plan covers this week."
+    return pipeline.review_text(ctx, now=ctx["now"], model=model, tenant=_tenant(), db_path=db_path) or "No plan covers this week."
 
 
-def next_text(ctx: dict) -> str | None:
+def next_text(ctx: dict, *, model: bool = False, db_path: str | None = None) -> str | None:
     from agents.kipchoge import pipeline
-    return pipeline.card_text(ctx, now=ctx["now"], model=False) or "Nothing planned in the next seven days."
+    return pipeline.card_text(ctx, now=ctx["now"], model=model, tenant=_tenant(), db_path=db_path) or "Nothing planned in the next seven days."
 
 
-def run_text(ctx: dict, args: str) -> str | None:
+def run_text(ctx: dict, args: str, *, model: bool = False, db_path: str | None = None) -> str | None:
     """`/run` → the last run's analysis; `/run list` → the recent runs;
     `/run <date>` / `/run yesterday` → that day's run."""
     from agents.kipchoge import ingest, pipeline
@@ -261,22 +289,30 @@ def run_text(ctx: dict, args: str) -> str | None:
         for wid in reversed(ids):
             row = ingest.summary_row(con, wid)
             if row and str(row["start"]).startswith(day):
-                return pipeline.analysis_text(ctx, wid, now=now, model=False)
+                return pipeline.analysis_text(ctx, wid, now=now, model=model, tenant=_tenant(), db_path=db_path)
         return f"No run on {day} in the store."
-    return pipeline.last_analysis_text(ctx, now=now, model=False) or "No runs in the store yet."
+    return pipeline.last_analysis_text(ctx, now=now, model=model, tenant=_tenant(), db_path=db_path) or "No runs in the store yet."
 
 
 # ── the minute tick ───────────────────────────────────────────────────
-def tick_once(now: datetime, *, send: Callable[[str], Any] | None, db_path: str | None = None,
-              model: bool | None = None) -> list[dict]:
-    """What this minute sends: the evening card and the Sunday review
-    (`pipeline.tick`), the final analysis of a run that landed, the
-    provisional analysis of a run the Watch shows. Never raises."""
-    from agents.kipchoge import harness_bridge as hb
+def proactive_enabled() -> bool:
+    """KIPCHOGE_PROACTIVE=1 turns the clock-driven messages on (default off)."""
+    return (os.getenv("KIPCHOGE_PROACTIVE") or "").strip().lower() in ("1", "true", "on", "yes")
+
+
+def tick_once(now: datetime, *, send: Callable[[str], Any] | None, db_path: str | None = None) -> list[dict]:
+    """What this minute sends, when the proactive messages are on: the
+    evening card and the Sunday review (`pipeline.tick`), the final
+    analysis of a run that landed, the provisional analysis of a run the
+    Watch shows. Templates only: the tick never calls the model, in any
+    mode (owner, 2026-10-26: zero model calls a day unless he asks).
+    Off by default: nothing. Never raises."""
     from agents.kipchoge import pipeline
     from agents.kipchoge import tenant as kt
+    if not proactive_enabled():
+        return []
     tenant = kt.tenant()
-    use_model = (hb.mode() == "serve") if model is None else model
+    use_model = False
     out: list[dict] = []
     for step in (lambda: pipeline.tick(tenant, now=now, send=send, db_path=db_path, model=use_model),
                  lambda: landed(tenant, now, send=send, db_path=db_path, model=use_model),

@@ -37,6 +37,7 @@ def world(tmp_path, monkeypatch):
     monkeypatch.setenv("KIPCHOGE_PRIMARY_CHAT", ME)
     monkeypatch.delenv("KIPCHOGE_ALLOWED_CHATS", raising=False)
     monkeypatch.delenv(hb.ENV_MODE, raising=False)
+    monkeypatch.delenv("KIPCHOGE_PROACTIVE", raising=False)
     monkeypatch.setenv(hb.ENV_LOG, str(tmp_path / "shadow.jsonl"))
     (tmp_path / "vault").mkdir()
     write_private_twins(tmp_path / "vault")
@@ -137,28 +138,69 @@ def test_serve_mode_hands_free_text_and_the_asks_to_the_harness(world, monkeypat
     assert bot.process_message(ME, "/next", NOW).startswith("Sunday · 07:30 · creek")   # the floor is the crash fallback
 
 
-def test_the_tick_sends_the_card_once_the_evening_before(world):
+def test_by_default_the_coach_sends_nothing_on_a_clock(world):
+    sent: list[str] = []
+    for when in (datetime(2026, 10, 24, 20, 5), datetime(2026, 10, 25, 19, 0), datetime(2026, 10, 24, 10, 0)):
+        assert bot.tick_once(when, send=sent.append, db_path=None) == []
+    assert sent == [] and bot.proactive_enabled() is False
+
+
+def test_the_tick_never_calls_the_model_even_in_serve_mode(world, monkeypatch):
+    monkeypatch.setenv("KIPCHOGE_PROACTIVE", "1")
+    monkeypatch.setenv(hb.ENV_MODE, "serve")
+    calls: list[dict] = []
+    monkeypatch.setattr(llm_chat, "_call_wire", lambda req: calls.append(req) or {"error": "no model on a clock"})
+    sent: list[str] = []
+    out = bot.tick_once(datetime(2026, 10, 24, 20, 5), send=sent.append, db_path=None)
+    assert [e["kind"] for e in out] == ["card"] and len(sent) == 1 and calls == []
+
+
+def test_the_harness_is_off_unless_the_owner_sets_it(monkeypatch):
+    monkeypatch.delenv(hb.ENV_MODE, raising=False)
+    assert hb.mode() == "off"
+
+
+def test_serve_mode_answers_run_through_the_pipeline_path_when_asked(world, monkeypatch):
+    monkeypatch.setenv(hb.ENV_MODE, "serve")
+    answer = {"kind": "analysis", "headline": "Grade {{r:run:R-C:grade}}: {{r:run:R-C:pace_s_per_mi}}.",
+              "bottom_line": ["Halves {{r:run:R-C:run_halves.first.hr_avg}} → {{r:run:R-C:run_halves.second.hr_avg}}."],
+              "sections": [{"title": "The trend", "lines": ["x"]}], "next": "n", "records_used": ["run:R-C:grade"], "normalized": False}
+    w = Wire(frame={"intent": "analyze"}, rounds=[[]], answers=[answer])
+    monkeypatch.setattr(llm_chat, "_call_wire", w)
+    held: list[str] = []
+    reply = bot.process_message(ME, "/run", NOW, send=held.append)
+    assert reply.startswith("Grade C:") and held == [bot.HOLDING]
+    assert "understand" not in w.calls and "answer" in w.calls          # the pipeline path: no Understand, records read first
+    assert w.calls.count("execute") <= 2 + 2 * 2                        # two rounds at most, plus repairs
+    monkeypatch.setattr(llm_chat, "_call_wire", lambda req: {"error": "capped"})
+    assert "grade" in bot.process_message(ME, "/run", NOW).lower()      # the model refused: the template answers
+
+
+def test_the_tick_sends_the_card_once_the_evening_before(world, monkeypatch):
+    monkeypatch.setenv("KIPCHOGE_PROACTIVE", "1")
     sent: list[str] = []
     evening = datetime(2026, 10, 24, 20, 5)
-    out = bot.tick_once(evening, send=sent.append, db_path=None, model=False)
+    out = bot.tick_once(evening, send=sent.append, db_path=None)
     assert [e["kind"] for e in out] == ["card"] and len(sent) == 1 and sent[0].endswith("Still on?")
-    assert bot.tick_once(evening, send=sent.append, db_path=None, model=False) == [] and len(sent) == 1
-    assert bot.tick_once(datetime(2026, 10, 24, 14, 0), send=sent.append, db_path=None, model=False) == []
+    assert bot.tick_once(evening, send=sent.append, db_path=None) == [] and len(sent) == 1
+    assert bot.tick_once(datetime(2026, 10, 24, 14, 0), send=sent.append, db_path=None) == []
 
 
-def test_the_tick_sends_a_landed_runs_final_once_and_ignores_history(world):
+def test_the_tick_sends_a_landed_runs_final_once_and_ignores_history(world, monkeypatch):
+    monkeypatch.setenv("KIPCHOGE_PROACTIVE", "1")
     sent: list[str] = []
-    assert bot.tick_once(NOW, send=sent.append, db_path=None, model=False) == []       # the Oct 18 run is history
+    assert bot.tick_once(NOW, send=sent.append, db_path=None) == []       # the Oct 18 run is history
     con = state.connect()
     load_fixture(con, synthetic_run("R-D", datetime(2026, 10, 24, 7, 30), 72, km=9.8, hr_first=142.0, hr_second=145.0))
     con.close()
-    out = bot.tick_once(datetime(2026, 10, 24, 10, 0), send=sent.append, db_path=None, model=False)
+    out = bot.tick_once(datetime(2026, 10, 24, 10, 0), send=sent.append, db_path=None)
     assert [e["kind"] for e in out] == ["analysis"] and out[0]["workout_id"] == "R-D" and out[0]["sent"] is True
     assert len(sent) == 1 and "R-D" not in sent[0] and "2026-10-24" in sent[0]
-    assert bot.tick_once(datetime(2026, 10, 24, 10, 1), send=sent.append, db_path=None, model=False) == [] and len(sent) == 1
+    assert bot.tick_once(datetime(2026, 10, 24, 10, 1), send=sent.append, db_path=None) == [] and len(sent) == 1
 
 
 def test_the_tick_sends_a_provisional_run_from_the_watch_once_it_is_over(world, monkeypatch):
+    monkeypatch.setenv("KIPCHOGE_PROACTIVE", "1")
     sunday = datetime(2026, 10, 25, 9, 0)
     con = state.connect()
     # the Watch's minute series for a 60-minute run that began at 07:30, in the store but no workout file yet
@@ -173,11 +215,11 @@ def test_the_tick_sends_a_provisional_run_from_the_watch_once_it_is_over(world, 
                "max_hr": 150, "kind": "run", "inferred": True}
     monkeypatch.setattr(bot, "_vitals_sessions", lambda now: [session])
     sent: list[str] = []
-    assert bot.tick_once(datetime(2026, 10, 25, 8, 35), send=sent.append, db_path=None, model=False) == []    # not over yet
-    out = bot.tick_once(sunday, send=sent.append, db_path=None, model=False)
+    assert bot.tick_once(datetime(2026, 10, 25, 8, 35), send=sent.append, db_path=None) == []    # not over yet
+    out = bot.tick_once(sunday, send=sent.append, db_path=None)
     assert [e["kind"] for e in out] == ["analysis"] and out[0]["stage"] == "provisional" and len(sent) == 1
     assert sent[0].startswith("Provisional (the Watch's minute data")
-    assert bot.tick_once(datetime(2026, 10, 25, 9, 1), send=sent.append, db_path=None, model=False) == [] and len(sent) == 1
+    assert bot.tick_once(datetime(2026, 10, 25, 9, 1), send=sent.append, db_path=None) == [] and len(sent) == 1
     gym = {"name": "Strength", "start": "2026-10-25 12:00:00", "end": "2026-10-25 12:40:00", "minutes": 40, "avg_hr": 110, "kind": None}
     assert bot.provisional_candidates([gym], now=datetime(2026, 10, 25, 13, 0), plan=kt.tenant().plan(), zones=ZONES) == []
     dense = dict(gym, avg_hr=138)

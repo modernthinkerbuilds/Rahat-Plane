@@ -4,20 +4,20 @@ the harness (ADR-018 §4; PRD v0.3 §15e).
     RAHAT_KIPCHOGE_HARNESS = off | shadow | serve
 
 * off:    code answers the grammar from records (the floors); free text
-          gets the offline line. The harness never runs.
+          gets the offline line. The harness never runs. The default
+          (owner, 2026-10-26: no model call unless he asks; shadow pays
+          for answers nobody reads).
 * shadow: as off, and the harness runs each free-text ask in a
           background thread, appending what it would have said, with
           its per-outcome results, to `vault/kipchoge_shadow.jsonl`.
-          Default outside test mode.
 * serve:  the grammar's lookups (`/me`, `/zones`, `/goal`, `/trend`,
           `/week`, `/routes`, help) are answered by code from records;
           `/next`, `/run`, the exact replies ("done", "skip", "moved",
           "go", "yes", "no", "more") and every free-text message go to
           the harness. The floor is the crash fallback.
 
-Under RAHAT_TEST_MODE the default is off (no background runs from
-other tests); tests set the variable explicitly and call `shadow(...,
-sync=True)`. Only the owner flips the live flag.
+Tests set the variable explicitly and call `shadow(..., sync=True)`.
+Only the owner flips the live flag.
 """
 from __future__ import annotations
 
@@ -46,7 +46,7 @@ def mode() -> str:
     v = (os.getenv(ENV_MODE) or "").strip().lower()
     if v in MODES:
         return v
-    return "off" if os.getenv("RAHAT_TEST_MODE") == "1" else "shadow"
+    return "off"
 
 
 def grammar():

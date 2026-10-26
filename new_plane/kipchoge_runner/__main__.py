@@ -13,7 +13,10 @@ Env:
     KIPCHOGE_ALLOWED_CHATS   — other chats allowed to ask (comma-separated)
     KIPCHOGE_LOG_PATH        — log file (default vault/kipchoge_bot.log)
     RAHAT_KIPCHOGE_HARNESS   — off | shadow | serve (agents.kipchoge.harness_bridge)
-    KIPCHOGE_TICK            — "0" switches the minute tick off (default on)
+    KIPCHOGE_PROACTIVE       — "1" turns on the clock-driven messages (the evening
+                               card, the Sunday review, the analysis when a run
+                               lands), templates only, never the model. Default
+                               off: the coach speaks when asked.
 """
 from __future__ import annotations
 
@@ -82,8 +85,8 @@ def cmd_serve() -> int:
     _menu.publish(tg, "kipchoge")          # the slash-command hints Telegram shows
     from agents.kipchoge import harness_bridge as hb
     primary = os.getenv("KIPCHOGE_PRIMARY_CHAT") or ""
-    logger.info("Kipchoge bot live | primary_chat=%s | harness=%s | tick=%s", primary or "UNSET (nobody can ask)",
-                hb.mode(), "off" if os.getenv("KIPCHOGE_TICK") == "0" else "on")
+    logger.info("Kipchoge bot live | primary_chat=%s | harness=%s | proactive=%s", primary or "UNSET (nobody can ask)",
+                hb.mode(), "on (templates only)" if bot.proactive_enabled() else "off")
 
     def send_primary(text: str):
         if not primary:
@@ -111,7 +114,7 @@ def cmd_serve() -> int:
             consecutive_errors = 0
             conflict_errors = 0
             now = bot.home_now()
-            if os.getenv("KIPCHOGE_TICK") != "0" and now.minute != last_tick_minute:
+            if bot.proactive_enabled() and now.minute != last_tick_minute:
                 last_tick_minute = now.minute
                 for ev in bot.tick_once(now, send=send_primary):
                     logger.info("[tick] %s %s sent=%s why=%s", ev.get("kind"), ev.get("workout_id") or ev.get("date") or ev.get("week") or ev.get("start") or "",
