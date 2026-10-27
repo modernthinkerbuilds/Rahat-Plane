@@ -36,7 +36,7 @@ import os
 import re
 import sqlite3
 import unicodedata
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 # Consecutive PRODUCTIVE refreshes an event must miss before 'suspect'.
 # The code kinds (2026-10-14) read the whole calendar, so two misses mean
@@ -268,6 +268,22 @@ def query_window(start_date: str, end_date: str, *,
         else:
             rest.append(r)
     return (first + rest)[:limit]
+
+
+def query_by_day(start_date: str, end_date: str, *, limit_per_day: int = 60,
+                 per_source_cap: int | None = None, path: str | None = None, **kw) -> list[dict]:
+    """query_window one day at a time, the days in order (2026-10-27).
+
+    LIVE BUG: the weekend digest asked for 60 rows of Saturday-and-Sunday in
+    time order; a Saturday with 200 listings filled all 60, and Sunday never
+    reached the digest or /whatson. Each day now gets its own `limit_per_day`."""
+    d, last = date.fromisoformat(start_date), date.fromisoformat(end_date)
+    out: list[dict] = []
+    while d <= last:
+        out += query_window(d.isoformat(), d.isoformat(), limit=limit_per_day,
+                            per_source_cap=per_source_cap, path=path, **kw)
+        d += timedelta(days=1)
+    return out
 
 
 def newest_event_by_source(path: str | None = None) -> dict[str, str]:

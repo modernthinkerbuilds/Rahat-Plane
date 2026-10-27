@@ -116,7 +116,8 @@ ADULT_RE = re.compile(r"\b(?:adults?|grown[\s-]*ups? only|21\s*\+|18\s*\+|book c
 ADMIN_RE = re.compile(r"\b(?:meeting|council|commission|board of|hearing|volunteers?|volunteer day|intake|"
                       r"application|deadline|closed|closure|cancell?ed|conference|webinar|virtual|online|zoom|"
                       r"livestream|office hours|clean[\s-]*up)\b", re.I)
-RACE_RE = re.compile(r"\b(?:5\s*k|10\s*k|half[\s-]*marathon|marathon|fun run|race|trail run|triathlon)\b", re.I)
+RACE_RE = re.compile(r"\b(?:5\s*k|10\s*k|half[\s-]*marathon|marathon|fun run|race|trail run|triathlon|"
+                     r"run|run[\s-]*walk|trot)\b", re.I)      # "Halloween Run", a turkey trot; not "(runs to ...)"
 
 
 @dataclass

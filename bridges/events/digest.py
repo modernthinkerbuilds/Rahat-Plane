@@ -162,11 +162,14 @@ def build_digest(now: datetime | None = None, *,
     now = now or datetime.now()
     start, end, label = weekend_window(now)
     try:
-        from bridges.events.store import query_window
+        from bridges.events.store import query_by_day
         # At most three rows per feed per day (2026-10-14): the library
         # feeds now hold whole calendars, and a time-ordered cut was all
-        # one branch's Saturday morning.
-        rows = query_window(start, end, limit=60, per_source_cap=3, path=path)
+        # one branch's Saturday morning. Each day on its own (2026-10-27:
+        # a busy Saturday took all 60 rows and Sunday vanished); a
+        # household's ranking sees the whole day.
+        rows = query_by_day(start, end, limit_per_day=400 if fit is not None else 60,
+                            per_source_cap=3, path=path)
     except Exception:  # noqa: BLE001 — no inventory, no digest
         rows = []
     # Something special, or just open (owner 2026-10-26): admission notices

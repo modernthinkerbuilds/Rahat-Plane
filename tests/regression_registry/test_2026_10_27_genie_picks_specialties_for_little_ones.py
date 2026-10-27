@@ -45,6 +45,7 @@ GOOD = [_r("Baby Wearing Dance", hhmm="10:30"),
         _r("Author Storytime: a new picture book", city="Newark", venue="Corner Bookshop", hhmm="11:00"),
         _r("Diwali Lights Family Night", city="Union City", hhmm="17:00")]
 POOR = [_r("Turkey Trot 5K", hhmm="07:00"),
+        _r("Lakeside Halloween Run", hhmm="08:00"),                  # a race on an occasion is still a race
         _r("Teen Anime Club", hhmm="15:00"),
         _r("Toddler Storytime", city="Santa Rosa", hhmm="10:00"),
         _r("Library Board of Trustees Meeting", hhmm="18:00"),
@@ -61,6 +62,11 @@ def test_the_reasons_and_the_floor():
     assert s >= fit.FLOOR and "Diwali" in why
     for row in POOR:
         assert fit.score(row, p)[0] < fit.FLOOR, row["title"]
+
+
+def test_a_run_is_a_race_but_a_show_that_runs_is_not():
+    assert fit.RACE_RE.search("Lakeside Halloween Run") and fit.RACE_RE.search("Harvest Run-Walk")
+    assert not fit.RACE_RE.search("Puppet Theater (runs to 2026-11-01)")
 
 
 def test_little_ones_count_only_when_the_household_has_them():
@@ -107,7 +113,7 @@ def test_the_digest_lists_picks_for_the_household(env):
     for t in ("Baby Wearing Dance", "Author Storytime", "Diwali Lights Family Night"):
         assert t in out, t
     assert "for babies" in out and "close to home" in out
-    for t in ("Turkey Trot", "Teen Anime Club", "Board of Trustees"):
+    for t in ("Turkey Trot", "Halloween Run", "Teen Anime Club", "Board of Trustees"):
         assert t not in out, t
     plain = build_digest(datetime(2026, 10, 28, 8, 0))
     assert "Picks for you" not in plain and "Turkey Trot" in plain

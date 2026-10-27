@@ -955,21 +955,27 @@ def handle_whats_on(*, now: datetime | None = None, llm=None,
     hidden_line = ""
     aud_tags = audience_terms(audience_text)
     try:
-        from bridges.events.store import query_window
-        rows = query_window(saturday.strftime("%Y-%m-%d"),
-                            sunday.strftime("%Y-%m-%d"), limit=40, per_source_cap=3)
+        from bridges.events.store import query_by_day
+        # The household's best fits, each with its reason (2026-10-27); "/whatson all" keeps the whole
+        # list in time order. Each day on its own, so a busy Saturday can't push Sunday out.
+        from agents.genie.state import fit_profile
+        prof = None if show_all else fit_profile()
+        per_day = 20 if saturday == sunday else 10
+        rows = query_by_day(saturday.strftime("%Y-%m-%d"), sunday.strftime("%Y-%m-%d"),
+                            limit_per_day=400 if prof is not None else 2 * per_day, per_source_cap=3)
         # Something special, or just open (owner 2026-10-26).
         from bridges.events import standing
         from agents.genie.state import keep_regular_words
         rows, hidden_rows = standing.split(rows, keep=keep_regular_words(), show_all=show_all)
         hidden_line = standing.hidden_note(hidden_rows) or ""
-        # The household's best fits first, each with its reason (2026-10-27); "/whatson all" keeps the
-        # whole list in time order.
-        from agents.genie.state import fit_profile
-        prof = None if show_all else fit_profile()
+        days: dict[str, list[dict]] = {}
+        for r in rows:
+            days.setdefault(str(r.get("start_ts") or "")[:10], []).append(r)
         if prof is not None:
             from bridges.events import fit as _fit
-            rows, _n = _fit.pick(rows, prof, limit=12)
+            rows = [r for d in sorted(days) for r in _fit.pick(days[d], prof, limit=min(per_day, 8))[0]]
+        else:
+            rows = [r for d in sorted(days) for r in days[d][:per_day]]
         if aud_tags:
             hit, rest = split_by_audience(rows, aud_tags)
             rows = hit if hit else rows
