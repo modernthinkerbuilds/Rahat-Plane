@@ -92,6 +92,11 @@ from agents.genie.intents import (
     GENIE_NL_RE as _GENIE_NL_RE,
 )
 
+# Steps over a period (2026-10-27): the same pattern Kobe's dispatcher uses,
+# so the rung that sends a question to Kobe and the route that answers it
+# can't drift apart.
+from agents.the_scientist.steps import STEPS_QUERY_RE as _STEPS_QUERY_RE  # noqa: E402
+
 
 # ─── Plan mutations (per Kobe handler.py L1872–1913) ───────────────────
 # Match the exact regex shapes the old plane's _legacy_route uses for
@@ -502,6 +507,15 @@ def classify_delegation(msg: str) -> tuple[str, str]:
 
     # 5. Status queries → Kobe (he formats deterministically + cheaply).
     if _STATUS_QUERY_RE.search(text):
+        return ("kobe_route", text)
+
+    # 5a. Steps over a period → Kobe's dispatcher reads the Health records
+    #     (live 2026-10-27: "How many steps do I average in the last 4
+    #     months?" went to the synthesizer, which has no step history; over
+    #     the spend cap it echoed the question). After the hypothetical rung
+    #     ("if I need 10,000 a day…" stays a what-if).
+    #     COORDINATION: shared file — one additive rung.
+    if _STEPS_QUERY_RE.search(text):
         return ("kobe_route", text)
 
     # 5b. Plan VIEW queries → Kobe (handle_show_plan: blacklist + kcal,

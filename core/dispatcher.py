@@ -336,6 +336,19 @@ def _h_last_week(msg: str, match: re.Match) -> str:
     return _kobe.handle_last_week()
 
 
+def _h_steps(msg: str, match) -> str:
+    """'how many steps do I average in the last 4 months' → the Health
+    records, deterministic (2026-10-27: it reached the synthesizer, which
+    has no step history, and over the spend cap it echoed the question)."""
+    from agents.the_scientist import steps as _steps
+    return _steps.answer(msg)
+
+
+def _is_steps_query(msg: str) -> bool:
+    from agents.the_scientist.steps import STEPS_QUERY_RE
+    return bool(STEPS_QUERY_RE.search(msg or ""))
+
+
 def _h_daily_breakdown(msg: str, match: re.Match) -> str:
     """'calories by the day' → deterministic per-day burn breakdown.
     Bug 2026-06-21: this fell to the reasoner, which has only the weekly
@@ -730,6 +743,8 @@ ROUTES: list[Route] = [
 
     # 6. Status / state read-only.
     Route("pace", _PACE_RE, _h_pace),
+    # Steps over a period (2026-10-27): records, not the model.
+    Route("steps", _Predicate(_is_steps_query), _h_steps),
     Route("current_weight", _CURRENT_WEIGHT_RE, _h_current_weight),
     Route("list_dislikes", _LIST_DISLIKES_RE, _h_list_dislikes),
     # Per-day breakdown must beat weekly_remaining (both mention burn/cal).

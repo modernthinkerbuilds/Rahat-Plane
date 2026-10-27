@@ -253,6 +253,12 @@ def _revoice_through_synth(*, raw_text: str, user_message: str,
             chat_memory_block=_maybe_load_chat_memory_block(chat_id or ""),
             trace_id=trace_id,
         )
+        if synth_result.fallback:
+            # The model is down (2026-10-27: the spend cap). The specialist's own
+            # answer, scrubbed, beats a floor that would replace it.
+            return raw_text, {"revoice": "fallback-kept-raw",
+                              "revoice_error": synth_result.error,
+                              "revoice_path": delegation_path}
         return synth_result.text, {
             "revoice": "ok",
             "revoice_model": synth_result.model,

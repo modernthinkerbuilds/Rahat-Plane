@@ -302,8 +302,12 @@ def synthesize(*, user_message: str, facts: dict[str, Any],
 
     client = _client()
     if client is None:
+        # Offline / CI keeps the comparable structured shape; a live bot with
+        # no key gets the plain floor (2026-10-27), never its own echo.
+        offline = os.getenv("RAHAT_TEST_MODE") == "1"
         return SynthesisResult(
-            text=_structured_fallback(user_message, facts, arbitration, fraser_text),
+            text=(_structured_fallback(user_message, facts, arbitration, fraser_text) if offline
+                  else _model_unavailable_floor(facts, arbitration, fraser_text, error="no-api-key")),
             model="fallback-structured", fallback=True,
         )
 
@@ -316,7 +320,7 @@ def synthesize(*, user_message: str, facts: dict[str, Any],
         output_tokens = getattr(usage, "candidates_token_count", 0) if usage else 0
         if not text:
             return SynthesisResult(
-                text=_structured_fallback(user_message, facts, arbitration, fraser_text),
+                text=_model_unavailable_floor(facts, arbitration, fraser_text, error="empty-response"),
                 model=model, fallback=True,
                 error="empty-response",
             )
@@ -327,10 +331,52 @@ def synthesize(*, user_message: str, facts: dict[str, Any],
     except Exception as e:
         logger.warning("synthesis failed (%s): %s", model, e)
         return SynthesisResult(
-            text=_structured_fallback(user_message, facts, arbitration, fraser_text),
+            text=_model_unavailable_floor(facts, arbitration, fraser_text, error=f"{type(e).__name__}: {e}"),
             model=model, fallback=True,
             error=f"{type(e).__name__}: {e}",
         )
+
+
+# ─── The live floor (2026-10-27) ──────────────────────────────────────
+# LIVE: with the Gemini project over its monthly spend cap, every free-text
+# turn shipped the offline debug shape below — "[new_miya] <your message>"
+# (Telegram ate the brackets), i.e. the question echoed back. The floor
+# says plainly that the model is unreachable and why, keeps any facts the
+# turn gathered in plain words, and never repeats the user's message.
+
+_FACT_LABELS = (("today_target", "Today"), ("pace", "Pace"), ("recalibration", "Where you stand"),
+                ("active_goal", "Goal"))
+
+
+def model_unavailable_line(error: str | None) -> str:
+    e = (error or "").lower()
+    if "spending cap" in e or "spend cap" in e:
+        return ("I can't reach my AI model right now: the Gemini project has hit its monthly spending cap. "
+                "It resets on the 1st, or it can be raised in AI Studio → Spend. Questions I answer from your "
+                "records still work: /pace, today's burn, steps, the plan.")
+    if "no-api-key" in e:
+        return "My AI model isn't set up on this machine (no API key), so I can only answer from your records."
+    if "429" in e or "resource_exhausted" in e or "quota" in e or "rate" in e:
+        return "Google is limiting my AI model right now. Try again in a few minutes."
+    return "I couldn't reach my AI model just now. Try again in a minute."
+
+
+def _model_unavailable_floor(facts: dict[str, Any], arbitration: dict[str, str] | None,
+                             fraser_text: str | None, *, error: str | None) -> str:
+    lines = [model_unavailable_line(error)]
+    if arbitration and arbitration.get("guidance"):
+        lines.append(f"Note: {arbitration['guidance']}")
+    for key, label in _FACT_LABELS:
+        v = (facts or {}).get(key)
+        if not v:
+            continue
+        r = v.get("result") if isinstance(v, dict) else v
+        summary = r.get("summary") if isinstance(r, dict) else r
+        if summary:
+            lines.append(f"{label}: {str(summary)[:240]}")
+    if fraser_text and not fraser_text.startswith("[fraser error"):
+        lines.append(f"Workout: {fraser_text[:600]}")
+    return "\n".join(lines)
 
 
 # ─── Fallback (matches miya_sim shape so offline behavior is comparable) ──
