@@ -127,15 +127,21 @@ def _inventory_context(now: datetime) -> str:
         from bridges.events.store import query_window
         rows = query_window(now.strftime("%Y-%m-%d"),
                             (now + timedelta(days=10)).strftime("%Y-%m-%d"),
-                            limit=14, per_source_cap=2)
+                            limit=400, per_source_cap=2)
     except Exception:  # noqa: BLE001 — inventory is optional context
         return ""
     try:
         from bridges.events import standing
         from agents.genie.state import keep_regular_words
         rows, _ = standing.split(rows, keep=keep_regular_words())     # something special, not just open (2026-10-26)
+        from agents.genie.state import fit_profile
+        prof = fit_profile()
+        if prof is not None:
+            from bridges.events import fit as _fit
+            rows, _n = _fit.pick(rows, prof, limit=14)                 # the household's best fits (2026-10-27)
     except Exception:  # noqa: BLE001
         pass
+    rows = rows[:14]
     if not rows:
         return ""
     lines = [f"{r['start_ts'][:16]} — {r['title']}"

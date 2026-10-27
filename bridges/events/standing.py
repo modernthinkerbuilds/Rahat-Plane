@@ -16,10 +16,12 @@ THE RULE (code, no model). A row is one of:
     holiday, a parade, an opening ...). Always shown, even when it recurs.
   * admission: an admission notice (a free day, resident admission,
     "free first Sunday"), not an event. Hidden.
-  * standing: a regular program, on STANDING_DATES or more distinct
-    dates in the inventory, a run longer than ONGOING_DAYS, or regular by
-    nature (a farmers market, a storytime, a drop-in). Hidden, unless
-    the household keeps it (`keep` words, e.g. "storytime").
+  * standing: a regular program (on STANDING_DATES or more distinct
+    dates in the inventory, or a run longer than ONGOING_DAYS), or regular
+    by nature (a farmers market, a drop-in). Hidden, unless the household
+    keeps it (`keep` words) or it is made for babies and small children
+    (a storytime, a lapsit, a babywearing dance), which a family with
+    little ones goes to every week (owner, 2026-10-27).
   * event: everything else (a one-off or a short series). Shown.
 Hidden rows are never lost: `/whatson all` shows them, and the lists
 say how many were left out.
@@ -48,8 +50,14 @@ ADMISSION_RE = re.compile(
 # Regular by nature, whatever the feed's history says (a feed that lists only the next date of a weekly
 # market gives no recurrence to count).
 REGULAR_TITLE_RE = re.compile(
-    r"\b(?:farmers'?\s*market|farmer'?s'?\s*market|story\s*time|storytime|drop[\s-]*in|open studio|open play|"
+    r"\b(?:farmers'?\s*market|farmer'?s'?\s*market|drop[\s-]*in|open studio|open play|"
     r"docent tour|daily tour|office hours)\b", re.I)
+# A regular program made for babies and small children is a specialty for a family with little ones, not a
+# place that is just open (owner 2026-10-27: "the story times are okay ... I want to take her to story times";
+# the weekly babywearing dance class is the kind of thing he wants).
+LITTLE_ONES_RE = re.compile(
+    r"\b(?:bab(?:y|ies)|infants?|lap[\s-]*sit|prewalkers?|bounce|baby[\s-]*wearing|babywearing|toddlers?|"
+    r"preschool(?:ers)?|little ones|tots?|story\s*time|storytimes?|sing[\s-]*along|sensory)\b", re.I)
 
 
 def _days(row: dict) -> float:
@@ -71,8 +79,10 @@ def kind(row: dict, *, recurrence: int = 1, keep: Iterable[str] = ()) -> str:
     if ADMISSION_RE.search(title):
         return "admission"
     low = title.lower()
-    if recurrence >= STANDING_DATES or _days(row) > ONGOING_DAYS or REGULAR_TITLE_RE.search(title):
-        if any(k and k.lower() in low for k in keep):
+    if REGULAR_TITLE_RE.search(title):
+        return "event" if any(k and k.lower() in low for k in keep) else "standing"
+    if recurrence >= STANDING_DATES or _days(row) > ONGOING_DAYS:
+        if LITTLE_ONES_RE.search(title) or any(k and k.lower() in low for k in keep):
             return "event"
         return "standing"
     return "event"

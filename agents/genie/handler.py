@@ -963,6 +963,13 @@ def handle_whats_on(*, now: datetime | None = None, llm=None,
         from agents.genie.state import keep_regular_words
         rows, hidden_rows = standing.split(rows, keep=keep_regular_words(), show_all=show_all)
         hidden_line = standing.hidden_note(hidden_rows) or ""
+        # The household's best fits first, each with its reason (2026-10-27); "/whatson all" keeps the
+        # whole list in time order.
+        from agents.genie.state import fit_profile
+        prof = None if show_all else fit_profile()
+        if prof is not None:
+            from bridges.events import fit as _fit
+            rows, _n = _fit.pick(rows, prof, limit=12)
         if aud_tags:
             hit, rest = split_by_audience(rows, aud_tags)
             rows = hit if hit else rows
@@ -987,6 +994,8 @@ def handle_whats_on(*, now: datetime | None = None, llm=None,
             # all-day events and never Markdown-escaped anything).
             from bridges.events.digest import _fmt_row
             line = _fmt_row(r, with_date=(saturday != sunday))
+            if r.get("_why"):
+                line += "\n      _" + " · ".join(r["_why"]) + "_"
             if weekend_commits:
                 try:
                     from agents.genie import calendar as _cal
@@ -1127,9 +1136,10 @@ def handle_digest(now: datetime | None = None) -> str:
     try:
         from bridges.events.digest import build_digest, weekend_window
         from agents.genie.state import calendar_entries
-        from agents.genie.state import keep_regular_words
+        from agents.genie.state import fit_profile, keep_regular_words
         start, end, _ = weekend_window(now)
-        text = build_digest(now, commitments=calendar_entries(start, end), keep_regular=keep_regular_words())
+        text = build_digest(now, commitments=calendar_entries(start, end), keep_regular=keep_regular_words(),
+                            fit=fit_profile())
     except Exception:  # noqa: BLE001 — surface degrades, never crashes
         text = None
     if text:

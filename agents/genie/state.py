@@ -158,6 +158,31 @@ def keep_regular_words() -> list[str]:
     return []
 
 
+_BABY_ROLES = {"newborn", "infant", "baby"}
+_TODDLER_ROLES = {"toddler", "preschooler"}
+
+
+def fit_profile():
+    """The household as the event ranking needs it (bridges.events.fit),
+    from the private family profile: the home city's point, who is small
+    (a newborn or infant → "baby", a toddler → "toddler"), and the
+    "events_interests" words. None when there is no profile; never raises."""
+    try:
+        from bridges.events import fit
+        path = family_profile_path()
+        data = json.load(path.open()) if path.exists() else {}
+        loc = household_location() or str(data.get("location") or "")
+        home = fit.city_point(loc.split(",")[0]) if loc else None
+        roles = {str(sub.get("role") or "").lower() for sub in (data.get("subjects") or [])}
+        little = frozenset((["baby"] if roles & _BABY_ROLES else []) + (["toddler"] if roles & _TODDLER_ROLES else []))
+        interests = tuple(str(w).strip() for w in (data.get("events_interests") or []) if str(w).strip())
+        if not little and not interests:
+            return None                       # a home alone is not a household to curate for
+        return fit.FitProfile(home=home, little=little, interests=interests)
+    except Exception:  # noqa: BLE001 - no profile, no ranking
+        return None
+
+
 def household_store_path() -> Path:
     """Path to the gitignored household store (family log + plans)."""
     override = os.getenv("RAHAT_GENIE_STORE_JSON")

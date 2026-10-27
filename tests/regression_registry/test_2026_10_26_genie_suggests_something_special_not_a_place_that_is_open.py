@@ -12,7 +12,10 @@ THE PINS (bridges.events.standing; invented venues here):
   * an admission notice (a free day, resident admission, "first Sundays
     at") is not an event: hidden;
   * a regular program (a series on 4+ distinct dates, or a run longer
-    than a week) is hidden, unless the household keeps it by name;
+    than a week; a farmers market) is hidden, unless the household keeps
+    it by name or it is made for babies and small children (owner,
+    2026-10-27: "the story times are okay ... I want to take her to story
+    times");
   * a title naming an occasion (Halloween, Día de los Muertos, a
     festival, an opening ...) is always shown, even when it recurs;
   * a one-off or a short series is shown;
@@ -78,8 +81,10 @@ def test_the_kinds_of_listing():
     assert kind({"title": "Hilltop Art Museum Free Day (First Tuesdays)"}) == "admission"
     assert kind({"title": "First Sundays at the Hilltop Art Museum"}) == "admission"
     assert kind({"title": "Free Day: the Conservatory"}) == "admission"
-    assert kind({"title": "Toddler Storytime"}, recurrence=14) == "standing"
-    assert kind({"title": "Toddler Storytime"}, recurrence=14, keep=["storytime"]) == "event"
+    assert kind({"title": "Toddler Storytime"}, recurrence=14) == "event"            # made for little ones (Oct 27)
+    assert kind({"title": "Baby Wearing Dance"}, recurrence=9) == "event"
+    assert kind({"title": "Ask A Master Gardener"}, recurrence=8) == "standing"
+    assert kind({"title": "Ask A Master Gardener"}, recurrence=8, keep=["gardener"]) == "event"
     assert kind({"title": "Monthly Craft", "start_ts": "2026-10-31 10:00:00", "end_ts": "2026-11-29 17:00:00"}) == "standing"
     assert kind({"title": "Halloween at the Discovery Museum"}, recurrence=6) == "special"
     assert kind({"title": "Día de los Muertos Family Day"}) == "special"
@@ -87,7 +92,7 @@ def test_the_kinds_of_listing():
     assert kind({"title": "Bats After Dark: a night walk"}) == "event"
     assert kind({"title": "Paint-A-Plane"}, recurrence=2) == "event"                 # a weekend series, not a regular
     assert kind({"title": "Riverside: Farmers Market"}) == "standing"                # regular by nature, no history needed
-    assert kind({"title": "Baby Story Time"}) == "standing"
+    assert kind({"title": "Baby Story Time"}) == "event"
     assert kind({"title": "Public Science Center Admission"}) == "admission"
     assert kind({"title": "Harvest Festival at the Farmers Market"}) == "special"
 
@@ -97,11 +102,12 @@ def test_the_digest_keeps_the_special_and_leaves_out_the_regulars(env):
     from bridges.events.digest import build_digest
     out = build_digest(_WED)
     assert "Halloween at the Discovery Museum" in out and "Bats After Dark" in out
-    for gone in ("Free Admission", "Toddler Storytime", "Monthly Craft"):
+    assert "Toddler Storytime" in out                                                # made for little ones (Oct 27)
+    for gone in ("Free Admission", "Monthly Craft"):
         assert gone not in out, gone
-    assert "Left out 4 regular listings" in out and "/whatson all" in out
-    kept = build_digest(_WED, keep_regular=["storytime"])
-    assert "Toddler Storytime" in kept and "Left out 3 regular listings" in kept
+    assert "Left out 3 regular listings" in out and "/whatson all" in out
+    kept = build_digest(_WED, keep_regular=["monthly craft"])
+    assert "Monthly Craft" in kept and "Left out 2 regular listings" in kept
     everything = build_digest(_WED, show_all=True)
     assert "Free Admission (Riverside Botanical Garden)" in everything and "Left out" not in everything
 
@@ -112,7 +118,7 @@ def test_the_day_shortcut_and_whatson_all(env, monkeypatch):
     day = handler.handle_day_events("2026-10-31", now=_WED)
     assert "Halloween at the Discovery Museum" in day and "Free Admission" not in day and "Left out" in day
     full = handler.handle_day_events("2026-10-31", now=_WED, show_all=True)
-    assert "Free Admission (Riverside Botanical Garden)" in full and "Toddler Storytime" in full
+    assert "Free Admission (Riverside Botanical Garden)" in full and "Monthly Craft" in full
     monkeypatch.setattr(handler, "_live_plan_enabled", lambda: False)
     monkeypatch.setattr(handler, "household_location", lambda: "Riverside")
     weekend = handler.handle_whats_on(now=_WED)

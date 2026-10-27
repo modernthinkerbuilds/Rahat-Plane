@@ -195,7 +195,11 @@ def maybe_send_digest(send, now=None) -> bool:
                      for pref in (subj.preferences or [])]
     except Exception:  # noqa: BLE001 — profile optional
         interests = []
-    text = build_digest(now, commitments=commitments, interests=interests)
+    try:
+        keep, prof = state.keep_regular_words(), state.fit_profile()
+    except Exception:  # noqa: BLE001 - the digest still goes out
+        keep, prof = [], None
+    text = build_digest(now, commitments=commitments, interests=interests, keep_regular=keep, fit=prof)
     if not text:
         logger.info("digest skipped — inventory empty for the weekend "
                     "window (feeds refresh 07:00/12:30/18:00)")

@@ -148,7 +148,8 @@ def build_digest(now: datetime | None = None, *,
                  commitments: list[dict] | None = None,
                  interests: list[str] | None = None,
                  keep_regular: list[str] | None = None,
-                 show_all: bool = False) -> str | None:
+                 show_all: bool = False,
+                 fit=None) -> str | None:
     """The daily weekend digest, or None when there is nothing to say.
 
     `commitments` (optional): household-calendar entries for the window
@@ -228,6 +229,31 @@ def build_digest(now: datetime | None = None, *,
         # _MAX_PER_DAY lines a day — but chosen, not first-come.
         from bridges.events.popularity import rank
         picks, fresh = rank(day_rows, interests=interests, path=path)
+        if fit is not None:
+            # The household's best fits (owner 2026-10-27: "I need some really good events ... specialties"):
+            # made for its little ones, a bookstore or author storytime, an occasion, close to home; in time
+            # order, each with its reason. Fewer lines when fewer clear the bar.
+            from bridges.events import fit as _fit
+            best, n_fit = _fit.pick(picks + fresh, fit, limit=_MAX_PER_DAY)
+            if best:
+                lines.append("  _Picks for you:_")
+            for r in best:
+                line = _fmt_row(r)
+                if r.get("_why"):
+                    line += "\n      _" + " · ".join(r["_why"]) + "_"
+                hits = _row_conflicts(r, day_commits)
+                if hits:
+                    line += (f"\n      ⚠️ overlaps {hits[0].get('title')}"
+                             f" — swap it in, or keep the commitment?")
+                lines.append(line)
+            if not best and not day_commits:
+                lines.append("  _Nothing special for you this day in the feeds._")
+            extra = len(day_rows) - len(best)
+            if extra > 0:
+                lines.append(f"  _…plus {extra} more — say "
+                             f"\"{day.strftime('%A')}\" or `/whatson` for "
+                             f"everything._")
+            continue
         n_picks = min(len(picks), _PICKS_PER_DAY)
         n_new = min(len(fresh), _MAX_PER_DAY - n_picks)
         shown = 0
