@@ -112,7 +112,7 @@ def test_the_digest_lists_picks_for_the_household(env):
     assert "Picks for you" in out
     for t in ("Baby Wearing Dance", "Author Storytime", "Diwali Lights Family Night"):
         assert t in out, t
-    assert "for babies" in out and "close to home" in out
+    assert "for babies" in out and "one time only" in out
     for t in ("Turkey Trot", "Halloween Run", "Teen Anime Club", "Board of Trustees"):
         assert t not in out, t
     plain = build_digest(datetime(2026, 10, 28, 8, 0))

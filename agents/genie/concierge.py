@@ -133,12 +133,14 @@ def _inventory_context(now: datetime) -> str:
     try:
         from bridges.events import standing
         from agents.genie.state import keep_regular_words
-        rows, _ = standing.split(rows, keep=keep_regular_words())     # something special, not just open (2026-10-26)
+        from bridges.events.store import recurrence_counts
+        recurrence = recurrence_counts()
+        rows, _ = standing.split(rows, recurrence=recurrence, keep=keep_regular_words())   # not just open (10-26)
         from agents.genie.state import fit_profile
         prof = fit_profile()
         if prof is not None:
             from bridges.events import fit as _fit
-            rows, _n = _fit.pick(rows, prof, limit=14)                 # the household's best fits (2026-10-27)
+            rows, _n = _fit.pick(rows, prof, limit=14, recurrence=recurrence)   # the household's best fits
     except Exception:  # noqa: BLE001
         pass
     rows = rows[:14]

@@ -20,6 +20,16 @@ short reason, from its title, venue, categories and city:
   + close to home; − far away (another county, out of the area);
   − school-age or teen only, adult classes, meetings and volunteer
     days, races.
+RARITY (owner, 2026-10-27: "if I can go to the de Young some point in
+life, in a year or in ten years, I don't want to look at it every day ...
+a new musician coming to my town ... a new author, the Grumpy Monkey
+author at Linden"): a listing the inventory has seen on one date only
+("one time only") and a named guest (an author visit, "Storytime with
+<name>", a band, a chef) score up, but only when the listing already fits
+the household: rarity amplifies fit, it never makes a stranger's event
+a pick. A regular program (4+ dates) scores down and says so, and a day
+shows at most MAX_REGULAR of them: they fill the gaps the one-offs leave.
+
 A day shows its best listings that clear FLOOR, in time order, each
 with its reason. The household's specifics (home, who is in it, its
 interests) come from the caller's FitProfile; this module knows only
@@ -33,6 +43,8 @@ import unicodedata
 from dataclasses import dataclass, field
 
 FLOOR = 20                     # a listing below this is not a pick
+MAX_REGULAR = 2                # regular programs (4+ dates) a day may show
+REGULAR_DATES = 4              # a series on this many distinct dates is a regular
 NEAR_KM, MID_KM, FAR_KM = 25.0, 45.0, 75.0
 
 # Rough city centres (public geography, ~1 km), for "how far is it".
@@ -116,6 +128,22 @@ ADULT_RE = re.compile(r"\b(?:adults?|grown[\s-]*ups? only|21\s*\+|18\s*\+|book c
 ADMIN_RE = re.compile(r"\b(?:meeting|council|commission|board of|hearing|volunteers?|volunteer day|intake|"
                       r"application|deadline|closed|closure|cancell?ed|conference|webinar|virtual|online|zoom|"
                       r"livestream|office hours|clean[\s-]*up)\b", re.I)
+# A named guest: an author or illustrator, a book launch or signing, "Storytime with Julia Example",
+# "featuring The Example Trio". The name part is case-sensitive (two capitalized words), so
+# "with the aquarium" and "Signing and Music Storytime" (sign language) are not guests.
+GUEST_RE = re.compile(r"\b(?i:author|illustrator|book launch|book signing|in conversation|meet the author|"
+                      r"special guest|q\s*&\s*a with)\b")
+NAMED_RE = re.compile(r"(?i:\bwith\b|\bfeaturing\b|\bft\.)\s+(?:(?i:author|illustrator|artist|musician|chef|pianist|"
+                      r"violinist|singer|storyteller)\s+)?([A-Z][a-z][\w'’.-]*(?:\s+[A-Z][a-z][\w'’.-]*)+)")
+# Capitalized words that make "with Special Needs" or "with Your Family" look like a name.
+_NOT_A_NAME = {"special", "needs", "disabilities", "autism", "friends", "family", "families", "kids", "children",
+               "parents", "caregivers", "grownups", "your", "my", "our", "the", "a", "an", "everyone", "us", "me"}
+NIGHT_RE = re.compile(r"\b(?:tonight|night|nights|after dark|late[\s-]*night|midnight)\b", re.I)
+AUTHORISH_RE = re.compile(r"\b(?:story\s*time|storytimes?|book|author|illustrator|reading|read[\s-]*aloud)\b", re.I)
+LIVE_RE = re.compile(r"\b(?:concerts?|live music|jazz|band|orchestra|quartet|trio|choir|chorus|recital|mariachi|"
+                     r"bluegrass|folk music|kirtan|qawwali|ghazal|a cappella)\b", re.I)
+FOOD_RE = re.compile(r"\b(?:food festival|food fair|night market|chef|pop[\s-]?up|tasting|food trucks?|street food|"
+                     r"culinary)\b", re.I)
 RACE_RE = re.compile(r"\b(?:5\s*k|10\s*k|half[\s-]*marathon|marathon|fun run|race|trail run|triathlon|"
                      r"run|run[\s-]*walk|trot)\b", re.I)      # "Halloween Run", a turkey trot; not "(runs to ...)"
 
@@ -150,13 +178,33 @@ def km(a: tuple[float, float], b: tuple[float, float]) -> float:
     return 6371.0 * 2 * math.asin(math.sqrt(h))
 
 
-def score(row: dict, profile: FitProfile) -> tuple[int, list[str]]:
-    """(score, reasons) for one listing."""
+def interest_of(title: str, profile: FitProfile) -> str | None:
+    """The household interest a title names, as a whole word ("Holi", not the start of "Holiday";
+    "garba", not "garbage"), or None."""
+    low = (title or "").lower()
+    for w in profile.interests:
+        if w and re.search(rf"\b{re.escape(w.lower())}(?:s|'s|’s)?\b", low):
+            return w
+    return None
+
+
+def is_guest(title: str) -> bool:
+    """An author, an illustrator, a book launch, a named performer or chef ("Storytime with Julia
+    Example"); not "with Special Needs" or "WITH SPECTACULAR LIGHTS"."""
+    named = NAMED_RE.search(title or "")
+    if named and {w.lower() for w in named.group(1).split()} & _NOT_A_NAME:
+        named = None
+    return bool(GUEST_RE.search(title or "") or named)
+
+
+def score(row: dict, profile: FitProfile, *, dates: int | None = None) -> tuple[int, list[str]]:
+    """(score, reasons) for one listing. `dates`: how many distinct dates the inventory has seen this
+    series on (store.recurrence_counts); None = unknown, no rarity either way."""
     title = str(row.get("title") or "")
     venue = str(row.get("venue") or "")
     cats = row.get("categories") or ""
     cats = " ".join(cats) if isinstance(cats, (list, tuple)) else str(cats)
-    s, why = 0, []
+    s, why = 0, []                 # why: (priority, text); the three most telling are kept
     # From the title only: the feeds' audience categories tag whole family programs "infant" (a LEGO club,
     # a book sale), so they can't tell a baby time from an all-ages afternoon.
     baby = bool(BABY_RE.search(title))
@@ -164,34 +212,54 @@ def score(row: dict, profile: FitProfile) -> tuple[int, list[str]]:
     little = (baby and "baby" in profile.little) or (tod and ("toddler" in profile.little or "baby" in profile.little))
     if baby and "baby" in profile.little:
         s += 45
-        why.append("for babies")
+        why.append((2, "for babies"))
     elif tod and ("toddler" in profile.little or "baby" in profile.little):
         s += 30
-        why.append("for little ones")
+        why.append((2, "for little ones"))
     family = bool(FAMILY_RE.search(title)) or "family" in {c.strip().lower() for c in cats.split(",")}
     if family and not little:
         s += 12
-        why.append("for families")
+        why.append((6, "for families"))
     if BOOKSTORE_RE.search(f"{title} {venue}"):
         s += 20
-        why.append("bookstore")
+        why.append((5, "bookstore"))
     elif SPECIAL_FORMAT_RE.search(title):
         s += 20
         m = SPECIAL_FORMAT_RE.search(title).group(0).lower()
-        why.append("author event" if m in ("author", "illustrator", "book launch", "book signing")
-                   else "concert for little ones" if "concert" in m or m == "story time band" else m)
+        why.append((5, "author event" if m in ("author", "illustrator", "book launch", "book signing")
+                    else "concert for little ones" if "concert" in m or m == "story time band" else m))
     occ = OCCASION_RE.search(title)
     if occ:
         s += 25
-        word = occ.group(0)
-        why.append("a celebration" if word.lower().startswith("celebrat") else word if len(word) <= 20 else "an occasion")
-    for w in profile.interests:
-        if w and re.search(rf"\b{re.escape(w.lower())}", title.lower()):
+        word = occ.group(0).title() if occ.group(0).isupper() else occ.group(0)
+        why.append((4, "a celebration" if word.lower().startswith("celebrat") else word if len(word) <= 20
+                    else "an occasion"))
+    w = interest_of(title, profile)
+    if w:
+        s += 20
+        why = [x for x in why if x[1] != "a celebration"]
+        if not any(w.lower() in x[1].lower() for x in why):
+            why.append((4, w[:1].upper() + w[1:]))
+    if LIVE_RE.search(title) and not little:
+        s += 10
+        why.append((5, "live music"))
+    elif FOOD_RE.search(title):
+        s += 10
+        why.append((5, "food"))
+    fits = s > 0 and not RACE_RE.search(title)     # for this household in some way (a race on an occasion is not)
+    # Rarity amplifies fit (2026-10-27): once in a while beats every week.
+    guest = is_guest(title)
+    if fits and guest and (dates is None or dates < REGULAR_DATES):
+        s += 20
+        bookish = AUTHORISH_RE.search(title) or BOOKSTORE_RE.search(f"{title} {venue}")
+        why.append((1, "author visit" if bookish else "special guest"))
+    if dates is not None:
+        if dates <= 1 and fits:
             s += 20
-            why = [x for x in why if x != "a celebration"]
-            if not any(w.lower() in x.lower() for x in why):
-                why.insert(1 if why and why[0].startswith("for ") else 0, w[:1].upper() + w[1:])
-            break
+            why.append((3, "one time only"))
+        elif dates >= REGULAR_DATES:
+            s -= 15
+            why.append((3, "regular program"))
     if row.get("_score") is not None:
         s += int((float(row["_score"]) - 50) / 4)          # the recurring series' online reputation
     # how far
@@ -204,16 +272,18 @@ def score(row: dict, profile: FitProfile) -> tuple[int, list[str]]:
             d = km(profile.home, pt)
             if d <= NEAR_KM:
                 s += 15
-                why.append("close to home")
+                why.append((7, "close to home"))
             elif d > FAR_KM:
                 s -= 60
             elif d > MID_KM:
-                s -= 20
+                s -= 30            # an hour's drive with small children (the beach fair, 2026-10-27)
     # not for this household
     if SCHOOL_AGE_RE.search(title) and not little:
         s -= 30
     if ADULT_RE.search(title) and not (little or family):
         s -= 35
+    if NIGHT_RE.search(title) and profile.little and not (little or family):
+        s -= 45                    # a night show is not a toddler's outing
     if ADMIN_RE.search(title):
         s -= 60
     if RACE_RE.search(title):
@@ -221,22 +291,42 @@ def score(row: dict, profile: FitProfile) -> tuple[int, list[str]]:
     if str(row.get("start_ts") or "")[11:16] in ("", "00:00") and not occ:
         s -= 5
     seen, out = set(), []
-    for w in why:
+    for _, w in sorted(why, key=lambda x: x[0]):
         if w.lower() not in seen:
             seen.add(w.lower())
             out.append(w)
     return s, out[:3]
 
 
-def pick(rows: list[dict], profile: FitProfile, *, limit: int = 6, floor: int = FLOOR) -> tuple[list[dict], int]:
+def pick(rows: list[dict], profile: FitProfile, *, limit: int = 6, floor: int = FLOOR,
+         recurrence: dict[str, int] | None = None, max_regular: int = MAX_REGULAR) -> tuple[list[dict], int]:
     """(the best rows that clear the floor, at most `limit`, in time order, each with `_fit_score` and
-    `_why`; how many cleared the floor in all)."""
+    `_why`; how many cleared the floor in all). `recurrence` (series key → distinct dates) is read from
+    the store when not given; at most `max_regular` regular programs, unless nothing else fills the day."""
+    if recurrence is None:
+        try:
+            from bridges.events.store import recurrence_counts
+            recurrence = recurrence_counts()
+        except Exception:  # noqa: BLE001 - no store, no rarity
+            recurrence = {}
+    from bridges.events.store import series_key
     scored = []
     for r in rows:
-        sc, why = score(r, profile)
+        n = recurrence.get(series_key(str(r.get("title") or ""), str(r.get("venue") or ""))) if recurrence else None
+        sc, why = score(r, profile, dates=n)
         if sc >= floor:
-            scored.append(dict(r, _fit_score=sc, _why=why))
+            scored.append(dict(r, _fit_score=sc, _why=why, _dates=n))
     scored.sort(key=lambda r: -r["_fit_score"])
-    best = scored[:limit]
+    best, spare, regular = [], [], 0
+    for r in scored:
+        if len(best) >= limit:
+            break
+        if (r["_dates"] or 0) >= REGULAR_DATES:
+            if regular >= max_regular:
+                spare.append(r)
+                continue
+            regular += 1
+        best.append(r)
+    best += spare[:max(0, limit - len(best))]          # regulars fill a quiet day
     best.sort(key=lambda r: str(r.get("start_ts") or ""))
     return best, len(scored)

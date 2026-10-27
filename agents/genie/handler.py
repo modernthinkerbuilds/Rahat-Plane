@@ -966,14 +966,21 @@ def handle_whats_on(*, now: datetime | None = None, llm=None,
         # Something special, or just open (owner 2026-10-26).
         from bridges.events import standing
         from agents.genie.state import keep_regular_words
-        rows, hidden_rows = standing.split(rows, keep=keep_regular_words(), show_all=show_all)
+        try:
+            from bridges.events.store import recurrence_counts
+            recurrence = recurrence_counts()
+        except Exception:  # noqa: BLE001
+            recurrence = {}
+        rows, hidden_rows = standing.split(rows, recurrence=recurrence, keep=keep_regular_words(),
+                                           show_all=show_all)
         hidden_line = standing.hidden_note(hidden_rows) or ""
         days: dict[str, list[dict]] = {}
         for r in rows:
             days.setdefault(str(r.get("start_ts") or "")[:10], []).append(r)
         if prof is not None:
             from bridges.events import fit as _fit
-            rows = [r for d in sorted(days) for r in _fit.pick(days[d], prof, limit=min(per_day, 8))[0]]
+            rows = [r for d in sorted(days)
+                    for r in _fit.pick(days[d], prof, limit=min(per_day, 8), recurrence=recurrence)[0]]
         else:
             rows = [r for d in sorted(days) for r in days[d][:per_day]]
         if aud_tags:

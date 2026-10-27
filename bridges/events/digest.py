@@ -175,13 +175,11 @@ def build_digest(now: datetime | None = None, *,
     # Something special, or just open (owner 2026-10-26): admission notices
     # and regular programs are left out unless the household keeps them.
     from bridges.events import standing
-    recurrence = None
-    if path is not None:
-        try:
-            from bridges.events.store import recurrence_counts
-            recurrence = recurrence_counts(path)
-        except Exception:  # noqa: BLE001
-            recurrence = {}
+    try:                                         # series key → distinct dates: regulars and one-offs
+        from bridges.events.store import recurrence_counts
+        recurrence = recurrence_counts(path)
+    except Exception:  # noqa: BLE001
+        recurrence = {}
     rows, hidden = standing.split(rows, recurrence=recurrence, keep=keep_regular or (), show_all=show_all)
     commitments = [c for c in (commitments or [])
                    if start <= str(c.get("date", "")) <= end]
@@ -237,7 +235,7 @@ def build_digest(now: datetime | None = None, *,
             # made for its little ones, a bookstore or author storytime, an occasion, close to home; in time
             # order, each with its reason. Fewer lines when fewer clear the bar.
             from bridges.events import fit as _fit
-            best, n_fit = _fit.pick(picks + fresh, fit, limit=_MAX_PER_DAY)
+            best, n_fit = _fit.pick(picks + fresh, fit, limit=_MAX_PER_DAY, recurrence=recurrence)
             if best:
                 lines.append("  _Picks for you:_")
             for r in best:
@@ -286,6 +284,9 @@ def build_digest(now: datetime | None = None, *,
             lines.append(f"  _…plus {extra} more — say "
                          f"\"{day.strftime('%A')}\" or `/whatson` for "
                          f"everything._")
+    if fit is not None:
+        lines += _weekday_highlights(now, fit, start=start, end=end, recurrence=recurrence,
+                                     keep_regular=keep_regular, path=path)
     note = standing.hidden_note(hidden)
     if note:
         lines += ["", note]
@@ -294,6 +295,60 @@ def build_digest(now: datetime | None = None, *,
                   "around any of these? Just tell me — e.g. \"plan Saturday "
                   "around the kids workshop\"._"]
     return "\n".join(lines)
+
+
+_HIGHLIGHTS = 3                 # weekday one-offs worth knowing about, at most
+_HIGHLIGHT_DAYS = 7
+
+
+def _weekday_highlights(now: datetime, fit, *, start: str, end: str, recurrence: dict,
+                        keep_regular, path: str | None) -> list[str]:
+    """The rare things on the days the weekend digest doesn't cover (owner, 2026-10-27: "a new author
+    ... the Grumpy Monkey author at Linden ... those are things that I want to know"): in the next
+    week, listings seen on one date only, with a named guest or the household's own interest, that
+    fit the household. At most _HIGHLIGHTS, soonest first; nothing when there are none. Never raises."""
+    try:
+        from bridges.events import fit as _fit, standing
+        from bridges.events.store import query_by_day
+        first = (now + timedelta(days=1)).strftime("%Y-%m-%d")
+        last = (now + timedelta(days=_HIGHLIGHT_DAYS)).strftime("%Y-%m-%d")
+        rows = [r for r in query_by_day(first, last, limit_per_day=400, per_source_cap=3, path=path)
+                if not (start <= str(r.get("start_ts") or "")[:10] <= end)]
+        rows, _ = standing.split(rows, recurrence=recurrence, keep=keep_regular or ())
+        best, _n = _fit.pick(rows, fit, limit=40, recurrence=recurrence, max_regular=0)
+        rare = [r for r in best if r.get("_dates") == 1
+                and (_fit.is_guest(str(r.get("title") or "")) or _fit.interest_of(str(r.get("title") or ""), fit))]
+        rare.sort(key=lambda r: -r["_fit_score"])
+        # A mix: the best guest first (an author visit), then the rest, at most two on one interest
+        # (three Diwali storytimes in a week would crowd out the author).
+        chosen = [r for r in rare if _fit.is_guest(str(r.get("title") or ""))][:1]
+        per_interest: dict[str, int] = {}
+        for r in chosen:
+            w = _fit.interest_of(str(r.get("title") or ""), fit)
+            if w:
+                per_interest[w] = per_interest.get(w, 0) + 1
+        for r in rare:
+            if len(chosen) >= _HIGHLIGHTS:
+                break
+            if r in chosen:
+                continue
+            w = _fit.interest_of(str(r.get("title") or ""), fit)
+            if w and per_interest.get(w, 0) >= 2:
+                continue
+            if w:
+                per_interest[w] = per_interest.get(w, 0) + 1
+            chosen.append(r)
+        rare = sorted(chosen, key=lambda r: str(r.get("start_ts") or ""))
+    except Exception:  # noqa: BLE001 - highlights are a bonus
+        return []
+    if not rare:
+        return []
+    out = ["", "*Also this week — one time only*"]
+    for r in rare:
+        day = datetime.strptime(str(r["start_ts"])[:10], "%Y-%m-%d")
+        line = _fmt_row(r).replace("  • ", f"  • {day.strftime('%a')} {day.strftime('%b')} {day.day}, ", 1)
+        out.append(line + "\n      _" + " · ".join(r["_why"]) + "_")
+    return out
 
 
 def _row_conflicts(row: dict, day_commits: list[dict]) -> list[dict]:
