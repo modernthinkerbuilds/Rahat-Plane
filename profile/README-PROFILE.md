@@ -1,6 +1,6 @@
 # Venkat Sadras
 
-> **Product lead for how a major cloud's AI platform runs in regulated and sovereign environments. Miya is my personal AI agent. Rahat is the platform underneath it: checks in the path, a harness every answer runs through, and a record of every decision. It runs in my life every day.**
+> **I'm a product manager at Google Cloud. I take Gemini Enterprise and its AI agents into banks, healthcare and government, safely. At home, I built Rahat, my own open-source AI agent platform. Seven agents run on it; Miya is the one I talk to.**
 
 <a href="https://modernthinkerbuilds.github.io/Rahat-Plane/specs/RAHAT-ARCHITECTURE.html"><img src="https://raw.githubusercontent.com/modernthinkerbuilds/Rahat-Plane/main/specs/img/rahat-map.gif" width="100%" alt="Rahat end to end: a /week message travels from Telegram through Miya's runner and the routing ladder to Kobe, with the checks, the control plane and the vault around it"></a>
 
@@ -10,7 +10,7 @@
 |:---:|:---:|:---:|
 | The whole system on one page. Tap any box, or watch a message travel. | The harness every answer runs through, step by step. | Open source (Apache 2.0): the architecture, the decision records, the tests. |
 
-**Miya** is the one I talk to. Behind it, Rahat runs six agents: Miya orchestrates Kobe (the numbers), Fraser (workout design), Huberman (the 9:30 pm cooldown) and Genie (weekends, the household calendar, local events). Bourdain answers "where do we eat?" on its own bot while it's being tested.
+**Miya** is the one I talk to. Behind it, Rahat runs six more agents: Miya hands work to Kobe (the numbers), Fraser (workout design), Huberman (the 9:30 pm cooldown) and Genie (weekends, the household calendar, local events). Bourdain answers "where do we eat?" and Kipchoge coaches my runs, each on its own bot.
 
 An agent can be fluent and wrong at the same time, and you can't tell from reading it. Run more than one and they contradict each other, act at moments they shouldn't, and remember the wrong things. Rahat is the layer under the agents that catches those: checks in code on the way out, one record of every decision, and a harness a new agent has to pass.
 
@@ -23,7 +23,7 @@ An agent can be fluent and wrong at the same time, and you can't tell from readi
 On a Mac mini at home, around the clock. The code and the tests are in the repo; the decision ledger and the golden sets are private, so those counts are mine.
 
 - **Checks in the path, not requests in the prompt.** A validator runs seven checks against the facts on record before Miya's reply sends, and rewrites it when one fails. Fraser's workout designs pass a 10-point contract in code before they go out: one repair if something fails, and if it still fails the reply says what isn't verified.
-- **A harness for agents** ([ADR-018](https://github.com/modernthinkerbuilds/Rahat-Plane/blob/main/specs/ADR-018-outcome-contracts-and-independent-evaluation.md)). Eight steps from understanding the ask to recording the run, with the outcomes each answer must meet checked in code. One agent is on it (Bourdain), and a second uses its contract (Fraser). [Watch an ask go through it →](https://modernthinkerbuilds.github.io/Rahat-Plane/specs/ADR-018.html)
+- **A harness for agents** ([ADR-018](https://github.com/modernthinkerbuilds/Rahat-Plane/blob/main/specs/ADR-018-outcome-contracts-and-independent-evaluation.md)). Eight steps from understanding the ask to recording the run, with the outcomes each answer must meet checked in code. Two agents answer through it: Bourdain since Oct 4 and Kipchoge since Nov 1. Fraser uses its contract. [Watch an ask go through it →](https://modernthinkerbuilds.github.io/Rahat-Plane/specs/ADR-018.html)
 - **A judge that has to earn its vote.** A second model grades what code can't, like taste and fit. It stays in shadow until it agrees with my own labels: 80% on at least 50 of them before it may annotate, 90% on one outcome before it may block. Today it has 3 labels, so it's all shadow.
 - **Knowledge with receipts.** Every fact in Bourdain's knowledge base carries its source and the date it was read: 326 places and 3,397 facts as of Oct 14.
 - **Evals that replay for $0.** Every model and tool call is recorded against its request, so a run replays without a network or a bill. The golden sets are 86 real asks (72 food, 14 weekend), kept private; the public tests run on synthetic twins.
@@ -90,7 +90,7 @@ Rahat is personal-scale, not enterprise software. My data lives on a Mac mini at
 
 ## About me
 
-By day I'm the product lead for how a major cloud's AI platform runs in the hardest environments: defense, banks, hospitals, sovereign governments. I define what the platform has to be before they can run it, from the frontier models it serves, its own and other labs', to the agents built on them. At home, hands-on with multi-agent systems. I care about building the kind of agents I'd actually point at my own life: ones that remember, coordinate, check themselves, and know when *not* to act.
+I'm a product manager at Google Cloud: I take Gemini Enterprise and its AI agents into banks, healthcare and government, safely. At home I design and run Rahat, the agent platform this profile is about. I care about building the kind of agents I'd actually point at my own life: ones that remember, coordinate, check themselves, and know when *not* to act.
 
 **The architecture, the decision records and the tests are public: [github.com/modernthinkerbuilds/Rahat-Plane](https://github.com/modernthinkerbuilds/Rahat-Plane).** Happy to walk through any of it.
 

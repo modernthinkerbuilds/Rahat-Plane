@@ -2,9 +2,9 @@
 
 # 🪶 Rahat
 
-### The platform under Miya, my personal AI agent
+### An open-source AI agent platform
 
-*Miya is the one I talk to. Rahat is everything underneath: specialist agents, checks in the path, a harness every answer runs through, and a record of every decision. Built at human scale.*
+*Rahat is the agent platform I built; seven agents run on it. Miya is the one I talk to. One harness agents answer through, evals that replay for $0, checks in code, and a record of every decision. Built at human scale.*
 
 <a href="https://modernthinkerbuilds.github.io/Rahat-Plane/specs/RAHAT-ARCHITECTURE.html"><img src="./specs/img/rahat-map.gif" width="100%" alt="Rahat end to end: a /week message travels from Telegram through Miya's runner and the routing ladder to Kobe, with the checks, the control plane and the vault around it"></a>
 
@@ -20,11 +20,11 @@
 
 An agent can be fluent and wrong at the same time, and you can't tell from reading it. Run several and they contradict each other, act when they shouldn't, and remember the wrong things. That isn't a model problem. It's the layer underneath, which is what this repo is.
 
-> **Miya is my personal AI agent. Rahat is the platform it runs on, built and run at home: specialists that share one memory, one rulebook and one record of every decision. It runs in my life every day.**
+> **Rahat is the agent platform I built; seven agents run on it. Miya is the one I talk to. The agents share one memory, one rulebook and one record of every decision, and they run in my life every day.**
 
-`3` front doors · `6` agents · `8` services (5 always on) · `122` event sources · `1` SQLite file of record · `4,209` tests
+`7` agents · `2` on the harness · `4` doors · `8` services (5 always on) · `122` event sources · `1` SQLite file of record · `4,209` tests
 
-<sub>Counts as of Oct 14–19, 2026. By [Venkat Sadras](https://venkatsadras.com) · [LinkedIn](https://www.linkedin.com/in/venkatsadras/).</sub>
+<sub>Agents, harness agents and doors as of Nov 1; the rest as of Oct 14–19, 2026. By [Venkat Sadras](https://venkatsadras.com) · [LinkedIn](https://www.linkedin.com/in/venkatsadras/).</sub>
 
 ---
 
@@ -34,9 +34,10 @@ An agent can be fluent and wrong at the same time, and you can't tell from readi
  you, on Telegram
         │
 ┌───────▼──────────────────────┐
-│ a front door                 │   Miya for me; Genie and
-│ Miya · Genie · Bourdain      │   Bourdain on their own doors
-└───────┬──────────────────────┘   for the household
+│ a door                       │   Miya for me; Genie, Bourdain
+│ Miya · Genie · Bourdain ·    │   and Kipchoge on their own
+│ Kipchoge                     │   doors
+└───────┬──────────────────────┘
         │
 ┌───────▼──────────────────────┐
 │ a ladder of rules, in code   │   commands, logs and known asks
@@ -76,8 +77,11 @@ An agent can be fluent and wrong at the same time, and you can't tell from readi
 | **Huberman** | The 9:30 pm cooldown: reads the day's workout and recovery and picks from a 25-drill library, with rotation. [`agents/huberman/`](./agents/huberman/) | Live, behind Miya |
 | **Genie** | Weekends, a household calendar that schedules rather than lists, and a digest of local events. [`agents/genie/`](./agents/genie/) | Live, behind Miya, with its own bot for the household; my wife uses it too, from her own phone |
 | **Bourdain** | "Where do we eat?" Answers from what it already knows, your saved places first, and searches live when that comes up short; every answer runs the harness (below). [`agents/bourdain/`](./agents/bourdain/) | Live on its own bot since Sep 20; on the harness since Oct 4; joins Miya when it passes |
+| **Kipchoge** | The running coach. Every number in a message is computed in code and cited from a record; the model writes only the words, and a message with a number that has no record behind it is never sent. The second tenant on the harness. [`agents/kipchoge/`](./agents/kipchoge/) | Live on its own bot since Nov 1 |
 
-**How an agent joins.** Bourdain is the first agent to start on its own front door, with its own bot and its own tests, where its failures are easy to see and can't break anything else. When it passes, it's wired in behind Miya ([`agent_boot.py`](./new_plane/miya_runner/agent_boot.py)), and Miya stays the one place I ask. Genie went the other way round: behind Miya on Aug 6, then its own bot for the household on Aug 10. Bourdain's route is the route from here on.
+**How an agent joins the platform.** A new agent brings a manifest (its tools, budgets, latency and capabilities), an outcome library (Bourdain 52, Kipchoge 19), a judge checklist (21 and 8 criteria), its own shapes (what it reads, what it answers, what counts as evidence) and its tests; the platform brings the loop, the brake, the ledger, the judge, the controller and the record. Before it serves, it passes [`test_tenant_conformance.py`](./tests/test_tenant_conformance.py) with Bourdain's 72-case snapshot unchanged, byte for byte. Kipchoge went through it: the shapes amendment (A6) was accepted Oct 25, and it went live on its own bot Nov 1.
+
+**Doors.** Bourdain is the first agent to start on its own front door, with its own bot and its own tests, where its failures are easy to see and can't break anything else. When it passes, it's wired in behind Miya ([`agent_boot.py`](./new_plane/miya_runner/agent_boot.py)), and Miya stays the one place I ask. Genie went the other way round: behind Miya on Aug 6, then its own bot for the household on Aug 10. Bourdain's route is the route from here on.
 
 **Orchestration, honestly.** Today the routing ladder answers the asks it recognizes without a model, and anything it doesn't claim goes to Miya's model, which draws on the specialists and answers in one voice; when two specialists disagree it reconciles them, best-effort. Where it's going: each agent declares what it does in a manifest, and a model reads every ask and hands it to the right agent, with the code rules still in front. *Not built yet.*
 
@@ -127,11 +131,41 @@ One loop an agent's answer runs through, owned by the platform, not by the agent
  └──────────┴──────────────────────────────────────┴──────────────┘
 ```
 
-- **Who's on it:** one agent (Bourdain), and a second using its contract (Fraser writes its 10 outcomes into the same tables). The wider rollout is parked.
+- **Who's on it:** two tenants, Bourdain (since Oct 4) and Kipchoge, the running coach (since Nov 1, the first to bring its own shapes under A6). Fraser uses the contract pattern and writes its 10 outcomes into the same tables, but isn't a tenant.
 - **Knowledge with receipts:** every fact in Bourdain's knowledge base stores its source, how it was obtained, when it was read and how long it stays fresh: 326 places and 3,397 facts (Oct 14). A misread can be forgotten ([`scripts/kb_forget.py`](./scripts/kb_forget.py)).
 - **Evals that replay for $0:** every model and tool call is recorded against its request, so a run replays without a network or a bill; production never reads a recording. The golden sets (72 real Bourdain asks and 14 Genie asks) stay private; the public tests run on synthetic twins. A live incident becomes a case.
 - **What it's like live:** 22 harness runs between Oct 4 and 11 (19 Bourdain answers, 3 Fraser designs). One household's volume, not a benchmark. A Bourdain answer takes about a minute.
 - **The judge so far:** 214 verdicts, all in shadow, with 3 labels of the 50 it needs.
+
+---
+
+## The three loops
+
+| Loop | What runs | What I measure |
+|---|---|---|
+| **The answer loop** (the harness) | Understand → contract → execute under a brake → verify in code → judge in shadow → control (one repair, or say what failed) → render from records → record | Outcomes passed and failed per answer; repairs, cost and time per answer |
+| **The eval loop** | Every model and tool call recorded against its request; the golden sets (72 Bourdain asks, 14 Genie asks) replay with no network and no bill; the judge grades in shadow until it agrees with my labels | Golden pass rate per release; the judge's agreement with my labels; the snapshot diff when the platform changes |
+| **The fix loop** | A failure in real use becomes a regression pin; a fix without its own test is refused; the pre-push gate runs the unit, contract and regression layers and the private-words check | Pins added per fix (1,877 tests in 219 pins, Oct 17); a known-fixed bug coming back blocks the push |
+
+## In agent-platform terms
+
+Rahat is personal scale, not enterprise software, but it has the parts an agent platform needs. Here they are in the words agent-platform teams use, with what's live and what isn't.
+
+| What it's called | In Rahat | Status | Code |
+|---|---|---|---|
+| **Orchestration and routing** | Miya: 16 rules in code, then Miya's model, which hands work to six specialists | Live. Routing by what each agent declares it can do: planned | [`delegate_classifier.py`](./new_plane/miya_runner/delegate_classifier.py) |
+| **Agent harness** | One eight-step loop the platform owns, not the agent (ADR-018) | Live for Bourdain (Oct 4) and Kipchoge (Nov 1) | [`core/harness/`](./core/harness/) |
+| **Agent registry and manifests** | Agents register at boot; a harness agent declares its tools, budgets, outcomes and shapes in a manifest checked in code, with a conformance test | Live for the two harness agents. Huberman isn't registered for hand-offs yet | [`agent_boot.py`](./new_plane/miya_runner/agent_boot.py) · [`manifest.py`](./core/manifest.py) |
+| **Tool access** | Tools allow-listed per agent; a brake per ask (Bourdain: 12 tool calls, 10 searches, $0.50) | Live in the harness. MCP: not built | [`manifest.json`](./agents/bourdain/manifest.json) |
+| **Guardrails and output checks** | A validator on Miya's replies (7 checks); Fraser's contract (10); numbers from records | Live | [`validator.py`](./new_plane/miya_runner/validator.py) · [`numbers.py`](./core/harness/numbers.py) |
+| **Human in the loop** | The judge gets authority only from my labels; a failed answer is repaired once or says what failed | Live. Approval before a risky action: not built | [`judge.py`](./core/judge.py) · [`control.py`](./core/harness/control.py) |
+| **Evals** | Every model and tool call recorded against its request; 86 real asks replay for $0; public tests on synthetic twins | Live | [`cassette.py`](./core/cassette.py) |
+| **Policy engine** | The Charter | Live for Genie's calendar writes. Kobe's policies and Miya's nudges don't route through it yet | [`charter.py`](./core/charter.py) |
+| **Audit trail** | The decision ledger: agent, rule, latency and cost per decision | Live | [`decisions.py`](./core/decisions.py) |
+| **Spend controls** | A cost ledger, a budget gate on the newer paths, and the per-ask brake | Partial: Miya's synthesizer isn't metered yet | [`ledger.py`](./core/ledger.py) · [`budget.py`](./core/budget.py) |
+| **Memory** | Typed memory the agents share | In daily use. Nightly consolidation: not scheduled since May | [`core/memory/`](./core/memory/) |
+| **Access control** | The household gate: only paired phones get in | Live | [`genie_runner/`](./new_plane/genie_runner/) |
+| **Leak prevention** | A push that would publish a name, an address, a token or a chat id is refused | Live | [`pre-push`](./scripts/hooks/pre-push) |
 
 ---
 
