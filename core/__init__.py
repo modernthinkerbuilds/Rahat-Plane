@@ -26,3 +26,10 @@ plus a shared toolbelt:
 Design principle: agents own domain logic, core/ owns plumbing. If two agents
 both need a thing, that thing belongs in core/ — not duplicated across them.
 """
+
+
+# The private overlay (core/overlay.py): agents kept off the public repo join
+# the import path here, for every process that imports core.
+from core import overlay as _overlay  # noqa: E402
+
+_overlay.activate()

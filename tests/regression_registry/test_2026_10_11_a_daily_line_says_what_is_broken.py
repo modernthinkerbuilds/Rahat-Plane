@@ -2,9 +2,8 @@
 
 LIVE: silent failures were the month's pattern, each found by hand weeks
 late. Genie's city calendar fetched nothing on every refresh from late
-August; Benji's Microsoft feed never fetched a role from launch, and two
-job boards went dark in early October; the Watch fed nothing from Sep 28
-to Oct 3; the spending cap refused every feed refresh from Sep 17 to 20.
+August; the Watch fed nothing from Sep 28 to Oct 3; the spending cap
+refused every feed refresh from Sep 17 to 20.
 Each bot logged it. Nobody was told.
 
 Fix (core/health.py; one tick entry in new_plane/miya_runner/__main__.py):
@@ -13,7 +12,8 @@ at 08:15, once a day, only when something is wrong (owner decision D6):
   * a Genie feed still tried but fetching nothing for 3+ days;
   * Genie's feeds as a whole not fed for over a day;
   * the Watch silent for over a day;
-  * a Benji job feed in error for 3+ days;
+  * (2026-11-01) what a private overlay agent adds: core/overlay.py; those
+    checks are pinned in the overlay, beside the agent;
   * the model refusing calls in the last day.
 Under test mode the line is off unless a test asks (RAHAT_HEALTH_LINE=1),
 so the tick tests that count messages are never disturbed.
@@ -35,14 +35,13 @@ def sandbox(tmp_path, monkeypatch):
     monkeypatch.setenv("RAHAT_TEST_MODE", "1")
     monkeypatch.setenv("RAHAT_TEST_VAULT_DIR", str(tmp_path))
     monkeypatch.setenv("RAHAT_EVENTS_DB", str(tmp_path / "events.db"))
-    monkeypatch.setenv("RAHAT_JOBSEARCH_DB", str(tmp_path / "jobs.db"))
     monkeypatch.setenv("RAHAT_HEALTH_LINE", "1")
     from core import health
     importlib.reload(health)
+    monkeypatch.setattr(health, "_overlay_checks", lambda: [])   # public checks only
     import agents.the_scientist.state as kstate
     monkeypatch.setattr(kstate, "watch_silence", lambda now=None, hours=24: None)
-    return {"dir": tmp_path, "health": health, "events": str(tmp_path / "events.db"),
-            "jobs": str(tmp_path / "jobs.db")}
+    return {"dir": tmp_path, "health": health, "events": str(tmp_path / "events.db")}
 
 
 def _feed(path, source, at, fetched):
@@ -73,14 +72,6 @@ def test_a_silent_watch_is_said(sandbox, monkeypatch):
     import agents.the_scientist.state as kstate
     monkeypatch.setattr(kstate, "watch_silence", lambda now=None, hours=24: "No Watch data since Sat Oct 3 08:15")
     assert sandbox["health"].watch_silent(NOW) == ["Kobe: No Watch data since Sat Oct 3 08:15."]
-
-
-def test_a_job_feed_in_error_for_three_days_is_said(sandbox):
-    from bridges.jobsearch import store
-    store.record_source_run("Board A", 0, now=datetime(2026, 10, 5, 6, 0), state="error", note="404")
-    store.record_source_run("Board B", 0, now=datetime(2026, 10, 10, 6, 0), state="error", note="404")  # 1 day
-    store.record_source_run("Board C", 40, now=datetime(2026, 10, 11, 6, 0))
-    assert sandbox["health"].benji_feeds_in_error(NOW) == ["Benji: 1 job feed in error since Oct 5: Board A."]
 
 
 def test_refused_model_calls_are_counted_from_the_logs(sandbox):

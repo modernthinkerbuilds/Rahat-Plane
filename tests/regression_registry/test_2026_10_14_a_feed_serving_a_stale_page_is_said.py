@@ -50,6 +50,7 @@ def test_the_check_is_in_the_daily_findings(db, monkeypatch):
     from core import health
     monkeypatch.setattr(health, "_feed_name", lambda sid: sid)
     for check in ("model_refusals", "lost_messages", "genie_dead_feeds", "genie_feeds_stale", "watch_silent",
-                  "gym_plan_stale", "benji_feeds_in_error"):
+                  "gym_plan_stale", "overlay_not_loaded"):
         monkeypatch.setattr(health, check, lambda now, **kw: [])
+    monkeypatch.setattr(health, "_overlay_checks", lambda: [])   # 2026-11-01: private checks pin themselves
     assert health.findings(NOW) == ["Genie: the alpha-city feed's newest event is dated 2026-03-07; it is serving a stale page."]

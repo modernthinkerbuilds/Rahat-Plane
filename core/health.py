@@ -1,9 +1,8 @@
 """core.health — one line a day, only when something is broken (D6, 2026-10-11).
 
 Silent failures were the month's pattern, each found by hand weeks late:
-Genie's city calendar returned 403 on every refresh from Aug 24; Benji's
-Microsoft feed never fetched a role from launch (Aug 17) and two job
-boards went dark in early October; the Watch fed nothing for five days
+Genie's city calendar returned 403 on every refresh from Aug 24; feeds
+went dark for weeks without a word; the Watch fed nothing for five days
 (Sep 28 to Oct 3); the spending cap stopped every feed refresh for four
 days (Sep 17 to 20). Each bot logged it; nobody was told.
 
@@ -17,7 +16,9 @@ record and returns one plain line per problem:
   * a Genie feed whose newest event is already past (a stale page);
   * Genie's feeds as a whole not fed for over a day;
   * the Watch silent for over a day;
-  * a Benji job feed in error for 3+ days;
+  * whatever a private overlay agent adds (core/overlay.py: HEALTH_CHECKS
+    in its agents/<name>/health.py, each check `(now) -> list[str]`), and
+    the overlay itself left unloaded because it would hide public code;
   * the model refusing calls in the last day (a spent cap shows up here);
   * replies or nudges Telegram never took, in the last day;
   * the gym plan not re-synced for over a week, with nothing for today.
@@ -39,7 +40,6 @@ from pathlib import Path
 HEALTH_HOUR, HEALTH_MINUTE = 8, 15
 FEED_DEAD_DAYS = 3
 FEED_MIN_TRIES = 3
-BENJI_ERROR_DAYS = 3
 REFUSAL_HOURS = 24
 LOST_HOURS = 24
 GYM_PLAN_DAYS = 8
@@ -287,25 +287,6 @@ def watch_silent(now: datetime) -> list[str]:
     return [f"Kobe: {note}."] if note else []
 
 
-def benji_feeds_in_error(now: datetime, *, path: str | None = None) -> list[str]:
-    try:
-        from bridges.jobsearch.store import source_ledger
-        rows = source_ledger(path)
-    except Exception:  # noqa: BLE001
-        return []
-    broken = []
-    for r in rows:
-        since = _ts(r.get("state_since"))
-        if r.get("state") == "error" and since and now - since >= timedelta(days=BENJI_ERROR_DAYS):
-            broken.append((since, str(r.get("source") or "?")))
-    if not broken:
-        return []
-    first = min(s for s, _ in broken)
-    names = ", ".join(sorted(n for _, n in broken))
-    feeds = "feed" if len(broken) == 1 else "feeds"
-    return [f"Benji: {len(broken)} job {feeds} in error since {_day(first)}: {names}."]
-
-
 def _log_hits(pattern: re.Pattern, since: datetime, until: datetime,
               log_dir: Path | None = None) -> list[tuple[str, datetime]]:
     """(log stem, time) of each line matching `pattern` in the tail of
@@ -442,11 +423,31 @@ def food_feeds_silent(now: datetime, *, path: str | None = None) -> list[str]:
     return out
 
 
+def overlay_not_loaded(now: datetime) -> list[str]:
+    """A private overlay on disk that core/overlay.py refused to load: its
+    agents are down, and nothing else would say so."""
+    try:
+        from core import overlay
+        why = overlay.refused()
+    except Exception:  # noqa: BLE001
+        return []
+    return [f"Private agents: not loaded, {why}; remove that file from the overlay."] if why else []
+
+
+def _overlay_checks() -> list:
+    """Checks a private overlay agent contributes (core/overlay.py). Never raises."""
+    try:
+        from core import overlay
+        return [c for c in overlay.plugins("health", "HEALTH_CHECKS") if callable(c)]
+    except Exception:  # noqa: BLE001
+        return []
+
+
 def findings(now: datetime | None = None) -> list[str]:
     now = now or datetime.now()
     out: list[str] = []
     for check in (model_refusals, lost_messages, genie_dead_feeds, genie_feeds_dated_past, genie_feeds_stale,
-                  watch_silent, gym_plan_stale, benji_feeds_in_error, food_feeds_silent):
+                  watch_silent, gym_plan_stale, food_feeds_silent, overlay_not_loaded, *_overlay_checks()):
         try:
             out += check(now)
         except Exception:  # noqa: BLE001

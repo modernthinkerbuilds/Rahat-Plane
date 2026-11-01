@@ -10,6 +10,7 @@
 #   1. unit layer       (target <5s)   — tests/test_*.py at the root
 #   2. contract layer   (target <30s)  — tests/test_miya_*.py, charter
 #   3. regression layer (target <10s)  — tests/regression_registry/
+#      (+ private/overlay/tests when the private overlay is here)
 #   4. silent-failure   (target <5s)   — tests/silent_failure/
 #   5. bug-policy check (instant)      — scripts/check_bug_has_regression_test.py
 #
@@ -102,6 +103,15 @@ step "silent-failure guard" \
 if [[ -d tests/kipchoge ]]; then
     step "kipchoge engine" \
         "$PY" -m pytest tests/kipchoge -q --no-header -x
+fi
+
+# 3c. The private overlay (2026-11-01, core/overlay.py): agents kept off the
+#     public repo carry their own pins. Run them when the overlay is on this
+#     machine; a clone without one is never blocked.
+OVERLAY_DIR="${RAHAT_PRIVATE_OVERLAY:-private/overlay}"
+if [[ -d "$OVERLAY_DIR/tests" ]]; then
+    step "private overlay" \
+        "$PY" -m pytest "$OVERLAY_DIR/tests" -q --no-header -x -p no:cacheprovider
 fi
 
 # 4. Unit + contract layers via the existing run_all harness.
