@@ -86,7 +86,7 @@ def cmd_serve() -> int:
     from agents.kipchoge import harness_bridge as hb
     primary = os.getenv("KIPCHOGE_PRIMARY_CHAT") or ""
     logger.info("Kipchoge bot live | primary_chat=%s | harness=%s | proactive=%s", primary or "UNSET (nobody can ask)",
-                hb.mode(), "on (templates only)" if bot.proactive_enabled() else "off")
+                hb.mode(), bot.checkin_mode() + " (templates only)")
 
     def send_primary(text: str):
         if not primary:

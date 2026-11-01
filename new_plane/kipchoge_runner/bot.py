@@ -22,12 +22,17 @@ day"): the coach calls the model only when the athlete asks. /run,
 /next and /week in serve mode take the pipeline path (the records read
 first, two rounds at most); nothing runs on a clock by default.
 
-The minute tick (`tick_once`) is opt-in (KIPCHOGE_PROACTIVE=1) and never
-calls the model: the card the evening before a session and the Sunday
-review (`pipeline.tick`), the final analysis of a run that landed
-(`landed`), the provisional one from the Watch's minute data
-(`provisional`), all from the templates. Each sends at most once per
-run per stage (the `kipchoge_sent` table).
+The minute tick (`tick_once`) never calls the model. KIPCHOGE_PROACTIVE
+picks what it sends (owner, 2026-11-01):
+  weekend (the default)  the next-run card on Friday and Saturday evenings
+                         (`pipeline.weekend_card`); everything else on demand
+  all (or 1)             the card the evening before every session, the
+                         Sunday review (`pipeline.tick`), the final analysis
+                         of a run that landed (`landed`), the provisional one
+                         from the Watch's minute data (`provisional`)
+  off (or 0)             nothing on a clock
+All from the templates; each sends at most once per run per stage (the
+`kipchoge_sent` table).
 """
 from __future__ import annotations
 
@@ -295,23 +300,41 @@ def run_text(ctx: dict, args: str, *, model: bool = False, db_path: str | None =
 
 
 # ── the minute tick ───────────────────────────────────────────────────
+def checkin_mode() -> str:
+    """"weekend" unless KIPCHOGE_PROACTIVE says "all" (1, true, on, yes) or "off" (0, false, no, none)."""
+    v = (os.getenv("KIPCHOGE_PROACTIVE") or "").strip().lower()
+    if v in ("1", "true", "on", "yes", "all"):
+        return "all"
+    if v in ("0", "false", "off", "no", "none"):
+        return "off"
+    return "weekend"
+
+
 def proactive_enabled() -> bool:
-    """KIPCHOGE_PROACTIVE=1 turns the clock-driven messages on (default off)."""
-    return (os.getenv("KIPCHOGE_PROACTIVE") or "").strip().lower() in ("1", "true", "on", "yes")
+    """Anything on a clock at all (the weekend cards by default)."""
+    return checkin_mode() != "off"
 
 
 def tick_once(now: datetime, *, send: Callable[[str], Any] | None, db_path: str | None = None) -> list[dict]:
-    """What this minute sends, when the proactive messages are on: the
+    """What this minute sends. By default (weekend) the next-run card on
+    Friday and Saturday evenings and nothing else; with "all", the
     evening card and the Sunday review (`pipeline.tick`), the final
     analysis of a run that landed, the provisional analysis of a run the
     Watch shows. Templates only: the tick never calls the model, in any
     mode (owner, 2026-10-26: zero model calls a day unless he asks).
-    Off by default: nothing. Never raises."""
+    Never raises."""
     from agents.kipchoge import pipeline
     from agents.kipchoge import tenant as kt
-    if not proactive_enabled():
+    mode = checkin_mode()
+    if mode == "off":
         return []
     tenant = kt.tenant()
+    if mode == "weekend":
+        try:
+            return pipeline.weekend_card(tenant, now=now, send=send, db_path=db_path)
+        except Exception as e:  # noqa: BLE001 — the tick never raises
+            logger.exception("weekend card failed: %s", e)
+            return []
     use_model = False
     out: list[dict] = []
     for step in (lambda: pipeline.tick(tenant, now=now, send=send, db_path=db_path, model=use_model),

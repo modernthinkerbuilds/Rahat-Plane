@@ -39,6 +39,9 @@ from agents.kipchoge.records import ENGINE_VERSION, Record, RecordSet, rid
 
 AGENT = "kipchoge"
 CARD_HOUR = 20
+WEEKEND_CARD_DAYS = (4, 5)                       # Friday and Saturday evenings (owner, 2026-11-01)
+NO_SESSION_LINE = ("Running tomorrow? Nothing's on the plan this weekend. Tell me when you'll go and I'll set "
+                   "the card, or /next.")
 REVIEW_WEEKDAY, REVIEW_HOUR = 6, 19           # Sunday 19:00
 QUIET = ("22:30", "06:30")
 MATERIAL_PACE_S = 10.0
@@ -326,6 +329,33 @@ def tick(tenant: Any, *, now: datetime, send: Callable[[str], Any] | None, db_pa
         except Exception:  # noqa: BLE001
             pass
     return out
+
+
+def weekend_card(tenant: Any, *, now: datetime, send: Callable[[str], Any] | None, db_path: str | None = None) -> list[dict]:
+    """The check-in the owner chose (2026-11-01): "a notification once
+    Friday night and once Saturday night ... I might run on Saturdays or
+    I might run on Sundays", on demand otherwise. At CARD_HOUR on those
+    evenings: the next planned session's card from the templates (never
+    the model), or one line when nothing is planned. Once an evening."""
+    if now.weekday() not in WEEKEND_CARD_DAYS or now.hour != CARD_HOUR:
+        return []
+    ctx = _ctx_for(tenant, now, db_path=db_path)
+    con = ctx["con"]
+    try:
+        key = f"weekend-card:{now.strftime('%Y-%m-%d')}"
+        if already_sent(con, key):
+            return []
+        text = card_text(ctx, now=now, model=False, tenant=tenant, db_path=db_path)
+        text = (text + "\n\nStill on?") if text else NO_SESSION_LINE
+        if send is not None:
+            send(text)
+        mark_sent(con, key, kind="card", stage="weekend", trace_id="", text=text, now=now)
+        return [{"kind": "card", "date": now.strftime("%Y-%m-%d"), "text": text}]
+    finally:
+        try:
+            con.close()
+        except Exception:  # noqa: BLE001
+            pass
 
 
 # ── the weekly review ─────────────────────────────────────────────────

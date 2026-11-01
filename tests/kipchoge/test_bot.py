@@ -138,11 +138,20 @@ def test_serve_mode_hands_free_text_and_the_asks_to_the_harness(world, monkeypat
     assert bot.process_message(ME, "/next", NOW).startswith("Sunday · 07:30 · creek")   # the floor is the crash fallback
 
 
-def test_by_default_the_coach_sends_nothing_on_a_clock(world):
+def test_by_default_only_the_friday_and_saturday_evening_cards(world, monkeypatch):
+    """Owner, 2026-11-01: a card Friday night and Saturday night, on demand otherwise."""
+    assert bot.checkin_mode() == "weekend"
     sent: list[str] = []
-    for when in (datetime(2026, 10, 24, 20, 5), datetime(2026, 10, 25, 19, 0), datetime(2026, 10, 24, 10, 0)):
-        assert bot.tick_once(when, send=sent.append, db_path=None) == []
-    assert sent == [] and bot.proactive_enabled() is False
+    for when in (datetime(2026, 10, 25, 19, 0), datetime(2026, 10, 24, 10, 0), datetime(2026, 10, 22, 20, 5)):
+        assert bot.tick_once(when, send=sent.append, db_path=None) == []        # Sunday review, a morning, a Thursday
+    fri = bot.tick_once(datetime(2026, 10, 23, 20, 5), send=sent.append, db_path=None)
+    sat = bot.tick_once(datetime(2026, 10, 24, 20, 5), send=sent.append, db_path=None)
+    again = bot.tick_once(datetime(2026, 10, 24, 20, 6), send=sent.append, db_path=None)
+    assert [e["kind"] for e in fri + sat] == ["card", "card"] and again == [] and len(sent) == 2
+    assert sent[0].startswith("Sunday") and sent[0].endswith("Still on?")
+    monkeypatch.setenv("KIPCHOGE_PROACTIVE", "off")
+    assert bot.tick_once(datetime(2026, 10, 30, 20, 5), send=sent.append, db_path=None) == [] and len(sent) == 2
+    assert bot.proactive_enabled() is False
 
 
 def test_the_tick_never_calls_the_model_even_in_serve_mode(world, monkeypatch):
