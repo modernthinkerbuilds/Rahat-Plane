@@ -214,10 +214,54 @@ def load_run(con: sqlite3.Connection, workout_id: str, *, include_merged: bool =
             run.duration_s += p_duration
             if prow.get("distance_km") and run.distance_km:
                 run.distance_km = round(run.distance_km + float(prow["distance_km"]), 3)
+    check_distance(run)
     run.sleep = sleep_before(con, start)
     run.indoor = bool((run.meta.get("is_indoor") or {}).get("value")) or \
         str((run.meta.get("location") or {}).get("text") or "").lower() == "indoor"
     return run
+
+
+DIST_TOLERANCE = 0.05     # a distance series, or the route, must come within 5% of the workout's own total
+
+
+def route_km(run: RunData) -> float | None:
+    """km from the route's speed (trapezoids over time); None without two points with a speed."""
+    pts = [p for p in run.route if p.speed is not None]
+    if len(pts) < 2:
+        return None
+    return sum(((a.speed or 0.0) + (b.speed or 0.0)) / 2.0 * (b.t - a.t) for a, b in zip(pts, pts[1:])) / 1000.0
+
+
+def check_distance(run: RunData) -> None:
+    """The workout's own distance series must add up to the workout's total.
+
+    Live 2026-11-01: Health Auto Export's per-minute distance series came
+    to 63% of the workout's total on every workout that carried one, so
+    the main block, the halves and the normalized pace came out 1.6 times
+    too slow, with the series named as their source; the route's speed
+    came within 1% of the total. Off by more than 5%: the route's speed
+    when it comes within 5% of the total, else the series scaled to the
+    total. The distance source says which, and by how much the series
+    was short."""
+    total = run.distance_km
+    if not run.has_distance() or not total or total <= 0:
+        return
+    series = run.dist[-1].v - run.dist[0].v
+    if series > 0 and abs(series - total) / total <= DIST_TOLERANCE:
+        return
+    note = f"the workout's distance series came to {series:.2f} of {total:.2f} km"
+    route = route_km(run)
+    if route is not None and abs(route - total) / total <= DIST_TOLERANCE:
+        run.dist = []
+        run.dist_source = f"the route's speed ({note})"
+    elif series > 0:
+        k = total / series
+        base = run.dist[0].v
+        run.dist = [Sample(s.t, round(base + (s.v - base) * k, 4)) for s in run.dist]
+        run.dist_source = f"the workout's distance series, scaled to the workout's total ({note})"
+    else:
+        run.dist = []
+        run.dist_source = "the route's speed" if run.route else ""
 
 
 def _fill(con: sqlite3.Connection, run: RunData, workout_id: str, start: datetime, end: datetime, *, t0: float,
