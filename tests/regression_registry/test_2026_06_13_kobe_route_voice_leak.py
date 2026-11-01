@@ -24,7 +24,7 @@ FIX (this commit):
     on both kobe_route and fraser_route output before publishing the
     signal / returning the Response. The scrubber strips:
       - "{agent} says: ..." prefixes (fraser, kobe, huberman, sci,
-        scientist, bajrangi, bali, miya, coach, the sports scientist,
+        scientist, miya, coach, the sports scientist,
         the crossfit coach)
       - "{agent}: ..." / "{agent}>> ..." / "{agent}-> ..." prefixes
       - "As Fraser ...", "Per Kobe ...", "According to Huberman ..."

@@ -1,4 +1,4 @@
-"""Rebrand contract — Scientist→Kobe, Bajrangi→Huberman (2026-05-12).
+"""Rebrand contract — Scientist→Kobe (2026-05-12).
 
 Pins the invariants the sprint promised so a future refactor can't
 silently undo the rebrand or the substrate-preservation guarantees:
@@ -11,7 +11,9 @@ silently undo the rebrand or the substrate-preservation guarantees:
      classifier still routes legacy LLM outputs correctly.
   5. The decisions-ledger actor string is STILL "scientist" — trace
      continuity is preserved (see ADR-002).
-  6. `agents.huberman` is wired the same way (alias of `agents.bajrangi`).
+  6. (retired 2026-11-01) `agents.huberman` became a real agent on
+     2026-08-24; its last alias, to a memory proof of concept, left the
+     public repo with that module.
   7. Miya's `list_capabilities()` surfaces aliases so external callers
      can discover them.
   8. The ADR exists and names the fallback options.
@@ -45,13 +47,6 @@ def test_kobe_submodule_is_same_object_as_the_scientist(name):
         f"agents.the_scientist.{name}. The rebrand alias broke — "
         f"see agents/kobe/__init__.py for the sys.modules aliasing."
     )
-
-
-def test_huberman_memory_is_same_object_as_bajrangi():
-    import importlib
-    new = importlib.import_module("agents.huberman.memory")
-    old = importlib.import_module("agents.bajrangi.memory")
-    assert new is old
 
 
 # ─── 2-4. Agent class + name + aliases ───────────────────────────

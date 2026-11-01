@@ -36,9 +36,9 @@ ROOT = Path(__file__).resolve().parent.parent
 AGENTS_DIR = ROOT / "agents"
 
 # Grandfathered: Kobe (in transition; ADR-003 retirement plan §1–4)
-# and Huberman (alias of Bajrangi, code-identity-preserving). New
+# and Huberman (the same 2026-05-12 rebrand). New
 # agents NOT in this list must obey the convention.
-GRANDFATHERED = {"the_scientist", "bajrangi", "kobe", "huberman"}
+GRANDFATHERED = {"the_scientist", "kobe", "huberman"}
 
 # Legacy table names whose writes are restricted to grandfathered agents.
 # Match against the source files of any new agent — a hit means the

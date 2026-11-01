@@ -281,7 +281,7 @@ def test_tick_nudge_paths_through_charter(captured_tg, sandbox_db,
 class _Aliased(Agent):
     name = "huberman"
     description = "Recovery agent."
-    aliases = ["bajrangi"]
+    aliases = ["mobility"]
     triggers: list[str] = []
 
     def route(self, msg):
@@ -321,7 +321,7 @@ def test_explicit_address_beats_trigger_match(fake_llm):
 
 def test_address_resolves_alias():
     miya.register(_Aliased())
-    res = miya.resolve_explicit_address("@bajrangi how is my recovery")
+    res = miya.resolve_explicit_address("@mobility how is my recovery")
     assert res is not None
     agent, rest = res
     assert agent.name == "huberman"

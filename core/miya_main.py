@@ -58,7 +58,7 @@ miya.register(KobeAgent())
 from agents.fraser.agent import FraserAgent                   # noqa: E402
 miya.register(FraserAgent())
 # miya.register(CoachAgent())            # placeholder — Phase Next
-# miya.register(HubermanAgent())         # placeholder — Phase Next (was Bajrangi)
+# miya.register(HubermanAgent())         # placeholder — Phase Next
 # miya.register(CurriculumAgent())       # placeholder — Phase Next
 
 

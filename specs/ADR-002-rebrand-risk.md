@@ -34,10 +34,10 @@ actor change, no test rewrites. Estimated time: 15 minutes.
 
 ## Why this is low-blast-radius
 
-* Files stay at `agents/the_scientist/` and `agents/bajrangi/`. The new
-  paths (`agents/kobe/`, `agents/huberman/`) are `sys.modules`-aliased
-  packages that resolve to the same module objects. `ScientistAgent`
-  and `KobeAgent` are literally the same class.
+* Files stay at `agents/the_scientist/` (and the recovery agent's first
+  folder). The new paths (`agents/kobe/`, `agents/huberman/`) are
+  `sys.modules`-aliased packages that resolve to the same module objects.
+  `ScientistAgent` and `KobeAgent` are literally the same class.
 * `decisions` ledger continues recording `actor="scientist"`. Every
   historical trace remains queryable by the old actor name. The rename
   is a surface-only change.

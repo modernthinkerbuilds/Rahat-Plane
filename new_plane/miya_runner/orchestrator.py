@@ -288,7 +288,7 @@ import re as _re
 
 _VOICE_LEAK_PREFIX_RE = _re.compile(
     r"^\s*("
-    r"fraser|kobe|huberman|sci|scientist|bajrangi|bali|miya|coach|"
+    r"fraser|kobe|huberman|sci|scientist|miya|coach|"
     r"the\s+(?:sports\s+)?scientist|the\s+crossfit\s+coach"
     r")\s*(?:says|>>|->|:)\s*",
     flags=_re.IGNORECASE | _re.MULTILINE,
@@ -296,7 +296,7 @@ _VOICE_LEAK_PREFIX_RE = _re.compile(
 
 _VOICE_LEAK_STANDALONE_RE = _re.compile(
     r"^\s*(?:as|per|according\s+to)\s+"
-    r"(fraser|kobe|huberman|sci|scientist|bajrangi|bali|the\s+sports\s+scientist|the\s+crossfit\s+coach)"
+    r"(fraser|kobe|huberman|sci|scientist|the\s+sports\s+scientist|the\s+crossfit\s+coach)"
     r"[\s,]+",
     flags=_re.IGNORECASE | _re.MULTILINE,
 )

@@ -34,9 +34,9 @@ Quillfeather
 Ash
 555 0199
 """
-ENV = """BENJI_DELIVERY_EMAIL=reader.one@postbox.zz
-BENJI_OWNER_EMAIL=owner@postbox.zz
-BENJI_ALLOWED_RECIPIENTS=reader.one@postbox.zz,you@example.com
+ENV = """DIGEST_DELIVERY_EMAIL=reader.one@postbox.zz
+DIGEST_OWNER_EMAIL=owner@postbox.zz
+DIGEST_ALLOWED_RECIPIENTS=reader.one@postbox.zz,you@example.com
 TELEGRAM_BOT_TOKEN=999999:AAFakeTokenForTheTest_abcdefghij
 OWNER_CHAT_ID=7012345678
 RAHAT_MAX_TOKENS=100000000
@@ -130,7 +130,7 @@ def test_env_addresses_tokens_and_chat_ids_block_and_stay_masked(repo):
                 "send the digest to reader.one@postbox.zz")
     code, out = repo.check()
     assert code == 1, out
-    assert "commit message" in out and ".env BENJI_DELIVERY_EMAIL" in out, out
+    assert "commit message" in out and ".env DIGEST_DELIVERY_EMAIL" in out, out
     assert "cfg.py:1" in out and "<.env TELEGRAM_BOT_TOKEN>" in out, out
     assert "cfg.py:2" in out and ".env OWNER_CHAT_ID" in out, out
     _never_printed(out)

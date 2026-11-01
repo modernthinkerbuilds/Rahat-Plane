@@ -2,7 +2,7 @@
 agents/ must satisfy the core Agent ABI, whether or not it is wired into the
 production boot list yet.
 
-WHY. The owner is adding agents fast (genie, bajrangi already scaffolded).
+WHY. The owner is adding agents fast (genie already scaffolded).
 The round-2 structured-output tripwire only checks agents ALREADY in
 `PRODUCTION_AGENT_CLASSES` — a half-built agent can sit in the tree with a
 broken ABI and nothing catches it until boot. This guard discovers every
@@ -27,7 +27,7 @@ from core.agent import Agent
 def _discover_agent_classes() -> list[tuple[str, type]]:
     """Import every agents.*.agent module and collect concrete Agent
     subclasses. Returns (dotted_path, cls). Soft-skips dirs with no agent
-    module (pure stubs like bajrangi's memory-only adapter)."""
+    module (pure stubs like a memory-only adapter)."""
     found: list[tuple[str, type]] = []
     for mod in pkgutil.iter_modules(_agents_pkg.__path__):
         if not mod.ispkg:

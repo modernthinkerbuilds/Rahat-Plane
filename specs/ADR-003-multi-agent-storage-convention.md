@@ -82,7 +82,7 @@ to make "the right way" the path of least resistance.
 
 `tests/test_storage_convention.py` source-greps every file under
 `agents/<agent>/` and fails if a NEW agent (anything other than
-`the_scientist` / `bajrangi` / `kobe` / `huberman`) imports or writes
+`the_scientist` / `kobe` / `huberman`) imports or writes
 to the legacy Scientist-private tables. Adding a new agent that
 accidentally repeats Kobe's pattern fails this test loudly.
 

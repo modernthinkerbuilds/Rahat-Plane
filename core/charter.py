@@ -1,7 +1,7 @@
 """core.charter — the policy plane.
 
 The Charter is *not* an agent. It's a chokepoint every work-order passes
-through before execution. Bajrangi (the agent) reads HRV/sleep and
+through before execution. A recovery agent reads HRV/sleep and
 *advises* on workouts; the Charter *enforces* across all agents.
 
 Mental model:

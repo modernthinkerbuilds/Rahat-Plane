@@ -62,7 +62,7 @@ def clear_registry() -> None:
 # Miya is the supervisor in the LangGraph sense: an explicit router
 # with declared agent capabilities. Today this is regex + LLM
 # classifier. Below we add an explicit capability registry and a
-# cross-agent memory broker so future agents (Bajrangi, Foodie, etc.)
+# cross-agent memory broker so future agents (Huberman, Foodie, etc.)
 # plug in cleanly without touching Miya core.
 
 def list_capabilities() -> list[dict]:
@@ -75,8 +75,8 @@ def list_capabilities() -> list[dict]:
             "description": a.description,
             "triggers":    list(a.triggers),
             # Brand-equivalent names — populated for one nightly cycle
-            # after the 2026-05-12 Scientist→Kobe / Bajrangi→Huberman
-            # rebrand, then dropped.
+            # after the 2026-05-12 Scientist→Kobe rebrand, then
+            # dropped.
             "aliases":     list(getattr(a, "aliases", [])),
         }
         for a in _AGENTS
@@ -90,7 +90,7 @@ def cross_agent_query(*,
     """Cross-agent broker: another agent (or Miya itself) asks for
     entities of `type` across the whole mesh. Logs the read for
     observability — eventually we'll add capability checks here so
-    e.g. the Scientist can't read Bajrangi's private state without a
+    e.g. the Scientist can't read Huberman's private state without a
     declared dependency.
     """
     from core import memory as mem
@@ -110,7 +110,7 @@ def cross_agent_recent_events(*,
                               limit: int = 50,
                               db_path: str | None = None) -> list[dict]:
     """Cross-agent broker for events. Useful when one agent needs
-    recent activity from another (e.g. Scientist asking 'has Bajrangi
+    recent activity from another (e.g. Scientist asking 'has Huberman
     flagged anything in the last 24h?').
     """
     from core import memory as mem

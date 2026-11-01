@@ -142,7 +142,7 @@ def _db():
       • observations  — raw_vitals + hrv_log + weighin_log + workout_log
       • intents       — hard-coded North Stars (80 kg, 200 kg deadlift)
       • work_orders   — pre-existing table; agents publish requested actions
-      • governance_log — Bajrangi audit trail (approved / modified / vetoed)
+      • governance_log — the governance audit trail (approved / modified / vetoed)
     The Scientist's own state (recovery_tier, weekly plan, nudge throttling)
     lives alongside but is not part of the cross-agent ledger surface.
     """
@@ -190,11 +190,11 @@ def _db():
         " status TEXT DEFAULT 'active',"     # active | met | abandoned
         " created_at DATETIME DEFAULT CURRENT_TIMESTAMP,"
         " UNIQUE(kind, target_date));"
-        # PRD §4.1: Governance log — Bajrangi's audit trail.
+        # PRD §4.1: Governance log — the governing agent's audit trail.
         "CREATE TABLE IF NOT EXISTS governance_log ("
         " id INTEGER PRIMARY KEY AUTOINCREMENT,"
         " ts DATETIME DEFAULT CURRENT_TIMESTAMP,"
-        " actor TEXT NOT NULL,"              # 'bajrangi' | 'scientist' | ...
+        " actor TEXT NOT NULL,"              # 'huberman' | 'scientist' | ...
         " subject TEXT NOT NULL,"            # what got governed (kind of nudge etc.)
         " decision TEXT NOT NULL,"           # approved | modified | vetoed
         " reason TEXT);"
@@ -233,10 +233,10 @@ def get_active_intent(kind: str) -> dict | None:
 
 
 def check_external_veto(subject: str, since_hours: int = 24) -> tuple[bool, str | None]:
-    """Read-only check for an active veto from another agent (e.g. Bajrangi).
+    """Read-only check for an active veto from another agent (e.g. Huberman).
 
     The Scientist consumes governance signals but never writes to
-    governance_log itself — that table is owned by Bajrangi per PRD §3.
+    governance_log itself — that table is owned by the governing agent per PRD §3.
     Returns (vetoed, reason) where `subject` matches the nudge kind
     ('morning_brief', 'walk_nudge', 'recovery_nudge', or '*').
     """

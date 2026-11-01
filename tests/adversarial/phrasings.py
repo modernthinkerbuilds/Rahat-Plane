@@ -207,8 +207,6 @@ def test_phrasing_routes_to_expected_agent_with_non_empty_reply(entry, _hermetic
     accepted = {expected}
     if expected == "kobe":
         accepted.add("scientist")
-    if expected == "huberman":
-        accepted.add("bajrangi")
     assert actor in accepted, (
         f"Phrasing {msg!r} expected → {expected}, routed to {actor!r}. "
         f"Intent: {entry.get('intent','?')}. Update the classifier or the "

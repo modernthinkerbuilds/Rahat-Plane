@@ -9,35 +9,11 @@ the never-empty fallback), handler.py (route + the 9:30 PM autocool
 tick). Athlete PII lives ONLY in vault/huberman_profile.json and
 vault/huberman/ (gitignored) — this package ships PII-free defaults.
 
-The `memory` submodule below is still the rebrand ALIAS of
-agents.bajrangi.memory (2026-05-12, same pattern as agents/kobe/ —
-see agents/kobe/__init__.py). agents/bajrangi/ is the memory-substrate
-PoC and belongs to the other architect's lane (two-architect protocol);
-the alias is read-only coupling and stays untouched.
-
-For users / docs / public-facing strings, `huberman` is the brand.
-Miya's Dakhini opener may still address the agent as "Bajrangi bhai"
-in conversation — that's a nickname inside the relationship, not the
-brand surface.
+The `memory` alias it carried until 2026-11-01 (to a memory-substrate
+proof of concept from the 2026-05-12 rebrand) left with that module; no
+caller used it. For users / docs / public-facing strings, `huberman` is
+the brand.
 
 See specs/ADR-002-rebrand-risk.md for fallback options.
 """
 from __future__ import annotations
-
-import sys
-import importlib
-
-_SUBMODULES = [
-    "memory",
-]
-
-for _name in _SUBMODULES:
-    _full = f"agents.bajrangi.{_name}"
-    _mod = importlib.import_module(_full)
-    sys.modules[f"agents.huberman.{_name}"] = _mod
-
-import agents.bajrangi as _bj  # noqa: E402
-
-for _attr in dir(_bj):
-    if not _attr.startswith("__"):
-        globals().setdefault(_attr, getattr(_bj, _attr))

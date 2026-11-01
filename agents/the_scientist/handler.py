@@ -461,7 +461,7 @@ def handle_weighin_when() -> str:
     )
 
 
-# hrv_band imported from protocols.py — pure-math, also re-exported for Coach/Bajrangi.
+# hrv_band imported from protocols.py — pure-math, also re-exported for Coach/Huberman.
 
 
 def handle_hrv(value: float) -> str:
@@ -3507,8 +3507,8 @@ def _internal_safety_downgrade() -> tuple[bool, str | None]:
 
     When the Scientist's own HRV reading is in the RED band, it downgrades
     its performance messaging to recovery messaging on its own — this is
-    normal coaching, not governance. A real governance veto from Bajrangi
-    (when that agent ships) takes precedence and is checked separately.
+    normal coaching, not governance. A real governance veto from another
+    agent (when one ships) takes precedence and is checked separately.
     """
     hrv = latest_hrv()
     if hrv is None or hrv >= HRV_RED:
@@ -3535,7 +3535,7 @@ def maybe_morning_briefing() -> str | None:
     gym = f" ({row['gym_label']})" if row["gym_label"] else ""
     mark_nudge("morning_brief", today)
 
-    # External veto from another agent (e.g. Bajrangi) — drop entirely.
+    # External veto from another agent (e.g. Huberman) — drop entirely.
     vetoed, reason = check_external_veto("morning_brief")
     if vetoed:
         return None
