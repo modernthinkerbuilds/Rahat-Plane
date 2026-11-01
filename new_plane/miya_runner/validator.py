@@ -465,7 +465,7 @@ _ACTION_CLAIM_RE = re.compile(
 )
 _NO_WRITE_CORRECTION = (
     "(Correction: nothing was changed — I can only report here. To set a goal "
-    "or target, say it as one message, e.g. “187 by Nov 26” or “weekly target "
+    "or target, say it as one message, e.g. “180 by March 1” or “weekly target "
     "7000”, and Kobe will confirm what was written.)")
 
 
