@@ -10,7 +10,7 @@
 |:---:|:---:|:---:|
 | The whole system on one page. Tap any box, or watch a message travel. | The harness every answer runs through, step by step. | Open source (Apache 2.0): the architecture, the decision records, the tests. |
 
-**Miya** is the one I talk to. Behind it, Rahat runs six more agents: Miya hands work to Kobe (the numbers), Fraser (workout design), Huberman (the 9:30 pm cooldown) and Genie (weekends, the household calendar, local events). Bourdain answers "where do we eat?" and Kipchoge coaches my runs, each on its own bot.
+**Miya** is the one I talk to. It hands each ask to one of six specialists on Rahat, in two groups. Training and recovery: Kobe (the numbers), Fraser (workout design), Kipchoge (my runs) and Huberman (the 9:30 pm cooldown). Family life: Genie (weekends, the household calendar, local events) and Bourdain (where we eat). Kipchoge and Bourdain answer on their own bots for now, and through Miya soon.
 
 An agent can be fluent and wrong at the same time, and you can't tell from reading it. Run more than one and they contradict each other, act at moments they shouldn't, and remember the wrong things. Rahat is the layer under the agents that catches those: checks in code on the way out, one record of every decision, and a harness a new agent has to pass.
 

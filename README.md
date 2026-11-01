@@ -69,15 +69,19 @@ An agent can be fluent and wrong at the same time, and you can't tell from readi
 
 ## The agents
 
+Miya is the one I talk to. It hands each ask to one of six specialists, in two groups: training and recovery, and family life.
+
 | Agent | Owns | Status |
 |---|---|---|
 | **Miya** (orchestrator) | My personal agent, the one I talk to. A 16-rung routing ladder in code, delegation, reconciliation, one voice out. [`new_plane/miya_runner/`](./new_plane/miya_runner/) | Live |
+| *Training and recovery* | | |
 | **Kobe** | The week's numbers, computed in code. [`agents/the_scientist/`](./agents/the_scientist/) | Live, behind Miya |
 | **Fraser** | Workout design, checked against a 10-point contract in code before it's sent. [`agents/fraser/`](./agents/fraser/) | Live, behind Miya |
+| **Kipchoge** | The running coach. Every number in a message is computed in code and cited from a record; the model writes only the words, and a message with a number that has no record behind it is never sent. The second tenant on the harness. [`agents/kipchoge/`](./agents/kipchoge/) | Live on its own bot since Nov 1; through Miya soon (the route is built and switched off) |
 | **Huberman** | The 9:30 pm cooldown: reads the day's workout and recovery and picks from a 25-drill library, with rotation. [`agents/huberman/`](./agents/huberman/) | Live, behind Miya |
+| *Family life* | | |
 | **Genie** | Weekends, a household calendar that schedules rather than lists, and a digest of local events. [`agents/genie/`](./agents/genie/) | Live, behind Miya, with its own bot for the household; my wife uses it too, from her own phone |
-| **Bourdain** | "Where do we eat?" Answers from what it already knows, your saved places first, and searches live when that comes up short; every answer runs the harness (below). [`agents/bourdain/`](./agents/bourdain/) | Live on its own bot since Sep 20; on the harness since Oct 4; joins Miya when it passes |
-| **Kipchoge** | The running coach. Every number in a message is computed in code and cited from a record; the model writes only the words, and a message with a number that has no record behind it is never sent. The second tenant on the harness. [`agents/kipchoge/`](./agents/kipchoge/) | Live on its own bot since Nov 1 |
+| **Bourdain** | "Where do we eat?" Answers from what it already knows, your saved places first, and searches live when that comes up short; every answer runs the harness (below). [`agents/bourdain/`](./agents/bourdain/) | Live on its own bot since Sep 20; on the harness since Oct 4; through Miya soon, once it passes |
 
 **How an agent joins the platform.** A new agent brings a manifest (its tools, budgets, latency and capabilities), an outcome library (Bourdain 52, Kipchoge 19), a judge checklist (21 and 8 criteria), its own shapes (what it reads, what it answers, what counts as evidence) and its tests; the platform brings the loop, the brake, the ledger, the judge, the controller and the record. Before it serves, it passes [`test_tenant_conformance.py`](./tests/test_tenant_conformance.py) with Bourdain's 72-case snapshot unchanged, byte for byte. Kipchoge went through it: the shapes amendment (A6) was accepted Oct 25, and it went live on its own bot Nov 1.
 
@@ -138,6 +142,17 @@ One loop an agent's answer runs through, owned by the platform, not by the agent
 - **The judge so far:** 214 verdicts, all in shadow, with 3 labels of the 50 it needs.
 
 ---
+
+## Four product decisions
+
+A few weeks after I started talking to Miya, it told me something about myself that had never been true, in a flawless voice. That's when I stopped adding features and started making decisions like these.
+
+| Decision | Instead of | What it bought |
+|---|---|---|
+| **Check every answer in code before it's sent** | Rewriting the prompt ten times | I replayed 126 real messages: replies with the agents' internal notes leaking into them went to zero, and about one reply in twenty had a mistake caught and fixed before it reached me |
+| **Build one shared engine that every new agent plugs into** | A new engine for each agent | The running coach plugged in as the second agent, and the food agent's 72 test cases came out exactly the same as before |
+| **Don't let an AI grader decide until it agrees with me** | Trusting a second AI to grade answers from day one | It has graded 214 answers with no say yet; it earns a vote after it matches my own judgment on 50 answers, 8 times in 10 |
+| **Numbers come from code, not from the AI** | Telling the AI not to make up numbers | A message with a number the code didn't compute is never sent. Checked against my old coaching chat: 24 numbers, 18 match, 6 still need data, 0 wrong |
 
 ## The three loops
 
