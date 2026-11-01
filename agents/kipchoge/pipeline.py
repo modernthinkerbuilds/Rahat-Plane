@@ -248,6 +248,33 @@ def on_workout_landed(tenant: Any, workout_id: str, *, now: datetime, send: Call
             pass
 
 
+PROVISIONAL_HEAD = "Provisional (the Watch's minute data; the workout file hasn't landed):\n"
+
+
+def provisional_analysis(ctx: dict, session: dict, *, now: datetime, run: Any = None) -> tuple[Any, dict | None, str | None]:
+    """A run the minute data shows before its workout file lands, analyzed
+    from heart rate and time only: (run, analysis, the template's text).
+    No model and no side effects; (run or None, None, None) when it is too
+    short or unreadable. `run`, when the caller has read it already."""
+    run = run if run is not None else ingest.provisional_run(ctx["con"], session)
+    if run is None or run.duration_s < PROVISIONAL_MIN_MINUTES * 60:
+        return run, None, None
+    from agents.kipchoge import analyze as ca
+    analysis = ca.analyze(run, zones=ctx.get("zones") or {}, now=now)
+    ctx["evidence"].add(RecordSet.from_json(analysis.get("records") or []))
+    return run, analysis, krender.analysis_floor(ctx["evidence"], run.workout_id, units=krender._units(ctx))
+
+
+def mark_provisional_sent(con: sqlite3.Connection, run: Any, analysis: dict, text: str, now: datetime) -> None:
+    """Once the athlete has the provisional analysis, the clock never sends
+    it again, and the final compares itself against it (`on_workout_landed`)."""
+    mark_sent(con, f"{run.workout_id}:provisional", kind="analysis", stage="provisional", trace_id="", text=text, now=now,
+              extra={"analysis": _slim(analysis)})
+    # the final's key is the workout uuid, unknown here; the final looks the provisional up by the start time
+    mark_sent(con, f"start:{run.start_utc}:provisional", kind="link", stage="provisional", trace_id="", text="", now=now,
+              extra={"analysis": _slim(analysis)})
+
+
 def on_provisional_run(tenant: Any, session: dict, *, now: datetime, send: Callable[[str], Any] | None, db_path: str | None = None,
                        model: bool = False, chat_id: str = "pipeline") -> dict:
     """A run the minute data shows before the workout file lands
@@ -262,25 +289,22 @@ def on_provisional_run(tenant: Any, session: dict, *, now: datetime, send: Calla
         key = f"{run.workout_id}:provisional"
         if already_sent(con, key):
             return {"sent": False, "stage": "provisional", "why": "already sent", "text": None}
-        from agents.kipchoge import analyze as ca
-        analysis = ca.analyze(run, zones=ctx.get("zones") or {}, now=now)
-        ctx["evidence"].add(RecordSet.from_json(analysis.get("records") or []))
-        text = krender.analysis_floor(ctx["evidence"], run.workout_id, units=krender._units(ctx)) if not model else None
+        run, analysis, floor = provisional_analysis(ctx, session, now=now, run=run)
+        if analysis is None:
+            return {"sent": False, "stage": "provisional", "why": "too short or unreadable", "text": None}
+        text = floor if not model else None
         if model:
             from core.harness import run as hrun
             frame = shapes.Frame(intent="analyze", run_ref=shapes.RunRef(which="uuid", value=run.workout_id))
             text = hrun.run_pipeline(tenant, f"the provisional analysis of {run.workout_id}", frame=frame, chat_id=chat_id, now=now,
                                      db_path=db_path, serve_mode="shadow",
                                      prefetch=[("analyze_run", {"which": "uuid", "value": run.workout_id}), ("get_athlete", {})]).text
-        text = "Provisional (the Watch's minute data; the workout file hasn't landed):\n" + (text or "")
+        text = PROVISIONAL_HEAD + (text or "")
         if in_quiet_hours(now):
             return {"sent": False, "stage": "provisional", "why": "quiet hours", "text": text, "held": True}
         if send is not None:
             send(text)
-        mark_sent(con, key, kind="analysis", stage="provisional", trace_id="", text=text, now=now, extra={"analysis": _slim(analysis)})
-        # the final's key is the workout uuid, unknown here; the final looks the provisional up by the start time
-        mark_sent(con, f"start:{run.start_utc}:provisional", kind="link", stage="provisional", trace_id="", text="", now=now,
-                  extra={"analysis": _slim(analysis)})
+        mark_provisional_sent(con, run, analysis, text, now)
         return {"sent": send is not None, "stage": "provisional", "why": "", "text": text}
     finally:
         try:

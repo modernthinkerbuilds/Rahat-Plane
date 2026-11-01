@@ -299,14 +299,16 @@ def runs_in(con: sqlite3.Connection, since: str, until: str | None = None, *, na
 
 # ── provisional ───────────────────────────────────────────────────────
 def provisional_id(session: dict, *, offset_min: int | None = None) -> str | None:
-    """A provisional run's id, `prov:<start utc>`, from the detector's
-    session dict alone (the pipeline's sent-once key is built on it)."""
+    """A provisional run's id, `prov:<start utc>` (20261018T143000: no space
+    and no colon, so the id fits a `{{r:...}}` placeholder and splits on
+    ':' like `run:<uuid>`), from the detector's session dict alone (the
+    pipeline's sent-once key is built on it)."""
     start = _dt(session.get("start"))
     if start is None:
         return None
     if offset_min is None:
         offset_min = home_offset_min(start)
-    return "prov:" + (start - timedelta(minutes=offset_min)).strftime("%Y-%m-%d %H:%M:%S")
+    return "prov:" + (start - timedelta(minutes=offset_min)).strftime("%Y%m%dT%H%M%S")
 
 
 def provisional_run(con: sqlite3.Connection, session: dict, *, offset_min: int | None = None) -> RunData | None:

@@ -279,7 +279,13 @@ def next_text(ctx: dict, *, model: bool = False, db_path: str | None = None) -> 
 
 def run_text(ctx: dict, args: str, *, model: bool = False, db_path: str | None = None) -> str | None:
     """`/run` → the last run's analysis; `/run list` → the recent runs;
-    `/run <date>` / `/run yesterday` → that day's run."""
+    `/run <date>` / `/run yesterday` → that day's run.
+
+    A run the Watch's minute data shows today or yesterday that the store
+    has no workout for yet (the phone's workouts export sends it later)
+    answers as the provisional analysis, heart rate and time only, and
+    says so (2026-11-01: `/run` analyzed a four-day-old run while that
+    morning's sat in the minute data)."""
     from agents.kipchoge import ingest, pipeline
     from agents.kipchoge import render as krender
     arg = (args or "").strip().lower()
@@ -287,16 +293,91 @@ def run_text(ctx: dict, args: str, *, model: bool = False, db_path: str | None =
         _tool(ctx, "list_runs", {"n": 8})
         return krender.runs_floor(ctx["evidence"], units=krender._units(ctx))
     now = ctx["now"]
+    con = ctx["con"]
+    ids = ingest.runs_in(con, (now - timedelta(days=400)).strftime("%Y-%m-%d"), now.strftime("%Y-%m-%d"))
     if arg and arg != "last":
         day = (now - timedelta(days=1)).strftime("%Y-%m-%d") if arg == "yesterday" else now.strftime("%Y-%m-%d") if arg == "today" else arg
-        con = ctx["con"]
-        ids = ingest.runs_in(con, (now - timedelta(days=400)).strftime("%Y-%m-%d"), now.strftime("%Y-%m-%d"))
         for wid in reversed(ids):
             row = ingest.summary_row(con, wid)
             if row and str(row["start"]).startswith(day):
                 return pipeline.analysis_text(ctx, wid, now=now, model=model, tenant=_tenant(), db_path=db_path)
-        return f"No run on {day} in the store."
+        return _provisional_text(ctx, day, ids) or f"No run on {day} in the store."
+    last = ingest.summary_row(con, ids[-1]) if ids else None
+    for day in (now, now - timedelta(days=1)):
+        prov = _unlanded_run(ctx, day.strftime("%Y-%m-%d"))
+        if prov is not None and (last is None or str(prov.get("start")) > str(last["start"])):
+            text = _provisional_text(ctx, day.strftime("%Y-%m-%d"), ids, session=prov)
+            if text:
+                return text
     return pipeline.last_analysis_text(ctx, now=now, model=model, tenant=_tenant(), db_path=db_path) or "No runs in the store yet."
+
+
+UNLANDED_NOTE = ("Pace, splits and the route come when the phone sends the workout itself "
+                 "(Health Auto Export's workouts automation).")
+LANDED_MATCH_S = 30 * 60      # a workout in the store starting this close to a minute-data run is that run
+
+
+def _unlanded_run(ctx: dict, day: str) -> dict | None:
+    """The latest run the Watch's minute data shows on `day` (a past day or
+    today; `/run` looks at today and yesterday) that is over and has no
+    workout in the store yet; None otherwise, and for a day that isn't a
+    date. The minute data is a bonus: unreadable means None."""
+    from agents.kipchoge import ingest, state
+    now = ctx["now"]
+    try:
+        probe = now if day == now.strftime("%Y-%m-%d") else datetime.strptime(day + " 23:59:59", "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return None
+    if probe > now:
+        return None
+    try:
+        sessions = _vitals_sessions(probe)
+        if not sessions:
+            return None
+        tenant = _tenant()
+        zones = ctx.get("zones") or state.zones(tenant.athlete())
+        cands = provisional_candidates(sessions, now=probe, plan=ctx.get("plan") or tenant.plan(), zones=zones)
+    except Exception as e:  # noqa: BLE001 - /run still answers from the store
+        logger.warning("the minute data's sessions were unreadable: %s", e)
+        return None
+    con = ctx["con"]
+    landed = []
+    for wid in ingest.runs_in(con, day, day):
+        row = ingest.summary_row(con, wid)
+        t = ingest._dt(row["start"]) if row else None
+        if t is not None:
+            landed.append(t)
+    fresh = []
+    for s in cands:
+        start = ingest._dt(s.get("start"))
+        if start is not None and str(s.get("start", "")).startswith(day) and \
+                not any(abs((start - t).total_seconds()) <= LANDED_MATCH_S for t in landed):
+            fresh.append(s)
+    return max(fresh, key=lambda s: str(s.get("start"))) if fresh else None
+
+
+def _provisional_text(ctx: dict, day: str, ids: list[str], *, session: dict | None = None) -> str | None:
+    """The provisional analysis of `day`'s unlanded run, with where the rest
+    comes from and the last full analysis; marked sent, so the clock never
+    repeats it. None when there is no such run."""
+    from agents.kipchoge import ingest, pipeline
+    s = session or _unlanded_run(ctx, day)
+    if s is None:
+        return None
+    now = ctx["now"]
+    run, analysis, floor = pipeline.provisional_analysis(ctx, s, now=now)
+    if not floor:
+        return None
+    tail = UNLANDED_NOTE
+    last = ingest.summary_row(ctx["con"], ids[-1]) if ids else None
+    if last is not None:
+        tail += f" The last full analysis: /run {str(last['start'])[:10]}."
+    text = pipeline.PROVISIONAL_HEAD + floor + "\n\n" + tail
+    try:
+        pipeline.mark_provisional_sent(ctx["con"], run, analysis, text, now)
+    except Exception as e:  # noqa: BLE001 - the athlete still gets the answer
+        logger.warning("could not mark the provisional analysis sent: %s", e)
+    return text
 
 
 # ── the minute tick ───────────────────────────────────────────────────

@@ -365,11 +365,11 @@ def test_a_provisional_run_is_heart_rate_and_time_only(con):
     session = {"name": "Outdoor Run", "start": "2026-10-18 07:30:00", "end": "2026-10-18 08:30:00", "minutes": 60, "kind": "run",
                "inferred": True}
     run = ingest.provisional_run(con, session)
-    assert run.provisional and run.workout_id == "prov:2026-10-18 14:30:00" and run.offset_min == -420
+    assert run.provisional and run.workout_id == "prov:20261018T143000" and run.offset_min == -420
     assert len(run.hr) > 600 and not run.has_distance() and not run.route
     a = ca.analyze(run, zones=ZONES, now=NOW)
     ids = [r["id"] for r in a["records"]]
-    assert ids and all(i.startswith("prov:2026-10-18 14:30:00:") for i in ids)
+    assert ids and all(i.startswith("prov:20261018T143000:") for i in ids)
     assert a["halves"]["run"][0]["hr_avg"] and a["halves"]["run"][0]["pace_s_per_mi"] is None
     assert "no block pace" in " ".join(a["notes"])
 

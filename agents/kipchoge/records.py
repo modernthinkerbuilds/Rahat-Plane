@@ -8,7 +8,7 @@ renderer fills them (S1); the verifier blocks a number with no record
 
     run:<workout uuid>:main_block.hr_avg      a metric of one run
     run:<uuid>:norm.pace_at_ref               a normalized value
-    prov:<start utc>:hr_avg                   a provisional run (no file yet)
+    prov:<start utc>:hr_avg                   a provisional run (no file yet; 20261018T143000)
     athlete:zone2.cap                         a field of the athlete file
     plan:<plan id>:<session id>:minutes       a planned session's field
     lib:z2_strides.strides                    a session-library number

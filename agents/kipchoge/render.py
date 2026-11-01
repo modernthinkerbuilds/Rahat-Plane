@@ -233,13 +233,15 @@ def card_floor(ev: Any, *, date_label: str, units: dict | None = None) -> str:
 def analysis_floor(ev: Any, wid: str, *, units: dict | None = None, zones: dict | None = None) -> str:
     """Sections 1, 2, 6, 7 and 8 of the analysis from the run's records."""
     units = units or {"pace": "min/mi", "distance": "km+mi"}
-    r = lambda path: f"{{{{r:run:{wid}:{path}}}}}"  # noqa: E731
-    has = lambda path: ev.get(rid("run", wid, path)) is not None and ev.get(rid("run", wid, path)).value is not None  # noqa: E731
-    grade = ev.get(rid("run", wid, "grade"))
-    stype = ev.get(rid("run", wid, "session_type"))
+    base = (wid,) if str(wid).startswith("prov:") else ("run", wid)    # a provisional run's records: prov:<start utc>:<path>
+    k = lambda path: rid(*base, path)  # noqa: E731
+    r = lambda path: f"{{{{r:{k(path)}}}}}"  # noqa: E731
+    has = lambda path: ev.get(k(path)) is not None and ev.get(k(path)).value is not None  # noqa: E731
+    grade = ev.get(k("grade"))
+    stype = ev.get(k("session_type"))
     head = []
     if stype is not None and grade is not None:
-        head.append(f"{r('start_local')}: {r('session_type')}, grade {r('grade')}" + (" (borderline)" if (ev.get(rid('run', wid, 'grade.borderline')) or type('x', (), {'value': False})).value else "") + ".")
+        head.append(f"{r('start_local')}: {r('session_type')}, grade {r('grade')}" + (" (borderline)" if (ev.get(k('grade.borderline')) or type('x', (), {'value': False})).value else "") + ".")
     nums = []
     if has("distance_km"):
         nums.append(r("distance_km"))
@@ -259,21 +261,21 @@ def analysis_floor(ev: Any, wid: str, *, units: dict | None = None, zones: dict 
     shows = []
     if has("run_halves.first.hr_avg") and has("run_halves.second.hr_avg"):
         shows.append(f"• Halves: {r('run_halves.first.hr_avg')} → {r('run_halves.second.hr_avg')}" + (f" ({r('run_halves.first.pace_s_per_mi')} → {r('run_halves.second.pace_s_per_mi')})" if has("run_halves.first.pace_s_per_mi") else "") + ".")
-    if has("ramp_min") and ev.get(rid("run", wid, "ramp_min")).value is not None:
+    if has("ramp_min") and ev.get(k("ramp_min")).value is not None:
         shows.append(f"• Ramp: {r('ramp_min')} to the band.")
     if has("time_in_zone.in_band_pct"):
         over_id = "time_in_zone.over_cap3_min" if has("time_in_zone.over_cap3_min") else "time_in_zone.over_cap_min"
         shows.append(f"• Time in band: {r('time_in_zone.in_band_pct')}; over the cap {r(over_id + '|int')}.")
-    if has("decoupling_pct") and ev.get(rid("run", wid, "decoupling_pct")).value is not None:
+    if has("decoupling_pct") and ev.get(k("decoupling_pct")).value is not None:
         shows.append(f"• Decoupling: {r('decoupling_pct')}; drift {r('drift_bpm|signed')}.")
-    if has("artifacts") and (ev.get(rid("run", wid, "artifacts")).value or 0) > 0:
+    if has("artifacts") and (ev.get(k("artifacts")).value or 0) > 0:
         shows.append(f"• Artifacts: {r('artifacts')} readings excluded (post-stop or the first minutes).")
-    if has("hr_gaps") and (ev.get(rid("run", wid, "hr_gaps")).value or 0) > 0:
+    if has("hr_gaps") and (ev.get(k("hr_gaps")).value or 0) > 0:
         shows.append(f"• Heart-rate gaps: {r('hr_gaps')}, longest {r('hr_gaps.longest_s')}; reported, not subtracted from the moving time.")
     if has("wx.temperature_f"):
         shows.append(f"• Conditions: {r('wx.temperature_f')}, dew point {r('wx.dew_point_f')}, apparent {r('wx.apparent_f')}.")
-    if has("sleep.night_before_h") and ev.get(rid("run", wid, "sleep.night_before_h")).value is not None:
-        shows.append(f"• Sleep: {r('sleep.night_before_h')} the night before" + (f", two-night average {r('sleep.two_night_avg_h')}" if has("sleep.two_night_avg_h") and ev.get(rid('run', wid, 'sleep.two_night_avg_h')).value is not None else "") + ".")
+    if has("sleep.night_before_h") and ev.get(k("sleep.night_before_h")).value is not None:
+        shows.append(f"• Sleep: {r('sleep.night_before_h')} the night before" + (f", two-night average {r('sleep.two_night_avg_h')}" if has("sleep.two_night_avg_h") and ev.get(k('sleep.two_night_avg_h')).value is not None else "") + ".")
     if shows:
         parts.append("")
         parts.append("What the data shows:")
@@ -297,10 +299,10 @@ def analysis_floor(ev: Any, wid: str, *, units: dict | None = None, zones: dict 
     if has("notes"):
         notes.append(r("notes"))
     if has("time_in_zone.over_cap3_min") and has("time_in_zone.over_cap_min"):
-        raw, line3 = ev.get(rid("run", wid, "time_in_zone.over_cap_min")).value, ev.get(rid("run", wid, "time_in_zone.over_cap3_min")).value
+        raw, line3 = ev.get(k("time_in_zone.over_cap_min")).value, ev.get(k("time_in_zone.over_cap3_min")).value
         if raw is not None and line3 is not None and float(raw) - float(line3) >= 1:
             notes.append(f"\"Over the cap\" counts minutes 3+ bpm over; every reading over the cap adds up to {r('time_in_zone.over_cap_min|int')}, most of it within the sensor's noise.")
-    if has("fitness_data_point") and ev.get(rid("run", wid, "fitness_data_point")).value is False:
+    if has("fitness_data_point") and ev.get(k("fitness_data_point")).value is False:
         notes.append("Grade D: this run does not count as a fitness data point.")
     if notes:
         parts.append("")
