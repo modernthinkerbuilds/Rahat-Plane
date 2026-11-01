@@ -90,14 +90,14 @@ def test_a2_fails_an_in_band_claim_the_records_contradict():
 def test_the_judge_sees_numbered_compact_records_led_by_the_runs_core():
     rs = Evidence(RecordSet())
     rs.add([Record(f"plan:2026-10-28:x{i}", i, "count", source="long source text " * 5) for i in range(200)])
-    rs.add([Record("run:W:grade", "C", "grade", source="t"), Record("run:W:time_in_zone.over_cap_min", 12.0, "min", source="t"),
+    rs.add([Record("run:W:grade", "C", "grade", source="t"), Record("run:W:time_in_zone.over_cap3_min", 12.0, "min", source="t"),
             Record("run:W:time_in_zone.in_band_pct", 52.0, "%", source="t"), Record("run:W:pace_s_per_mi", 720.0, "s/mi", lo=690.0, hi=750.0, source="t")])
     a = shapes.Answer(kind="analysis", headline="Grade {{r:run:W:grade}}.")
     ev = shapes.judge_evidence(a, rs)
     assert [e["id"] for e in ev] == list(range(1, len(ev) + 1)) and len(ev) <= shapes.JUDGE_MAX
     assert ev[0]["record"] == "run:W:grade"
     lead = [e["record"] for e in ev[:4]]
-    assert "run:W:time_in_zone.over_cap_min" in lead and "run:W:time_in_zone.in_band_pct" in lead
+    assert "run:W:time_in_zone.over_cap3_min" in lead and "run:W:time_in_zone.in_band_pct" in lead     # 3+ bpm over (2026-11-01)
     assert all("source" not in e for e in ev) and ev[3].get("lo") is not None or True
     import json
     assert len(json.dumps(ev)) < 9000                                           # inside the judge's evidence budget

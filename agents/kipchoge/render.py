@@ -262,7 +262,8 @@ def analysis_floor(ev: Any, wid: str, *, units: dict | None = None, zones: dict 
     if has("ramp_min") and ev.get(rid("run", wid, "ramp_min")).value is not None:
         shows.append(f"• Ramp: {r('ramp_min')} to the band.")
     if has("time_in_zone.in_band_pct"):
-        shows.append(f"• Time in band: {r('time_in_zone.in_band_pct')}; over the cap {r('time_in_zone.over_cap_min|int')}.")
+        over_id = "time_in_zone.over_cap3_min" if has("time_in_zone.over_cap3_min") else "time_in_zone.over_cap_min"
+        shows.append(f"• Time in band: {r('time_in_zone.in_band_pct')}; over the cap {r(over_id + '|int')}.")
     if has("decoupling_pct") and ev.get(rid("run", wid, "decoupling_pct")).value is not None:
         shows.append(f"• Decoupling: {r('decoupling_pct')}; drift {r('drift_bpm|signed')}.")
     if has("artifacts") and (ev.get(rid("run", wid, "artifacts")).value or 0) > 0:
@@ -295,6 +296,10 @@ def analysis_floor(ev: Any, wid: str, *, units: dict | None = None, zones: dict 
     notes = []
     if has("notes"):
         notes.append(r("notes"))
+    if has("time_in_zone.over_cap3_min") and has("time_in_zone.over_cap_min"):
+        raw, line3 = ev.get(rid("run", wid, "time_in_zone.over_cap_min")).value, ev.get(rid("run", wid, "time_in_zone.over_cap3_min")).value
+        if raw is not None and line3 is not None and float(raw) - float(line3) >= 1:
+            notes.append(f"\"Over the cap\" counts minutes 3+ bpm over; every reading over the cap adds up to {r('time_in_zone.over_cap_min|int')}, most of it within the sensor's noise.")
     if has("fitness_data_point") and ev.get(rid("run", wid, "fitness_data_point")).value is False:
         notes.append("Grade D: this run does not count as a fitness data point.")
     if notes:

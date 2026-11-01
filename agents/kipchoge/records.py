@@ -27,7 +27,8 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Iterator
 
-ENGINE_VERSION = "1.0.2"          # 1.0.1: distance_mi to 3 decimals; 1.0.2: a run's slope from the runs before it only
+ENGINE_VERSION = "1.0.3"          # 1.0.1: distance_mi to 3 decimals; 1.0.2: a run's slope from the runs before it only;
+                                   # 1.0.3: time_in_zone.over_cap3_min, the minutes 3+ bpm over the cap
 
 
 @dataclass(frozen=True)

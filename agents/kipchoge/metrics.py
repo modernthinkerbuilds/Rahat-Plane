@@ -29,6 +29,7 @@ from agents.kipchoge import segments as seg
 from agents.kipchoge.ingest import RunData, Sample
 
 FORMULA_VERSION = "m1"
+OVER_CAP_LINE_BPM = 3      # the grade's line: a sample this far over the cap is over it (main_block.over_cap_pct)
 DECOUPLING_MIN_BLOCK_S = 20 * 60
 DECOUPLING_MAX_PAUSE_S = 60
 
@@ -92,7 +93,7 @@ def time_in_zones(run: RunData, zones: dict, ps: Sequence[seg.Pause]) -> dict:
     lo, hi = zones.get("zone2_lo"), zones.get("zone2_hi")
     sweet_lo, sweet_hi = zones.get("sweet_lo"), zones.get("sweet_hi")
     cap = zones.get("cap")
-    out = {"below": 0.0, "in_band": 0.0, "sweet": 0.0, "above": 0.0, "over_cap": 0.0, "total": 0.0}
+    out = {"below": 0.0, "in_band": 0.0, "sweet": 0.0, "above": 0.0, "over_cap": 0.0, "over_cap3": 0.0, "total": 0.0}
     pts = _moving_only(run.hr, ps)
     if not pts or lo is None or hi is None:
         return out
@@ -111,6 +112,8 @@ def time_in_zones(run: RunData, zones: dict, ps: Sequence[seg.Pause]) -> dict:
             out["above"] += w
         if cap is not None and s.v > cap:
             out["over_cap"] += w
+        if cap is not None and s.v >= cap + OVER_CAP_LINE_BPM:
+            out["over_cap3"] += w
     return {k: round(v) for k, v in out.items()}
 
 

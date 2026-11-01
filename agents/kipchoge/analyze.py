@@ -118,6 +118,10 @@ def analyze(run: RunData, *, zones: dict, slope: cmodel.Slope | None = None, con
     tz = cm.time_in_zones(run, zones, ps)
     for k in ("below", "in_band", "sweet", "above", "over_cap"):
         put(f"time_in_zone.{k}_min", _r(tz.get(k, 0) / 60.0), "min", source="his zones from the athlete file, moving samples")
+    # What a message calls "over the cap" (shadow pack, fix 2): minutes 3+ bpm over, the grade's own line. Every
+    # sample over the cap (over_cap_min) counts the sensor's noise at the cap too, and stays a data note.
+    put("time_in_zone.over_cap3_min", _r(tz.get("over_cap3", 0) / 60.0), "min",
+        source=f"moving minutes {cm.OVER_CAP_LINE_BPM}+ bpm over the cap, the grade's line")
     if tz.get("total"):
         put("time_in_zone.in_band_pct", _r(tz["in_band"] / tz["total"] * 100.0, 0), "%")
 

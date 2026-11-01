@@ -199,13 +199,13 @@ def register(reg: cverify.Registry) -> None:
         runs = {i.split(":")[1] for i in _ids(ctx) if i.startswith("run:") and i.count(":") >= 2}
         out = []
         for w in sorted(runs):
-            over = _rec(ctx, f"run:{w}:time_in_zone.over_cap_min")
+            over = _rec(ctx, f"run:{w}:time_in_zone.over_cap3_min") or _rec(ctx, f"run:{w}:time_in_zone.over_cap_min")
             pct = _rec(ctx, f"run:{w}:time_in_zone.in_band_pct")
             over_v = float(over.value) if over is not None and over.value is not None else 0.0
             pct_v = float(pct.value) if pct is not None and pct.value is not None else 100.0
             if over_v >= OVER_CAP_MIN_FOR_CLAIM or pct_v < IN_BAND_PCT_FOR_CLAIM:
                 out.append(Failure(o.id, f"the answer calls the run in band, but it spent {over_v:.0f} min over the cap and {pct_v:.0f}% of its moving time in band",
-                                   f"say it with the records run:{w}:time_in_zone.over_cap_min and run:{w}:time_in_zone.in_band_pct; "
+                                   f"say it with the records run:{w}:time_in_zone.over_cap3_min and run:{w}:time_in_zone.in_band_pct; "
                                    "don't call it in band, disciplined or steady"))
                 break
         return out

@@ -202,7 +202,7 @@ HOW_TEXT = ("How to work: call the tools for the athlete file (his zones, cap an
             "session's week of the block is its plan record (plan:<date>:week_of_block); the clock's block week is "
             "this week. Cite distances in km (distance_km); the reader's units add the miles, so never write both. "
             "When a run spent minutes over the cap or under 60% of its moving time in band, say so with those "
-            "records (time_in_zone.over_cap_min, time_in_zone.in_band_pct); never call such a run in band, "
+            "records (time_in_zone.over_cap3_min, the minutes 3+ bpm over, and time_in_zone.in_band_pct); never call such a run in band, "
             "disciplined or steady.")
 
 ANSWER_INSTRUCTION = (
@@ -225,11 +225,121 @@ DATE_WORDS = re.compile(r"\b(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|S
 
 
 # ── the members the harness reads (core.harness.shapes.resolve) ───────
+_PH = re.compile(r"\{\{\s*r:([^}|\s]+)\s*(?:\|\s*([a-z]+)\s*)?\}\}")
+CARD_LINES_BEFORE_WHY = 9          # A1
+_LABEL_LINE_CHARS = 30             # a line this short around its placeholders is a label, not advice
+
+
+def _adjusted(rid: str) -> bool:
+    """The ids E8 wants shown with a range: normalized paces, the trend and the forecast."""
+    return (":norm." in rid and rid.endswith(("pace_at_ref", "pace_at_ref_hr_only"))) or (
+        rid.startswith(("trend:", "forecast:")) and rid.endswith("pace_s_per_mi"))
+
+
+def _with_ranges(text: str, evidence: Any, shown: set[str]) -> str:
+    """E8 in code: an adjusted number cited bare gets its range beside it, once."""
+    def add(m: re.Match) -> str:
+        rid, fmt = m.group(1), m.group(2)
+        if fmt or not _adjusted(rid) or rid in shown:
+            return m.group(0)
+        rec = evidence.get(rid)
+        if rec is None or getattr(rec, "lo", None) is None:
+            return m.group(0)
+        shown.add(rid)
+        return m.group(0) + " ({{r:" + rid + "|range}})"
+    return _PH.sub(add, text)
+
+
+def _complete_format(answer: Answer, evidence: Any) -> tuple[Answer, list[str]]:
+    """Shadow pack, fix 1 (2026-11-01): about half the repairs were format
+    failures code can guarantee from the records. Before the checks run:
+    an analysis states its run's type and grade (A4, and a D says it
+    doesn't count); an adjusted number shows its range (E8); a card says
+    each thing once and keeps nine lines before "why" (A1)."""
+    notes: list[str] = []
+    texts = " ".join(answer.texts())
+    # E8: ranges beside adjusted numbers
+    shown = {m.group(1) for m in _PH.finditer(texts) if m.group(2) == "range"}
+    upd: dict = {}
+    head = _with_ranges(answer.headline, evidence, shown)
+    bottom = [_with_ranges(t, evidence, shown) for t in answer.bottom_line]
+    sections = [s.model_copy(update={"lines": [_with_ranges(t, evidence, shown) for t in s.lines]}) for s in answer.sections]
+    if (head, bottom, [s.lines for s in sections]) != (answer.headline, answer.bottom_line, [s.lines for s in answer.sections]):
+        upd.update(headline=head, bottom_line=bottom, sections=sections)
+        notes.append("E8: ranges added beside adjusted numbers")
+    # A4: an analysis names its run's type and grade
+    if answer.kind == "analysis":
+        cited = [m.group(1) for m in _PH.finditer(texts)] + list(answer.records_used)
+        runs = [i.split(":")[1] for i in cited if i.startswith("run:") and i.count(":") >= 2]
+        wid = max(set(runs), key=runs.count) if runs else None
+        has = lambda rid: evidence.get(rid) is not None  # noqa: E731
+        if wid and has(f"run:{wid}:grade") and has(f"run:{wid}:session_type"):
+            says_type = any(i.endswith(":session_type") for i in cited)
+            says_grade = any(i.endswith(":grade") for i in cited)
+            if not (says_type and says_grade):
+                line = "Type {{r:run:" + wid + ":session_type}}, grade {{r:run:" + wid + ":grade}}."
+                if evidence.get(f"run:{wid}:grade").value == "D":
+                    line = line[:-1] + ": it doesn't count as fitness data."
+                cur = upd.get("bottom_line", list(answer.bottom_line))
+                upd["bottom_line"] = [line] + cur
+                notes.append("A4: the run's type and grade stated")
+    # A1: a card says each thing once, nine lines before "why"
+    if answer.kind == "card":
+        secs = upd.get("sections", list(answer.sections))
+        seen = {m.group(1) for t in [upd.get("headline", answer.headline)] + upd.get("bottom_line", list(answer.bottom_line))
+                for m in _PH.finditer(t or "")}
+        dropped = 0
+        kept_secs = []
+        before_why = True
+        for s in secs:
+            if s.title.strip().lower().startswith("why"):
+                before_why = False
+            if not before_why:
+                kept_secs.append(s)
+                continue
+            lines = []
+            for t in s.lines:
+                ids = {m.group(1) for m in _PH.finditer(t)}
+                words = _PH.sub("", t).strip(" .,:;-–—•")
+                if ids and ids <= seen and len(words) <= _LABEL_LINE_CHARS:
+                    dropped += 1
+                    continue
+                seen |= ids
+                lines.append(t)
+            if lines:
+                kept_secs.append(s.model_copy(update={"lines": lines}))
+        n = (1 if upd.get("headline", answer.headline) else 0) + len([t for t in upd.get("bottom_line", answer.bottom_line) if t])
+        moved: list[str] = []
+        out_secs = []
+        # Overflow moves below "why" only when the card has one (A1 counts the lines before it).
+        past_why = not any(x.title.strip().lower().startswith("why") for x in kept_secs)
+        for s in kept_secs:
+            if past_why or s.title.strip().lower().startswith("why"):
+                past_why = True                     # from "why" on, nothing is counted or moved
+                out_secs.append(s)
+                continue
+            room = max(CARD_LINES_BEFORE_WHY - n, 0)
+            keep, over = s.lines[:room], s.lines[room:]
+            n += len(keep)
+            moved += over
+            if keep:
+                out_secs.append(s.model_copy(update={"lines": keep}))
+        if moved:
+            out_secs.append(Section(title="More", lines=moved))
+        if dropped or moved:
+            upd["sections"] = out_secs
+            notes.append(f"A1: {dropped} repeated line(s) dropped, {len(moved)} moved below why")
+    if upd:
+        answer = answer.model_copy(update=upd)
+    return answer, notes
+
+
 def sanitize(answer: Answer, evidence: Any) -> tuple[Answer, list[str]]:
     """A cited id with no record is dropped from records_used and from a
     hypothesis's records (the placeholder itself stays for E1 to name);
-    the notes say which."""
-    notes: list[str] = []
+    the notes say which. Then the format the records can guarantee is
+    completed in code (`_complete_format`)."""
+    answer, notes = _complete_format(answer, evidence)
     have = lambda rid: evidence.get(rid) is not None  # noqa: E731
     used = [r for r in answer.records_used if have(r)]
     dropped = [r for r in answer.records_used if not have(r)]
@@ -246,7 +356,7 @@ def sanitize(answer: Answer, evidence: Any) -> tuple[Answer, list[str]]:
 
 # The records that say whether a run held its band, whatever the answer cites (the judge must see them to
 # grade a verdict: live 2026-10-26, it passed "squarely inside Zone 2" for a run well over the cap).
-JUDGE_CORE = (":grade", ":session_type", ":time_in_zone.in_band_pct", ":time_in_zone.over_cap_min", ":main_block.over_cap_pct",
+JUDGE_CORE = (":grade", ":session_type", ":time_in_zone.in_band_pct", ":time_in_zone.over_cap3_min", ":main_block.over_cap_pct",
               ":run_halves.first.hr_avg", ":run_halves.second.hr_avg", ":drift_bpm", ":decoupling_pct", ":grade.borderline",
               ":grade.margin.start_bpm", ":grade.margin.protocol_bpm", ":hr_avg_moving", ":pace_s_per_mi", ":norm.pace_at_ref")
 JUDGE_MAX = 70
@@ -291,7 +401,14 @@ def disclosure(f: Any) -> str | None:
         return "A pace target did not fit the HR–pace model's range, so I kept the heart-rate anchor."
     if f.outcome == "S1":
         return "If you have chest pain or pressure, a racing or irregular heartbeat at rest, fainting, unusual breathlessness or a worst-ever headache, see a clinician promptly."
-    return f"Unresolved: {f.message}."
+    if f.outcome == "S2":
+        return "It's hot enough that any harder session should move to a cooler hour or get shorter."
+    if f.outcome == "E2":
+        return "Your heart-rate band comes from your athlete file, not from a pace."
+    # Shadow pack, fix 3 (2026-11-01): a format or structure failure is fixed in code or stays silent;
+    # "Unresolved: the session type or the grade is not stated" was developer text in his message.
+    # The trace and the outcome results still record it.
+    return None
 
 
 frame_model = Frame
