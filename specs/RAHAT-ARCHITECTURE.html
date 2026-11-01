@@ -6,11 +6,11 @@
 <!-- Rahat end to end as an interactive page. Hosted copies: https://modernthinkerbuilds.github.io/Rahat-Plane/specs/RAHAT-ARCHITECTURE.html (GitHub Pages) and https://claude.ai/artifact/5Lsi2YiDVQQXxcBorudNeq ; this file is their source and opens in any browser. The harness inside one agent has its own page, ADR-018.html, beside it. -->
 <style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
 <title>Rahat Architecture</title>
-<meta name="description" content="Rahat, end to end, as built: the doors a message comes in by, the rules in code that meet it, six agents, the checks between an answer and you, one SQLite file of record, and a record of every decision. Interactive: tap any box or watch a message travel.">
+<meta name="description" content="Rahat, end to end, as built: the doors a message comes in by, the rules in code that meet it, seven agents, the checks between an answer and you, one SQLite file of record, and a record of every decision. Interactive: tap any box or watch a message travel.">
 <link rel="canonical" href="https://modernthinkerbuilds.github.io/Rahat-Plane/specs/RAHAT-ARCHITECTURE.html">
 <meta property="og:type" content="website">
 <meta property="og:title" content="Rahat Architecture, end to end">
-<meta property="og:description" content="Rahat, end to end, as built: the doors a message comes in by, the rules in code that meet it, six agents, the checks between an answer and you, one SQLite file of record, and a record of every decision. Interactive: tap any box or watch a message travel.">
+<meta property="og:description" content="Rahat, end to end, as built: the doors a message comes in by, the rules in code that meet it, seven agents, the checks between an answer and you, one SQLite file of record, and a record of every decision. Interactive: tap any box or watch a message travel.">
 <meta property="og:url" content="https://modernthinkerbuilds.github.io/Rahat-Plane/specs/RAHAT-ARCHITECTURE.html">
 <meta property="og:image" content="https://modernthinkerbuilds.github.io/Rahat-Plane/specs/img/rahat-map.png">
 <meta name="twitter:card" content="summary_large_image">
@@ -282,13 +282,13 @@ svg .now-t { font-family: var(--mono); font-size: 10.5px; fill: var(--plane); }
   <p class="eyebrow"><a href="https://venkatsadras.com/rahat/">← venkatsadras.com</a> · Rahat · end to end · as built on October 17, 2026</p>
   <h1>Rahat Architecture</h1>
   <p class="lede"><b>Miya is the agent you talk to. Rahat is everything underneath it:</b> the doors messages come in by, the rules in code that meet them, the specialists, the checks between an answer and you, the memory they share, and the jobs that keep it fed while nobody is typing. It runs on one Mac mini at home.</p>
-  <div class="counts" aria-label="Counts as of October 17 to 19">
-    <span class="count"><b>3</b><span class="d">front doors</span></span>
-    <span class="count"><b>6</b><span class="d">agents</span></span>
-    <span class="count"><b>8</b><span class="d">services · 5 always on</span></span>
+  <div class="counts" aria-label="Counts as of November 1, 2026; event sources as of October 19">
+    <span class="count"><b>4</b><span class="d">front doors</span></span>
+    <span class="count"><b>7</b><span class="d">agents</span></span>
+    <span class="count"><b>9</b><span class="d">services · 6 always on</span></span>
     <span class="count"><b>122</b><span class="d">event sources</span></span>
     <span class="count"><b>1</b><span class="d">SQLite file of record</span></span>
-    <span class="count"><b>4,209</b><span class="d">tests</span></span>
+    <span class="count"><b>4,322</b><span class="d">tests</span></span>
   </div>
   <div class="legend" aria-label="Color key">
     <span><i class="sw model"></i>a model does it</span>
@@ -313,6 +313,7 @@ svg .now-t { font-family: var(--mono); font-size: 10.5px; fill: var(--plane); }
     <button class="play" data-scen="watch" aria-pressed="false">The Watch syncs</button>
     <button class="play" data-scen="events" aria-pressed="false">Weekend events</button>
     <button class="play" data-scen="coffee" aria-pressed="false"><span class="k">/coffee</span> · Bourdain</button>
+    <button class="play" data-scen="run" aria-pressed="false"><span class="k">/run</span> · Kipchoge</button>
     <button class="play" data-scen="cool" aria-pressed="false">9:30 pm cooldown</button>
     <button class="play" data-scen="food" aria-pressed="false">Food feeds · 05:30</button>
     <button class="play" data-scen="health" aria-pressed="false">Health line · 08:15</button>
@@ -321,7 +322,7 @@ svg .now-t { font-family: var(--mono); font-size: 10.5px; fill: var(--plane); }
 
   <figure>
     <div class="fig fig-map">
-      <svg id="map" viewBox="0 0 1240 704" role="img" xmlns="http://www.w3.org/2000/svg" aria-label="Rahat end to end. Three Telegram doors lead to three runners on a Mac mini. Miya's runner meets a 16-rung ladder of rules in code, then Miya, Kobe, Fraser and Huberman, then a validator and Fraser's contract, then Telegram. Genie's runner meets a household gate, then Genie and its plan rules. Bourdain's runner meets a grammar of lookups and asks, then the harness, then verify and a judge in shadow. Under them, the control plane: the model wire to Gemini, the Charter, the decisions and cost ledgers, the 08:15 health line and the tests. Under that, the vault: health data from the phone's bridge, the gym's week from the gym bridge, the events inventory from three daily event runs, the knowledge base from the nightly food run, plus memory, scoped state, records and the JSON profiles.">
+      <svg id="map" viewBox="0 0 1240 768" role="img" xmlns="http://www.w3.org/2000/svg" aria-label="Rahat end to end. Four Telegram doors lead to four runners on a Mac mini. Miya's runner meets a 16-rung ladder of rules in code, then Miya, Kobe, Fraser and Huberman, then a validator and Fraser's contract, then Telegram. Genie's runner meets a household gate, then Genie and its plan rules. Bourdain's runner meets a grammar of lookups and asks, then the harness, then verify and a judge in shadow. Kipchoge's runner meets its commands, then Kipchoge on the harness, then a check that every number cites a record and a judge in shadow. Under them, the control plane: the model wire to Gemini, the Charter, the decisions and cost ledgers, the 08:15 health line and the tests. Under that, the vault: health data from the phone's bridge, the gym's week from the gym bridge, the events inventory from three daily event runs, the knowledge base from the nightly food run, plus memory, scoped state, records and the JSON profiles.">
         <defs>
           <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk"/></marker>
           <marker id="a-lit" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-lit"/></marker>
@@ -330,7 +331,7 @@ svg .now-t { font-family: var(--mono); font-size: 10.5px; fill: var(--plane); }
           <filter id="glow" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="4.5"/></filter>
           <pattern id="dots" width="18" height="18" patternUnits="userSpaceOnUse"><circle cx="1.5" cy="1.5" r="1.1" class="dotgrid"/></pattern>
         </defs>
-        <rect x="0" y="0" width="1240" height="704" fill="url(#dots)"/>
+        <rect x="0" y="0" width="1240" height="768" fill="url(#dots)"/>
 
         <text x="30" y="26" class="tag">COMES IN</text>
         <text x="196" y="26" class="tag">DOORS · LAUNCHD</text>
@@ -339,10 +340,10 @@ svg .now-t { font-family: var(--mono); font-size: 10.5px; fill: var(--plane); }
         <text x="864" y="26" class="tag">CHECKS IN THE PATH</text>
         <text x="1060" y="26" class="tag">GOES OUT</text>
 
-        <rect x="20" y="300" width="1200" height="88" rx="10" class="band-plane"/>
-        <text x="1210" y="315" text-anchor="end" class="tag">CONTROL PLANE · A BUDGET GATE ON THE NEWER PATHS</text>
-        <rect x="360" y="406" width="860" height="290" rx="10" class="band-store"/>
-        <text x="372" y="424" class="tag">THE VAULT · vault/rahat.db, ONE SQLITE FILE ON THE MAC MINI · JSON BESIDE IT · NEVER IN GIT</text>
+        <rect x="20" y="364" width="1200" height="88" rx="10" class="band-plane"/>
+        <text x="1210" y="379" text-anchor="end" class="tag">CONTROL PLANE · A BUDGET GATE ON THE NEWER PATHS</text>
+        <rect x="360" y="470" width="860" height="290" rx="10" class="band-store"/>
+        <text x="372" y="488" class="tag">THE VAULT · vault/rahat.db, ONE SQLITE FILE ON THE MAC MINI · JSON BESIDE IT · NEVER IN GIT</text>
 
         <g id="dyn"></g>
 
@@ -355,7 +356,7 @@ svg .now-t { font-family: var(--mono); font-size: 10.5px; fill: var(--plane); }
         <g class="node n-model" id="n-fraser" data-tip="fraser" tabindex="0"><rect x="653" y="80" width="90" height="52" rx="6"/><text x="698" y="102" text-anchor="middle" class="t">Fraser</text><text x="698" y="119" text-anchor="middle" class="s">workouts</text></g>
         <g class="node n-model" id="n-huberman" data-tip="huberman" tabindex="0"><rect x="748" y="80" width="90" height="52" rx="6"/><text x="793" y="102" text-anchor="middle" class="t">Huberman</text><text x="793" y="119" text-anchor="middle" class="s">cooldowns</text></g>
         <g class="node n-code" id="n-checksA" data-tip="checksA" tabindex="0"><rect x="864" y="52" width="170" height="60" rx="6"/><text x="949" y="77" text-anchor="middle" class="t">Validator · 7 checks</text><text x="949" y="95" text-anchor="middle" class="s">+ Fraser's contract · 10</text></g>
-        <g class="node n-neutral" id="n-tg" data-tip="tg" tabindex="0"><rect x="1060" y="52" width="150" height="220" rx="8"/><text x="1135" y="148" text-anchor="middle" class="t big">Telegram</text><text x="1135" y="168" text-anchor="middle" class="s">one voice per door</text><text x="1135" y="184" text-anchor="middle" class="s">refused → sent again</text><text x="1135" y="200" text-anchor="middle" class="s">slash-menu hints</text></g>
+        <g class="node n-neutral" id="n-tg" data-tip="tg" tabindex="0"><rect x="1060" y="52" width="150" height="284" rx="8"/><text x="1135" y="180" text-anchor="middle" class="t big">Telegram</text><text x="1135" y="200" text-anchor="middle" class="s">one voice per door</text><text x="1135" y="216" text-anchor="middle" class="s">refused → sent again</text><text x="1135" y="232" text-anchor="middle" class="s">slash-menu hints</text></g>
 
         <path class="edge" id="e-you-miya" d="M170,82 L194,82" marker-end="url(#a)"/>
         <path class="edge" id="e-miya-ladder" d="M346,82 L370,82" marker-end="url(#a)"/>
@@ -391,50 +392,62 @@ svg .now-t { font-family: var(--mono); font-size: 10.5px; fill: var(--plane); }
         <path class="edge" id="e-bourdain-verify" d="M838,239 L862,239" marker-end="url(#a)"/>
         <path class="edge" id="e-verify-tg" d="M1034,239 L1058,239" marker-end="url(#a)"/>
 
+        <!-- lane D: you → Kipchoge, its own door since Nov 1 -->
+        <g class="node n-neutral" id="n-athlete" data-tip="athlete" tabindex="0"><rect x="30" y="280" width="140" height="50" rx="6"/><text x="100" y="301" text-anchor="middle" class="t">You</text><text x="100" y="318" text-anchor="middle" class="s">Telegram · Kipchoge</text></g>
+        <g class="node n-run" id="n-kiprun" data-tip="kiprun" tabindex="0"><rect x="196" y="280" width="150" height="50" rx="6"/><text x="271" y="301" text-anchor="middle" class="t">kipchoge</text><text x="271" y="318" text-anchor="middle" class="s">runner · Fri, Sat 20:00 ⏱</text></g>
+        <g class="node n-code" id="n-kipcmds" data-tip="kipcmds" tabindex="0"><rect x="372" y="280" width="160" height="50" rx="6"/><text x="452" y="301" text-anchor="middle" class="t">Commands</text><text x="452" y="318" text-anchor="middle" class="s">a lookup or an ask</text></g>
+        <g class="node n-model" id="n-kipchoge" data-tip="kipchoge" tabindex="0"><rect x="558" y="280" width="280" height="50" rx="6"/><text x="698" y="301" text-anchor="middle" class="t">Kipchoge · on the harness</text><text x="698" y="318" text-anchor="middle" class="s">the running coach · numbers from records</text></g>
+        <g class="node n-judge" id="n-kipchecks" data-tip="kipchecks" tabindex="0"><rect x="864" y="280" width="170" height="50" rx="6"/><text x="949" y="301" text-anchor="middle" class="t">Cited · judge</text><text x="949" y="318" text-anchor="middle" class="s">no record, no number</text></g>
+        <path class="edge" id="e-ath-kip" d="M170,305 L194,305" marker-end="url(#a)"/>
+        <path class="edge" id="e-krun-cmds" d="M346,305 L370,305" marker-end="url(#a)"/>
+        <path class="edge" id="e-cmds-kip" d="M532,305 L556,305" marker-end="url(#a)"/>
+        <path class="edge" id="e-kip-checks" d="M838,305 L862,305" marker-end="url(#a)"/>
+        <path class="edge" id="e-kchecks-tg" d="M1034,305 L1058,305" marker-end="url(#a)"/>
+
         <!-- every agent → the wire and the vault -->
-        <path class="edge thin" d="M558,280 L838,280"/>
-        <text x="698" y="276" text-anchor="middle" class="lbl">every agent</text>
-        <path class="edge model" id="e-agents-wire" d="M600,280 L600,292 L271,292 L271,318" marker-end="url(#a-model)"/>
-        <text x="436" y="287" text-anchor="middle" class="lbl">calls models</text>
-        <path class="edge store" id="e-agents-vault" d="M698,280 L698,404" marker-end="url(#a-store)"/>
-        <text x="706" y="399" class="lbl">reads and writes</text>
+        <path class="edge thin" d="M558,344 L838,344"/>
+        <text x="698" y="340" text-anchor="middle" class="lbl">every agent</text>
+        <path class="edge model" id="e-agents-wire" d="M600,344 L600,356 L271,356 L271,382" marker-end="url(#a-model)"/>
+        <text x="436" y="351" text-anchor="middle" class="lbl">calls models</text>
+        <path class="edge store" id="e-agents-vault" d="M698,344 L698,468" marker-end="url(#a-store)"/>
+        <text x="706" y="463" class="lbl">reads and writes</text>
 
         <!-- the control plane -->
-        <g class="node n-plane" id="n-rails" data-tip="rails" tabindex="0"><rect x="30" y="320" width="140" height="56" rx="6"/><text x="100" y="343" text-anchor="middle" class="t">The rails</text><text x="100" y="360" text-anchor="middle" class="s">4,209 tests · a gate</text></g>
-        <g class="node n-plane" id="n-wire" data-tip="wire" tabindex="0"><rect x="196" y="320" width="150" height="56" rx="6"/><text x="271" y="343" text-anchor="middle" class="t">Model wire</text><text x="271" y="360" text-anchor="middle" class="s">90 s timeout · retried</text></g>
-        <g class="node n-ext" id="n-gemini" data-tip="gemini" tabindex="0"><rect x="372" y="320" width="160" height="56" rx="6"/><text x="452" y="343" text-anchor="middle" class="t">Gemini</text><text x="452" y="360" text-anchor="middle" class="s">Flash · search · Maps</text></g>
-        <g class="node n-plane" id="n-charter" data-tip="charter" tabindex="0"><rect x="558" y="320" width="126" height="56" rx="6"/><text x="621" y="343" text-anchor="middle" class="t">Charter</text><text x="621" y="360" text-anchor="middle" class="s">quiet hours · vetoes</text></g>
-        <g class="node n-plane" id="n-decisions" data-tip="decisions" tabindex="0"><rect x="712" y="320" width="126" height="56" rx="6"/><text x="775" y="343" text-anchor="middle" class="t">Decisions</text><text x="775" y="360" text-anchor="middle" class="s">a trace per message</text></g>
-        <g class="node n-plane" id="n-cost" data-tip="cost" tabindex="0"><rect x="864" y="320" width="170" height="56" rx="6"/><text x="949" y="343" text-anchor="middle" class="t">Cost ledger</text><text x="949" y="360" text-anchor="middle" class="s">/cost · a brake per ask</text></g>
-        <g class="node n-plane" id="n-health" data-tip="health" tabindex="0"><rect x="1060" y="320" width="150" height="56" rx="6"/><text x="1135" y="343" text-anchor="middle" class="t">Health line</text><text x="1135" y="360" text-anchor="middle" class="s">08:15 · only if broken ⏱</text></g>
-        <path class="edge" id="e-wire-gemini" d="M346,348 L370,348" marker-end="url(#a)"/>
+        <g class="node n-plane" id="n-rails" data-tip="rails" tabindex="0"><rect x="30" y="384" width="140" height="56" rx="6"/><text x="100" y="407" text-anchor="middle" class="t">The rails</text><text x="100" y="424" text-anchor="middle" class="s">4,322 tests · a gate</text></g>
+        <g class="node n-plane" id="n-wire" data-tip="wire" tabindex="0"><rect x="196" y="384" width="150" height="56" rx="6"/><text x="271" y="407" text-anchor="middle" class="t">Model wire</text><text x="271" y="424" text-anchor="middle" class="s">90 s timeout · retried</text></g>
+        <g class="node n-ext" id="n-gemini" data-tip="gemini" tabindex="0"><rect x="372" y="384" width="160" height="56" rx="6"/><text x="452" y="407" text-anchor="middle" class="t">Gemini</text><text x="452" y="424" text-anchor="middle" class="s">Flash · search · Maps</text></g>
+        <g class="node n-plane" id="n-charter" data-tip="charter" tabindex="0"><rect x="558" y="384" width="126" height="56" rx="6"/><text x="621" y="407" text-anchor="middle" class="t">Charter</text><text x="621" y="424" text-anchor="middle" class="s">quiet hours · vetoes</text></g>
+        <g class="node n-plane" id="n-decisions" data-tip="decisions" tabindex="0"><rect x="712" y="384" width="126" height="56" rx="6"/><text x="775" y="407" text-anchor="middle" class="t">Decisions</text><text x="775" y="424" text-anchor="middle" class="s">a trace per message</text></g>
+        <g class="node n-plane" id="n-cost" data-tip="cost" tabindex="0"><rect x="864" y="384" width="170" height="56" rx="6"/><text x="949" y="407" text-anchor="middle" class="t">Cost ledger</text><text x="949" y="424" text-anchor="middle" class="s">/cost · a brake per ask</text></g>
+        <g class="node n-plane" id="n-health" data-tip="health" tabindex="0"><rect x="1060" y="384" width="150" height="56" rx="6"/><text x="1135" y="407" text-anchor="middle" class="t">Health line</text><text x="1135" y="424" text-anchor="middle" class="s">08:15 · only if broken ⏱</text></g>
+        <path class="edge" id="e-wire-gemini" d="M346,412 L370,412" marker-end="url(#a)"/>
 
         <!-- pipelines into the vault -->
-        <g class="node n-neutral" id="n-phone" data-tip="phone" tabindex="0"><rect x="30" y="438" width="140" height="46" rx="6"/><text x="100" y="458" text-anchor="middle" class="t">iPhone + Watch</text><text x="100" y="474" text-anchor="middle" class="s">Health Auto Export</text></g>
-        <g class="node n-run" id="n-vitals" data-tip="vitals" tabindex="0"><rect x="196" y="438" width="150" height="46" rx="6"/><text x="271" y="458" text-anchor="middle" class="t">vitals.v2</text><text x="271" y="474" text-anchor="middle" class="s">health bridge · :5000</text></g>
-        <g class="node n-store" id="n-healthdata" data-tip="healthdata" tabindex="0"><rect x="372" y="438" width="160" height="46" rx="6"/><text x="452" y="458" text-anchor="middle" class="t">Health data</text><text x="452" y="474" text-anchor="middle" class="s">minutes · sleep · workouts</text></g>
-        <g class="node n-neutral" id="n-gym" data-tip="gym" tabindex="0"><rect x="30" y="496" width="140" height="46" rx="6"/><text x="100" y="516" text-anchor="middle" class="t">The gym</text><text x="100" y="532" text-anchor="middle" class="s">SugarWOD</text></g>
-        <g class="node n-run" id="n-sugar" data-tip="sugar" tabindex="0"><rect x="196" y="496" width="150" height="46" rx="6"/><text x="271" y="516" text-anchor="middle" class="t">sugar.bridge</text><text x="271" y="532" text-anchor="middle" class="s">the week's programming</text></g>
-        <g class="node n-store" id="n-gymweek" data-tip="gymweek" tabindex="0"><rect x="372" y="496" width="160" height="46" rx="6"/><text x="452" y="516" text-anchor="middle" class="t">The gym's week</text><text x="452" y="532" text-anchor="middle" class="s">the week's plan file</text></g>
-        <g class="node n-ext" id="n-web" data-tip="web" tabindex="0"><rect x="30" y="554" width="140" height="104" rx="6"/><text x="100" y="592" text-anchor="middle" class="t">The web</text><text x="100" y="610" text-anchor="middle" class="s">122 event sources</text><text x="100" y="625" text-anchor="middle" class="s">12 food feeds</text><text x="100" y="640" text-anchor="middle" class="s">open data</text></g>
-        <g class="node n-run" id="n-events" data-tip="events" tabindex="0"><rect x="196" y="554" width="150" height="46" rx="6"/><text x="271" y="574" text-anchor="middle" class="t">events ⏱</text><text x="271" y="590" text-anchor="middle" class="s">07:00 · 12:30 · 18:00</text></g>
-        <g class="node n-store" id="n-inventory" data-tip="inventory" tabindex="0"><rect x="372" y="554" width="160" height="46" rx="6"/><text x="452" y="574" text-anchor="middle" class="t">Events inventory</text><text x="452" y="590" text-anchor="middle" class="s">deduped · tagged</text></g>
-        <g class="node n-run" id="n-food" data-tip="food" tabindex="0"><rect x="196" y="612" width="150" height="46" rx="6"/><text x="271" y="632" text-anchor="middle" class="t">food.nightly ⏱</text><text x="271" y="648" text-anchor="middle" class="s">05:30 · no model</text></g>
-        <g class="node n-store" id="n-kb" data-tip="kb" tabindex="0"><rect x="372" y="612" width="160" height="46" rx="6"/><text x="452" y="632" text-anchor="middle" class="t">Knowledge base</text><text x="452" y="648" text-anchor="middle" class="s">places · facts · sources</text></g>
-        <path class="edge" id="e-phone-vitals" d="M170,461 L194,461" marker-end="url(#a)"/>
-        <path class="edge store" id="e-vitals-health" d="M346,461 L370,461" marker-end="url(#a-store)"/>
-        <path class="edge" id="e-gym-sugar" d="M170,519 L194,519" marker-end="url(#a)"/>
-        <path class="edge store" id="e-sugar-gym" d="M346,519 L370,519" marker-end="url(#a-store)"/>
-        <path class="edge" id="e-web-events" d="M170,577 L194,577" marker-end="url(#a)"/>
-        <path class="edge store" id="e-events-inv" d="M346,577 L370,577" marker-end="url(#a-store)"/>
-        <path class="edge" id="e-web-food" d="M170,635 L194,635" marker-end="url(#a)"/>
-        <path class="edge store" id="e-food-kb" d="M346,635 L370,635" marker-end="url(#a-store)"/>
+        <g class="node n-neutral" id="n-phone" data-tip="phone" tabindex="0"><rect x="30" y="502" width="140" height="46" rx="6"/><text x="100" y="522" text-anchor="middle" class="t">iPhone + Watch</text><text x="100" y="538" text-anchor="middle" class="s">Health Auto Export</text></g>
+        <g class="node n-run" id="n-vitals" data-tip="vitals" tabindex="0"><rect x="196" y="502" width="150" height="46" rx="6"/><text x="271" y="522" text-anchor="middle" class="t">vitals.v2</text><text x="271" y="538" text-anchor="middle" class="s">health bridge · :5000</text></g>
+        <g class="node n-store" id="n-healthdata" data-tip="healthdata" tabindex="0"><rect x="372" y="502" width="160" height="46" rx="6"/><text x="452" y="522" text-anchor="middle" class="t">Health data</text><text x="452" y="538" text-anchor="middle" class="s">minutes · sleep · workouts</text></g>
+        <g class="node n-neutral" id="n-gym" data-tip="gym" tabindex="0"><rect x="30" y="560" width="140" height="46" rx="6"/><text x="100" y="580" text-anchor="middle" class="t">The gym</text><text x="100" y="596" text-anchor="middle" class="s">SugarWOD</text></g>
+        <g class="node n-run" id="n-sugar" data-tip="sugar" tabindex="0"><rect x="196" y="560" width="150" height="46" rx="6"/><text x="271" y="580" text-anchor="middle" class="t">sugar.bridge</text><text x="271" y="596" text-anchor="middle" class="s">the week's programming</text></g>
+        <g class="node n-store" id="n-gymweek" data-tip="gymweek" tabindex="0"><rect x="372" y="560" width="160" height="46" rx="6"/><text x="452" y="580" text-anchor="middle" class="t">The gym's week</text><text x="452" y="596" text-anchor="middle" class="s">the week's plan file</text></g>
+        <g class="node n-ext" id="n-web" data-tip="web" tabindex="0"><rect x="30" y="618" width="140" height="104" rx="6"/><text x="100" y="656" text-anchor="middle" class="t">The web</text><text x="100" y="674" text-anchor="middle" class="s">122 event sources</text><text x="100" y="689" text-anchor="middle" class="s">12 food feeds</text><text x="100" y="704" text-anchor="middle" class="s">open data</text></g>
+        <g class="node n-run" id="n-events" data-tip="events" tabindex="0"><rect x="196" y="618" width="150" height="46" rx="6"/><text x="271" y="638" text-anchor="middle" class="t">events ⏱</text><text x="271" y="654" text-anchor="middle" class="s">07:00 · 12:30 · 18:00</text></g>
+        <g class="node n-store" id="n-inventory" data-tip="inventory" tabindex="0"><rect x="372" y="618" width="160" height="46" rx="6"/><text x="452" y="638" text-anchor="middle" class="t">Events inventory</text><text x="452" y="654" text-anchor="middle" class="s">deduped · tagged</text></g>
+        <g class="node n-run" id="n-food" data-tip="food" tabindex="0"><rect x="196" y="676" width="150" height="46" rx="6"/><text x="271" y="696" text-anchor="middle" class="t">food.nightly ⏱</text><text x="271" y="712" text-anchor="middle" class="s">05:30 · no model</text></g>
+        <g class="node n-store" id="n-kb" data-tip="kb" tabindex="0"><rect x="372" y="676" width="160" height="46" rx="6"/><text x="452" y="696" text-anchor="middle" class="t">Knowledge base</text><text x="452" y="712" text-anchor="middle" class="s">places · facts · sources</text></g>
+        <path class="edge" id="e-phone-vitals" d="M170,525 L194,525" marker-end="url(#a)"/>
+        <path class="edge store" id="e-vitals-health" d="M346,525 L370,525" marker-end="url(#a-store)"/>
+        <path class="edge" id="e-gym-sugar" d="M170,583 L194,583" marker-end="url(#a)"/>
+        <path class="edge store" id="e-sugar-gym" d="M346,583 L370,583" marker-end="url(#a-store)"/>
+        <path class="edge" id="e-web-events" d="M170,641 L194,641" marker-end="url(#a)"/>
+        <path class="edge store" id="e-events-inv" d="M346,641 L370,641" marker-end="url(#a-store)"/>
+        <path class="edge" id="e-web-food" d="M170,699 L194,699" marker-end="url(#a)"/>
+        <path class="edge store" id="e-food-kb" d="M346,699 L370,699" marker-end="url(#a-store)"/>
 
         <!-- the shared stores -->
-        <g class="node n-store" id="n-memory" data-tip="memory" tabindex="0"><rect x="558" y="438" width="280" height="104" rx="6"/><text x="698" y="472" text-anchor="middle" class="t">Memory</text><text x="698" y="491" text-anchor="middle" class="s">entities · events · threads</text><text x="698" y="506" text-anchor="middle" class="s">preferences · relationships · archive</text><text x="698" y="521" text-anchor="middle" class="s">chat memory: the last four hours</text></g>
-        <g class="node n-store" id="n-state" data-tip="state" tabindex="0"><rect x="864" y="438" width="346" height="104" rx="6"/><text x="1037" y="472" text-anchor="middle" class="t">Scoped state</text><text x="1037" y="491" text-anchor="middle" class="s">turn · session · day · trip · standing</text><text x="1037" y="506" text-anchor="middle" class="s">the last ask · where you are</text></g>
-        <g class="node n-store" id="n-records" data-tip="records" tabindex="0"><rect x="558" y="554" width="280" height="104" rx="6"/><text x="698" y="588" text-anchor="middle" class="t">Records</text><text x="698" y="607" text-anchor="middle" class="s">decisions · costs · harness runs</text><text x="698" y="622" text-anchor="middle" class="s">outcomes · verdicts · the Charter's log</text></g>
-        <g class="node n-store" id="n-profiles" data-tip="profiles" tabindex="0"><rect x="864" y="554" width="346" height="104" rx="6" style="stroke-dasharray:6 4"/><text x="1037" y="588" text-anchor="middle" class="t">Profiles and plans · JSON</text><text x="1037" y="607" text-anchor="middle" class="s">the household calendar and plans</text><text x="1037" y="622" text-anchor="middle" class="s">family and athlete profiles</text></g>
+        <g class="node n-store" id="n-memory" data-tip="memory" tabindex="0"><rect x="558" y="502" width="280" height="104" rx="6"/><text x="698" y="536" text-anchor="middle" class="t">Memory</text><text x="698" y="555" text-anchor="middle" class="s">entities · events · threads</text><text x="698" y="570" text-anchor="middle" class="s">preferences · relationships · archive</text><text x="698" y="585" text-anchor="middle" class="s">chat memory: the last four hours</text></g>
+        <g class="node n-store" id="n-state" data-tip="state" tabindex="0"><rect x="864" y="502" width="346" height="104" rx="6"/><text x="1037" y="536" text-anchor="middle" class="t">Scoped state</text><text x="1037" y="555" text-anchor="middle" class="s">turn · session · day · trip · standing</text><text x="1037" y="570" text-anchor="middle" class="s">the last ask · where you are</text></g>
+        <g class="node n-store" id="n-records" data-tip="records" tabindex="0"><rect x="558" y="618" width="280" height="104" rx="6"/><text x="698" y="652" text-anchor="middle" class="t">Records</text><text x="698" y="671" text-anchor="middle" class="s">decisions · costs · harness runs</text><text x="698" y="686" text-anchor="middle" class="s">outcomes · verdicts · the Charter's log</text></g>
+        <g class="node n-store" id="n-profiles" data-tip="profiles" tabindex="0"><rect x="864" y="618" width="346" height="104" rx="6" style="stroke-dasharray:6 4"/><text x="1037" y="652" text-anchor="middle" class="t">Profiles and plans · JSON</text><text x="1037" y="671" text-anchor="middle" class="s">the household calendar and plans</text><text x="1037" y="686" text-anchor="middle" class="s">family and athlete profiles</text></g>
 
         <g id="pulse-g" opacity="0" aria-hidden="true">
           <circle r="13" class="pulse-halo" filter="url(#glow)"/>
@@ -487,31 +500,31 @@ svg .now-t { font-family: var(--mono); font-size: 10.5px; fill: var(--plane); }
 
   <p class="sec-eyebrow">The runners</p>
   <h2>A day in Rahat</h2>
-  <div class="prose"><p>Five services run all the time; the rest wake on a clock. Most of what Rahat does, it does while nobody is typing. Play the day to watch it, or hover a mark.</p></div>
+  <div class="prose"><p>Six services run all the time; the rest wake on a clock. Most of what Rahat does, it does while nobody is typing. Play the day to watch it, or hover a mark.</p></div>
   <div class="day-ctl">
     <button class="play" id="play-day" aria-pressed="false">▶ Play the day</button>
     <span class="chip plane" id="now-chip">now: —</span>
   </div>
   <figure>
     <div class="fig fig-day">
-      <svg id="day" viewBox="0 0 1200 330" role="img" xmlns="http://www.w3.org/2000/svg" aria-label="A 24-hour timeline. Always on: the three bots, the health bridge and the gym bridge. Feeds: the paid event search at 03:00 on Wednesdays and Saturdays, the food feeds at 05:30, the event runs at 07:00, 12:30 and 18:00. Miya's minute tick: the morning brief at 08:00, the health line at 08:15, walk nudges from 10:00 to 20:00 on a lagging day, the recovery nudge at 21:00, Huberman's cooldown at 21:30, the weekly reset on Sunday at 23:55. Genie's digest at 08:00. Built but not scheduled yet: a nightly replay at 03:10, a weekly report and a command screener on Sunday evening, a shadow diff at 21:35.">
+      <svg id="day" viewBox="0 0 1200 330" role="img" xmlns="http://www.w3.org/2000/svg" aria-label="A 24-hour timeline. Always on: the four bots, the health bridge and the gym bridge. Feeds: the paid event search at 03:00 on Wednesdays and Saturdays, the food feeds at 05:30, the event runs at 07:00, 12:30 and 18:00. Miya's minute tick: the morning brief at 08:00, the health line at 08:15, walk nudges from 10:00 to 20:00 on a lagging day, the recovery nudge at 21:00, Huberman's cooldown at 21:30, the weekly reset on Sunday at 23:55. Genie's digest at 08:00; Kipchoge's next-run card at 20:00 on Fridays and Saturdays. Built but not scheduled yet: a nightly replay at 03:10, a weekly report and a command screener on Sunday evening, a shadow diff at 21:35.">
         <defs><pattern id="dots-d" width="18" height="18" patternUnits="userSpaceOnUse"><circle cx="1.5" cy="1.5" r="1.1" class="dotgrid"/></pattern></defs>
         <rect x="0" y="0" width="1200" height="330" fill="url(#dots-d)"/>
         <g id="axis"></g>
         <text x="20" y="72" class="tag">ALWAYS ON</text>
         <text x="20" y="122" class="tag">FEEDS</text>
         <text x="20" y="172" class="tag">MIYA'S TICK</text>
-        <text x="20" y="222" class="tag">GENIE</text>
+        <text x="20" y="222" class="tag">OWN BOTS</text>
         <text x="20" y="272" class="tag">BUILT, NOT</text>
         <text x="20" y="285" class="tag">SCHEDULED</text>
-        <g class="mark" data-tip="d-always" tabindex="0"><rect x="160" y="58" width="1020" height="20" rx="10" class="band-code"/><text x="670" y="72" text-anchor="middle" class="s">three bots · the health bridge · the gym bridge</text></g>
+        <g class="mark" data-tip="d-always" tabindex="0"><rect x="160" y="58" width="1020" height="20" rx="10" class="band-code"/><text x="670" y="72" text-anchor="middle" class="s">four bots · the health bridge · the gym bridge</text></g>
         <g id="marks"></g>
         <line id="nowline" class="now" x1="0" y1="40" x2="0" y2="300" opacity="0"/>
         <text id="nowtxt" class="now-t" x="0" y="314" text-anchor="middle" opacity="0">now</text>
         <line id="cursor" class="cursor" x1="160" y1="40" x2="160" y2="300" opacity="0"/>
       </svg>
     </div>
-    <div class="narr" aria-live="polite"><span class="narr-n" id="day-n">a day</span><span class="narr-t" id="day-t">Five services never stop: the three bots, the health bridge and the gym bridge. Everything else on this line wakes on a clock, in Pacific time.</span></div>
+    <div class="narr" aria-live="polite"><span class="narr-n" id="day-n">a day</span><span class="narr-t" id="day-t">Six services never stop: the four bots, the health bridge and the gym bridge. Everything else on this line wakes on a clock, in Pacific time.</span></div>
   </figure>
 
   <p class="sec-eyebrow">The specialists</p>
@@ -552,6 +565,12 @@ svg .now-t { font-family: var(--mono); font-size: 10.5px; fill: var(--plane); }
       <dt>Reads</dt><dd>A knowledge base with a source on every fact, an open-data gazetteer, food feeds every night, where you are.</dd></dl>
       <a class="go" href="ADR-018.html">Open the harness page ↗</a>
     </div>
+    <div class="agent" style="--c: var(--judge)">
+      <div class="h"><h3>Kipchoge · the running coach</h3><span class="chip ok">Live, own bot</span></div>
+      <dl><dt>Built on</dt><dd>The harness, its second tenant since November 1: 19 outcomes, an 8-point judge in shadow, a brake of 10 tool calls and $0.25 an ask.</dd>
+      <dt>Rule</dt><dd>Every number is computed in code from your runs and cites its record; a message with a number no record backs is never sent.</dd>
+      <dt>Next</dt><dd>Through Miya: the route is built and switched off.</dd></dl>
+    </div>
   </div>
 
   <p class="sec-eyebrow">The memory</p>
@@ -560,7 +579,7 @@ svg .now-t { font-family: var(--mono); font-size: 10.5px; fill: var(--plane); }
   <div class="stores">
     <div class="store"><h3>Health data</h3><p>The Watch's minute series, sleep stages and workouts.</p>
       <div class="flow"><span class="lbl">in</span><span class="p">the health bridge</span></div>
-      <div class="flow"><span class="lbl">out</span><span class="p">Kobe</span><span class="p">Huberman</span><span class="p">the health line</span></div></div>
+      <div class="flow"><span class="lbl">out</span><span class="p">Kobe</span><span class="p">Huberman</span><span class="p">Kipchoge</span><span class="p">the health line</span></div></div>
     <div class="store"><h3>The gym's week</h3><p>The week's programming as a plan file, from the gym's own app.</p>
       <div class="flow"><span class="lbl">in</span><span class="p">the gym bridge</span></div>
       <div class="flow"><span class="lbl">out</span><span class="p">Kobe</span><span class="p">Fraser</span><span class="p">Huberman</span></div></div>
@@ -593,7 +612,7 @@ svg .now-t { font-family: var(--mono); font-size: 10.5px; fill: var(--plane); }
         <span class="step model">1 Understand</span><span class="step code">2 Contract</span><span class="step model">3 Execute</span><span class="step code">4 Verify</span>
         <span class="step judge">5 Judge</span><span class="step code">6 Control</span><span class="step code">7 Render</span><span class="step code">8 Record</span>
       </div>
-      <p>One loop an agent's answer runs through, owned by the platform: the model reads and researches, code decides what counts as done, and a second model grades judgment once it has earned a say. One agent runs on it today, Bourdain; Fraser borrows its contract pattern; a second tenant is parked. It has its own page, with a message you can watch move through it.</p>
+      <p>One loop an agent's answer runs through, owned by the platform: the model reads and researches, code decides what counts as done, and a second model grades judgment once it has earned a say. Two agents run on it: Bourdain since October 4, and Kipchoge, the running coach, since November 1. Fraser borrows its contract pattern. It has its own page, with a message you can watch move through it.</p>
     </div>
     <a class="btn" href="ADR-018.html">Open the harness page ↗</a>
   </div>
@@ -602,9 +621,9 @@ svg .now-t { font-family: var(--mono); font-size: 10.5px; fill: var(--plane); }
   <h2>The rails</h2>
   <div class="rails">
     <div class="rail"><h3>Before a change ships</h3><ul>
-      <li><b>A fix adds a pin</b><span>A <code>fix:</code> commit without a new regression test is refused at merge. 219 pin files, 1,877 tests.</span></li>
-      <li><b>Hermetic tests</b><span>4,209 tests, no network, no live database, no secrets loaded.</span></li>
-      <li><b>The pre-push gate</b><span>Private words, the bug-to-test policy, the registry, the silent-failure guard, the unit and contract layers. Anything red blocks the push.</span></li>
+      <li><b>A fix adds a pin</b><span>A <code>fix:</code> commit without a new regression test is refused at merge. 218 pin files, 1,876 tests.</span></li>
+      <li><b>Hermetic tests</b><span>4,322 tests, no network, no live database, no secrets loaded. CI runs every test file on each push to main.</span></li>
+      <li><b>The pre-push gate</b><span>Private words, the bug-to-test policy, the registry, the silent-failure guard, the unit and contract layers, and the pins of any agent kept in the private overlay. Anything red blocks the push.</span></li>
       <li><b>Private words</b><span>A name, an address, a token or a chat id in anything a push would publish stops it.</span></li>
     </ul></div>
     <div class="rail"><h3>In production</h3><ul>
@@ -618,9 +637,9 @@ svg .now-t { font-family: var(--mono); font-size: 10.5px; fill: var(--plane); }
   <p class="sec-eyebrow">Shipped and the bet</p>
   <h2>Where it's going</h2>
   <div class="bets">
-    <div class="bet"><h3>Outcomes, not answers</h3><span class="chip warn">Measured for two agents; learning not built</span><p>Bourdain's answers and Fraser's designs are checked against named outcomes and recorded, and Bourdain's golden set replays for nothing. A loop that changes behavior from outcomes isn't built.</p></div>
+    <div class="bet"><h3>Outcomes, not answers</h3><span class="chip warn">Measured for three agents; learning not built</span><p>Bourdain's and Kipchoge's answers and Fraser's designs are checked against named outcomes and recorded, and Bourdain's golden set replays for nothing. A loop that changes behavior from outcomes isn't built.</p></div>
     <div class="bet"><h3>Memory that keeps what mattered</h3><span class="chip off">Not built</span><p>Shared typed memory is in daily use. Recall weighted by what changed an outcome, rather than by what was recent, is the bet.</p></div>
-    <div class="bet"><h3>A receipt for every fact</h3><span class="chip warn">Partial, one agent</span><p>Bourdain's facts carry their source and date, from the web, open data and the feeds. The profiles, memory and training numbers don't yet.</p></div>
+    <div class="bet"><h3>A receipt for every fact</h3><span class="chip warn">Partial, two agents</span><p>Bourdain's facts carry their source and date, from the web, open data and the feeds; every number Kipchoge sends cites the record of the run it came from. The profiles, memory and Kobe's numbers don't yet.</p></div>
   </div>
   <div class="prose" style="margin-top:16px"><p>Next on the data path: the database answers first, code applies the facts (who is eating, how far, open now), the model applies taste once, and the web is touched only when the database comes up short or you say “search”. That path isn't built yet.</p></div>
 
@@ -628,7 +647,7 @@ svg .now-t { font-family: var(--mono); font-size: 10.5px; fill: var(--plane); }
     <span><a href="https://github.com/modernthinkerbuilds/Rahat-Plane" target="_blank" rel="noopener">The repo on GitHub</a></span>
     <span><a href="https://github.com/modernthinkerbuilds/Rahat-Plane/blob/main/specs/ARCHITECTURE.md" target="_blank" rel="noopener">ARCHITECTURE.md</a></span>
     <span><a href="ADR-018.html">The harness page</a></span>
-    <span>Counts as of October 17, 2026</span>
+    <span>Counts as of November 1, 2026</span>
   </div>
 </div>
 
@@ -642,25 +661,30 @@ svg .now-t { font-family: var(--mono); font-size: 10.5px; fill: var(--plane); }
 (function () {
   "use strict";
   var TIPS = {
-    you: ["You · Telegram", "Live", "You talk to one agent, Miya, on Telegram. Typing / shows every command it knows.", "new_plane/miya_runner/"],
+    you: ["You · Telegram", "Live", "You talk to Miya on Telegram, the one place you ask. Typing / shows every command it knows.", "new_plane/miya_runner/"],
+    athlete: ["You · Telegram · Kipchoge", "Live", "The running coach has its own bot, since November 1. It talks to one athlete; any other chat gets one line and nothing from the store. Through Miya next: the route is built and switched off.", "new_plane/kipchoge_runner/"],
     household: ["The household", "Live", "Genie and Bourdain each have their own bot, so anyone in the household can use them from their own phone once it's paired.", "new_plane/genie_runner/ · bourdain_runner/"],
     miyarun: ["miya.v2 · the Miya runner", "Live", "A launchd service on the Mac mini, always on. It long-polls Telegram, gives every message a trace id, and runs a minute tick: the 08:00 brief, nudges, the 9:30 pm cooldown and the 08:15 health line.", "new_plane/miya_runner/__main__.py"],
     genierun: ["genie · the Genie runner", "Live", "Always on. Pairs household phones, answers Genie's commands and plain questions, and sends the 08:00 events digest.", "new_plane/genie_runner/"],
+    kiprun: ["kipchoge · the Kipchoge runner", "New", "Always on since November 1. It answers the coach's commands, runs asks through the harness, and on Friday and Saturday at 20:00 sends the next-run card from templates, with no model call. Everything else waits to be asked.", "new_plane/kipchoge_runner/"],
     bourdainrun: ["bourdain · the Bourdain runner", "Live", "Always on. Pairs the household, answers through the harness, and takes a location shared in Telegram as where you are.", "new_plane/bourdain_runner/"],
     ladder: ["The ladder · 16 rungs", "Live", "Rules in code, checked top to bottom. The first rung that claims a message decides who answers: most send it straight to the agent that owns it; a what-if or a design goes through Miya. What no rung claims goes to Miya's model. The section below lets you drop messages through it.", "new_plane/miya_runner/delegate_classifier.py"],
     gate: ["Household gate · Genie's intents", "Live", "Only paired phones get in. Genie's commands (/whatson, /weekend_plan) and its plain-language asks are matched in code first.", "agents/genie/"],
     grammar: ["Grammar · a lookup or an ask", "Live", "Bourdain's commands, exact or nothing. A lookup (/list, /who, /cost, /kb) is answered by code; an ask (/coffee, /eat, “more”) goes to the harness as the words it stands for.", "agents/bourdain/handler.py"],
+    kipcmds: ["Commands · a lookup or an ask", "New", "A lookup (/me, /zones, /goal, /trend, /routes) is answered by code from the records. /run, /next, /week and plain questions go to the harness; if it fails, code answers from the records.", "new_plane/kipchoge_runner/bot.py"],
     miya: ["Miya · the orchestrator", "Live", "When no rung claims a message, Miya's model looks things up, asks the specialists, reconciles them when they disagree, and answers in one voice. A specialist's reply is said in Miya's voice too, unless it is an exact answer from code.", "new_plane/miya_runner/orchestrator.py"],
     kobe: ["Kobe · the numbers", "Live", "The week's numbers from the Watch and the plan: burn, targets, pace, the gym's workout. Its own dispatcher and command table answer first, in code; a reasoner with tools takes the rest.", "agents/the_scientist/"],
     fraser: ["Fraser · workouts", "Live", "Designs a session from your constraints, Kobe's week and the gym's coming sessions. The model writes it; a 10-point contract in code checks it before it's sent.", "agents/fraser/"],
     huberman: ["Huberman · cooldowns", "Live", "At 9:30 pm it reads the day's workout and recovery and picks from a 25-drill library, with rotation, explaining each drill. It says when it can't tell whether you trained.", "agents/huberman/"],
     genie: ["Genie · the household's weekends", "Live", "Plans weekends, keeps the household calendar, and sends a daily digest of the weekend's events, tagged by audience.", "agents/genie/"],
     bourdain: ["Bourdain · where to eat", "Live", "Every answer runs the harness's eight steps: understand, contract, execute, verify, judge, control, render, record. Click the box to open the harness page.", "agents/bourdain/ · core/harness/"],
+    kipchoge: ["Kipchoge · the running coach", "New", "The harness's second tenant. A deterministic engine turns each run into records with ranges: splits, halves, decoupling, grade-adjusted pace, a pace at a reference heart rate, a grade. The model writes only the words and may cite only those records: 19 outcomes, a brake of 10 tool calls and $0.25 an ask, no web search.", "agents/kipchoge/ · core/harness/"],
     checksA: ["Checks · the validator and Fraser's contract", "Live", "Every reply Miya sends, a specialist's included, passes the validator: seven checks against what is true, rewritten before send, including a claim that something changed when nothing was written. Fraser's designs also pass a ten-point contract, with one repair pass; what still fails is said.", "validator.py · agents/fraser/contract.py"],
     genierules: ["Genie's rules", "Live", "A plan never puts two things in one slot, and on a Sunday it is today alone. The digest carries at most six picks a day, no more than three from one source, and says when the feeds are stale; a down live search is said in one line.", "agents/genie/ · bridges/events/digest.py"],
     verify: ["Verify · judge", "Shadow", "Code checks every pick against its evidence: open at arrival, inside the travel time, each diet confirmed on a menu. A second model grades judgment, in shadow until it earns a say.", "core/verify.py · core/judge.py"],
-    tg: ["Telegram", "Live", "One voice per door. A reply Telegram refuses for its formatting goes again as plain text; a nudge that doesn't land is tried again the next minute. Each bot publishes its slash-command hints when it starts.", "new_plane/miya_runner/telegram.py"],
-    rails: ["The rails", "Live", "4,209 hermetic tests: no network, no live database, no secrets. A fix must add a regression pin, and the pre-push gate blocks a push that fails a test or would publish a private word.", "tests/ · scripts/hooks/pre-push"],
+    kipchecks: ["Cited numbers · judge", "Shadow", "A message with a number no record backs is never sent. A second model grades each answer against an 8-point checklist, in shadow until it earns a say.", "agents/kipchoge/guardrails.py · core/judge.py"],
+    tg: ["Telegram", "Live", "One voice per door, four doors: Miya, Genie, Bourdain and Kipchoge. A reply Telegram refuses for its formatting goes again as plain text; a nudge that doesn't land is tried again the next minute. Each bot publishes its slash-command hints when it starts.", "new_plane/miya_runner/telegram.py"],
+    rails: ["The rails", "Live", "4,322 hermetic tests: no network, no live database, no secrets, and CI runs every one of them on each push to main. A fix must add a regression pin, and the pre-push gate blocks a push that fails a test or would publish a private word.", "tests/ · scripts/hooks/pre-push"],
     wire: ["The model wire", "Live", "Model calls go through one client: a 90-second timeout, a provider hiccup retried, a ledger row for what it cost. The harness adds a per-ask brake on tool calls, searches and dollars. Three older paths still call the model their own way.", "core/llm.py · core/llm_chat.py"],
     gemini: ["Gemini", "Live", "Google's models: Flash for most steps, grounded web search, and Google Maps grounding for places. Each call sends that request's context to Google.", "outside Rahat"],
     charter: ["The Charter", "Live", "One rulebook in code with a say on every reply Miya sends: approved, modified or vetoed, by policies such as quiet hours. An agent's veto also holds back another agent's nudge. Every verdict is logged.", "core/charter.py"],
@@ -674,7 +698,7 @@ svg .now-t { font-family: var(--mono); font-size: 10.5px; fill: var(--plane); }
     web: ["The web", "Live", "122 event sources (50 read in plain code, 52 pages a model reads daily, 20 grounded searches), 12 food feeds read in code, and open data from OpenStreetMap.", "bridges/events/ · bridges/food/"],
     events: ["events · three times a day", "Live", "At 07:00, 12:30 and 18:00 it reads the event sources, dedupes them and tags them by audience. The paid search pass runs Wednesday and Saturday at 03:00.", "bridges/events/"],
     food: ["food.nightly · 05:30", "Live", "Reads twelve food feeds in code, with no model: openings, closings and praise become mentions on places, and each place's own page is re-read for hours.", "bridges/food/nightly.py"],
-    healthdata: ["Health data", "Live", "The Watch's minute series, sleep stages and workouts. Kobe, Huberman and the health line read it.", "vault/rahat.db"],
+    healthdata: ["Health data", "Live", "The Watch's minute series, sleep stages and workouts, with each run's route and series. Kobe, Huberman, Kipchoge and the health line read it.", "vault/rahat.db"],
     gymweek: ["The gym's week", "Live", "The week's programming as a plan file. Kobe, Fraser and Huberman read it; the health line says when it's old.", "the gym bridge's plan file"],
     inventory: ["Events inventory", "Live", "Every upcoming event, deduped on title, start and city, tagged by audience. A feed that goes quiet shows up on the health line.", "vault/rahat.db"],
     kb: ["The knowledge base", "Live", "Bourdain's places, every fact with its source and read time, plus a gazetteer of every eating place in open data and the mentions from the food feeds.", "core/kb/"],
@@ -699,7 +723,7 @@ svg .now-t { font-family: var(--mono); font-size: 10.5px; fill: var(--plane); }
     r8: ["Rung 8 · the gym's workout", "Live", "The gym's programming for a day, from Kobe, verbatim, never paraphrased by a model.", "rung 8"],
     r8a: ["Rung 8a · the household", "Live", "Weekend and household planning goes to Genie. It sits after every Kobe rule, so it only gets what nobody else owns.", "rung 8a"],
     rmiya: ["Nobody claims it · Miya's model", "Live", "Miya's model takes the whole question: it looks things up, asks the specialists, and answers in one voice. A plain-language intent layer sits just above it, behind a flag that is off.", "new_plane/miya_runner/orchestrator.py"],
-    "d-always": ["Always on", "Live", "Five launchd services that never stop: the three bots (miya.v2, genie, bourdain), the health bridge on port 5000, and the gym bridge.", "launchd on the Mac mini"]
+    "d-always": ["Always on", "Live", "Six launchd services that never stop: the four bots (miya.v2, genie, bourdain, kipchoge), the health bridge on port 5000, and the gym bridge.", "launchd on the Mac mini"]
   };
   var CHIP = { "Live": "ok", "New": "pulse", "Shadow": "shadow", "Not built": "off", "Not yet": "off", "Parked": "warn", "Partly": "warn", "Built": "code" };
 
@@ -819,6 +843,20 @@ svg .now-t { font-family: var(--mono); font-size: 10.5px; fill: var(--plane); }
       ["n-verify", "e-bourdain-verify", "Code verifies every pick against its evidence; the judge grades the answer in shadow."],
       ["n-tg", "e-verify-tg", "Cafés near you, with a sources line and the time it was checked."],
       ["n-records", ">n-tg", "The run and each outcome are recorded."]
+    ],
+    run: [
+      ["n-athlete", null, "After a run, you send Kipchoge /run."],
+      ["n-kiprun", "e-ath-kip", "The kipchoge runner takes it. It talks to one athlete: you."],
+      ["n-kipcmds", "e-krun-cmds", "/run is an ask, not a lookup, so it goes to the harness."],
+      ["n-kipchoge", "e-cmds-kip", "Kipchoge is the harness's second tenant, with its own outcomes and its own idea of evidence."],
+      ["n-healthdata", ">n-kipchoge", "The records come first: the run from the Watch, its route, its minute series…"],
+      ["n-kipchoge", ">n-healthdata", "…and the engine works them out in code: splits, halves, decoupling, grade-adjusted pace, a grade."],
+      ["n-wire", ">n-kipchoge", "Only then the model, through the wire, two rounds at most…"],
+      ["n-gemini", "e-wire-gemini", "…to write the words around the numbers."],
+      ["n-kipchoge", ">n-gemini", "Every number in the message is computed in code and cites the record it came from."],
+      ["n-kipchecks", "e-kip-checks", "A number with no record behind it stops the message. The judge grades it against eight points, in shadow."],
+      ["n-tg", "e-kchecks-tg", "The analysis arrives on Telegram, every number traceable to your run."],
+      ["n-records", ">n-tg", "The run, each outcome and the cost are recorded."]
     ],
     cool: [
       ["n-miyarun", null, "21:30: the minute tick inside miya.v2."],
@@ -979,6 +1017,7 @@ svg .now-t { font-family: var(--mono); font-size: 10.5px; fill: var(--plane); }
     [1290, 166, "m-model", "d-cool", "Huberman's cooldown · 21:30", "Live", "Once a night between 21:30 and 21:59: the day's workout and recovery, a session from a 25-drill library.", "agents/huberman/", "cooldown", "start"],
     [1435, 166, "m-code", "d-reset", "Weekly reset · Sunday 23:55", "Live", "A recap of the week, and next week's target locked in.", "agents/the_scientist/", ""],
     [480, 216, "m-store", "d-digest", "Genie's digest · 08:00", "Live", "The weekend's events, chosen for the household, a link on each.", "new_plane/genie_runner/", "digest"],
+    [1200, 216, "m-code", "d-kipcard", "Kipchoge's card · Fri, Sat 20:00", "New", "The next-run card on Friday and Saturday evenings: minutes, the heart-rate band and its cap, the expected pace. From templates, with no model call; everything else is on demand.", "new_plane/kipchoge_runner/", "run card (Fri, Sat)"],
     [190, 266, "m-off", "d-replay", "Nightly replay · 03:10", "Built", "Replays Bourdain's golden set from its recorded calls and scores it by outcomes, for nothing. Built, not scheduled yet.", "com.rahat.nightly-eval", "replay"],
     [1085, 266, "m-off", "d-report", "Weekly report · Sunday 18:05", "Built", "One screen: spend against the free allowance, the harness's clean rate, the last replay, the judge's agreement, the owner's corrections. No model. Built, not scheduled yet.", "com.rahat.weekly-report", "report"],
     [1100, 266, "m-off", "d-screener", "Command screener · Sunday 18:20", "Built", "Reads the week's asks and proposes new exact commands; the owner adds them by hand. Built, not scheduled yet.", "com.rahat.command-screener", ""],

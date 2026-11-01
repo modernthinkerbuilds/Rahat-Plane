@@ -6,6 +6,8 @@
 
 *Rahat is the agent platform I built; seven agents run on it. Miya is the one I talk to. One harness agents answer through, evals that replay for $0, checks in code, and a record of every decision. Built at human scale.*
 
+<a href="https://github.com/modernthinkerbuilds/Rahat-Plane/actions/workflows/tests.yml"><img src="https://github.com/modernthinkerbuilds/Rahat-Plane/actions/workflows/tests.yml/badge.svg?branch=main" alt="tests: every test file, hermetic"></a> <a href="https://github.com/modernthinkerbuilds/Rahat-Plane/actions/workflows/gates.yml"><img src="https://github.com/modernthinkerbuilds/Rahat-Plane/actions/workflows/gates.yml/badge.svg?branch=main" alt="gates: registry, silent failure, bug-to-test, time zones"></a>
+
 <a href="https://modernthinkerbuilds.github.io/Rahat-Plane/specs/RAHAT-ARCHITECTURE.html"><img src="./specs/img/rahat-map.gif" width="100%" alt="Rahat end to end: a /week message travels from Telegram through Miya's runner and the routing ladder to Kobe, with the checks, the control plane and the vault around it"></a>
 
 <sub>A <code>/week</code> message moving through Rahat, from Telegram through the routing ladder to Kobe. Click it for the live page, then tap any box.</sub>
@@ -22,9 +24,9 @@ An agent can be fluent and wrong at the same time, and you can't tell from readi
 
 > **Rahat is the agent platform I built; seven agents run on it. Miya is the one I talk to. The agents share one memory, one rulebook and one record of every decision, and they run in my life every day.**
 
-`7` agents · `2` on the harness · `4` doors · `8` services (5 always on) · `122` event sources · `1` SQLite file of record · `4,209` tests
+`7` agents · `2` on the harness · `4` doors · `9` services (6 always on) · `122` event sources · `1` SQLite file of record · `4,322` tests
 
-<sub>Agents, harness agents and doors as of Nov 1; the rest as of Oct 14–19, 2026. By [Venkat Sadras](https://venkatsadras.com) · [LinkedIn](https://www.linkedin.com/in/venkatsadras/).</sub>
+<sub>Event sources as of Oct 19; the rest as of Nov 1, 2026. By [Venkat Sadras](https://venkatsadras.com) · [LinkedIn](https://www.linkedin.com/in/venkatsadras/).</sub>
 
 ---
 
@@ -195,6 +197,7 @@ Rahat is personal scale, not enterprise software, but it has the parts an agent 
 | **Cost ledger** | Prices all four token buckets per call. A budget gate on the newer paths, plus a per-ask brake in the harness | [`ledger.py`](./core/ledger.py) · [`budget.py`](./core/budget.py) |
 | **Routing ladder** | Sixteen rungs, first claim wins; deterministic routes never call the model | [`delegate_classifier.py`](./new_plane/miya_runner/delegate_classifier.py) |
 | **Health line** | One line at 08:15 when something is broken; silence otherwise | [`health.py`](./core/health.py) |
+| **Private overlay** | An agent I keep private lives in a gitignored folder laid out like the repo. The platform loads it at import, after the public code, runs its health checks and pins, and refuses one that would hide a public package. The public tree never names it | [`overlay.py`](./core/overlay.py) |
 | **Events** | 122 sources: 50 read in plain code with no model, 52 pages a model reads daily, 20 grounded searches. Deduped, tagged by audience | [`bridges/events/`](./bridges/events/readers.py) |
 | **Food feeds** | Twelve food feeds read nightly at 05:30 in code, no model; places they name become mentions, and closures become facts | [`bridges/food/`](./bridges/food/) |
 | **Gazetteer** | 21,555 Bay Area eating places from open data (© OpenStreetMap contributors), under the knowledge base; a row is promoted only when an ask or a mention touches it | [`gazetteer.py`](./core/kb/gazetteer.py) |
@@ -220,9 +223,9 @@ Replaying **126 real messages** from my own history: voice leaks **0%**, contrad
 
 Where the architecture points, labeled by how far each part has come.
 
-- **Outcomes, not answers.** *Measuring shipped for two agents; learning not built.* Bourdain's answers and Fraser's designs are checked against named outcomes and recorded, and Bourdain's golden set replays for $0. A loop that changes behavior from outcomes, and proves a cheaper model kept the result, is not built.
+- **Outcomes, not answers.** *Measuring shipped for three agents; learning not built.* Bourdain's and Kipchoge's answers and Fraser's designs are checked against named outcomes and recorded, and Bourdain's golden set replays for $0. A loop that changes behavior from outcomes, and proves a cheaper model kept the result, is not built.
 - **Memory that keeps what *mattered*.** *Not built.* Shared typed memory is table stakes (Letta, Mem0). The bet is recall conditioned on what changed an outcome, not on what was recent.
-- **A receipt for every fact.** *Partial, one agent.* Bourdain's facts, including those from open data and the food feeds, carry their source and date. The profile, memory and the training numbers don't yet.
+- **A receipt for every fact.** *Partial, two agents.* Bourdain's facts, including those from open data and the food feeds, carry their source and date; every number Kipchoge sends cites the record of the run it came from. The profile, memory and Kobe's numbers don't yet.
 
 ---
 
@@ -242,13 +245,15 @@ RAHAT_TEST_MODE=1 python -m tests.run_all
  │ private words           │ a name, address, token or chat id in     │
  │                         │ anything the push would publish          │
  │ bug-to-test policy      │ every fix carries its own test           │
- │ regression registry     │ 1,877 tests in 219 pins                  │
+ │ regression registry     │ 1,876 tests in 218 pins                  │
  │ silent-failure guard    │ every agent answers its canonical asks   │
  │                         │ with a real reply, never a stub          │
  │ unit · contract layers  │                                          │
+ │ private overlay         │ the pins of agents kept off the public   │
+ │                         │ repo, when they're on the machine        │
  └─────────────────────────┴──────────────────────────────────────────┘
- the full suite: 4,209 tests, hermetic: no network, no live
- database, no secrets loaded (RAHAT_TEST_MODE=1)
+ the full suite: 4,322 tests, every one run in CI, hermetic: no
+ network, no live database, no secrets loaded (RAHAT_TEST_MODE=1)
 
  IN PRODUCTION
  ┌─────────────────────────┬──────────────────────────────────────────┐

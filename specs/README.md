@@ -1,6 +1,6 @@
 # Specs: start here
 
-Rahat's design documents. If you read one thing, read **[ARCHITECTURE.md](./ARCHITECTURE.md)**: the system as built (v3.0, October 17, 2026). If you'd rather watch it move, open the two interactive pages:
+Rahat's design documents. If you read one thing, read **[ARCHITECTURE.md](./ARCHITECTURE.md)**: the system as built (v3.1, November 1, 2026). If you'd rather watch it move, open the two interactive pages:
 
 - **[Rahat Architecture](https://modernthinkerbuilds.github.io/Rahat-Plane/specs/RAHAT-ARCHITECTURE.html)**: the whole system on one map ([source](./RAHAT-ARCHITECTURE.html))
 - **[Rahat Harness Architecture](https://modernthinkerbuilds.github.io/Rahat-Plane/specs/ADR-018.html)**: inside one agent, the harness ([source](./ADR-018.html))

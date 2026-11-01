@@ -2,16 +2,23 @@
 
 **Miya is my personal AI agent. Rahat is the platform underneath it:** the doors messages come in by, the rules in code that meet them, the specialist agents, the checks between an answer and me, the memory they share, and the jobs that keep it fed.
 
-**Version:** 3.0 · 2026-10-17
+**Version:** 3.1 · 2026-11-01
 **Author:** Venkat Sadras
-**Status:** In production on one Mac mini, for one owner and his household: three front doors, six agents, eight launchd services. Every section says what is shipped and what is not built.
+**Status:** In production on one Mac mini, for one owner and his household: four front doors, seven agents, nine launchd services. Every section says what is shipped and what is not built.
 
 > **See it move.** Two interactive pages tell this document's story in pictures you can click:
 >
-> - **[Rahat Architecture](https://modernthinkerbuilds.github.io/Rahat-Plane/specs/RAHAT-ARCHITECTURE.html)**: the whole system on one map. Hover any box for what happens there, watch eight moments move through it, drop real messages through the routing ladder, and play a day of scheduled jobs.
+> - **[Rahat Architecture](https://modernthinkerbuilds.github.io/Rahat-Plane/specs/RAHAT-ARCHITECTURE.html)**: the whole system on one map. Hover any box for what happens there, watch nine moments move through it, drop real messages through the routing ladder, and play a day of scheduled jobs.
 > - **[Rahat Harness Architecture](https://modernthinkerbuilds.github.io/Rahat-Plane/specs/ADR-018.html)**: inside one agent, the eight steps every Bourdain answer runs ([ADR-018](./ADR-018-outcome-contracts-and-independent-evaluation.md)).
 >
 > Their sources are [`RAHAT-ARCHITECTURE.html`](./RAHAT-ARCHITECTURE.html) and [`ADR-018.html`](./ADR-018.html), beside this file. GitHub shows those files as source; the links above open them as pages, and so does any browser.
+
+> **v3.1 update note (2026-11-01).** Checked against the code on November 1. What changed since v3.0:
+>
+> 1. **A fourth front door, and the harness's second tenant.** Kipchoge, the running coach, went live on its own bot on November 1 as the harness's second tenant ([ADR-018](./ADR-018-outcome-contracts-and-independent-evaluation.md) A6, accepted October 25). An engine in code turns each run into evidence records; the model writes only the words, and a message with a number no record backs is never sent. Its route behind Miya is built and switched off (§5.4, §6, §7).
+> 2. **Agents kept off the public repo.** An agent the owner keeps private lives in a gitignored overlay laid out like the repo; [`core/overlay.py`](../core/overlay.py) loads it at import, after the public tree, and its health checks join the 08:15 line (§13).
+> 3. **CI runs every test file.** The tests workflow had been red on `main`: a property-testing library was missing from the dev requirements. `tests/run_all.py` gained a `rest` layer for the 83 test files no layer named (§12).
+> 4. **Counts** in Appendix B are dated November 1.
 
 > **v3.0 update note (2026-10-17).** v2.0 (May 2026) described a model-first Kobe and a memory design. This version is rewritten as built, by Architect A (platform lane), and checked against the code and the records on October 17; every count carries its date (Appendix B). What changed since v2.0:
 >
@@ -52,18 +59,18 @@
 
 ## 1. Executive summary
 
-Rahat is the platform under Miya, a personal AI agent. It runs on one Mac mini at home, keeps its state in one SQLite file, and serves one owner and his household through three Telegram bots. Miya is the one place the owner asks; specialists answer behind it; two agents also have doors of their own for the household.
+Rahat is the platform under Miya, a personal AI agent. It runs on one Mac mini at home, keeps its state in one SQLite file, and serves one owner and his household through four Telegram bots. Miya is the one place the owner asks; specialists answer behind it; three agents also have doors of their own: Genie and Bourdain for the household, and Kipchoge for the owner's running.
 
-**What runs today (October 17):**
+**What runs today (November 1):**
 
-- **Three front doors.** The Miya bot (Miya, with Kobe, Fraser, Huberman and Genie behind it), the Genie bot and the Bourdain bot.
-- **Six agents.** Miya (the orchestrator), Kobe (the week's numbers), Fraser (workout design), Huberman (cooldowns), Genie (household weekends and events) and Bourdain (where to eat).
-- **Rules before models.** A 16-rung ladder in code routes Miya's messages; Kobe's dispatcher and Genie's intents answer what they recognize in code; Bourdain's grammar answers its lookups in code.
+- **Four front doors.** The Miya bot (Miya, with Kobe, Fraser, Huberman and Genie behind it), the Genie bot, the Bourdain bot and the Kipchoge bot.
+- **Seven agents.** Miya (the orchestrator), Kobe (the week's numbers), Fraser (workout design), Huberman (cooldowns), Genie (household weekends and events), Bourdain (where to eat) and Kipchoge (the running coach).
+- **Rules before models.** A 16-rung ladder in code routes Miya's messages; Kobe's dispatcher and Genie's intents answer what they recognize in code; Bourdain's grammar and Kipchoge's commands answer their lookups in code.
 - **Checks before the owner sees anything.** One governance sink for every Miya reply (§5.1), Fraser's design contract, Bourdain's verify step, and the Charter's policies.
-- **One harness for agents** (§7), serving Bourdain since October 4.
+- **One harness for agents** (§7), serving Bourdain since October 4 and Kipchoge since November 1.
 - **One record.** A decisions ledger with a trace per message, a cost ledger with every billable event priced, harness runs and per-outcome results, judge verdicts, and the Charter's log.
 - **Work that happens while nobody types.** A minute tick sends the morning brief, the nudges, the 9:30 pm cooldown and the 08:15 health line; event runs three times a day; the food run at 05:30.
-- **The rails.** 4,209 hermetic tests; a fix commit without a new regression pin is refused at merge; a push carrying a private word is blocked.
+- **The rails.** 4,322 hermetic tests, every one run in CI; a fix commit without a new regression pin is refused at merge; a push carrying a private word is blocked.
 
 **What isn't built:**
 
@@ -71,7 +78,7 @@ Rahat is the platform under Miya, a personal AI agent. It runs on one Mac mini a
 - Memory that weights recall by what changed an outcome; scheduled memory consolidation.
 - Bourdain's database-first answer path (the knowledge base answers first, the web only when it comes up short).
 - Authority for the judge (it grades in shadow until labels exist).
-- A second harness tenant (parked by the owner on October 11).
+- Kipchoge behind Miya (the route is built and switched off).
 - A source and date on every fact beyond Bourdain's.
 - One wire for every model call (three older paths call the model directly).
 
@@ -91,7 +98,7 @@ Personal AI today is reactive: the user prompts, the model answers, neither reme
 
 ### 2.2 Who it serves
 
-One owner, who talks to Miya; his household, who use Genie from their own phones, and Bourdain. Every concrete personal value (profiles, household rules, home, health data) lives only in the vault on the Mac mini. The public repository carries the code and synthetic tests, never the vault.
+One owner, who talks to Miya, and to Kipchoge about his running; his household, who use Genie and Bourdain from their own phones. Every concrete personal value (profiles, household rules, home, health data) lives only in the vault on the Mac mini. The public repository carries the code and synthetic tests, never the vault.
 
 ### 2.3 Hard constraints
 
@@ -99,7 +106,7 @@ One owner, who talks to Miya; his household, who use Genie from their own phones
 2. **One voice per door.** Miya is the one place the owner asks; specialists never talk to him directly through the Miya bot.
 3. **Deterministic where it matters** ([ADR-011](./ADR-011-deterministic-shell-llm-core.md)). State, arithmetic, routing and vetoes are code. Intent, taste and phrasing are the model's.
 4. **Every change gated.** Hermetic tests on every push; a regression pin for every fix; nothing red ships.
-5. **A public repo with a private life.** No personal data in commits or tests; the pre-push gate blocks a push that would publish a private word.
+5. **A public repo with a private life.** No personal data in commits or tests; the pre-push gate blocks a push that would publish a private word. An agent the owner keeps private lives outside the public tree (§13).
 
 ### 2.4 Why not a framework
 
@@ -119,7 +126,7 @@ Each principle is paired with the alternative rejected and the cost accepted.
 | **Checks in the path** | Review after sending; trust the model | A reply can be held, rewritten, repaired once, or sent with a plain "not verified" line. |
 | **One record** | Per-agent logs | A row per step; any turn can be reconstructed from its trace id. |
 | **Heartbeat over prompts** | A cron job per feature, or prompt-only | An always-on runner with a minute tick. |
-| **Every fix ships a pin** | Fix and forget | 219 regression pins and a merge gate that refuses a fix without a new one. |
+| **Every fix ships a pin** | Fix and forget | 218 regression pins and a merge gate that refuses a fix without a new one. |
 | **Say what isn't verified** | A confident guess | Replies carry gap lines and fall back to floors (a library session, an offline plan). |
 | **Frictionless setup** | Per-machine instructions | Templated launchd plists, `.env.example`, `bootstrap.sh`; no tracked file holds a machine path. |
 
@@ -130,56 +137,61 @@ Each principle is paired with the alternative rejected and the cost accepted.
 ### 4.1 The map
 
 ```
-  Miya bot              Genie bot               Bourdain bot
-  the owner             the household           the household
-       │                       │                       │
-┌──────▼──────────────┐ ┌──────▼──────────────┐ ┌──────▼──────────────┐
-│ miya.v2             │ │ genie               │ │ bourdain            │
-│ the ladder: 16      │ │ household gate,     │ │ grammar: a lookup   │
-│ rules in code       │ │ Genie's intents     │ │ or an ask           │
-├─────────────────────┤ ├─────────────────────┤ ├─────────────────────┤
-│ Miya's model, or    │ │ Genie: weekends,    │ │ Bourdain on the     │
-│ Kobe · Fraser ·     │ │ the calendar,       │ │ harness: 8 steps    │
-│ Huberman · Genie    │ │ events              │ │                     │
-├─────────────────────┤ ├─────────────────────┤ ├─────────────────────┤
-│ validator, Fraser's │ │ Genie's rules       │ │ verify in code,     │
-│ contract, Charter   │ │                     │ │ judge in shadow     │
-└──────┬──────────────┘ └──────┬──────────────┘ └──────┬──────────────┘
-       └───────────────────────┴ back out on Telegram ─┘
+  Miya bot           Genie bot          Bourdain bot       Kipchoge bot
+  the owner          the household      the household      the owner
+       │                  │                  │                  │
+┌──────▼─────────┐ ┌──────▼─────────┐ ┌──────▼─────────┐ ┌──────▼─────────┐
+│ miya.v2        │ │ genie          │ │ bourdain       │ │ kipchoge       │
+│ the ladder: 16 │ │ household gate,│ │ grammar: a     │ │ commands: a    │
+│ rules in code  │ │ Genie's intents│ │ lookup or ask  │ │ lookup or ask  │
+├────────────────┤ ├────────────────┤ ├────────────────┤ ├────────────────┤
+│ Miya's model,  │ │ Genie:         │ │ Bourdain on    │ │ Kipchoge on    │
+│ or Kobe ·      │ │ weekends,      │ │ the harness:   │ │ the harness:   │
+│ Fraser ·       │ │ the calendar,  │ │ 8 steps        │ │ records first  │
+│ Huberman ·     │ │ events         │ │                │ │                │
+│ Genie          │ │                │ │                │ │                │
+├────────────────┤ ├────────────────┤ ├────────────────┤ ├────────────────┤
+│ validator,     │ │ Genie's rules  │ │ verify in code,│ │ no record, no  │
+│ Fraser's       │ │                │ │ judge in shadow│ │ number; judge  │
+│ contract,      │ │                │ │                │ │ in shadow      │
+│ Charter        │ │                │ │                │ │                │
+└──────┬─────────┘ └──────┬─────────┘ └──────┬─────────┘ └──────┬─────────┘
+       └──────────────────┴ out on Telegram ─┴──────────────────┘
 
-┌─────────────────────────────────────────────────────────────────────┐
-│ CONTROL PLANE  the model wire (Gemini Flash, Pro on hard prompts;   │
-│ Search and Maps grounding) · the Charter · the decisions ledger ·   │
-│ the cost ledger · the 08:15 health line · 4,209 tests, push and     │
-│ merge gates                                                         │
-├─────────────────────────────────────────────────────────────────────┤
-│ THE VAULT  vault/rahat.db, one SQLite file, with JSON beside it:    │
-│ health data · the gym's week · events · the knowledge base ·        │
-│ memory · scoped state · records · profiles and plans                │
-└──────▲────────────────▲──────────────▲────────────────────▲─────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│ CONTROL PLANE  the model wire (Gemini Flash, Pro on hard prompts;       │
+│ Search and Maps grounding) · the Charter · the decisions ledger · the   │
+│ cost ledger · the 08:15 health line · 4,322 tests, push and merge       │
+│ gates, all of them in CI                                                │
+├─────────────────────────────────────────────────────────────────────────┤
+│ THE VAULT  vault/rahat.db, one SQLite file, with JSON beside it: health │
+│ data · the gym's week · events · the knowledge base · memory · scoped   │
+│ state · records · profiles and plans                                    │
+└──────▲────────────────▲──────────────▲────────────────────▲─────────────┘
    vitals.v2       sugar.bridge      events            food.nightly
    iPhone, Watch   the gym's app     3 runs a day      05:30, no model
    always on       always on         122 sources       12 feeds
 ```
 
-The interactive [Rahat Architecture](https://modernthinkerbuilds.github.io/Rahat-Plane/specs/RAHAT-ARCHITECTURE.html) page draws the same map with every box explained and eight moments animated.
+The interactive [Rahat Architecture](https://modernthinkerbuilds.github.io/Rahat-Plane/specs/RAHAT-ARCHITECTURE.html) page draws the same map with every box explained and nine moments animated.
 
 ### 4.2 Services
 
-Eight launchd services on the Mac mini. The always-on ones restart on exit (`KeepAlive`).
+Nine launchd services on the Mac mini. The always-on ones restart on exit (`KeepAlive`).
 
 | Service | Runs | What it does | Code |
 |---|---|---|---|
 | `com.rahat.miya.v2` | Always on | The Miya bot: long-polls Telegram, routes through the ladder, runs Miya and the minute tick | [`new_plane/miya_runner/`](../new_plane/miya_runner/) |
 | `com.rahat.genie` | Always on | The Genie bot: pairing, Genie's commands and questions, the 08:00 digest | [`new_plane/genie_runner/`](../new_plane/genie_runner/) |
 | `com.rahat.bourdain` | Always on | The Bourdain bot: pairing, the grammar, the harness, shared locations | [`new_plane/bourdain_runner/`](../new_plane/bourdain_runner/) |
+| `com.rahat.kipchoge` | Always on | The Kipchoge bot: one athlete, the running coach's commands and asks, and the next-run card at 20:00 on Fridays and Saturdays | [`new_plane/kipchoge_runner/`](../new_plane/kipchoge_runner/) |
 | `com.rahat.vitals.v2` | Always on | The health bridge on port 5000, behind a key: the phone's HealthKit exports, and a location push for Bourdain | [`bridges/healthkit/`](../bridges/healthkit/) |
 | `com.rahat.sugar.bridge` | Always on | The gym bridge: the week's programming, sent from the gym's app | [`bridges/sugarwod/`](../bridges/sugarwod/) |
 | `com.rahat.events` | 07:00, 12:30, 18:00 | Reads the event sources, dedupes and tags them into the events inventory | [`bridges/events/`](../bridges/events/) |
 | `com.rahat.events.search` | Wed and Sat, 03:00 | The paid grounded-search pass for events no feed covers (also on demand: Genie's `/refresh`) | [`bridges/events/`](../bridges/events/) |
 | `com.rahat.food.nightly` | 05:30 | Twelve food feeds and places' own pages into the knowledge base, without a model | [`bridges/food/`](../bridges/food/) |
 
-Built and templated, **not scheduled yet**: the nightly golden-set replay (03:10), the weekly report (Sunday 18:05), the command screener (Sunday 18:20) and the harness shadow diff (21:35), all under [`scripts/`](../scripts/); and memory consolidation (`scripts/memory_consolidate.py`), unscheduled since May.
+Built and templated, **not scheduled yet**: the nightly golden-set replay (03:10), the weekly report (Sunday 18:05), the command screener (Sunday 18:20) and the harness shadow diff (21:35), all under [`scripts/`](../scripts/); and memory consolidation (`scripts/memory_consolidate.py`), unscheduled since May. Agents kept in the private overlay (§13) bring their own jobs, not listed here.
 
 ### 4.3 The three planes
 
@@ -187,7 +199,7 @@ v2.0's decomposition still holds, with October's contents:
 
 - **Control plane: what may happen, and what is written down.** The Charter (policies), the model wire (timeouts, retries, the budget gate, the harness's per-ask brake), the checks (validator, Fraser's contract, the harness's verify and judge), the decisions and cost ledgers, the health line, and the registry of agents and manifests. §10.
 - **Data plane: what the system knows.** One SQLite file and the JSON beside it. §8.
-- **Runtime plane: what runs.** The three runners and their minute ticks, the agents, the harness's steps, the bridges and the scheduled feeds. §5, §6, §7, §9.
+- **Runtime plane: what runs.** The four runners and their minute ticks, the agents, the harness's steps, the bridges and the scheduled feeds. §5, §6, §7, §9.
 
 ---
 
@@ -240,7 +252,15 @@ The plain-language intent layer ([ADR-017](./ADR-017_nl_intent_layer.md)) sits j
 - **Where you are:** a location shared in Telegram (once, or live until the owner stops it, throttled to meaningful moves), a push from the phone to the health bridge, or a town named in words. It is kept for three hours in scoped state; after that the origin is home. Only the place's label is logged.
 - **Everything else** is the harness: §7.
 
-### 5.4 Telegram
+### 5.4 Kipchoge (its own bot)
+
+- **One athlete.** The bot answers the chat it is paired with; any other chat gets one line and nothing from the store.
+- **Commands** ([`bot.py`](../new_plane/kipchoge_runner/bot.py)). Lookups (`/me`, `/zones`, `/goal`, `/trend`, `/routes`) are answered by code from the records. `/run`, `/next`, `/week`, the exact replies and plain questions go to the harness; if it fails, code answers from the records.
+- **Records first.** The engine ([`agents/kipchoge/`](../agents/kipchoge/)) turns each run in the store (the Watch's workouts, routes and minute series, written by the health bridge) into evidence records with ranges: splits, halves, decoupling, grade-adjusted pace, a pace at a reference heart rate, a grade. The model gets two rounds at most and may cite only those records; every number in a message is computed in code, and a message with a number no record backs is never sent.
+- **On demand.** The model is called only when the athlete asks. The minute tick sends the next-run card at 20:00 on Fridays and Saturdays, from templates (`KIPCHOGE_PROACTIVE`: `weekend` by default, or `all`, or `off`).
+- **Behind Miya next.** The route is built and switched off.
+
+### 5.5 Telegram
 
 - A reply Telegram refuses for its formatting goes again as plain text; long replies are split.
 - A scheduled message that doesn't land is tried again every minute for up to 30 minutes, then dropped and logged; the health line counts lost messages.
@@ -258,9 +278,9 @@ The plain-language intent layer ([ADR-017](./ADR-017_nl_intent_layer.md)) sits j
 | **Huberman** | Behind Miya, and the 9:30 pm tick | Cooldowns | A 25-drill library with rotation; the model coaches each drill; the library alone when the model can't answer. A run is read from the Watch's running series and any other workout from its heart-rate trace, hours before the phone's workout export names them (it sends the days before today); a run gets the post-run session, a gym session the post-workout one | Live since Aug 24 |
 | **Genie** | Its own bot, and behind Miya | Weekends, the household calendar, the events digest | Intents in code; live discovery with search; the digest from the inventory | Live; behind Miya since Aug 6 |
 | **Bourdain** | Its own bot | Where to eat | The harness | Live since Sep 20; on the harness since Oct 4 |
-| **Kipchoge** | Its own bot (to come) | The running coach: every run's numbers, the next run | A deterministic engine ([`agents/kipchoge/`](../agents/kipchoge/)) turns each run in the store into evidence records with ranges (segments, halves, decoupling, grade-adjusted pace, a normalized pace at a reference heart rate, a grade); the model, as the harness's second tenant, may only cite those records | Building on `feat/kipchoge` since Oct 25: the data slice (S0) is done; the tenancy waits on ADR-018 A6 |
+| **Kipchoge** | Its own bot; behind Miya next | The running coach: every run's numbers, the next run | A deterministic engine ([`agents/kipchoge/`](../agents/kipchoge/)) turns each run in the store into evidence records with ranges (segments, halves, decoupling, grade-adjusted pace, a normalized pace at a reference heart rate, a grade); on the harness, as its second tenant, the model writes the words and may cite only those records; a number no record backs stops the message | Live on its own bot since Nov 1; the route behind Miya is built and switched off |
 
-Code: [`agents/the_scientist/`](../agents/the_scientist/) (Kobe), [`agents/fraser/`](../agents/fraser/), [`agents/huberman/`](../agents/huberman/), [`agents/genie/`](../agents/genie/), [`agents/bourdain/`](../agents/bourdain/) and [`agents/kipchoge/`](../agents/kipchoge/). One more agent lives in a private build lane and is deliberately outside these public docs; it runs on the same substrate documented here.
+Code: [`agents/the_scientist/`](../agents/the_scientist/) (Kobe), [`agents/fraser/`](../agents/fraser/), [`agents/huberman/`](../agents/huberman/), [`agents/genie/`](../agents/genie/), [`agents/bourdain/`](../agents/bourdain/) and [`agents/kipchoge/`](../agents/kipchoge/). Agents the owner keeps private live in a gitignored overlay (§13) and are deliberately outside these public docs; they run on the same substrate documented here.
 
 **How an agent joins.** It starts on its own front door, with its own bot and tests, where its failures are easy to see and can't break anything else. When it passes, it is registered behind Miya in [`agent_boot.py`](../new_plane/miya_runner/agent_boot.py). An agent registered since June 17 must emit numeric facts as typed fields (`emits_structured_facts`); the contract test refuses one that doesn't. The front door's own judged criteria are written ([`core/checklists/front_door.json`](../core/checklists/front_door.json)) and not yet running.
 
@@ -284,7 +304,7 @@ A strict command check runs first ([`core/inbound.py`](../core/inbound.py)); the
 | 8. Record | Code | The run, each outcome's result, and the cost |
 
 - **Evals that replay for $0.** Every model and tool call under test is recorded against its whole request ([`core/cassette.py`](../core/cassette.py), [`core/httpcache.py`](../core/httpcache.py)), so a golden-set run replays without a network or a bill; production never reads a recording. [`core/eval_outcomes.py`](../core/eval_outcomes.py) scores a case by its outcomes, not by substrings. The golden sets (72 real Bourdain asks, 14 Genie asks) stay private; public tests use synthetic twins.
-- **Status.** One tenant, Bourdain, served since October 4. Fraser borrows the contract pattern and records its outcomes in the same table, but isn't a tenant. The second tenant, the running coach, began on October 25 with its data slice; its tenancy is amendment A6, proposed and awaiting the owner. The judge has no authority yet. A memo cache for repeated asks is not built. Five dated amendments (A1–A5) and one proposed (A6) are in [ADR-018 §7](./ADR-018-outcome-contracts-and-independent-evaluation.md).
+- **Status.** Two tenants: Bourdain since October 4, and Kipchoge, the running coach, since November 1. Its tenancy is amendment A6 (accepted October 25): a tenant brings its own shapes, meaning what it reads, what it answers and what counts as evidence. Kipchoge's outcome library has 19 outcomes, its judge checklist 8 criteria, and its brake 10 tool calls and $0.25 an ask, with no web search. Fraser borrows the contract pattern and records its outcomes in the same table, but isn't a tenant. The judge has no authority yet, for either tenant. A memo cache for repeated asks is not built. Six dated amendments (A1–A6) are in [ADR-018 §7](./ADR-018-outcome-contracts-and-independent-evaluation.md).
 
 ---
 
@@ -346,6 +366,7 @@ Revisit when state must live on more than one machine (§15).
 | Food run | 05:30 | 12 food feeds; places' own pages for missing or old hours | Mentions, acclaim, closures and hours in the knowledge base | None |
 | Miya's minute tick | 08:00 brief · 08:15 health line · walk nudges 10:00–20:00 on a day that's behind · 21:00 recovery nudge · 21:30–21:59 Huberman's cooldown · Sunday 23:55 weekly reset | The vault | Telegram, `nudge_log` | Huberman's coaching |
 | Genie's digest | 08:00 | The events inventory | Telegram | None |
+| Kipchoge's tick | Fri and Sat 20:00 | The runs in the store and the plan | Telegram, `kipchoge_sent` | None |
 
 A nudge another agent has vetoed is held back (§10.3). The jobs built but not scheduled are listed in §4.2.
 
@@ -380,13 +401,13 @@ A nudge another agent has vetoed is held back (§10.3). The jobs built but not s
 
 ### 10.5 The health line
 
-[`core/health.py`](../core/health.py): at 08:15 the minute tick checks for a feed fetching nothing, a page gone stale, food feeds silent for three nights, a quiet Watch, lost messages, an old gym plan and refused model calls. If something is broken, one line goes to the owner; otherwise nothing does.
+[`core/health.py`](../core/health.py): at 08:15 the minute tick checks for a feed fetching nothing, a page gone stale, food feeds silent for three nights, a quiet Watch, lost messages, an old gym plan and refused model calls. If something is broken, one line goes to the owner; otherwise nothing does. An agent kept in the private overlay adds its own checks (a `HEALTH_CHECKS` list in its `health.py`), and the line says so when an overlay on disk was not loaded (§13).
 
 Since October 19 every refresh row records why a feed yielded nothing ("HTTP 403", "no such host", "redirect loop", "nothing upcoming; newest 2025-06-14"), and the line groups dead feeds by it: sites that refuse the reader, addresses gone, feeds that fail, feeds that answer with nothing. A calendar the registry marks `quiet` is named only when its site fails. `python -m bridges.events --check [id …]` reads sources once with the production client, writing nothing and calling no model.
 
 ### 10.6 Registry and manifests
 
-Miya's agents are registered in code ([`agent_boot.py`](../new_plane/miya_runner/agent_boot.py)). A harness tenant declares itself in a manifest ([`core/manifest.py`](../core/manifest.py); Bourdain's is [`manifest.json`](../agents/bourdain/manifest.json)): its grammar, prompts, frame schema, outcome library, judge checklist, allow-listed tools, state scopes, budgets, render templates, banned phrases and golden sets.
+Miya's agents are registered in code ([`agent_boot.py`](../new_plane/miya_runner/agent_boot.py)). A harness tenant declares itself in a manifest ([`core/manifest.py`](../core/manifest.py); [Bourdain's](../agents/bourdain/manifest.json) and [Kipchoge's](../agents/kipchoge/manifest.json)): its grammar, prompts, frame schema, outcome library, judge checklist, allow-listed tools, state scopes, budgets, render templates, banned phrases and golden sets.
 
 ---
 
@@ -402,6 +423,7 @@ Miya's agents are registered in code ([`agent_boot.py`](../new_plane/miya_runner
 | A scheduled message doesn't land | Retried each minute for 30 minutes, then dropped and logged; the health line reports lost messages | |
 | A feed goes dark or stale | The digest says when feeds last refreshed; the health line names the feed and why (refused, gone, nothing listed) | Automatic repair of a moved feed |
 | A regression returns | The pre-push gate and CI block it (§12) | |
+| A private overlay would hide public code | It isn't loaded; the 08:15 line names the file to remove | |
 
 **Operations.** The owner alone pushes and flips live flags; services are restarted with `launchctl kickstart`. Logs live beside the vault. Two build lanes share `main` under a two-architect protocol: lanes by directory, and a commit that touches a shared file says so in a `COORDINATION:` line.
 
@@ -409,10 +431,10 @@ Miya's agents are registered in code ([`agent_boot.py`](../new_plane/miya_runner
 
 ## 12. Testing and the rails
 
-- **4,209 tests**, all hermetic: no network, no live database, no secrets loaded (`RAHAT_TEST_MODE=1`). The regression registry holds 1,877 of them in 219 pins; the layered suites (unit, contract, eval, adversarial, quality gate, silent failure, production parity across time zones) hold 1,370; the module tests hold 962.
+- **4,322 tests**, all hermetic: no network, no live database, no secrets loaded (`RAHAT_TEST_MODE=1`). The regression registry holds 1,876 of them in 218 pins; the rest are the layered suites (unit, contract, eval, adversarial, quality gate, silent failure, production parity across time zones) and the module tests.
 - **A fix ships a pin.** A `fix:` commit that doesn't add a new file under `tests/regression_registry/` is refused at merge.
-- **The pre-push gate** ([`scripts/hooks/pre-push`](../scripts/hooks/pre-push)): private words, the bug-to-test policy, the regression registry, the silent-failure guard, the unit and contract layers. Anything red blocks the push.
-- **CI** ([`.github/workflows/`](../.github/workflows/)): the full layered suite on every push to `main` and every pull request; the registry, the silent-failure guard, the bug-to-test policy and the time-zone matrix on pushes to `main`, `feat/*` and `fix/*`; and the gates again every hour on `main`, to catch drift from outside.
+- **The pre-push gate** ([`scripts/hooks/pre-push`](../scripts/hooks/pre-push)): private words, the bug-to-test policy, the regression registry, the silent-failure guard, the running coach's engine, the private overlay's own pins when it is present, and the unit and contract layers. Anything red blocks the push.
+- **CI** ([`.github/workflows/`](../.github/workflows/)): every test file on every push to `main` and every pull request (the layered suite, plus a `rest` layer that picks up any file no layer names, so no test sits outside CI; a failing layer prints its last lines and the report goes to the run's summary); the registry, the silent-failure guard, the bug-to-test policy and the time-zone matrix on pushes to `main`, `feat/*` and `fix/*`; and the gates again every hour on `main`, to catch drift from outside.
 - **Golden sets and replay:** §7.
 
 ---
@@ -425,6 +447,7 @@ Miya's agents are registered in code ([`agent_boot.py`](../new_plane/miya_runner
 - **Pages are data, never instructions.** What the harness reads from a page comes back as facts for the model to use, not as text it obeys ([`core/fetch.py`](../core/fetch.py)).
 - **Doors are gated.** Genie and Bourdain answer only paired phones; the health bridge needs its key.
 - **The public repo** carries code and synthetic tests only. Profiles, household rules, golden sets and recordings stay private.
+- **Agents kept private** live in `private/overlay/` (gitignored), laid out like the repo. [`core/overlay.py`](../core/overlay.py) appends it to the import path when `core` is imported, after the public tree, so public code wins any clash: `agents/` and `bridges/` are namespace packages, so the overlay's packages join them, and `new_plane/` adds the overlay's runner. An overlay with an `__init__.py` where the public tree has a namespace package would hide every public agent, so it is refused, and the 08:15 line says so. Its pins run in the pre-push gate when it is present, and its names are on the private word list. Chosen over a fork (two trees to keep in step) and a git submodule (the public repo would name it).
 
 ---
 
@@ -446,7 +469,7 @@ Miya's agents are registered in code ([`agent_boot.py`](../new_plane/miya_runner
 | [015](./ADR-015_outcome_validated_learning_engine.md) | An outcome-validated learning engine | Proposed, design only |
 | [016](./ADR-016_platform_seams.md) | Platform seams before the second agent, surface or tenant | Accepted; amended by ADR-018 |
 | [017](./ADR-017_nl_intent_layer.md) | A plain-language intent layer | Accepted, behind a flag that is off; amended by ADR-018 |
-| [018](./ADR-018-outcome-contracts-and-independent-evaluation.md) | Outcome contracts and independent evaluation: the harness | Accepted; in production since October 4 |
+| [018](./ADR-018-outcome-contracts-and-independent-evaluation.md) | Outcome contracts and independent evaluation: the harness | Accepted; in production since October 4; two tenants since November 1 (A6) |
 
 There is no ADR-010 in this repository. [`specs/README.md`](./README.md) groups these by theme. Two ADRs moved to [`archive/`](../archive/README.md) on October 18: ADR-001, the first Now/Next/Later plan, never accepted; and ADR-006, an LLM router over agent descriptions that the Miya bot doesn't use (it routes by the ladder, §5.1).
 
@@ -466,7 +489,7 @@ The rule from v2.0 still decides promotion: an item moves to Now when an agent i
 | Bring Miya's synthesizer, Kobe's reasoner and Fraser's design onto the wire | The owner's call: pricing Fraser's calls first, gating only if he asks |
 | Bourdain's database-first path: the knowledge base answers, code applies the facts, the model applies taste once, the web only when the base comes up short | The owner's design (October 15); built once the run counters (recorded since October 15) show how often the knowledge base could have answered |
 | Schedule memory consolidation, or retire it | Before memory is described as consolidating again |
-| A second harness tenant | When the owner unparks it |
+| Kipchoge behind Miya | When its own door has passed; the route is built and switched off |
 | Give the judge authority | When enough owner labels exist to measure its agreement |
 
 **Later:** a learning loop that changes behaviour from outcomes ([ADR-015](./ADR-015_outcome_validated_learning_engine.md)); memory recall weighted by what changed an outcome; a source and date on every fact, not just Bourdain's; an off-machine replica; a gateway for a mobile client; manifests for agents beyond the harness.
@@ -491,29 +514,33 @@ The rule from v2.0 still decides promotion: an item moves to Now when an agent i
 |---|---|
 | [`new_plane/miya_runner/`](../new_plane/miya_runner/) | The Miya runner: the ladder, the orchestrator and its sink, the synthesizer, the validator, the cost router, the Telegram client, menus, agent registry |
 | [`new_plane/genie_runner/`](../new_plane/genie_runner/), [`new_plane/bourdain_runner/`](../new_plane/bourdain_runner/) | The household bots' runners |
+| [`new_plane/kipchoge_runner/`](../new_plane/kipchoge_runner/) | The running coach's bot and its minute tick |
 | [`agents/`](../agents/) | One folder per agent (Kobe's code is in `agents/the_scientist/`) |
 | [`core/harness/`](../core/harness/) | The harness's steps: frame, contract, execute, answer, evidence, control, render, record, run |
 | [`core/kb/`](../core/kb/) | The knowledge base: schema, queries, the gazetteer, cities, geography |
-| [`core/`](../core/) | The platform: the wire (`llm.py`, `llm_chat.py`), the Charter, decisions, the cost ledger and budget, the health line, scoped state, memory, the judge, verify, manifests, tools, cassettes |
+| [`core/`](../core/) | The platform: the wire (`llm.py`, `llm_chat.py`), the Charter, decisions, the cost ledger and budget, the health line, scoped state, memory, the judge, verify, manifests, tools, cassettes, the private overlay (`overlay.py`) |
 | [`bridges/`](../bridges/) | Health, gym, events and food ingestion |
 | [`scripts/`](../scripts/) | Launchd templates, the gates, evals, reports and loaders |
 | [`tests/`](../tests/) | The regression registry, the layered suites and the module tests |
 | [`specs/`](./) | This document, the ADRs ([index](./README.md)) and the two interactive pages |
 | [`archive/`](../archive/) | Documents, scripts and tests that no longer describe or run the system (October 18) |
+| `private/overlay/` (gitignored, not in the repo) | Agents kept off the public repo, laid out like it (§13) |
 
 ## Appendix B. Counts, dated
 
 | Count | Value | As of |
 |---|---|---|
-| Front doors | 3 | Oct 17 |
-| Agents | 6 in these docs (one more in a private build lane, see §6) | Oct 17 |
-| launchd services | 8 (5 always on) | Oct 17 |
+| Front doors | 4 | Nov 1 |
+| Agents | 7 in these docs (any the owner keeps private live in the overlay, §13) | Nov 1 |
+| launchd services | 9 (6 always on) | Nov 1 |
 | Event sources | 122 (50 in code, 52 pages read by a model, 20 searches) | Oct 19 |
 | Food feeds | 12 | Oct 17 |
 | Gazetteer places | 21,555 | Oct 17 |
-| Tests | 4,209 (1,877 in 219 regression pins) | Oct 17 |
+| Tests | 4,322 (1,876 in 218 regression pins), all run in CI | Nov 1 |
 | Bourdain outcome library | 52 outcomes, 3 always required | Oct 18 |
-| Judge checklist | 21 criteria | Oct 17 |
+| Kipchoge outcome library | 19 outcomes | Nov 1 |
+| Harness tenants | 2 (Bourdain, Kipchoge) | Nov 1 |
+| Judge checklist | 21 criteria (Bourdain), 8 (Kipchoge) | Nov 1 |
 | Golden sets (private) | 72 Bourdain asks, 14 Genie asks | Oct 17 |
 | Harness runs | 22 (19 Bourdain answers, 3 Fraser designs) | Oct 4–11 |
 | Decisions ledger | 7,408 rows | Oct 14 |

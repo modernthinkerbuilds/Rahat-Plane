@@ -30,7 +30,7 @@ On a Mac mini at home, around the clock. The code and the tests are in the repo;
 - **A decision ledger.** One row per decision, with the agent, the rule, the latency and the cost: 7,408 rows since May 8.
 - **It tells on itself.** One line at 08:15 when something is broken (a dead feed, a stale page, a silent Watch, lost messages, refused model calls), and silence otherwise.
 - **Real data in.** 122 local event sources, 50 of them read in plain code with no model; 150+ health metrics at minute resolution.
-- **4,209 tests** in the full suite (Oct 17). The unit, contract and regression layers run before every push, along with a check that refuses a push that would publish a private word.
+- **4,322 tests** in the full suite (Nov 1), every one run in CI. The unit, contract and regression layers run before every push, along with a check that refuses a push that would publish a private word.
 
 **[→ How Rahat actually runs](https://github.com/modernthinkerbuilds/Rahat-Plane/blob/main/specs/ARCHITECTURE.md)**
 
