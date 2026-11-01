@@ -55,7 +55,7 @@ launchctl unload "$LAUNCHAGENT" 2>/dev/null || true
 launchctl load "$LAUNCHAGENT"
 echo "✓ loaded com.rahat.kipchoge"
 sleep 3
-if launchctl list | grep -q com.rahat.kipchoge; then
+if launchctl list com.rahat.kipchoge >/dev/null 2>&1; then
     echo "✓ service running — tail -f $REPO/vault/kipchoge_bot.log ; then /start the bot on Telegram"
 else
     echo "✗ service not visible — check $REPO/vault/kipchoge_bot.log"; exit 1

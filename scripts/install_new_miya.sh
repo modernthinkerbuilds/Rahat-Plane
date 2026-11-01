@@ -79,7 +79,7 @@ echo "=== install ==="
 mkdir -p "$HOME/Library/LaunchAgents"
 
 # If already installed, unload first so we can swap cleanly
-if launchctl list | grep -q "^[0-9-]* *[0-9-]* *com.rahat.miya.v2$"; then
+if launchctl list com.rahat.miya.v2 >/dev/null 2>&1; then
   echo "  unloading existing com.rahat.miya.v2..."
   launchctl unload "$LAUNCHAGENT" 2>/dev/null || true
 fi

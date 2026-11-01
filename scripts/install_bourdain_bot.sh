@@ -52,7 +52,7 @@ launchctl unload "$LAUNCHAGENT" 2>/dev/null || true
 launchctl load "$LAUNCHAGENT"
 echo "✓ loaded com.rahat.bourdain"
 sleep 3
-if launchctl list | grep -q com.rahat.bourdain; then
+if launchctl list com.rahat.bourdain >/dev/null 2>&1; then
     echo "✓ service running — tail -f $REPO/vault/bourdain_bot.log ; then /start the bot on Telegram"
 else
     echo "✗ service not visible — check $REPO/vault/bourdain_bot.log"; exit 1

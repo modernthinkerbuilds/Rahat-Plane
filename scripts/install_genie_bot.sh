@@ -60,7 +60,7 @@ launchctl load "$LAUNCHAGENT"
 echo "✓ loaded com.rahat.genie"
 
 sleep 3
-if launchctl list | grep -q com.rahat.genie; then
+if launchctl list com.rahat.genie >/dev/null 2>&1; then
     echo "✓ service running — tail the log with:"
     echo "    tail -f $REPO/vault/genie_bot.log"
     echo "  Then message your bot on Telegram: /start"
