@@ -12,6 +12,8 @@ Layers (per tests/__init__.py):
     3. eval        — tests/evals/test_scientist_conversation.py
     4. adversarial — tests/evals/test_adversarial.py
     5. regression  — tests/test_replay_regression.py
+    6. quality_gate — tests/quality_gate/
+    7. rest        — every other tests/**/test_*.py, so CI runs them all
 
 Each layer runs in its own subprocess (a clean Python interp) so a
 crash in one layer doesn't take down the rest. Per-layer pass/fail
@@ -242,6 +244,32 @@ LAYERS: list[LayerSpec] = [
 ]
 
 
+def _unlisted(layers: list[LayerSpec]) -> list[str]:
+    """Every test file under tests/ that no layer above names. Until
+    2026-11-01 that was 83 of 342 files (new_plane, kipchoge, core, the
+    root suites): CI never ran them. A new suite lands here until a layer
+    claims it, so no test sits outside CI unnoticed."""
+    named = [p for layer in layers for p in layer.paths]
+    out: list[str] = []
+    for f in sorted((ROOT / "tests").rglob("test_*.py")):
+        rel = f.relative_to(ROOT).as_posix()
+        if not any(rel == p or (p.endswith("/") and rel.startswith(p)) for p in named):
+            out.append(rel)
+    return out
+
+
+_REST = _unlisted(LAYERS)
+if _REST:
+    LAYERS.append(LayerSpec(
+        name="rest",
+        description=("Every test file no layer above names (2026-11-01): "
+                     "new_plane, kipchoge, core and the root suites, which "
+                     "CI had never run. A new suite lands here until a "
+                     "layer claims it."),
+        paths=_REST,
+    ))
+
+
 @dataclass
 class LayerResult:
     name: str
@@ -400,6 +428,9 @@ def main() -> int:
         results.append(r)
         flag = "PASS" if r.passed else "FAIL"
         print(f"    [{flag}] {r.summary} ({r.duration_s:.2f}s)")
+        if not r.passed:   # the CI log shows why, not just that
+            tail = r.raw_output.rstrip().splitlines()[-60:]
+            print("    ── last lines ──\n" + "\n".join("    " + ln for ln in tail))
 
     md = render_markdown(results)
     Path(args.report).write_text(md)

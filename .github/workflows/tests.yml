@@ -77,8 +77,10 @@ jobs:
             tests/last_run.json
           retention-days: 14
 
-      - name: Add report to PR summary
-        if: always() && github.event_name == 'pull_request'
+      - name: Add report to the run summary
+        # Every run, not only PRs: the run page shows which layer failed
+        # without downloading the artifact.
+        if: always()
         run: |
           {
             echo "## Test report"

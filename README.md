@@ -6,6 +6,8 @@
 
 *Rahat is the agent platform I built; seven agents run on it. Miya is the one I talk to. One harness agents answer through, evals that replay for $0, checks in code, and a record of every decision. Built at human scale.*
 
+<a href="https://github.com/modernthinkerbuilds/Rahat-Plane/actions/workflows/tests.yml"><img src="https://github.com/modernthinkerbuilds/Rahat-Plane/actions/workflows/tests.yml/badge.svg?branch=main" alt="tests: every test file, hermetic"></a> <a href="https://github.com/modernthinkerbuilds/Rahat-Plane/actions/workflows/gates.yml"><img src="https://github.com/modernthinkerbuilds/Rahat-Plane/actions/workflows/gates.yml/badge.svg?branch=main" alt="gates: registry, silent failure, bug-to-test, time zones"></a>
+
 <a href="https://modernthinkerbuilds.github.io/Rahat-Plane/specs/RAHAT-ARCHITECTURE.html"><img src="./specs/img/rahat-map.gif" width="100%" alt="Rahat end to end: a /week message travels from Telegram through Miya's runner and the routing ladder to Kobe, with the checks, the control plane and the vault around it"></a>
 
 <sub>A <code>/week</code> message moving through Rahat, from Telegram through the routing ladder to Kobe. Click it for the live page, then tap any box.</sub>
