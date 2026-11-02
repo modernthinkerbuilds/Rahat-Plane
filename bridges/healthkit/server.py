@@ -97,7 +97,12 @@ def _check_key(x_api_key: str | None) -> None:
 
 @app.get("/health")
 def health() -> dict:
-    return {"ok": True, "service": "healthkit-bridge"}
+    try:
+        from core import site
+        where = site.active().name
+    except Exception:  # noqa: BLE001
+        where = "home"
+    return {"ok": True, "service": "healthkit-bridge", "site": where}
 
 
 @app.post("/hae")

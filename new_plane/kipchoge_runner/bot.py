@@ -43,7 +43,7 @@ from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
 
-HOME_ZONE = "America/Los_Angeles"
+HOME_ZONE = "America/Los_Angeles"          # the default; the active site's zone wins (core/site.py)
 LANDED_WINDOW_H = 48          # a run older than this is history, not news (no flood on first boot)
 PROVISIONAL_SETTLE_MIN = 10   # the dense heart-rate stretch must have ended this long ago: the run is over
 RUN_LIKE_HR_MARGIN = 10       # on a planned run day, a stretch at zone2_lo − this or above is provisionally the run
@@ -94,7 +94,8 @@ def home_now(now_utc: datetime | None = None) -> datetime:
     utc = now_utc.astimezone(timezone.utc) if (now_utc and now_utc.tzinfo) else (now_utc.replace(tzinfo=timezone.utc) if now_utc else datetime.now(timezone.utc))
     try:
         from zoneinfo import ZoneInfo
-        return utc.astimezone(ZoneInfo(HOME_ZONE)).replace(tzinfo=None)
+        from agents.kipchoge.ingest import home_zone
+        return utc.astimezone(ZoneInfo(home_zone())).replace(tzinfo=None)
     except Exception:  # noqa: BLE001
         return utc.astimezone().replace(tzinfo=None)
 

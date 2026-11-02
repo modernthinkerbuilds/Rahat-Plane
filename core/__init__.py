@@ -33,3 +33,10 @@ both need a thing, that thing belongs in core/ — not duplicated across them.
 from core import overlay as _overlay  # noqa: E402
 
 _overlay.activate()
+
+# The active site (core/site.py, ADR-019): its env overrides apply to every
+# process at start. Not under test (a test names a sites dir and calls it).
+if __import__("os").environ.get("RAHAT_TEST_MODE", "").lower() not in ("1", "true", "yes"):
+    from core import site as _site  # noqa: E402
+
+    _site.apply_env()

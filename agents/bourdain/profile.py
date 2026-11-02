@@ -77,9 +77,35 @@ def profile_path() -> Path:
     return Path(str(cio.DB_PATH)).parent / "bourdain" / "profile.json"
 
 
+SITE_HOME_KEYS = ("lat", "lng", "city", "region", "country", "minutes_mode", "radius_min")
+
+
+def _site_home(home: dict) -> dict:
+    """The profile's home with the active site's over it (core/site.py):
+    away from home, "near home" is the house there, in its zone. A site
+    with no home point of its own leaves the profile alone."""
+    try:
+        from core import site
+        s = site.active()
+    except Exception:  # noqa: BLE001
+        return home
+    if s.home_point() is None and not (s.home.get("city") or "").strip():
+        return home
+    out = dict(home)
+    for k in SITE_HOME_KEYS:
+        if s.home.get(k) not in (None, ""):
+            out[k] = s.home[k]
+    if s.timezone:
+        out["tz"] = s.timezone
+    out["_site"] = s.name
+    return out
+
+
 def load() -> dict:
     """The canonical profile, whole. Falls back to the PII-free default
-    (and says so in `_source`) when the vault file is absent or broken."""
+    (and says so in `_source`) when the vault file is absent or broken.
+    The active site's home point and zone, when it has them, replace the
+    profile's (`home._site` names the site)."""
     p = profile_path()
     try:
         data = json.loads(p.read_text(encoding="utf-8"))
@@ -90,11 +116,11 @@ def load() -> dict:
         for k, v in DEFAULT_PROFILE["household"].items():
             data["household"].setdefault(k, v)
         data["_source"] = str(p)
-        return data
     except (OSError, ValueError, json.JSONDecodeError):
-        d = json.loads(json.dumps(DEFAULT_PROFILE))
-        d["_source"] = "default (no profile file)"
-        return d
+        data = json.loads(json.dumps(DEFAULT_PROFILE))
+        data["_source"] = "default (no profile file)"
+    data["home"] = _site_home(data.get("home") or {})
+    return data
 
 
 def member_ids(profile: dict) -> list[str]:

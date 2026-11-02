@@ -57,8 +57,11 @@ def trip_now(now_utc: datetime | None = None) -> datetime:
         trip = state.trip() or {}
         if trip.get("stays"):
             local = utc.astimezone(ZoneInfo(TRIP_TZ)).replace(tzinfo=None)
-            if resolve.leg_for(trip, local):
-                return local
+            key = resolve.leg_for(trip, local)
+            if key:
+                # the stay's own zone when it names one (2026-11-02); TRIP_TZ otherwise
+                stay_tz = str((trip["stays"].get(key) or {}).get("tz") or "").strip()
+                return utc.astimezone(ZoneInfo(stay_tz)).replace(tzinfo=None) if stay_tz else local
         from agents.bourdain import profile as cprofile
         home_tz = str((cprofile.load().get("home") or {}).get("tz") or "").strip()
         if home_tz:

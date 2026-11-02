@@ -18,6 +18,34 @@ from agents.genie.agent import GenieAgent
 # exercise of the 06-23 delegation-sink scaling contracts.
 PRODUCTION_AGENT_CLASSES = [KobeAgent, FraserAgent, GenieAgent]
 
+GENIE_OFF_LINE = ("Genie is off while we're {where}: no weekend plans, household calendar or event digest "
+                  "from here. It comes back with the home site.")
+
+
+def production_agents() -> list[type]:
+    """The classes Miya registers at this site (core/site.py): the list
+    above, without Genie where the site turns it off."""
+    try:
+        from core import site
+        if not site.active().genie:
+            return [c for c in PRODUCTION_AGENT_CLASSES if c is not GenieAgent]
+    except Exception:  # noqa: BLE001 — an unreadable site never changes the roster
+        pass
+    return list(PRODUCTION_AGENT_CLASSES)
+
+
+def genie_off_line() -> str | None:
+    """What Miya says on Genie's rungs at a site that turns Genie off; None at home."""
+    try:
+        from core import site
+        s = site.active()
+        if not s.genie:
+            return GENIE_OFF_LINE.format(where=f"in {s.label}" if s.label and s.label != s.name else "away")
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
 # Agents that predate the structured-output contract (PF-2026-06-17-002) and
 # rely on the outbound validator as their content gate. New agents are NOT
 # grandfathered — they must emit numeric facts as typed fields.

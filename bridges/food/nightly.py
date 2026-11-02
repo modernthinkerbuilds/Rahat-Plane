@@ -255,6 +255,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--max", type=int, default=REFRESH_MAX)
     a = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    from bridges.events.ingest import site_turns_off
+    if site_turns_off("com.rahat.food.nightly"):      # the Mac is away (core/site.py)
+        print(json.dumps({"skipped": "the site turns the food run off"}))
+        return 0
     both = not (a.feeds or a.refresh)
     out = run(feeds=both or a.feeds, refresh=both or a.refresh, dry_run=a.dry_run, limit=a.max)
     print(json.dumps(out, indent=1))

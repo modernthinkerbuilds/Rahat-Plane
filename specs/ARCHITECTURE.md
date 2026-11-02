@@ -18,7 +18,8 @@
 > 1. **A fourth front door, and the harness's second tenant.** Kipchoge, the running coach, went live on its own bot on November 1 as the harness's second tenant ([ADR-018](./ADR-018-outcome-contracts-and-independent-evaluation.md) A6, accepted October 25). An engine in code turns each run into evidence records; the model writes only the words, and a message with a number no record backs is never sent. Its route behind Miya is built and switched off (§5.4, §6, §7).
 > 2. **Agents kept off the public repo.** An agent the owner keeps private lives in a gitignored overlay laid out like the repo; [`core/overlay.py`](../core/overlay.py) loads it at import, after the public tree, and its health checks join the 08:15 line (§13).
 > 3. **CI runs every test file.** The tests workflow had been red on `main`: a property-testing library was missing from the dev requirements. `tests/run_all.py` gained a `rest` layer for the 83 test files no layer named (§12).
-> 4. **Counts** in Appendix B are dated November 1.
+> 4. **Sites** ([ADR-019](./ADR-019-sites.md)): the Mac travels. One private file per place names the zone, the home point, the jobs that run there and whether Genie is on; `scripts/rahat_site.py switch <name>` moves everything in one go and back (§11).
+> 5. **Counts** in Appendix B are dated November 1.
 
 > **v3.0 update note (2026-10-17).** v2.0 (May 2026) described a model-first Kobe and a memory design. This version is rewritten as built, by Architect A (platform lane), and checked against the code and the records on October 17; every count carries its date (Appendix B). What changed since v2.0:
 >
@@ -425,7 +426,9 @@ Miya's agents are registered in code ([`agent_boot.py`](../new_plane/miya_runner
 | A regression returns | The pre-push gate and CI block it (§12) | |
 | A private overlay would hide public code | It isn't loaded; the 08:15 line names the file to remove | |
 
-**Operations.** The owner alone pushes and flips live flags; services are restarted with `launchctl kickstart`. Logs live beside the vault. Two build lanes share `main` under a two-architect protocol: lanes by directory, and a commit that touches a shared file says so in a `COORDINATION:` line.
+**Operations.** The owner alone pushes and flips live flags; services are restarted with `launchctl kickstart`. Logs live beside the vault.
+
+**Sites** ([ADR-019](./ADR-019-sites.md), [`core/site.py`](../core/site.py)). The Mac mini runs from more than one place. A site is one private file (`vault/sites/<name>.json`): the zone, the home point (an address, geocoded once), the launchd jobs off there, whether Genie is on, env overrides. `scripts/rahat_site.py switch <name>` writes the active marker, unloads and reloads the jobs, restarts the always-on bots, and says whether the Mac's clock matches; every process reads the site once at start. Kipchoge's athlete clock and Bourdain's home follow it; the health line skips the checks for jobs the site turns off and names a Mac clock on another zone; the event and food runs refuse to run where they're off. With no site files Rahat is at home, as before. The phone reaches the health bridge over Tailscale, one address on every network. Two build lanes share `main` under a two-architect protocol: lanes by directory, and a commit that touches a shared file says so in a `COORDINATION:` line.
 
 ---
 
@@ -470,6 +473,7 @@ Miya's agents are registered in code ([`agent_boot.py`](../new_plane/miya_runner
 | [016](./ADR-016_platform_seams.md) | Platform seams before the second agent, surface or tenant | Accepted; amended by ADR-018 |
 | [017](./ADR-017_nl_intent_layer.md) | A plain-language intent layer | Accepted, behind a flag that is off; amended by ADR-018 |
 | [018](./ADR-018-outcome-contracts-and-independent-evaluation.md) | Outcome contracts and independent evaluation: the harness | Accepted; in production since October 4; two tenants since November 1 (A6) |
+| [019](./ADR-019-sites.md) | Sites: one Rahat, run from more than one place | Accepted, November 2 |
 
 There is no ADR-010 in this repository. [`specs/README.md`](./README.md) groups these by theme. Two ADRs moved to [`archive/`](../archive/README.md) on October 18: ADR-001, the first Now/Next/Later plan, never accepted; and ADR-006, an LLM router over agent descriptions that the Miya bot doesn't use (it routes by the ladder, §5.1).
 
@@ -518,7 +522,7 @@ The rule from v2.0 still decides promotion: an item moves to Now when an agent i
 | [`agents/`](../agents/) | One folder per agent (Kobe's code is in `agents/the_scientist/`) |
 | [`core/harness/`](../core/harness/) | The harness's steps: frame, contract, execute, answer, evidence, control, render, record, run |
 | [`core/kb/`](../core/kb/) | The knowledge base: schema, queries, the gazetteer, cities, geography |
-| [`core/`](../core/) | The platform: the wire (`llm.py`, `llm_chat.py`), the Charter, decisions, the cost ledger and budget, the health line, scoped state, memory, the judge, verify, manifests, tools, cassettes, the private overlay (`overlay.py`) |
+| [`core/`](../core/) | The platform: the wire (`llm.py`, `llm_chat.py`), the Charter, decisions, the cost ledger and budget, the health line, scoped state, memory, the judge, verify, manifests, tools, cassettes, the private overlay (`overlay.py`), the active site (`site.py`) |
 | [`bridges/`](../bridges/) | Health, gym, events and food ingestion |
 | [`scripts/`](../scripts/) | Launchd templates, the gates, evals, reports and loaders |
 | [`tests/`](../tests/) | The regression registry, the layered suites and the module tests |

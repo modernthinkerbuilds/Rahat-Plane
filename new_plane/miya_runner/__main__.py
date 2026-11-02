@@ -308,9 +308,9 @@ def cmd_serve(_args: list[str]) -> int:
     # finds an empty registry and emits "I do not know an agent named 'fraser'".
     try:
         from core import miya as _miya_registry
-        from new_plane.miya_runner.agent_boot import PRODUCTION_AGENT_CLASSES
+        from new_plane.miya_runner.agent_boot import production_agents
         _miya_registry.clear_registry()
-        for _agent_cls in PRODUCTION_AGENT_CLASSES:
+        for _agent_cls in production_agents():          # the active site's roster (core/site.py)
             _miya_registry.register(_agent_cls())
         logger.info("agents registered: %s",
                     [a.name for a in _miya_registry.registered()])

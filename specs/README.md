@@ -36,6 +36,7 @@ An ADR records a decision as it was made. Its **Status** line says whether it is
 | Runtime | [012](./ADR-012-shared-tool-calling-runtime.md) | One shared tool-calling runtime | Accepted as amended by ADR-018 (the harness's Execute step) |
 | Spend | [005](./ADR-005-budget-enforcement.md) | A token-budget gate | Accepted; amended by ADR-018 (a per-ask brake) |
 | Position | [014](./ADR-014_openclaw_position.md) | OpenClaw is a parked adapter, not the runtime | Accepted |
+| Runtime | [019](./ADR-019-sites.md) | Sites: one private file per place the Mac runs from; one command moves everything and back | Accepted, Nov 2 |
 | Proposed | [015](./ADR-015_outcome_validated_learning_engine.md) | A learning engine that changes behaviour from outcomes | Proposed, design only, not built |
 
 There is no ADR-010. The next decision is ADR-019.

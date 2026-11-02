@@ -498,6 +498,21 @@ def refresh_on_demand(*, now: datetime | None = None,
             "next": now + timedelta(hours=min_gap_hours)}
 
 
+def site_turns_off(label: str) -> bool:
+    """True, and a log line, when the active site turns this job off
+    (core/site.py): the switch unloads it from launchd too, but a run that
+    starts anyway must not read the home feeds from abroad."""
+    try:
+        from core import site
+        s = site.active()
+    except Exception:  # noqa: BLE001
+        return False
+    if s.service_on(label):
+        return False
+    logger.info("%s is off at the %s site; nothing run", label, s.label)
+    return True
+
+
 def main() -> int:
     import sys
     logging.basicConfig(level="INFO",
@@ -509,6 +524,8 @@ def main() -> int:
         for source_id, active, latest in inventory_stats():
             print(f"{source_id:24s} {active or 0:4d} active   "
                   f"last refresh {latest}")
+        return 0
+    if site_turns_off("com.rahat.events"):         # the Mac is away (core/site.py); nothing to read here
         return 0
     # Default pass = the FREE kinds only. `--search` adds the paid
     # search-kind sources + popularity lookups (Wed/Sat 03:00 in launchd).

@@ -33,7 +33,16 @@ from typing import Any
 from bridges.healthkit import sleep as hk_sleep
 from bridges.healthkit import workouts as hkw
 
-HOME_ZONE = "America/Los_Angeles"
+HOME_ZONE = "America/Los_Angeles"          # the default; the active site's zone wins (core/site.py)
+
+
+def home_zone() -> str:
+    """The athlete's home zone: the active site's, else HOME_ZONE."""
+    try:
+        from core import site
+        return site.active().timezone or HOME_ZONE
+    except Exception:  # noqa: BLE001
+        return HOME_ZONE
 FORM_METRICS = ("running_speed", "running_power", "running_ground_contact_time", "running_vertical_oscillation",
                 "running_stride_length")
 RECOVERY_MIN = 3             # minutes of the day series after the end that stand in for the recovery series
@@ -385,11 +394,12 @@ def provisional_run(con: sqlite3.Connection, session: dict, *, offset_min: int |
 
 
 def home_offset_min(local: datetime) -> int:
-    """The home zone's UTC offset at a local wall-clock time (E5: his home
-    zone is America/Los_Angeles); -420 when the zone database is missing."""
+    """The home zone's UTC offset at a local wall-clock time (E5: the
+    athlete's home zone, the active site's); -420 when the zone database
+    is missing."""
     try:
         from zoneinfo import ZoneInfo
-        off = local.replace(tzinfo=ZoneInfo(HOME_ZONE)).utcoffset()
+        off = local.replace(tzinfo=ZoneInfo(home_zone())).utcoffset()
         return int(off.total_seconds() // 60) if off is not None else -420
     except Exception:  # noqa: BLE001
         return -420

@@ -19,6 +19,10 @@ record and returns one plain line per problem:
   * whatever a private overlay agent adds (core/overlay.py: HEALTH_CHECKS
     in its agents/<name>/health.py, each check `(now) -> list[str]`), and
     the overlay itself left unloaded because it would hide public code;
+  * the Mac's clock on another zone than the active site's (core/site.py;
+    the scheduled jobs run on the Mac's clock). A check for a job the site
+    turns off (event feeds with the event runs off, the gym plan with the
+    gym bridge off, food feeds with the food run off) is skipped;
   * the model refusing calls in the last day (a spent cap shows up here);
   * replies or nudges Telegram never took, in the last day;
   * the gym plan not re-synced for over a week, with nothing for today.
@@ -434,6 +438,24 @@ def overlay_not_loaded(now: datetime) -> list[str]:
     return [f"Private agents: not loaded, {why}; remove that file from the overlay."] if why else []
 
 
+def site_clock(now: datetime) -> list[str]:
+    """The Mac's clock against the active site's zone (core/site.py)."""
+    try:
+        from core import site
+        line = site.clock_mismatch(site.active(), now)
+    except Exception:  # noqa: BLE001
+        return []
+    return [line] if line else []
+
+
+def _site_checks_off() -> frozenset[str]:
+    try:
+        from core import site
+        return site.active().checks_off()
+    except Exception:  # noqa: BLE001
+        return frozenset()
+
+
 def _overlay_checks() -> list:
     """Checks a private overlay agent contributes (core/overlay.py). Never raises."""
     try:
@@ -443,11 +465,16 @@ def _overlay_checks() -> list:
         return []
 
 
+# The checks, by name: the active site may turn some off (core/site.py), by these names.
+CHECKS = ("model_refusals", "lost_messages", "genie_dead_feeds", "genie_feeds_dated_past", "genie_feeds_stale",
+          "watch_silent", "gym_plan_stale", "food_feeds_silent", "overlay_not_loaded", "site_clock")
+
+
 def findings(now: datetime | None = None) -> list[str]:
     now = now or datetime.now()
     out: list[str] = []
-    for check in (model_refusals, lost_messages, genie_dead_feeds, genie_feeds_dated_past, genie_feeds_stale,
-                  watch_silent, gym_plan_stale, food_feeds_silent, overlay_not_loaded, *_overlay_checks()):
+    off = _site_checks_off()
+    for check in [globals()[name] for name in CHECKS if name not in off] + _overlay_checks():
         try:
             out += check(now)
         except Exception:  # noqa: BLE001

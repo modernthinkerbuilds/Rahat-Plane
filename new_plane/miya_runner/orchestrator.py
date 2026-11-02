@@ -811,6 +811,14 @@ def handle(turn: Turn) -> Response:
     # deterministic pipeline — through the SAME finalize sink as every
     # other delegation path (06-23 scaling contract).
     if delegation_path == "genie_route":
+        from new_plane.miya_runner.agent_boot import genie_off_line
+        off_line = genie_off_line()               # a site that turns Genie off (core/site.py, 2026-11-02)
+        if off_line:
+            used.append("genie_route")
+            return _finalize_delegated(
+                raw_text=off_line, path="genie_route", turn=turn,
+                stripped_msg=stripped_msg, trace_id=trace_id,
+                used=used, transport_errors=transport_errors)
         r = adapter.genie_route(stripped_msg,
                                 chat_id=turn.chat_id or None,
                                 trace_id=trace_id)

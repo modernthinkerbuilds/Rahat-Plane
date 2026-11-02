@@ -38,13 +38,19 @@ def test_contract_marker_exists_on_base():
 
 def test_boot_list_is_the_single_source_of_truth():
     """`__main__` must register from agent_boot.PRODUCTION_AGENT_CLASSES so a
-    new agent can't be added to the runtime without passing this contract."""
+    new agent can't be added to the runtime without passing this contract.
+    Since 2026-11-02 it does so through agent_boot.production_agents(), which
+    is that list minus what the active site turns off (core/site.py) and
+    never adds to it."""
     import inspect
     from new_plane.miya_runner import __main__ as boot
+    from new_plane.miya_runner import agent_boot
     src = inspect.getsource(boot)
-    assert "PRODUCTION_AGENT_CLASSES" in src, (
-        "__main__ must register agents from agent_boot.PRODUCTION_AGENT_CLASSES "
+    assert "production_agents" in src, (
+        "__main__ must register agents from agent_boot.production_agents() "
         "— otherwise a 4th agent can register without tripping this contract")
+    assert set(agent_boot.production_agents()) <= set(agent_boot.PRODUCTION_AGENT_CLASSES)
+    assert "PRODUCTION_AGENT_CLASSES" in inspect.getsource(agent_boot.production_agents)
 
 
 @pytest.mark.skipif(
