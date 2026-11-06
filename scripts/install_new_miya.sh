@@ -5,9 +5,9 @@
 # new Miya v2 boots automatically on login and restarts on crash.
 #
 # Pre-conditions checked before install:
-#   - .venv/bin/python exists (run weekend_setup.sh first)
+#   - .venv/bin/python exists (python3 -m venv .venv && .venv/bin/pip install -r requirements.txt)
 #   - NEW_MIYA_BOT_TOKEN is in .env (NOT equal to SCIENTIST_BOT_TOKEN)
-#   - OPENCLAW_ADAPTER_URL points at a reachable adapter
+#   - with NEW_MIYA_USE_HTTP_CLIENT=1 only: RAHAT_ADAPTER_URL reaches the adapter
 #   - vault/ directory exists for log output
 #
 # To uninstall:
@@ -29,7 +29,7 @@ if [ ! -d "$REPO" ]; then
 fi
 if [ ! -x "$PYTHON_BIN" ]; then
   echo "✗ python venv not found at $PYTHON_BIN"
-  echo "  Run weekend_setup.sh first to create .venv"
+  echo "  Create it: python3 -m venv .venv && .venv/bin/pip install -r requirements.txt"
   exit 2
 fi
 echo "  ✓ python: $PYTHON_BIN"
@@ -53,13 +53,17 @@ if [ -n "$SCI_TOKEN" ] && [ "$NEW_TOKEN" = "$SCI_TOKEN" ]; then
 fi
 echo "  ✓ NEW_MIYA_BOT_TOKEN set (distinct from SCIENTIST_BOT_TOKEN)"
 
-ADAPTER_URL=$(grep -E '^OPENCLAW_ADAPTER_URL=' "$REPO/.env" | head -1 | cut -d= -f2-)
-ADAPTER_URL="${ADAPTER_URL:-http://127.0.0.1:8766}"
-if ! curl -sf "$ADAPTER_URL/healthz" >/dev/null 2>&1; then
-  echo "  ⚠ adapter not reachable at $ADAPTER_URL (runner will refuse to boot)"
-  echo "    boot it with: ./scripts/weekend_smoke.sh (one-off) or its own launchd job"
-else
-  echo "  ✓ adapter healthy at $ADAPTER_URL"
+# The runner calls the agents by import (ADR-013); the HTTP adapter matters
+# only when .env turns HTTP mode on.
+if grep -qE '^NEW_MIYA_USE_HTTP_CLIENT=1' "$REPO/.env"; then
+  ADAPTER_URL=$(grep -E '^RAHAT_ADAPTER_URL=' "$REPO/.env" | head -1 | cut -d= -f2-)
+  ADAPTER_URL="${ADAPTER_URL:-http://127.0.0.1:8766}"
+  if ! curl -sf "$ADAPTER_URL/healthz" >/dev/null 2>&1; then
+    echo "  ⚠ HTTP mode is on and the adapter is not reachable at $ADAPTER_URL"
+    echo "    start it: .venv/bin/python -m uvicorn bridges.http_adapter.server:app --port 8766"
+  else
+    echo "  ✓ adapter healthy at $ADAPTER_URL"
+  fi
 fi
 
 mkdir -p "$REPO/vault"

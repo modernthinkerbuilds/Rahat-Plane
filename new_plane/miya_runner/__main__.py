@@ -1,7 +1,7 @@
 """new_plane.miya_runner — entry point.
 
 Usage:
-    # Boot the runner against the new-plane adapter (must be running first)
+    # Boot the runner (native client; the HTTP adapter only with NEW_MIYA_USE_HTTP_CLIENT=1)
     python -m new_plane.miya_runner
 
     # Boot for one turn from CLI (skip Telegram, useful for smoke tests)
@@ -12,8 +12,8 @@ Usage:
 
 Env (required for live Telegram mode):
     NEW_MIYA_BOT_TOKEN          — separate bot, NOT SCIENTIST_BOT_TOKEN
-    OPENCLAW_ADAPTER_URL        — defaults to http://127.0.0.1:8766
-    OPENCLAW_ADAPTER_TOKEN      — bearer token for the adapter (optional in dev)
+    RAHAT_ADAPTER_URL           — HTTP mode only; defaults to http://127.0.0.1:8766
+    RAHAT_ADAPTER_TOKEN         — HTTP mode only; bearer token (optional in dev)
     GEMINI_API_KEY              — for synthesis (else structured fallback)
 
 Optional:
@@ -21,7 +21,7 @@ Optional:
     NEW_MIYA_MODEL_FLASH        — default gemini-2.5-flash
     NEW_MIYA_MODEL_PRO          — default gemini-2.5-pro
     NEW_MIYA_PRO_THRESHOLD_CHARS — default 200
-    OPENCLAW_COST_LOG           — JSONL log of routing decisions
+    RAHAT_COST_LOG              — JSONL log of routing decisions
 """
 from __future__ import annotations
 
@@ -112,8 +112,8 @@ def _preflight() -> int:
     if not r.ok:
         err = r.error or r.transport_error
         logger.error("adapter unreachable at %s: %s", adapter.ADAPTER_URL, err)
-        logger.error("Boot the adapter first: ./scripts/weekend_smoke.sh "
-                     "or `uvicorn bridges.openclaw_adapters.server:app "
+        logger.error("Start the adapter first: "
+                     "`uvicorn bridges.http_adapter.server:app "
                      "--port 8766`")
         return 2
     logger.info("adapter healthy at %s", adapter.ADAPTER_URL)

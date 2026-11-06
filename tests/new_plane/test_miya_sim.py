@@ -14,7 +14,7 @@ from new_plane.miya_sim.orchestrator import (
 
 @pytest.fixture(autouse=True)
 def isolated_signals(tmp_path, monkeypatch):
-    monkeypatch.setenv("OPENCLAW_SIGNALS_DB", str(tmp_path / "sim.db"))
+    monkeypatch.setenv("RAHAT_SIGNALS_DB", str(tmp_path / "sim.db"))
     from new_plane.signals import store
     store.set_db_path(tmp_path / "sim.db")
     store.init_db()

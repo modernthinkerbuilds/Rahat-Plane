@@ -14,7 +14,7 @@ import pytest
 
 @pytest.fixture
 def store(tmp_path, monkeypatch):
-    monkeypatch.delenv("OPENCLAW_SIGNALS_DB", raising=False)
+    monkeypatch.delenv("RAHAT_SIGNALS_DB", raising=False)
     from new_plane.signals import store as s
     s.set_db_path(tmp_path / "signals.db")
     s.init_db()

@@ -45,8 +45,8 @@ def test_adapter_client_route_parity_with_native():
 
     NOTE: this asserts SURFACE parity (the methods exist + are callable). It
     does not assert the server-side /route endpoints exist; that is the
-    remaining half of owner decision D2 (keep HTTP for OpenClaw vs delete the
-    branch) and is tracked in the findings report, not here."""
+    remaining half of owner decision D2 (keep the HTTP branch or delete
+    it) and is tracked in the findings report, not here."""
     for name in _DELEGATION_ROUTE_SURFACE:
         assert hasattr(ac, name) and callable(getattr(ac, name)), (
             f"REGRESSION (B-P0 reopened): adapter_client missing {name} — "
@@ -64,13 +64,13 @@ def test_adapter_client_route_parity_with_native():
 
 def test_adapter_server_defines_the_route_endpoints():
     """D2 (finished 2026-06-14): the HTTP adapter server
-    (bridges/openclaw_adapters/server.py) defines /kobe/route, /fraser/route,
+    (bridges/http_adapter/server.py) defines /kobe/route, /fraser/route,
     /huberman/route handlers, so adapter_client's POSTs resolve end-to-end
     (not just at the client surface). Asserted at the function level to avoid
     booting FastAPI (starlette/TestClient is flaky in this sandbox). A revert
     of the endpoints fires this test."""
     import inspect
-    from bridges.openclaw_adapters import server as adapter_server
+    from bridges.http_adapter import server as adapter_server
     src = inspect.getsource(adapter_server)
     for path in ('"/kobe/route"', '"/fraser/route"', '"/huberman/route"'):
         assert path in src, (
@@ -92,8 +92,8 @@ def test_native_route_exception_is_not_silently_dropped(monkeypatch, tmp_path):
     from new_plane.signals import store
     store.set_db_path(tmp_path / "sig.db")
     store.init_db()
-    monkeypatch.setenv("OPENCLAW_SIGNALS_DB", str(tmp_path / "sig.db"))
-    monkeypatch.setenv("OPENCLAW_COST_LOG", "")
+    monkeypatch.setenv("RAHAT_SIGNALS_DB", str(tmp_path / "sig.db"))
+    monkeypatch.setenv("RAHAT_COST_LOG", "")
     from new_plane.miya_runner import cost_router
     monkeypatch.setattr(cost_router, "COST_LOG_PATH", "")
 

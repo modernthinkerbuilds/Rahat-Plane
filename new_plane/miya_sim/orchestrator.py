@@ -1,18 +1,14 @@
 """new_miya orchestration loop, in Python.
 
-Mirrors what `new_plane/openclaw_plugin/src/agents/miya.ts` will do once
-the OpenClaw plugin is wired. Same arbitration policy, same autonomy
-budget, same signal publication pattern. Difference: instead of running
-inside an OpenClaw runtime, this calls the same Python tool functions
-the adapter would.
+The arbitration policy, the autonomy budget and the signal publication
+pattern Miya runs on. It calls the same Python tool functions the
+adapter wraps; the runner's orchestrator imports these rules.
 
-Pre-OpenClaw use cases:
+Use cases:
   - Side-by-side comparison: send the same prompts to old Miya and to
     this simulator; compare outputs.
-  - Stage-0 validation: prove the orchestration logic before adapting
-    the TS plugin to OpenClaw's SDK shape.
-  - Reference: when the TS plugin ships, its behavior should match this
-    on the same inputs.
+  - Validation: prove the orchestration logic without Telegram or a model.
+  - Reference: the runner's behavior should match this on the same inputs.
 """
 from __future__ import annotations
 
@@ -30,7 +26,7 @@ from agents.the_scientist import tools as kobe_tools
 from new_plane.signals.store import publish as publish_signal
 
 
-# ─── budget guard (mirrors TS) ────────────────────────────────────────────
+# ─── budget guard ────────────────────────────────────────────
 @dataclass
 class TurnBudget:
     trace_id: str
@@ -77,7 +73,7 @@ class Response:
     facts: dict[str, Any] = field(default_factory=dict)
 
 
-# ─── intent classifier (mirrors TS) ───────────────────────────────────────
+# ─── intent classifier ───────────────────────────────────────
 # DESIGN: explicit ask for Fraser to invent/scale a workout.
 _DESIGN_RE = re.compile(r"\b(design|create|invent|scale|substitute|sub\s*in|swap)\b", re.I)
 # The household's other ways of asking for one (2026-10-11: "Give me the
@@ -171,7 +167,7 @@ def classify_intent(msg: str) -> dict[str, Any]:
     }
 
 
-# ─── arbitration (mirrors TS — hard-coded v0) ─────────────────────────────
+# ─── arbitration (hard-coded v0) ─────────────────────────────
 def arbitrate(facts: dict[str, Any]) -> dict[str, str] | None:
     recal = facts.get("recalibration", {}).get("result") or facts.get("recalibration")
     if isinstance(recal, dict) and recal.get("behind_pace") is True:
@@ -192,7 +188,7 @@ def arbitrate(facts: dict[str, Any]) -> dict[str, str] | None:
     return None
 
 
-# ─── synthesis (placeholder — same shape as TS) ───────────────────────────
+# ─── synthesis (placeholder) ───────────────────────────
 def synthesize(
     *, trace_id: str, user_message: str,
     facts: dict[str, Any], verdict: dict[str, str] | None,

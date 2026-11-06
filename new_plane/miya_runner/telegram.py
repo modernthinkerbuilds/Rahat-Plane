@@ -1,8 +1,7 @@
 """Telegram client for the new-plane runner.
 
 Self-contained — no import from old-plane core/io.py. This keeps the
-new plane independent and makes the TS-port (when we get to OpenClaw)
-a true 1:1 mapping rather than a partial port.
+new plane independent of the old one.
 
 Mirrors the proven pattern from `agents/the_scientist/handler.start()`:
 - deleteWebhook on boot (idempotent, prevents getUpdates from being

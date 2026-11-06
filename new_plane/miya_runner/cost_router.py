@@ -11,7 +11,7 @@ it's a hard-coded heuristic so we can start collecting outcome data:
         ("project", "compare", "explain why", "plan for the week", etc.)
       • arbitration verdict fires (the loop wants a careful response)
 
-Every decision is logged as a JSONL line in $OPENCLAW_COST_LOG. The
+Every decision is logged as a JSONL line in $RAHAT_COST_LOG. The
 learner upgrade reads those logs to fit a contextual bandit.
 
 This is intentionally NOT pluggable yet — keep the v0 surface tiny,
@@ -42,8 +42,9 @@ MODEL_PRO = os.getenv("NEW_MIYA_MODEL_PRO", "gemini-2.5-pro")
 # (WorkingDirectory). Expand here; if a `$` survives (undefined var), fall
 # back to the default rather than logging into a '$…' directory.
 def _resolve_cost_log_path() -> str:
+    from new_plane.env import setting
     default = os.path.expanduser("~/.rahat/cost_router.log")
-    raw = os.getenv("OPENCLAW_COST_LOG")
+    raw = setting("RAHAT_COST_LOG")
     if raw is None:
         return default
     if raw == "":          # explicit opt-out of logging

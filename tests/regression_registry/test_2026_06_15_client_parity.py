@@ -4,7 +4,7 @@ The orchestrator hard-switches between native_client (default) and
 adapter_client (NEW_MIYA_USE_HTTP_CLIENT=1) and calls adapter.kobe_route /
 fraser_route / huberman_route. adapter_client lacked all three, so HTTP mode
 crashed with AttributeError (root cause of the pre-existing new_plane HTTP
-test failures and a broken ADR-014 OpenClaw-integration surface).
+test failures and a broken HTTP adapter surface).
 
 This contract test pins that BOTH clients expose the identical delegation +
 health + signal surface with compatible route signatures, so the two can

@@ -75,10 +75,10 @@ def miya(tmp_path, monkeypatch):
     monkeypatch.setattr(cio, "DB_PATH", tmp_path / "live.db")
     from new_plane.signals import store
     db = tmp_path / "signals.db"
-    monkeypatch.setenv("OPENCLAW_SIGNALS_DB", str(db))
+    monkeypatch.setenv("RAHAT_SIGNALS_DB", str(db))
     store.set_db_path(db)
     store.init_db()
-    monkeypatch.setenv("OPENCLAW_COST_LOG", "")
+    monkeypatch.setenv("RAHAT_COST_LOG", "")
     monkeypatch.setenv("NEW_MIYA_REVOICE", "0")
     monkeypatch.setenv("RAHAT_XAGENT_MEMORY", "0")
     from new_plane.miya_runner import cost_router, orchestrator, synthesizer

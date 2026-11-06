@@ -1,42 +1,32 @@
-# OpenClaw Adapter — Old-Plane Tools
+# HTTP adapter — Kobe and Fraser over HTTP
 
-HTTP surface exposing old-plane Python agents (Kobe, Fraser) to the
-new-plane OpenClaw (TS) runtime. Read-only wrappers over existing public
-APIs — no new agent logic.
+A localhost FastAPI surface over Kobe's and Fraser's existing public
+functions: read-only wrappers, no new agent logic. Miya's runner calls the
+agents by direct import (ADR-013, the default); with
+`NEW_MIYA_USE_HTTP_CLIENT=1` it goes through this adapter instead, and the
+parity tests keep the two paths identical. ADR-014 names it as Rahat's one
+seam to the outside.
 
-## Run for Stage 0 hello-world
+## Run
 
 ```bash
 cd ~/developer/agency/rahat
-./venv/bin/python -m uvicorn bridges.openclaw_adapters.server:app \
-    --host 127.0.0.1 --port 8765
+.venv/bin/python -m uvicorn bridges.http_adapter.server:app \
+    --host 127.0.0.1 --port 8766
 ```
 
 Then verify:
 
 ```bash
-curl -s http://127.0.0.1:8765/healthz
-curl -s -X POST http://127.0.0.1:8765/kobe/today_target -H 'content-type: application/json' -d '{}' | jq
+curl -s http://127.0.0.1:8766/healthz
+curl -s -X POST http://127.0.0.1:8766/kobe/today_target -H 'content-type: application/json' -d '{}' | jq
 ```
 
-## Run with auth (for the wedge build, end-to-end with OpenClaw)
+## Auth
 
-Add to `.env`:
-
-```
-OPENCLAW_ADAPTER_TOKEN=<long random hex>
-OPENCLAW_ADAPTER_PORT=8765
-```
-
-Then start:
-
-```bash
-./venv/bin/python -m uvicorn bridges.openclaw_adapters.server:app \
-    --host 127.0.0.1 --port 8765
-```
-
-The OpenClaw plugin reads the same env and includes the token on every
-request (`Authorization: Bearer <token>`).
+Set `RAHAT_ADAPTER_TOKEN` in `.env` and every request must carry
+`Authorization: Bearer <token>`; the runner's HTTP client sends it. Unset,
+auth is off, for local development only.
 
 ## Contract — what KTLO must NOT break
 

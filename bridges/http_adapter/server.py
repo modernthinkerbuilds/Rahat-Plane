@@ -1,25 +1,26 @@
-"""OpenClaw ↔ Python-plane HTTP adapter — FastAPI app.
+"""HTTP adapter over Kobe and Fraser — FastAPI app.
 
 Endpoints expose the *existing* tool functions in
 `agents.the_scientist.tools` and `agents.fraser.composer` as
-language-agnostic HTTP tools the OpenClaw (TS) runtime can call. They are
+language-agnostic HTTP tools any local caller can use (the runner's HTTP
+mode). They are
 **read-only wrappers** over public APIs — no new agent logic lives here.
 
 Run for dev::
 
-    OPENCLAW_ADAPTER_TOKEN="" \\
-      ./venv/bin/python -m uvicorn bridges.openclaw_adapters.server:app \\
+    RAHAT_ADAPTER_TOKEN="" \\
+      ./venv/bin/python -m uvicorn bridges.http_adapter.server:app \\
       --host 127.0.0.1 --port 8765
 
-Run for the weekend wedge::
+Run with auth::
 
-    OPENCLAW_ADAPTER_TOKEN="<long random>" \\
-      ./venv/bin/python -m uvicorn bridges.openclaw_adapters.server:app \\
+    RAHAT_ADAPTER_TOKEN="<long random>" \\
+      ./venv/bin/python -m uvicorn bridges.http_adapter.server:app \\
       --host 127.0.0.1 --port 8765
 
 Routes
 ------
-  GET  /healthz                       — liveness for Stage 0 hello-world.
+  GET  /healthz                       — liveness.
   GET  /version                       — version + git SHA for trace correlation.
   POST /kobe/today_target             — today's day-type + kcal target.
   POST /kobe/active_goal              — committed weight goal (if any).
@@ -34,7 +35,7 @@ Routes
   GET  /signals/recent                — read last N signals for an agent.
 
 Every route accepts a ``trace_id`` field in the request body (or generates
-one) so the OpenClaw plugin and the Python plane share a correlation key.
+one) so the caller and the Python plane share a correlation key.
 """
 from __future__ import annotations
 
@@ -56,7 +57,7 @@ def _safely(fn: Callable[[], Any]) -> dict[str, Any]:
     ``{"error": "<type>: <message>"}`` on failure.
 
     The adapter is a contract surface — every underlying agent error must
-    come back as structured JSON the OpenClaw plugin can route around.
+    come back as structured JSON the caller can route around.
     Never let a tool call return 500 to the client.
     """
     try:
@@ -78,9 +79,9 @@ def _git_sha() -> str:
         return "unknown"
 
 
-app = FastAPI(title="OpenClaw Adapter — Old-Plane Tools", version=_VERSION)
+app = FastAPI(title="Rahat HTTP adapter — Kobe and Fraser tools", version=_VERSION)
 
-# Localhost-only; CORS open to the OpenClaw process running locally.
+# Localhost-only; CORS open to local callers.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -93,7 +94,7 @@ app.add_middleware(
 # ─── Request envelope ──────────────────────────────────────────────────────
 class _Envelope(BaseModel):
     trace_id: str | None = Field(default=None,
-                                 description="OpenClaw session/trace ID. "
+                                 description="The caller's session/trace ID. "
                                  "Generated if omitted.")
 
 
@@ -297,7 +298,7 @@ def fraser_design_session(req: _FraserDesignReq) -> dict:
         return {"trace_id": _trace(req), "result": {"text": text}}
     except Exception as e:
         # Don't crash the adapter — return a structured error so the
-        # OpenClaw plugin can recover.
+        # caller can recover.
         return {
             "trace_id": _trace(req),
             "error": f"{type(e).__name__}: {e}",

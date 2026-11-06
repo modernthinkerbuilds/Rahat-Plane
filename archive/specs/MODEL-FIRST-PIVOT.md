@@ -10,15 +10,12 @@
 > (default) with Gemini 2.5 Pro as the high-stakes opt-in — the same
 > two-tier shape, different vendor. Reasons:
 >
->   1. Anthropic's posture toward OpenClaw (a related Alex project)
->      created a non-trivial vendor-risk asymmetry. Putting the daily-use
->      agent on Anthropic compounded that risk.
->   2. The architecture was provider-agnostic by design (`core/anthropic_io.py`
+>   1. The architecture was provider-agnostic by design (`core/anthropic_io.py`
 >      and the Gemini side were separate from the reasoner). Flipping the
 >      primary cost ~3 hours of work, almost all of it in the io module
 >      and tool-schema converter; the reasoner loop, charter gates, voice
 >      layer, telemetry, and 360 eval cases are unchanged.
->   3. Cost gets cheaper, not more expensive. Gemini 2.5 Flash at
+>   2. Cost gets cheaper, not more expensive. Gemini 2.5 Flash at
 >      $0.30/M input + $2.50/M output runs ~70% of Haiku 4.5's per-call
 >      cost on this workload, even without prompt caching.
 >

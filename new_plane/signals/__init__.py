@@ -14,7 +14,7 @@ The contract:
                                        "user_thumbsup", "outcome_logged")
       payload:   dict                 (JSON-serializable, schema is per-type)
       ts:        datetime             (UTC, microsecond)
-      trace_id:  str                  (correlates with OpenClaw session)
+      trace_id:  str                  (correlates one turn across agents)
       consumed_by: list[str]          (which agents have *used* this signal
                                        in a decision — set via mark_consumed)
   }

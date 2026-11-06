@@ -14,8 +14,6 @@ For the system as it runs, start at [`specs/README.md`](../specs/README.md) and 
 | `specs/SOTA-AGENT-ARCHITECTURE-REVIEW.md` | [`specs/SOTA-AGENT-ARCHITECTURE-REVIEW.md`](./specs/SOTA-AGENT-ARCHITECTURE-REVIEW.md) | May research notes behind the memory design |
 | `specs/MEMORY-AND-STATE-ARCHITECTURE.md` | [`specs/MEMORY-AND-STATE-ARCHITECTURE.md`](./specs/MEMORY-AND-STATE-ARCHITECTURE.md) | The May memory design; what was built is ARCHITECTURE.md §8.4 and §8.5 |
 | `specs/LLM-COST-OPTIMIZATION.md` | [`specs/LLM-COST-OPTIMIZATION.md`](./specs/LLM-COST-OPTIMIZATION.md) | A May cost analysis, partly superseded that month; spend is ARCHITECTURE.md §10.1 |
-| `specs/OPENCLAW_INTEGRATION_GUIDE.md` | [`specs/OPENCLAW_INTEGRATION_GUIDE.md`](./specs/OPENCLAW_INTEGRATION_GUIDE.md) | How to wire the OpenClaw path, which is parked (ADR-014) |
-| `OPENCLAW_LEVERAGE_2026-05-27.md` | [`OPENCLAW_LEVERAGE_2026-05-27.md`](./OPENCLAW_LEVERAGE_2026-05-27.md) | A May memo on OpenClaw; ADR-014 is the decision |
 | `specs/Rahat_21Agents_FinalPlan.xlsx`, `specs/Rahat_21Agents_Scoring.xlsx` | [`specs/`](./specs/) | Planning spreadsheets for a 21-agent roadmap |
 | `specs/diagrams/` | [`specs/diagrams/`](./specs/diagrams/) | The v2.0 drawings (May); the interactive pages replace them |
 
@@ -37,7 +35,7 @@ For the system as it runs, start at [`specs/README.md`](../specs/README.md) and 
 ## Not archived, and why
 
 - **`core/miya.py`**, the first orchestrator, stays: the Miya runner uses it as the agent registry for Kobe's delegation, and the contract tests exercise it.
-- **The OpenClaw adapter and plugin** (`bridges/openclaw_adapters/`, `new_plane/openclaw_plugin/`) stay: ADR-014 parks them rather than retiring them, tests import the adapter, and `scripts/weekend_setup.sh` installs the plugin.
+- **The HTTP adapter** (`bridges/http_adapter/`) stays: the runner's HTTP mode (`NEW_MIYA_USE_HTTP_CLIENT=1`) calls it, and its parity tests import it.
 - **`new_plane/learn/bandit.py`** stays: nothing imports it yet, but it is the first piece of the learning engine ADR-015 proposes.
 - **`tests/nightly.sh`** stays: a scheduled run may still call it.
 

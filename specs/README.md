@@ -35,7 +35,7 @@ An ADR records a decision as it was made. Its **Status** line says whether it is
 | Agents and state | [016](./ADR-016_platform_seams.md) | Seams for a second agent, surface or tenant, added before they're needed | Accepted; amended by ADR-018 |
 | Runtime | [012](./ADR-012-shared-tool-calling-runtime.md) | One shared tool-calling runtime | Accepted as amended by ADR-018 (the harness's Execute step) |
 | Spend | [005](./ADR-005-budget-enforcement.md) | A token-budget gate | Accepted; amended by ADR-018 (a per-ask brake) |
-| Position | [014](./ADR-014_openclaw_position.md) | OpenClaw is a parked adapter, not the runtime | Accepted |
+| Runtime | [014](./ADR-014_own_runtime.md) | Rahat runs on its own runtime | Accepted; restated Nov 6 |
 | Runtime | [019](./ADR-019-sites.md) | Sites: one private file per place the Mac runs from; one command moves everything and back | Accepted, Nov 2 |
 | Proposed | [015](./ADR-015_outcome_validated_learning_engine.md) | A learning engine that changes behaviour from outcomes | Proposed, design only, not built |
 
@@ -43,4 +43,4 @@ There is no ADR-010. The next decision is ADR-019.
 
 ## Archived
 
-On October 18, 2026, documents that no longer describe the running system moved to [`../archive/`](../archive/), so this folder shows what's in force. Among them: ADR-001 (the first Now/Next/Later plan, never accepted), ADR-006 (an LLM router the Miya bot doesn't use), the May design notes (the model-first pivot, the agent-architecture review, the memory design, the cost analysis), the OpenClaw integration guide, the 21-agent planning spreadsheets and the v2.0 diagrams. [`archive/README.md`](../archive/README.md) maps each old path to its new one.
+On October 18, 2026, documents that no longer describe the running system moved to [`../archive/`](../archive/), so this folder shows what's in force. Among them: ADR-001 (the first Now/Next/Later plan, never accepted), ADR-006 (an LLM router the Miya bot doesn't use), the May design notes (the model-first pivot, the agent-architecture review, the memory design, the cost analysis), the 21-agent planning spreadsheets and the v2.0 diagrams. [`archive/README.md`](../archive/README.md) maps each old path to its new one.

@@ -1,7 +1,7 @@
 """new_plane.channels — transport-agnostic channel seam (ADR-016, Seam 1).
 
 ADDITIVE-ONLY. Nothing in the runtime imports this package yet. It exists
-so the *second* surface (Slack / email / in-app SDK / OpenClaw Channel)
+so the *second* surface (Slack / email / in-app SDK)
 can be added as a new adapter instead of forking the Telegram-hardwired
 send/poll path in ``core/io.py`` and ``new_plane/miya_runner/telegram.py``.
 

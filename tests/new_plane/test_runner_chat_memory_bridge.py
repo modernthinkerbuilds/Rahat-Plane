@@ -26,10 +26,10 @@ def _test_mode(monkeypatch, tmp_path):
     monkeypatch.setenv("RAHAT_TEST_MODE", "1")
     from new_plane.signals import store
     signal_db = tmp_path / "signals.db"
-    monkeypatch.setenv("OPENCLAW_SIGNALS_DB", str(signal_db))
+    monkeypatch.setenv("RAHAT_SIGNALS_DB", str(signal_db))
     store.set_db_path(signal_db)
     store.init_db()
-    monkeypatch.setenv("OPENCLAW_COST_LOG", "")
+    monkeypatch.setenv("RAHAT_COST_LOG", "")
     from new_plane.miya_runner import cost_router
     monkeypatch.setattr(cost_router, "COST_LOG_PATH", "")
 

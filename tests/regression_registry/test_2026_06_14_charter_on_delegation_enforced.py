@@ -29,8 +29,8 @@ def _env(monkeypatch, tmp_path):
     from new_plane.signals import store
     store.set_db_path(tmp_path / "sig.db")
     store.init_db()
-    monkeypatch.setenv("OPENCLAW_SIGNALS_DB", str(tmp_path / "sig.db"))
-    monkeypatch.setenv("OPENCLAW_COST_LOG", "")
+    monkeypatch.setenv("RAHAT_SIGNALS_DB", str(tmp_path / "sig.db"))
+    monkeypatch.setenv("RAHAT_COST_LOG", "")
     monkeypatch.setenv("NEW_MIYA_REVOICE", "0")
     from new_plane.miya_runner import cost_router
     monkeypatch.setattr(cost_router, "COST_LOG_PATH", "")

@@ -15,7 +15,7 @@ hard-wired:
   - core/io.py:111       ``telegram_get_updates(...)`` long-polls Telegram
   - new_plane/miya_runner/telegram.py:43  ``TelegramClient`` (self-contained)
 
-A second surface (Slack, email, in-app SDK, OpenClaw ``Channel``) cannot
+A second surface (Slack, email, in-app SDK) cannot
 be added without copying that wiring. This Protocol is the seam: the
 runtime would depend on ``Channel`` (this file), and ``TelegramClient``
 would become the *first* concrete implementation — without changing the

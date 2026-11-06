@@ -6,7 +6,7 @@
 **Relationship to prior ADRs:**
 - ADR-005 (budget enforcement) and ADR-006 (capability-based router) define the cost/routing surface this learner eventually optimizes; this ADR does not change either — the bandit sits behind the existing `cost_router.decide()` contract.
 - ADR-013 made `new_plane/` the active runtime; the learner lives there (`new_plane/learn/`).
-- ADR-014 pinned OpenClaw as supporting, not structural. The learner is runtime-agnostic Python with no OpenClaw coupling, consistent with that pin.
+- ADR-014: Rahat runs on its own runtime. The learner is plain Python inside it, consistent with that decision.
 
 ---
 
@@ -19,7 +19,7 @@ Two failure modes the thesis warns against, which this ADR exists to prevent:
 1. **Shipping five engines that look similar** (§8a). Each surface is a routing decision: features in, discrete action out, near-term outcome observed. They are one learner with five wiring points, not five learners.
 2. **Treating the trajectory learner as a sixth routing endpoint** (§8b) — "will fail quietly."
 
-The training data already exists. `core/decisions.py` logs every action with `cost_usd`, `tokens_in/out`, `latency_ms`, and `outcome` per `trace_id`. `new_plane/miya_runner/cost_router.py` logs every routing decision to the `OPENCLAW_COST_LOG` JSONL with `model`, `reason`, `user_message_len`, `arbitration_rule`, `matched_patterns`, `trace_id`, `ts`. `new_plane/signals/store.py` captures outcome signals with a consumption contract. We have the substrate; we do not yet have the learner. The current router is a hard-coded heuristic whose own docstring marks where the learner goes.
+The training data already exists. `core/decisions.py` logs every action with `cost_usd`, `tokens_in/out`, `latency_ms`, and `outcome` per `trace_id`. `new_plane/miya_runner/cost_router.py` logs every routing decision to the `RAHAT_COST_LOG` JSONL with `model`, `reason`, `user_message_len`, `arbitration_rule`, `matched_patterns`, `trace_id`, `ts`. `new_plane/signals/store.py` captures outcome signals with a consumption contract. We have the substrate; we do not yet have the learner. The current router is a hard-coded heuristic whose own docstring marks where the learner goes.
 
 This ADR records the decision **not to relitigate the §8a/§8b sequence** and to build it in the order the thesis specifies.
 

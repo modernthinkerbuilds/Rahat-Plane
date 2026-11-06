@@ -33,7 +33,7 @@ def _test_mode(monkeypatch, tmp_path):
     # Isolate signal DB
     from new_plane.signals import store
     signal_db = tmp_path / "signals.db"
-    monkeypatch.setenv("OPENCLAW_SIGNALS_DB", str(signal_db))
+    monkeypatch.setenv("RAHAT_SIGNALS_DB", str(signal_db))
     store.set_db_path(signal_db)
     store.init_db()
 

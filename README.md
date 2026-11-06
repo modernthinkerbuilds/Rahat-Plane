@@ -20,7 +20,7 @@
 
 ---
 
-An agent can be fluent and wrong at the same time, and you can't tell from reading it. Run several and they contradict each other, act when they shouldn't, and remember the wrong things. That isn't a model problem. It's the layer underneath, which is what this repo is.
+An agent can be fluent and wrong at the same time, and you can't tell from reading it. Run several and they contradict each other, act when they shouldn't, and remember the wrong things. That isn't a model problem. It's the layer underneath, which is what this repo is: an agent platform I wrote from scratch in Python.
 
 > **Rahat is the agent platform I built; seven agents run on it. Miya is the one I talk to. The agents share one memory, one rulebook and one record of every decision, and they run in my life every day.**
 
@@ -272,12 +272,14 @@ RAHAT_TEST_MODE=1 python -m tests.run_all
 
 ---
 
+## Built from scratch
+
+Rahat is my own code: an agent platform I wrote from scratch in Python. In May 2026 I experimented with OpenClaw and built adapters so it could host my agents, then chose to build my own. Why, in one line: I wanted code, not the model, to have the last word on what my agents do, and I didn't want that to depend on someone else's runtime ([ADR-014](./specs/ADR-014_own_runtime.md)).
+
 ## Scope
 
 Personal-scale, not a product. The *problems* generalize to any fleet of agents; the product doesn't. State lives in one SQLite file on a Mac mini at home; each model or maps call sends that request's context to the provider, and messages travel through Telegram.
 
 Built by **Venkat Sadras**, a Bay Area PM at a large tech company, hands-on with multi-agent systems. Views my own, not my employer's.
-
-Rahat runs on its own local Python runtime. An [OpenClaw](https://github.com/openclaw/openclaw) adapter is kept as one integration target, not a foundation, and is currently parked ([ADR-014](./specs/ADR-014_openclaw_position.md)).
 
 Licensed under the [Apache License 2.0](./LICENSE).

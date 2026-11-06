@@ -38,7 +38,7 @@ def test_the_native_path_sends_the_text(fraser_says):
 
 def test_the_http_adapter_sends_the_text(fraser_says, monkeypatch):
     from fastapi.testclient import TestClient
-    monkeypatch.delenv("OPENCLAW_ADAPTER_TOKEN", raising=False)
-    from bridges.openclaw_adapters.server import app
+    monkeypatch.delenv("RAHAT_ADAPTER_TOKEN", raising=False)
+    from bridges.http_adapter.server import app
     body = TestClient(app).post("/fraser/route", json={"message": "deadlifts instead of rows"}).json()
     assert body["result"]["text"] == _DESIGN.text

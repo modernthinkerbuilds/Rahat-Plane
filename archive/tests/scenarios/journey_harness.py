@@ -105,7 +105,7 @@ TURNS = [
  ("T54","pasted WOD how to do","I am feeling weak but here is the WOD for today, how should I do it? Every 3:00 x 5 Sets: 6 Back Squats + 8 Jumping Lunges, starting at 70%."),
  ("T55","switch to emom","Should I switch to a 10 min EMOM and cash in cash out for today"),
  ("T56","emom unrealistic","The emom is not realistic"),
- ("T57","meta agents","Separately if I had a team of sync agents telling me the same instructions, with something like open claw, what would those agents be?"),
+ ("T57","meta agents","Separately if I had a team of sync agents telling me the same instructions, what would those agents be?"),
  ("T58","lunges count","If I cash in 400 and cash out 400 and do an 8 min Emom, how many lunges would you recommend"),
  ("T59","squats make it good","Wouldn't the squats with the WOD make it good today?"),
  ("T60","design chest 700 2-part","Based on my workout patterns, design a PRVN workout for me today. Focus on chest bench press and then have a WOD as well. 75 to 80 minutes and burn 700 calories. Break the metcon into two portions. I've already done deadlifts and back squats and box jumps this week, so don't have those, not even running."),

@@ -3,8 +3,8 @@ old-plane Python code directly instead of going over HTTP.
 
 Per ADR-013 Phase A: the runner stops using the HTTP adapter for its
 internal synchronous calls. We import `agents.the_scientist.tools` and
-`agents.fraser.composer` directly. The HTTP adapter stays alive (still
-a launchd service) for OpenClaw / external use.
+`agents.fraser.composer` directly. The HTTP adapter stays in the tree
+for external callers and the HTTP mode.
 
 **Key design decision:** this file matches the signature surface of
 `adapter_client.py` exactly — same function names, same args, same

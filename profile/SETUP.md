@@ -44,31 +44,7 @@ No placeholders to replace — the file is ready to push as-is.
 
 ---
 
-## 2. Rahat-Plane Repo README (`README-RAHAT-REPO.md`)
-
-This replaces the current OpenClaw README on your [`Rahat-Plane`](https://github.com/modernthinkerbuilds/Rahat-Plane) repo (currently a fork of OpenClaw's README — not your story).
-
-```bash
-# In your existing Rahat-Plane clone on disk
-cd ~/developer/agency/rahat/staging   # or wherever the local clone lives
-
-# Back up the OpenClaw README (you may want it for reference)
-mv README.md README-OPENCLAW.md
-
-# Copy the new Rahat README in
-cp ~/developer/agency/rahat/profile/README-RAHAT-REPO.md ./README.md
-
-# Commit
-git add README.md README-OPENCLAW.md
-git commit -m "docs: replace upstream readme with Rahat positioning"
-git push origin main
-```
-
-No placeholders to replace — file is ready to push as-is.
-
----
-
-## 3. Pin the right repos on your profile
+## 2. Pin the right repos on your profile
 
 Per Aakash's guidance: **two strong pinned repos > a wall of half-finished ones.**
 
@@ -82,7 +58,7 @@ To pin: profile page → "Customize your pins" → check the 1-2 repos that matt
 
 ---
 
-## 4. Profile polish (5-min wins)
+## 3. Profile polish (5-min wins)
 
 These compound. Do them once, they pay off forever.
 
@@ -96,7 +72,7 @@ These compound. Do them once, they pay off forever.
 
 ---
 
-## 5. The first 30 days of activity (the "green squares")
+## 4. The first 30 days of activity (the "green squares")
 
 Aakash's point: **regular > frequent**, **meaningful > regular**.
 
@@ -110,7 +86,7 @@ The goal isn't to game the chart. It's to make the chart honest evidence that yo
 
 ---
 
-## 6. What goes in `/specs/PRD.md` next
+## 5. What goes in `/specs/PRD.md` next
 
 The Rahat repo README references `/specs/PRD.md`. You already have most of this from the v2.0/v2.1 PRD work — paste the latest version into `staging/specs/PRD.md` and commit. That gives every visitor a place to dig deeper.
 

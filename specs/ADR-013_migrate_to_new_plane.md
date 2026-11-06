@@ -37,8 +37,8 @@ greater than the residual risk of porting without 8 weeks of data.
 **`new_plane/` is now the active plane.** Old-plane Python code
 (`agents/the_scientist/`, `agents/fraser/`, `core/charter.py`, etc.)
 becomes a **library** that the new plane imports directly. The HTTP
-adapter (`bridges/openclaw_adapters/`) stays alive for OpenClaw-future
-and external use, but the runner stops calling it for internal
+adapter (`bridges/http_adapter/`) stays alive for
+external use, but the runner stops calling it for internal
 synchronous work — it goes through Python imports.
 
 When the new plane reaches parity (Phase D below), `com.rahat.miya`
@@ -71,7 +71,7 @@ dependencies (no need to keep the adapter healthy for the runner to
 work).
 
 **What we keep:** the adapter itself stays in tree and stays running as
-a launchd service (still useful for OpenClaw future and for the eval
+a launchd service (still useful for external callers and for the eval
 suite). The runner just stops being a consumer of it.
 
 **Rollback:** revert the orchestrator commit. The adapter is unchanged
@@ -167,9 +167,6 @@ porting.
 - **Telegram bot name in production.** Once `com.rahat.miya` is off,
   the user can ask BotFather to rename `RahatBadeMiya_bot` → `Miya_bot`
   (or whatever) if desired. Not part of this ADR.
-- **OpenClaw TS plugin path.** Parked as Stage 2 of the original
-  thesis; this ADR doesn't change that. The OpenClaw work is still
-  available in `new_plane/openclaw_plugin/` if/when needed.
 - **Code organization within `new_plane/`.** Phase F is cosmetic only.
   The internal structure (orchestrator / synthesizer / cost_router /
   signal_store split) stays as-is.

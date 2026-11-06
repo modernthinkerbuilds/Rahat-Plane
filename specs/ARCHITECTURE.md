@@ -111,7 +111,7 @@ One owner, who talks to Miya, and to Kipchoge about his running; his household, 
 
 ### 2.4 Why not a framework
 
-LangGraph, AutoGen and CrewAI were evaluated early and rejected for the same reason: they assume cloud-resident state, make the graph the runtime, and produce reasoning chains rather than code-checked contracts. Rahat's runtime is small and its own. By October the market had converged on much of the same shape (a tool loop with caps, code that decides before a model does, schema-validated outputs, evals graded on outcomes), and [ADR-018](./ADR-018-outcome-contracts-and-independent-evaluation.md) adopts that shape. What no framework enforces, "no claim without a source", is Rahat's to build. OpenClaw stays a parked adapter, not the runtime ([ADR-014](./ADR-014_openclaw_position.md)).
+LangGraph, AutoGen and CrewAI were evaluated early and rejected for the same reason: they assume cloud-resident state, make the graph the runtime, and produce reasoning chains rather than code-checked contracts. Rahat's runtime is small and its own. By October the market had converged on much of the same shape (a tool loop with caps, code that decides before a model does, schema-validated outputs, evals graded on outcomes), and [ADR-018](./ADR-018-outcome-contracts-and-independent-evaluation.md) adopts that shape. What no framework enforces, "no claim without a source", is Rahat's to build. [ADR-014](./ADR-014_own_runtime.md) records why the runtime stays its own.
 
 ---
 
@@ -468,7 +468,7 @@ Miya's agents are registered in code ([`agent_boot.py`](../new_plane/miya_runner
 | [011](./ADR-011-deterministic-shell-llm-core.md) | Deterministic shell, LLM core | Accepted |
 | [012](./ADR-012-shared-tool-calling-runtime.md) | A shared tool-calling runtime | Accepted as amended by ADR-018 §3 |
 | [013](./ADR-013_migrate_to_new_plane.md) | Move the runtime to the new plane | Accepted |
-| [014](./ADR-014_openclaw_position.md) | OpenClaw: a parked adapter, not the runtime | Accepted |
+| [014](./ADR-014_own_runtime.md) | Rahat runs on its own runtime | Accepted |
 | [015](./ADR-015_outcome_validated_learning_engine.md) | An outcome-validated learning engine | Proposed, design only |
 | [016](./ADR-016_platform_seams.md) | Platform seams before the second agent, surface or tenant | Accepted; amended by ADR-018 |
 | [017](./ADR-017_nl_intent_layer.md) | A plain-language intent layer | Accepted, behind a flag that is off; amended by ADR-018 |

@@ -1,7 +1,7 @@
-"""HTTP adapters exposing old-plane Python agents (Kobe, Fraser) to the
-new-plane OpenClaw runtime over a localhost FastAPI surface.
+"""HTTP adapter exposing the old-plane Python agents (Kobe, Fraser) over a
+localhost FastAPI surface: the runner's HTTP mode and any local caller.
 
-This is the *contract surface* between the two planes — read-only wrappers
+This is a *contract surface* — read-only wrappers
 over existing `agents.the_scientist.tools` and `agents.fraser.composer`
 public APIs. No new agent logic lives here; only HTTP envelopes.
 

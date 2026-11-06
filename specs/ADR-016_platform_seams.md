@@ -20,7 +20,7 @@ single-user / single-channel / single-agent case:
 1. **Channel is Telegram.** `core/io.py:87` (`send`) posts directly to
    `api.telegram.org`; `core/io.py:111` (`telegram_get_updates`) long-polls
    Telegram; `new_plane/miya_runner/telegram.py:43` (`TelegramClient`) is a
-   self-contained Telegram client. A Slack / email / in-app / OpenClaw
+   self-contained Telegram client. A Slack / email / in-app
    `Channel` surface cannot be added without copying this wiring. Violates
    thesis §4 rule #2.
 

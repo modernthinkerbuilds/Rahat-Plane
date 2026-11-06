@@ -1,6 +1,6 @@
 """SQLite-backed signal store — isolated from old-plane decisions table.
 
-Path: ``$OPENCLAW_SIGNALS_DB`` if set, else ``~/.rahat/new_plane_signals.db``.
+Path: ``$RAHAT_SIGNALS_DB`` if set, else ``~/.rahat/new_plane_signals.db``.
 Tests override via ``set_db_path(...)``.
 
 Schema (idempotent — ``CREATE TABLE IF NOT EXISTS``)::
@@ -49,7 +49,8 @@ def _default_path() -> Path:
     # files. Expand `$VARS` and `~` here; if anything unexpandable
     # remains, fall back to the default path rather than writing to a
     # `$`-named directory.
-    p = os.environ.get("OPENCLAW_SIGNALS_DB", "").strip()
+    from new_plane.env import setting
+    p = (setting("RAHAT_SIGNALS_DB") or "").strip()
     if p:
         expanded = os.path.expanduser(os.path.expandvars(p))
         if "$" not in expanded:

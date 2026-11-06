@@ -19,7 +19,7 @@ from new_plane.miya_runner import pending
 @pytest.fixture(autouse=True)
 def _isolated_store(monkeypatch, tmp_path):
     db = tmp_path / "signals.db"
-    monkeypatch.setenv("OPENCLAW_SIGNALS_DB", str(db))
+    monkeypatch.setenv("RAHAT_SIGNALS_DB", str(db))
     store.set_db_path(db)
     store.init_db()
     yield db
@@ -120,7 +120,7 @@ def test_pending_survives_process_bounce(tmp_path, monkeypatch):
     — modeled by dropping the cached path and re-pointing at the same file
     (what a fresh process does on boot)."""
     db = tmp_path / "durable.db"
-    monkeypatch.setenv("OPENCLAW_SIGNALS_DB", str(db))
+    monkeypatch.setenv("RAHAT_SIGNALS_DB", str(db))
     store.set_db_path(db)
     store.init_db()
     pending.record(chat_id="c1", question="q", options=["Run", "Rest"])

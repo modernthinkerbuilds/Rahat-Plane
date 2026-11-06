@@ -1,15 +1,14 @@
-"""Python HTTP client for the new-plane FastAPI adapter.
+"""Python HTTP client for the FastAPI adapter (`bridges/http_adapter/`).
 
-Mirrors the TS `new_plane/openclaw_plugin/src/adapter_client.ts` contract:
-same endpoints, same envelope shape (`{ result, error?, trace_id? }`).
+Same endpoints, same envelope shape (`{ result, error?, trace_id? }`) and
+the same function surface as `native_client.py`. The orchestrator uses it
+when NEW_MIYA_USE_HTTP_CLIENT=1; the parity tests keep the two identical.
 
-Why HTTP and not direct imports?
-- Parallel-planes thesis: the new plane treats old Kobe/Fraser as
-  black-box services. The HTTP boundary is what makes them swappable
-  later (port-to-TS) and what proves the contract is clean.
-- The Python new_miya_runner is a *strict superset* of what the TS
-  OpenClaw plugin will do. Same wire shape, same retry semantics, same
-  arbitration logic.
+Why an HTTP path at all?
+- It treats Kobe/Fraser as black-box services: the HTTP boundary proves
+  the contract is clean and lets the agents run in another process.
+- Same wire shape, same retry semantics, same arbitration logic as the
+  native path.
 
 This client uses the stdlib `urllib` rather than `requests` or `httpx`
 to keep the new-plane dependency surface minimal — easier launchd install.
@@ -25,16 +24,18 @@ from typing import Any, Optional
 from urllib import error as _urlerr
 from urllib import request as _urlreq
 
+from new_plane.env import setting
+
 logger = logging.getLogger(__name__)
 
-ADAPTER_URL = os.getenv("OPENCLAW_ADAPTER_URL", "http://127.0.0.1:8766")
-ADAPTER_TOKEN = os.getenv("OPENCLAW_ADAPTER_TOKEN", "")
+ADAPTER_URL = setting("RAHAT_ADAPTER_URL") or "http://127.0.0.1:8766"
+ADAPTER_TOKEN = setting("RAHAT_ADAPTER_TOKEN") or ""
 DEFAULT_TIMEOUT_S = 30.0
 
 
 @dataclass
 class AdapterResult:
-    """Mirror of `AdapterResult<T>` in the TS client.
+    """The envelope every client call returns (`native_client` uses it too).
 
     Either `result` is set (success), `error` is set (the adapter
     returned a structured `_safely` error envelope), or `transport_error`
@@ -147,7 +148,7 @@ def get(path: str, query: dict[str, Any] | None = None, *,
         )
 
 
-# ─── Typed convenience wrappers (mirror TS tools/) ────────────────────
+# ─── Typed convenience wrappers ────────────────────
 
 def kobe_today_target(trace_id: str | None = None) -> AdapterResult:
     return post("/kobe/today_target", {}, trace_id=trace_id)

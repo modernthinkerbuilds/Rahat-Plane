@@ -54,12 +54,12 @@ for p in "${STALE[@]}"; do
 done
 
 echo
-echo "== 3. PARKED — do NOT delete (ADR-014: OpenClaw kept ready) =="
-echo "  KEEP: new_plane/openclaw_plugin/  bridges/openclaw_adapters/  staging/fleet/  core/huberman_bridge.py"
+echo "== 3. KEEP — do NOT delete =="
+echo "  KEEP: bridges/http_adapter/  core/huberman_bridge.py"
 
 echo
 echo "== 4. Ambiguous — review before deleting (left untouched) =="
-echo "  specs/OPENCLAW_INTEGRATION_GUIDE.md, specs/L8_AGENT_ARCHITECT_KICKOFF_PROMPT.md,"
+echo "  specs/L8_AGENT_ARCHITECT_KICKOFF_PROMPT.md,"
 echo "  duplicate L9 vs L9_L10 handoff in specs/test_lead/findings/, specs/RAHAT_COMMERCIALIZATION_PARKED.md"
 
 echo

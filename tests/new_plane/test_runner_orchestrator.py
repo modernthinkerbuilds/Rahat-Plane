@@ -55,7 +55,7 @@ def fake_adapter(monkeypatch, tmp_path):
 
     Default after ADR-013 Phase A is native_client. These tests exercise
     the HTTP path (proves the adapter contract is correct + that the
-    HTTP fallback still works for OpenClaw). Native path is covered by
+    HTTP fallback still works). Native path is covered by
     test_runner_native_client.py and the parity tests.
     """
     # Swap the orchestrator's `adapter` symbol so HTTP calls flow through
@@ -74,12 +74,12 @@ def fake_adapter(monkeypatch, tmp_path):
     # Isolated signal DB so we don't pollute the user's real one
     from new_plane.signals import store as signal_store
     signal_db = tmp_path / "signals.db"
-    monkeypatch.setenv("OPENCLAW_SIGNALS_DB", str(signal_db))
+    monkeypatch.setenv("RAHAT_SIGNALS_DB", str(signal_db))
     signal_store.set_db_path(signal_db)
     signal_store.init_db()
 
     # Disable cost-log writes
-    monkeypatch.setenv("OPENCLAW_COST_LOG", "")
+    monkeypatch.setenv("RAHAT_COST_LOG", "")
     from new_plane.miya_runner import cost_router
     monkeypatch.setattr(cost_router, "COST_LOG_PATH", "")
 
@@ -245,10 +245,10 @@ def test_handle_adapter_down_still_produces_response(monkeypatch, tmp_path):
 
     from new_plane.signals import store as signal_store
     signal_db = tmp_path / "signals.db"
-    monkeypatch.setenv("OPENCLAW_SIGNALS_DB", str(signal_db))
+    monkeypatch.setenv("RAHAT_SIGNALS_DB", str(signal_db))
     signal_store.set_db_path(signal_db)
     signal_store.init_db()
-    monkeypatch.setenv("OPENCLAW_COST_LOG", "")
+    monkeypatch.setenv("RAHAT_COST_LOG", "")
     from new_plane.miya_runner import cost_router
     monkeypatch.setattr(cost_router, "COST_LOG_PATH", "")
 

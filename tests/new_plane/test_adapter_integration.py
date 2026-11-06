@@ -1,6 +1,6 @@
 """Integration tests — exercise the adapter against REAL Kobe/Fraser code.
 
-The unit tests in test_openclaw_adapter.py patch the underlying tool
+The unit tests in test_http_adapter.py patch the underlying tool
 functions. These tests do NOT — they call into the actual
 ``agents.the_scientist.tools`` and ``agents.fraser.composer`` paths.
 
@@ -12,7 +12,7 @@ This catches the class of bug the unit tests can't see:
 
 All tests assert HTTP 200 — the adapter must never return 500. On a real
 underlying error, the response carries an ``error`` field with the
-type+message; the OpenClaw plugin can route around it.
+type+message; the caller can route around it.
 """
 from __future__ import annotations
 
@@ -22,13 +22,13 @@ from fastapi.testclient import TestClient
 
 @pytest.fixture
 def client(monkeypatch):
-    monkeypatch.delenv("OPENCLAW_ADAPTER_TOKEN", raising=False)
+    monkeypatch.delenv("RAHAT_ADAPTER_TOKEN", raising=False)
     # Hermetic-ish: live agents read DB; make sure RAHAT_TEST_MODE is on
     # so writes don't touch the user's live DB.
     monkeypatch.setenv("RAHAT_TEST_MODE", "1")
     monkeypatch.setenv("RAHAT_VOICE", "neutral")
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-    from bridges.openclaw_adapters.server import app
+    from bridges.http_adapter.server import app
     return TestClient(app)
 
 
@@ -82,7 +82,7 @@ def test_project_eta_real_math(client):
 
 # ─── load-bearing primitive: signal round-trip with real store ────────────
 def test_signal_full_lifecycle(client, tmp_path, monkeypatch):
-    monkeypatch.setenv("OPENCLAW_SIGNALS_DB", str(tmp_path / "signals.db"))
+    monkeypatch.setenv("RAHAT_SIGNALS_DB", str(tmp_path / "signals.db"))
     # Re-import to pick up the new path
     from new_plane.signals import store
     store.set_db_path(tmp_path / "signals.db")

@@ -57,11 +57,11 @@ def fake_adapter(monkeypatch, tmp_path):
     port = server.server_address[1]
     monkeypatch.setattr(ac, "ADAPTER_URL", f"http://127.0.0.1:{port}")
     monkeypatch.setattr(ac, "ADAPTER_TOKEN", "")
-    monkeypatch.setenv("OPENCLAW_COST_LOG", "")
+    monkeypatch.setenv("RAHAT_COST_LOG", "")
 
     from new_plane.signals import store as signal_store
     signal_db = tmp_path / "signals.db"
-    monkeypatch.setenv("OPENCLAW_SIGNALS_DB", str(signal_db))
+    monkeypatch.setenv("RAHAT_SIGNALS_DB", str(signal_db))
     signal_store.set_db_path(signal_db)
     signal_store.init_db()
 
@@ -202,7 +202,7 @@ def _offline_parity_env(monkeypatch, tmp_path):
     from new_plane.signals import store as signal_store
     prev_signals_path = signal_store._path()
     sdb = tmp_path / "signals.db"
-    monkeypatch.setenv("OPENCLAW_SIGNALS_DB", str(sdb))
+    monkeypatch.setenv("RAHAT_SIGNALS_DB", str(sdb))
     signal_store.set_db_path(sdb)
     signal_store.init_db()
     yield

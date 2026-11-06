@@ -7,7 +7,7 @@
    instance both polling.)
 2. Non-409 HTTP errors are still swallowed (return {} → []), unchanged.
 3. The signal store gets a RAHAT_TEST_MODE sandbox guard (mirrors core.io):
-   with test mode on and no explicit OPENCLAW_SIGNALS_DB, it never resolves
+   with test mode on and no explicit RAHAT_SIGNALS_DB, it never resolves
    to the real ~/.rahat signals DB. Explicit override still wins.
 """
 from __future__ import annotations
@@ -45,7 +45,7 @@ def test_get_updates_network_error_swallowed(monkeypatch):
 
 
 def test_signal_store_test_mode_sandbox(monkeypatch):
-    monkeypatch.delenv("OPENCLAW_SIGNALS_DB", raising=False)
+    monkeypatch.delenv("RAHAT_SIGNALS_DB", raising=False)
     monkeypatch.setenv("RAHAT_TEST_MODE", "1")
     from new_plane.signals import store
     p = store._default_path()
@@ -55,7 +55,7 @@ def test_signal_store_test_mode_sandbox(monkeypatch):
 
 def test_explicit_signals_db_still_wins(monkeypatch, tmp_path):
     target = tmp_path / "explicit.db"
-    monkeypatch.setenv("OPENCLAW_SIGNALS_DB", str(target))
+    monkeypatch.setenv("RAHAT_SIGNALS_DB", str(target))
     monkeypatch.setenv("RAHAT_TEST_MODE", "1")
     from new_plane.signals import store
     assert store._default_path() == target

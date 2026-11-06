@@ -22,7 +22,7 @@ from new_plane.signals import store
 @pytest.fixture(autouse=True)
 def _isolated_store(monkeypatch, tmp_path):
     db = tmp_path / "signals.db"
-    monkeypatch.setenv("OPENCLAW_SIGNALS_DB", str(db))
+    monkeypatch.setenv("RAHAT_SIGNALS_DB", str(db))
     store.set_db_path(db)
     store.init_db()
     yield db
@@ -31,7 +31,7 @@ def _isolated_store(monkeypatch, tmp_path):
 # ─── replay on boot / restart ─────────────────────────────────────────
 def test_signals_survive_process_bounce(tmp_path, monkeypatch):
     db = tmp_path / "durable.db"
-    monkeypatch.setenv("OPENCLAW_SIGNALS_DB", str(db))
+    monkeypatch.setenv("RAHAT_SIGNALS_DB", str(db))
     store.set_db_path(db)
     store.init_db()
     sid = store.publish(agent="kobe", type_="pace_update",
@@ -89,12 +89,12 @@ def test_recent_orders_by_id_under_subsecond_collision():
 # ─── RAHAT_TEST_MODE sandbox guard (PRE_SCALE D-P1 — landed) ───────────
 def test_store_sandboxes_under_test_mode(monkeypatch):
     """The signal store now mirrors core.io's corruption guard: with
-    RAHAT_TEST_MODE=1 and no explicit OPENCLAW_SIGNALS_DB, `_default_path()`
+    RAHAT_TEST_MODE=1 and no explicit RAHAT_SIGNALS_DB, `_default_path()`
     resolves to a pid-scoped temp sandbox, NEVER the live ~/.rahat DB. This
     closes the D-P1 gap (same class as the 2026-05-08 corruption). Pinned
     GREEN so a revert of the guard fires this test."""
     monkeypatch.setenv("RAHAT_TEST_MODE", "1")
-    monkeypatch.delenv("OPENCLAW_SIGNALS_DB", raising=False)
+    monkeypatch.delenv("RAHAT_SIGNALS_DB", raising=False)
     store._DB_PATH = None
     p = store._default_path()
     home_db = Path.home() / ".rahat" / "new_plane_signals.db"

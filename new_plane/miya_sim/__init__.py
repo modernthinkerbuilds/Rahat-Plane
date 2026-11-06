@@ -1,15 +1,15 @@
-"""Python new_miya simulator — pre-OpenClaw baseline.
+"""Python new_miya simulator — the reference orchestration loop.
 
-Mirrors the TS plugin's orchestration loop in pure Python, calling the
-same adapter endpoints and signal store. Lets you smoke-test the
-orchestration logic BEFORE OpenClaw is wired.
+Miya's orchestration loop in pure Python, calling the same tool
+functions and signal store as the runner, so the logic can be
+smoke-tested without Telegram or a model.
 
 Why this exists:
-  1. Validates the adapter + signal contracts end-to-end without TS.
+  1. Validates the adapter + signal contracts end-to-end.
   2. Captures side-by-side comparisons (old Miya vs new orchestration)
      in a stack you control.
-  3. Acts as the canonical reference implementation — when the TS plugin
-     ships, its behavior should match this on the same inputs.
+  3. Acts as the canonical reference implementation — the runner's
+     orchestrator imports its rules, so the two cannot drift.
 
 Run::
 

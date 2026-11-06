@@ -286,10 +286,10 @@ def test_huberman_deterministic_cooldowns_are_valid(kobe, salt):
 def miya(tmp_path, monkeypatch, kobe):
     from new_plane.signals import store
     db = tmp_path / "signals.db"
-    monkeypatch.setenv("OPENCLAW_SIGNALS_DB", str(db))
+    monkeypatch.setenv("RAHAT_SIGNALS_DB", str(db))
     store.set_db_path(db)
     store.init_db()
-    monkeypatch.setenv("OPENCLAW_COST_LOG", "")
+    monkeypatch.setenv("RAHAT_COST_LOG", "")
     from new_plane.miya_runner import cost_router
     monkeypatch.setattr(cost_router, "COST_LOG_PATH", "")
     (tmp_path / "vault").mkdir(exist_ok=True)

@@ -7,7 +7,7 @@ structured fallback.
 
 Why two orchestrators?
 - `miya_sim.orchestrator` does direct Python imports — fast for unit
-  tests and pre-OpenClaw smoke-testing the logic.
+  tests and for smoke-testing the logic.
 - `miya_runner.orchestrator` does HTTP calls — proves the adapter
   contract end-to-end and gives us a realistic latency profile.
 
@@ -26,8 +26,8 @@ from typing import Any
 import os
 
 # Per ADR-013 Phase A: the runner uses direct Python imports for internal
-# calls. The HTTP adapter (adapter_client) stays alive in the tree for
-# OpenClaw and external use, but the runner defaults to the native client.
+# calls. The HTTP adapter (adapter_client) stays in the tree for
+# external use, but the runner defaults to the native client.
 # Set NEW_MIYA_USE_HTTP_CLIENT=1 to fall back to the HTTP adapter
 # (useful for debugging the adapter contract or for ops scenarios
 # where the runner and old code run in different processes).

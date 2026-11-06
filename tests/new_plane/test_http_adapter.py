@@ -1,7 +1,7 @@
-"""Smoke tests for bridges/openclaw_adapters/server.py.
+"""Smoke tests for bridges/http_adapter/server.py.
 
 Hermetic — the adapter calls real agent functions, but the test wraps them
-with monkeypatch where needed. Pre-cleared `OPENCLAW_ADAPTER_TOKEN` so auth
+with monkeypatch where needed. Pre-cleared `RAHAT_ADAPTER_TOKEN` so auth
 is disabled in dev mode; a separate test exercises the auth path.
 """
 from __future__ import annotations
@@ -15,8 +15,8 @@ from fastapi.testclient import TestClient
 
 @pytest.fixture
 def client(monkeypatch):
-    monkeypatch.delenv("OPENCLAW_ADAPTER_TOKEN", raising=False)
-    from bridges.openclaw_adapters.server import app
+    monkeypatch.delenv("RAHAT_ADAPTER_TOKEN", raising=False)
+    from bridges.http_adapter.server import app
     return TestClient(app)
 
 
@@ -149,8 +149,8 @@ def test_fraser_design_session_recovers_from_error(client):
 # ─── auth-mode separate fixture ────────────────────────────────────────────
 @pytest.fixture
 def authed_client(monkeypatch):
-    monkeypatch.setenv("OPENCLAW_ADAPTER_TOKEN", "secret-abc-123")
-    from bridges.openclaw_adapters.server import app
+    monkeypatch.setenv("RAHAT_ADAPTER_TOKEN", "secret-abc-123")
+    from bridges.http_adapter.server import app
     return TestClient(app)
 
 
